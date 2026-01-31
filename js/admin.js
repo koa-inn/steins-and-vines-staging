@@ -1554,7 +1554,16 @@
 
       appendTd(tr, item.sku || '');
       appendTd(tr, item.brand || '');
-      appendTd(tr, item.name || '');
+      var nameTd = document.createElement('td');
+      nameTd.textContent = item.name || '';
+      if (requiresMultiplesOfTwo(item.brand)) {
+        var pack = document.createElement('span');
+        pack.textContent = ' (2-pack)';
+        pack.style.color = '#888';
+        pack.style.fontSize = '0.85em';
+        nameTd.appendChild(pack);
+      }
+      tr.appendChild(nameTd);
 
       // Editable qty
       var qtyTd = document.createElement('td');
@@ -1852,6 +1861,42 @@
     renderOrderTab();
   }
 
+  function importOrderCSV(file) {
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var lines = e.target.result.split(/\r?\n/).filter(function (l) { return l.trim() !== ''; });
+      if (lines.length < 2) { alert('CSV must have a header row and at least one data row.'); return; }
+
+      var headers = parseCSVLine(lines[0]).map(function (h) { return h.trim().toLowerCase(); });
+      var skuCol = headers.indexOf('sku');
+      var qtyCol = headers.indexOf('qty');
+      if (skuCol === -1 || qtyCol === -1) { alert('CSV must have "SKU" and "Qty" columns.'); return; }
+
+      var added = 0;
+      var skippedSkus = [];
+
+      for (var i = 1; i < lines.length; i++) {
+        var cols = parseCSVLine(lines[i]);
+        var sku = (cols[skuCol] || '').trim();
+        var qty = parseInt(cols[qtyCol], 10);
+        if (!sku || isNaN(qty) || qty <= 0) continue;
+
+        var kit = kitsData.find(function (k) { return k.sku === sku; });
+        if (!kit) { skippedSkus.push(sku); continue; }
+
+        addToOrder(sku, kit.brand, kit.name, qty);
+        added++;
+      }
+
+      var msg = added + ' item(s) added to order.';
+      if (skippedSkus.length > 0) {
+        msg += '\n' + skippedSkus.length + ' skipped (unrecognized SKUs: ' + skippedSkus.join(', ') + ')';
+      }
+      alert(msg);
+    };
+    reader.readAsText(file);
+  }
+
   function initOrderControls() {
     initKitSearchDropdown();
 
@@ -1881,6 +1926,16 @@
 
     var clearBtn = document.getElementById('order-clear-btn');
     if (clearBtn) clearBtn.addEventListener('click', clearOrder);
+
+    var importBtn = document.getElementById('order-import-btn');
+    var importFile = document.getElementById('order-import-file');
+    if (importBtn && importFile) {
+      importBtn.addEventListener('click', function () { importFile.click(); });
+      importFile.addEventListener('change', function () {
+        if (importFile.files.length > 0) importOrderCSV(importFile.files[0]);
+        importFile.value = '';
+      });
+    }
   }
 
   // ===== Export =====
