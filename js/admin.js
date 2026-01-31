@@ -259,6 +259,8 @@
       populateOrderKitSelect();
       populateOrderBrandFilter();
       renderOrderTab();
+      var orderSkus = getOrder().map(function (item) { return item.sku; });
+      if (orderSkus.length > 0) syncOnOrder(orderSkus);
     }).catch(function (err) {
       console.error('Failed to load data:', err);
     });
