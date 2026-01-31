@@ -1356,12 +1356,26 @@
     localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(items));
   }
 
+  var MULTIPLES_OF_TWO_BRANDS = ['Heritage Estates', 'Orchard Breezin\''];
+
+  function requiresMultiplesOfTwo(brand) {
+    return MULTIPLES_OF_TWO_BRANDS.indexOf(brand) !== -1;
+  }
+
   function addToOrder(sku, brand, name, qty) {
+    var step = requiresMultiplesOfTwo(brand) ? 2 : 1;
+    // Round qty up to nearest valid step
+    if (step === 2 && qty % 2 !== 0) {
+      qty = Math.ceil(qty / 2) * 2;
+    }
     var order = getOrder();
     // If same SKU already in order, increment qty
     for (var i = 0; i < order.length; i++) {
       if (order[i].sku === sku) {
         order[i].qty += qty;
+        if (step === 2 && order[i].qty % 2 !== 0) {
+          order[i].qty = Math.ceil(order[i].qty / 2) * 2;
+        }
         saveOrder(order);
         renderOrderTab();
         return;
@@ -1384,9 +1398,13 @@
     var order = getOrder();
     for (var i = 0; i < order.length; i++) {
       if (order[i].sku === sku) {
+        var step = requiresMultiplesOfTwo(order[i].brand) ? 2 : 1;
         if (newQty <= 0) {
           order.splice(i, 1);
         } else {
+          if (step === 2 && newQty % 2 !== 0) {
+            newQty = Math.ceil(newQty / 2) * 2;
+          }
           order[i].qty = newQty;
         }
         break;
@@ -1510,13 +1528,15 @@
       var qtyControls = document.createElement('div');
       qtyControls.className = 'product-qty-controls';
 
+      var step = requiresMultiplesOfTwo(item.brand) ? 2 : 1;
+
       var minusBtn = document.createElement('button');
       minusBtn.type = 'button';
       minusBtn.className = 'qty-btn';
       minusBtn.textContent = '\u2212';
-      minusBtn.addEventListener('click', (function (s, q) {
-        return function () { updateOrderQty(s, q - 1); };
-      })(item.sku, item.qty));
+      minusBtn.addEventListener('click', (function (s, q, st) {
+        return function () { updateOrderQty(s, q - st); };
+      })(item.sku, item.qty, step));
 
       var qtySpan = document.createElement('span');
       qtySpan.className = 'qty-value';
@@ -1526,9 +1546,9 @@
       plusBtn.type = 'button';
       plusBtn.className = 'qty-btn';
       plusBtn.textContent = '+';
-      plusBtn.addEventListener('click', (function (s, q) {
-        return function () { updateOrderQty(s, q + 1); };
-      })(item.sku, item.qty));
+      plusBtn.addEventListener('click', (function (s, q, st) {
+        return function () { updateOrderQty(s, q + st); };
+      })(item.sku, item.qty, step));
 
       qtyControls.appendChild(minusBtn);
       qtyControls.appendChild(qtySpan);
@@ -1639,6 +1659,17 @@
       hidden.setAttribute('data-brand', opt.brand);
       hidden.setAttribute('data-name', opt.name);
       dropdown.style.display = 'none';
+      // Auto-set qty to 2 for brands that require multiples of 2
+      var qtyInput = document.getElementById('order-kit-qty');
+      if (qtyInput && requiresMultiplesOfTwo(opt.brand)) {
+        qtyInput.value = '2';
+        qtyInput.step = '2';
+        qtyInput.min = '2';
+      } else if (qtyInput) {
+        qtyInput.value = '1';
+        qtyInput.step = '1';
+        qtyInput.min = '1';
+      }
     }
 
     function highlightOption(idx) {
