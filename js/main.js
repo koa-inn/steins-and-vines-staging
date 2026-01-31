@@ -66,11 +66,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
 function loadProducts() {
   var allProducts = [];
+  var userHasSorted = false;
   var activeFilters = { type: 'All', brand: 'All', subcategory: 'All', time: 'All' };
 
   var csvUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.PUBLISHED_CSV_URL)
     ? SHEETS_CONFIG.PUBLISHED_CSV_URL
     : null;
+
+  var CSV_CACHE_KEY = 'sv-products-csv';
+  var CSV_CACHE_TS_KEY = 'sv-products-csv-ts';
+  var CSV_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   function fetchCSV(url) {
     return fetch(url).then(function (res) {
@@ -79,9 +84,40 @@ function loadProducts() {
     });
   }
 
-  var csvPromise = csvUrl
-    ? fetchCSV(csvUrl).catch(function () { return fetchCSV('content/products.csv'); })
-    : fetchCSV('content/products.csv');
+  function getCachedCSV() {
+    try {
+      var csv = localStorage.getItem(CSV_CACHE_KEY);
+      var ts = parseInt(localStorage.getItem(CSV_CACHE_TS_KEY), 10) || 0;
+      if (csv) return { csv: csv, fresh: (Date.now() - ts) < CSV_CACHE_TTL };
+    } catch (e) {}
+    return null;
+  }
+
+  function setCachedCSV(csv) {
+    try {
+      localStorage.setItem(CSV_CACHE_KEY, csv);
+      localStorage.setItem(CSV_CACHE_TS_KEY, String(Date.now()));
+    } catch (e) {}
+  }
+
+  var cached = getCachedCSV();
+  var csvPromise;
+
+  if (cached) {
+    // Serve cached data immediately
+    csvPromise = Promise.resolve(cached.csv);
+
+    // Refresh in background if stale
+    if (!cached.fresh) {
+      var refreshUrl = csvUrl || 'content/products.csv';
+      fetchCSV(refreshUrl).then(setCachedCSV).catch(function () {});
+    }
+  } else {
+    csvPromise = csvUrl
+      ? fetchCSV(csvUrl).catch(function () { return fetchCSV('content/products.csv'); })
+      : fetchCSV('content/products.csv');
+    csvPromise.then(setCachedCSV);
+  }
 
   csvPromise
     .then(function (csv) {
@@ -107,16 +143,23 @@ function loadProducts() {
       buildFilterRow('filter-brand', 'brand', 'Brand:');
       buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
       buildFilterRow('filter-time', 'time', 'Brew Time:');
-      renderCatalog(allProducts);
+      applyFilters();
 
       var searchInput = document.getElementById('catalog-search');
       if (searchInput) {
-        searchInput.addEventListener('input', applyFilters);
+        var searchTimer;
+        searchInput.addEventListener('input', function () {
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(applyFilters, 180);
+        });
       }
 
       var sortSelect = document.getElementById('catalog-sort');
       if (sortSelect) {
-        sortSelect.addEventListener('change', applyFilters);
+        sortSelect.addEventListener('change', function () {
+          userHasSorted = true;
+          applyFilters();
+        });
       }
 
       var toggleBtn = document.getElementById('catalog-toggle');
@@ -155,6 +198,15 @@ function loadProducts() {
         var numA = parseFloat(a) || 0;
         var numB = parseFloat(b) || 0;
         return numA - numB;
+      });
+    } else if (field === 'subcategory') {
+      var styleOrder = ['red', 'white', 'rosé', 'rose', 'fruit', 'specialty'];
+      uniqueValues.sort(function (a, b) {
+        var aIdx = styleOrder.indexOf(a.toLowerCase());
+        var bIdx = styleOrder.indexOf(b.toLowerCase());
+        if (aIdx === -1) aIdx = styleOrder.length;
+        if (bIdx === -1) bIdx = styleOrder.length;
+        return aIdx - bIdx;
       });
     } else {
       uniqueValues.sort();
@@ -216,10 +268,12 @@ function loadProducts() {
     var sortVal = sortSelect ? sortSelect.value : 'name-asc';
 
     filtered.sort(function (a, b) {
-      var favA = (a.favorite || '').toLowerCase() === 'true' ? 0 : 1;
-      var favB = (b.favorite || '').toLowerCase() === 'true' ? 0 : 1;
-      if (favA !== favB) return favA - favB;
-      if (favA === 0 && favB === 0) return (a._favRand || 0) - (b._favRand || 0);
+      if (!userHasSorted) {
+        var favA = (a.favorite || '').toLowerCase() === 'true' ? 0 : 1;
+        var favB = (b.favorite || '').toLowerCase() === 'true' ? 0 : 1;
+        if (favA !== favB) return favA - favB;
+        if (favA === 0 && favB === 0) return (a._favRand || 0) - (b._favRand || 0);
+      }
 
       switch (sortVal) {
         case 'name-asc':
@@ -287,10 +341,22 @@ function loadProducts() {
     var wrapper = document.createElement('div');
     wrapper.className = 'catalog-section' + (extraClass ? ' ' + extraClass : '');
 
+    var sectionHeader = document.createElement('div');
+    sectionHeader.className = 'catalog-section-header';
+
     var sectionHeading = document.createElement('h2');
     sectionHeading.className = 'catalog-section-title';
     sectionHeading.textContent = title;
-    wrapper.appendChild(sectionHeading);
+    sectionHeader.appendChild(sectionHeading);
+
+    if (extraClass === 'catalog-section--order') {
+      var note = document.createElement('p');
+      note.className = 'process-note';
+      note.textContent = 'Allow up to 2 weeks for items to be ordered in.';
+      sectionHeader.appendChild(note);
+    }
+
+    wrapper.appendChild(sectionHeader);
 
     // Group by type, preserving CSV order
     var groups = {};
@@ -331,11 +397,6 @@ function loadProducts() {
         cardName.textContent = product.name;
         header.appendChild(cardName);
 
-        var cardSub = document.createElement('p');
-        cardSub.className = 'product-subcategory';
-        cardSub.textContent = product.subcategory;
-        header.appendChild(cardSub);
-
         if (product.tasting_notes) {
           var notes = document.createElement('div');
           notes.className = 'product-notes-tooltip';
@@ -356,10 +417,27 @@ function loadProducts() {
 
         card.appendChild(header);
 
-        var meta = document.createElement('p');
-        meta.className = 'product-meta';
-        meta.textContent = product.time;
-        card.appendChild(meta);
+        if (product.subcategory || product.time) {
+          var detailRow = document.createElement('div');
+          detailRow.className = 'product-detail-row';
+          if (product.subcategory) {
+            var subSpan = document.createElement('span');
+            subSpan.textContent = product.subcategory;
+            detailRow.appendChild(subSpan);
+          }
+          if (product.subcategory && product.time) {
+            var sep = document.createElement('span');
+            sep.className = 'detail-sep';
+            sep.textContent = '\u00b7';
+            detailRow.appendChild(sep);
+          }
+          if (product.time) {
+            var timeSpan = document.createElement('span');
+            timeSpan.textContent = product.time;
+            detailRow.appendChild(timeSpan);
+          }
+          card.appendChild(detailRow);
+        }
 
         var instore = (product.retail_instore || '').trim();
         var kit = (product.retail_kit || '').trim();

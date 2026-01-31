@@ -198,6 +198,13 @@
             <div class="admin-panel-header">
               <h2>Supplier Order</h2>
               <div class="admin-panel-actions">
+                <input type="text" id="order-search" class="catalog-search" placeholder="Search order...">
+                <div class="admin-filter-row">
+                  <label for="order-brand-filter">Brand:</label>
+                  <select id="order-brand-filter" class="admin-select">
+                    <option value="all">All</option>
+                  </select>
+                </div>
                 <button type="button" class="btn" id="order-copy-btn">Copy Order List</button>
                 <button type="button" class="btn" id="order-accept-btn">Accept Delivery</button>
                 <button type="button" class="btn-secondary admin-btn-danger" id="order-clear-btn">Clear Order</button>

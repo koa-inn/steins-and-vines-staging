@@ -257,6 +257,7 @@
       renderIngredientsTab();
       populateKitBrandFilter();
       populateOrderKitSelect();
+      populateOrderBrandFilter();
       renderOrderTab();
     }).catch(function (err) {
       console.error('Failed to load data:', err);
@@ -366,6 +367,8 @@
 
     var ingCatFilter = document.getElementById('ing-category-filter');
     if (ingCatFilter) ingCatFilter.addEventListener('change', renderIngredientsTab);
+
+    initOrderFilterListeners();
   }
 
   // ===== Reservations & Holds Tab =====
@@ -1273,6 +1276,72 @@
 
   // ===== Supplier Orders =====
 
+  var orderSortCol = 'brand';
+  var orderSortDir = 'asc';
+
+  var orderSortableColumns = {
+    'SKU': 'sku',
+    'Brand': 'brand',
+    'Name': 'name',
+    'Qty': 'qty',
+    'Cost': '_cost',
+    'Line Total': '_total'
+  };
+
+  function initOrderSortHeaders() {
+    var thead = document.querySelector('#order-table thead tr');
+    if (!thead) return;
+    var ths = thead.querySelectorAll('th');
+    ths.forEach(function (th) {
+      var text = th.textContent.trim();
+      var dataKey = orderSortableColumns[text];
+      if (dataKey) {
+        th.className = 'sortable';
+        th.setAttribute('data-sort-key', dataKey);
+        if (dataKey === orderSortCol) {
+          th.classList.add(orderSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+        }
+        th.addEventListener('click', function () {
+          if (orderSortCol === dataKey) {
+            orderSortDir = orderSortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            orderSortCol = dataKey;
+            orderSortDir = 'asc';
+          }
+          renderOrderTab();
+        });
+      }
+    });
+  }
+
+  function initOrderFilterListeners() {
+    var searchInput = document.getElementById('order-search');
+    if (searchInput) searchInput.addEventListener('input', renderOrderTab);
+
+    var brandFilter = document.getElementById('order-brand-filter');
+    if (brandFilter) brandFilter.addEventListener('change', renderOrderTab);
+
+    initOrderSortHeaders();
+  }
+
+  function populateOrderBrandFilter() {
+    var select = document.getElementById('order-brand-filter');
+    if (!select) return;
+    var order = getOrder();
+    var brands = [];
+    order.forEach(function (item) {
+      if (item.brand && brands.indexOf(item.brand) === -1) brands.push(item.brand);
+    });
+    brands.sort();
+    while (select.options.length > 1) select.remove(1);
+    brands.forEach(function (b) {
+      var opt = document.createElement('option');
+      opt.value = b;
+      opt.textContent = b;
+      select.appendChild(opt);
+    });
+  }
+
   var ORDER_STORAGE_KEY = 'sv-admin-order';
 
   function getOrder() {
@@ -1300,12 +1369,14 @@
     }
     order.push({ sku: sku, brand: brand, name: name, qty: qty });
     saveOrder(order);
+    populateOrderBrandFilter();
     renderOrderTab();
   }
 
   function removeFromOrder(sku) {
     var order = getOrder().filter(function (item) { return item.sku !== sku; });
     saveOrder(order);
+    populateOrderBrandFilter();
     renderOrderTab();
   }
 
@@ -1322,6 +1393,7 @@
       }
     }
     saveOrder(order);
+    populateOrderBrandFilter();
     renderOrderTab();
   }
 
@@ -1334,7 +1406,66 @@
     var order = getOrder();
     tbody.innerHTML = '';
 
-    if (order.length === 0) {
+    // Apply search filter
+    var searchInput = document.getElementById('order-search');
+    var query = searchInput ? searchInput.value.toLowerCase() : '';
+
+    // Apply brand filter
+    var brandFilterEl = document.getElementById('order-brand-filter');
+    var brandFilter = brandFilterEl ? brandFilterEl.value : 'all';
+
+    var filtered = order.filter(function (item) {
+      if (brandFilter !== 'all' && item.brand !== brandFilter) return false;
+      if (query) {
+        var haystack = ((item.name || '') + ' ' + (item.brand || '') + ' ' + (item.sku || '')).toLowerCase();
+        if (haystack.indexOf(query) === -1) return false;
+      }
+      return true;
+    });
+
+    // Apply sorting
+    filtered.sort(function (a, b) {
+      var aVal, bVal;
+      if (orderSortCol === '_cost' || orderSortCol === '_total') {
+        var aKit = kitsData.find(function (k) { return k.sku === a.sku; });
+        var bKit = kitsData.find(function (k) { return k.sku === b.sku; });
+        var aCost = aKit && aKit.wholesale ? parseFloat(aKit.wholesale.replace(/[^0-9.\-]/g, '')) || 0 : 0;
+        var bCost = bKit && bKit.wholesale ? parseFloat(bKit.wholesale.replace(/[^0-9.\-]/g, '')) || 0 : 0;
+        if (orderSortCol === '_total') {
+          aVal = aCost * a.qty;
+          bVal = bCost * b.qty;
+        } else {
+          aVal = aCost;
+          bVal = bCost;
+        }
+      } else if (orderSortCol === 'qty') {
+        aVal = a.qty || 0;
+        bVal = b.qty || 0;
+      } else {
+        aVal = a[orderSortCol] || '';
+        bVal = b[orderSortCol] || '';
+      }
+      var aNum = parseFloat(String(aVal).replace(/[^0-9.\-]/g, ''));
+      var bNum = parseFloat(String(bVal).replace(/[^0-9.\-]/g, ''));
+      var cmp;
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        cmp = aNum - bNum;
+      } else {
+        cmp = String(aVal).localeCompare(String(bVal));
+      }
+      return orderSortDir === 'asc' ? cmp : -cmp;
+    });
+
+    // Update sort header indicators
+    var ths = document.querySelectorAll('#order-table thead th.sortable');
+    ths.forEach(function (th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.getAttribute('data-sort-key') === orderSortCol) {
+        th.classList.add(orderSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+    });
+
+    if (filtered.length === 0) {
       if (emptyMsg) emptyMsg.style.display = '';
       if (table) table.style.display = 'none';
       return;
@@ -1354,7 +1485,7 @@
 
     var orderTotal = 0;
 
-    order.forEach(function (item) {
+    filtered.forEach(function (item) {
       var tr = document.createElement('tr');
 
       // Checkbox cell
