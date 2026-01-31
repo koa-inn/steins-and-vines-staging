@@ -1849,14 +1849,15 @@ small, .text-small {
   .nav-list {
     display: none;
     flex-direction: column;
-    position: absolute;
-    top: 60px;
+    position: fixed;
+    top: var(--header-height, 80px);
+    left: 0;
     right: 0;
     background-color: var(--color-cream);
-    width: 100%;
     padding: 1rem 0;
     text-align: center;
     border-bottom: 1px solid var(--color-brown);
+    z-index: 199;
   }
 
   .nav-list.open {
@@ -1865,10 +1866,6 @@ small, .text-small {
 
   .hero {
     padding: 4rem 0;
-  }
-
-  .main-nav {
-    position: relative;
   }
 
   .catalog-search {
