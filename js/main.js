@@ -53,7 +53,8 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Dismiss open tasting-notes tooltips when tapping outside
-  document.addEventListener('click', function () {
+  document.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('.product-notes-btn')) return;
     var openTips = document.querySelectorAll('.product-notes-tooltip.show');
     openTips.forEach(function (tip) { tip.classList.remove('show'); });
   });
