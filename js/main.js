@@ -698,6 +698,8 @@ function loadProducts() {
           card.appendChild(badge);
         }
 
+        var pricingFrom = (product.pricing_from || '').trim().toUpperCase() === 'TRUE';
+        var plusSign = pricingFrom ? '+' : '';
         var instore = (product.retail_instore || '').trim();
         var kit = (product.retail_kit || '').trim();
         if (instore || kit) {
@@ -709,9 +711,9 @@ function loadProducts() {
             if (discount > 0) {
               var instoreNum = parseFloat(instore.replace(/[^0-9.]/g, ''));
               var instoreSale = (instoreNum * (1 - discount / 100)).toFixed(2);
-              instoreBox.innerHTML = '<span class="product-price-label">Ferment in store</span><span class="product-price-original">' + instore + '</span><span class="product-price-value">$' + instoreSale + '</span>';
+              instoreBox.innerHTML = '<span class="product-price-label">Ferment in store</span><span class="product-price-original">' + instore + '</span><span class="product-price-value">$' + instoreSale + plusSign + '</span>';
             } else {
-              instoreBox.innerHTML = '<span class="product-price-label">Ferment in store</span><span class="product-price-value">' + instore + '</span>';
+              instoreBox.innerHTML = '<span class="product-price-label">Ferment in store</span><span class="product-price-value">' + instore + plusSign + '</span>';
             }
             priceRow.appendChild(instoreBox);
           }
@@ -721,9 +723,9 @@ function loadProducts() {
             if (discount > 0) {
               var kitNum = parseFloat(kit.replace(/[^0-9.]/g, ''));
               var kitSale = (kitNum * (1 - discount / 100)).toFixed(2);
-              kitBox.innerHTML = '<span class="product-price-label">Kit only</span><span class="product-price-original">' + kit + '</span><span class="product-price-value">$' + kitSale + '</span>';
+              kitBox.innerHTML = '<span class="product-price-label">Kit only</span><span class="product-price-original">' + kit + '</span><span class="product-price-value">$' + kitSale + plusSign + '</span>';
             } else {
-              kitBox.innerHTML = '<span class="product-price-label">Kit only</span><span class="product-price-value">' + kit + '</span>';
+              kitBox.innerHTML = '<span class="product-price-label">Kit only</span><span class="product-price-value">' + kit + plusSign + '</span>';
             }
             priceRow.appendChild(kitBox);
           }

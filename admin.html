@@ -316,13 +316,15 @@
             </div>
 
             <div class="admin-export-section">
-              <h3>WineScheduler Sync</h3>
-              <p>WineScheduler does not have a public API. To sync:</p>
+              <h3>Wine Scheduler Export</h3>
+              <p>Download a CSV of all kits and ingredients formatted for Wine Scheduler import. The columns match Wine Scheduler's import fields exactly.</p>
+              <button type="button" class="btn" id="export-ws-btn">Export for Wine Scheduler</button>
+              <h4 style="margin-top: 1rem;">How to import:</h4>
               <ol>
-                <li>Export Kits CSV above</li>
-                <li>Open WineScheduler and navigate to Import</li>
+                <li>Click "Export for Wine Scheduler" above</li>
+                <li>Open Wine Scheduler → Import Products</li>
                 <li>Upload the exported CSV file</li>
-                <li>Map the columns as prompted</li>
+                <li>Map each column: Stock Code/SKU → Column A, Name → Column B, etc.</li>
               </ol>
             </div>
           </div>

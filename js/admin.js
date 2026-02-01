@@ -2457,6 +2457,9 @@
 
       var exportIngBtn = document.getElementById('export-ingredients-btn');
       if (exportIngBtn) exportIngBtn.addEventListener('click', exportIngredientsCSV);
+
+      var exportWsBtn = document.getElementById('export-ws-btn');
+      if (exportWsBtn) exportWsBtn.addEventListener('click', exportWineSchedulerCSV);
     });
   }
 
@@ -2493,6 +2496,36 @@
 
     var today = new Date().toISOString().split('T')[0];
     downloadCSV(rows, 'sv-ingredients-export-' + today + '.csv');
+  }
+
+  function exportWineSchedulerCSV() {
+    var wsHeaders = ['Stock Code/SKU', 'Name', 'Retail Price', 'Wholesale Price', 'Qty'];
+    var rows = [wsHeaders];
+
+    // Add kits
+    kitsData.forEach(function (kit) {
+      rows.push([
+        kit.sku || '',
+        ((kit.brand || '') + ' ' + (kit.name || '')).trim(),
+        (kit.retail_instore || '').replace('$', ''),
+        (kit.wholesale || '').replace('$', ''),
+        kit.stock || '0'
+      ]);
+    });
+
+    // Add ingredients
+    ingredientsData.forEach(function (ing) {
+      rows.push([
+        ing.sku || '',
+        ing.name || '',
+        (ing.cost || '').replace('$', ''),
+        (ing.cost || '').replace('$', ''),
+        ing.stock_qty || '0'
+      ]);
+    });
+
+    var today = new Date().toISOString().split('T')[0];
+    downloadCSV(rows, 'sv-winescheduler-export-' + today + '.csv');
   }
 
   function downloadCSV(rows, filename) {
