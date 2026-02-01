@@ -456,6 +456,16 @@
         })(res, resHolds));
         actionsTd.appendChild(confirmAllBtn);
       }
+      if ((res.status || '').toLowerCase() === 'confirmed') {
+        var emailBtn = document.createElement('button');
+        emailBtn.type = 'button';
+        emailBtn.className = 'btn admin-btn-sm';
+        emailBtn.textContent = 'Send Email';
+        emailBtn.addEventListener('click', (function (reservation) {
+          return function () { openConfirmationEmail(reservation); };
+        })(res));
+        actionsTd.appendChild(emailBtn);
+      }
       tr.appendChild(actionsTd);
 
       tbody.appendChild(tr);
@@ -671,6 +681,7 @@
     else if (allResolved) newStatus = 'confirmed'; // mix of confirmed/released
 
     if (newStatus && reservation.status !== newStatus) {
+      var wasNotConfirmed = reservation.status !== 'confirmed';
       reservation.status = newStatus;
       var statusCol = reservationsHeaders.indexOf('status');
       if (statusCol !== -1) {
@@ -679,7 +690,35 @@
           [[newStatus]]
         );
       }
+      // Auto-open confirmation email when reservation transitions to confirmed
+      if (newStatus === 'confirmed' && wasNotConfirmed && reservation.customer_email) {
+        openConfirmationEmail(reservation);
+      }
     }
+  }
+
+  // ===== Confirmation Email =====
+
+  function openConfirmationEmail(reservation) {
+    var customer = reservation.customer_name || 'Customer';
+    var email = reservation.customer_email || '';
+    var products = reservation.products || '';
+    var timeslot = reservation.timeslot || '';
+
+    var subject = encodeURIComponent('Your Steins & Vines Reservation is Confirmed');
+    var body = encodeURIComponent(
+      'Hi ' + customer + ',\n\n' +
+      'Great news! Your reservation has been confirmed.\n\n' +
+      'Reserved items: ' + products + '\n' +
+      'Appointment: ' + timeslot + '\n\n' +
+      'Your appointment is to start fermentation in store — it takes about 15 minutes. ' +
+      'We\'ll contact you when it\'s time to come back and bottle.\n\n' +
+      'If you need to reschedule, please reply to this email or give us a call.\n\n' +
+      'See you soon!\n' +
+      'Steins & Vines'
+    );
+
+    window.open('mailto:' + encodeURIComponent(email) + '?subject=' + subject + '&body=' + body, '_blank');
   }
 
   // ===== Kit Inventory Tab =====
