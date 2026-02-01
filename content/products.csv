@@ -1,4 +1,4 @@
-type,brand,name,subcategory,sku,retail_instore,retail_kit,time,wholesale,tasting_notes,stock,favorite
+type,brand,name,subcategory,sku,retail_instore,retail_kit,time,wholesale,tasting_notes,stock,favorite,discount
 Wine,En Primeur,Chile Chardonnay,White,80088332,$246.95 ,$178.00 ,8 weeks,$108.00 ,,0,FALSE
 Wine,En Primeur,Italy Pinot Grigio,White,80088335,$246.95 ,$178.00 ,8 weeks,$108.00 ,,0,FALSE
 Wine,En Primeur,South Africa Sauvignon Blanc,White,80088336,$246.95 ,$178.00 ,8 weeks,$108.00 ,,0,FALSE
