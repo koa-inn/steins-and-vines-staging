@@ -27,6 +27,10 @@ var SHEETS_CONFIG = {
   SCOPES: 'https://www.googleapis.com/auth/spreadsheets',
 
   // Sheet/tab names within the spreadsheet
+  // Web App URL for anonymous product event tracking (deploy trackEvent.gs as web app)
+  // Leave blank to disable tracking; no events are sent until a URL is set.
+  TRACK_EVENTS_URL: '',
+
   SHEET_NAMES: {
     KITS: 'Kits',
     INGREDIENTS: 'Ingredients',
