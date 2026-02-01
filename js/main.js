@@ -132,11 +132,10 @@ function loadOpenHours() {
       slots.push(obj);
     }
 
-    // Only consider available slots in the future
+    // Consider all slots (regardless of status) to show full default hours
     var today = new Date();
     today.setHours(0, 0, 0, 0);
     slots = slots.filter(function (s) {
-      if (s.status && s.status !== 'available') return false;
       var d = new Date(s.date + 'T00:00:00');
       return d >= today;
     });
@@ -659,7 +658,7 @@ function loadProducts() {
           notesToggle.type = 'button';
           notesToggle.className = 'product-notes-toggle';
           notesToggle.setAttribute('aria-expanded', 'false');
-          notesToggle.innerHTML = 'Tasting Notes <span class="product-notes-chevron">&#9660;</span>';
+          notesToggle.innerHTML = 'More Information <span class="product-notes-chevron">&#9660;</span>';
 
           var notesBody = document.createElement('div');
           notesBody.className = 'product-notes-body';
@@ -1071,6 +1070,21 @@ function renderReservationItems() {
   subtotalRow.className = 'reservation-subtotal';
   subtotalRow.innerHTML = '<span>Estimated Subtotal <span class="reservation-disclaimer">— Final pricing may vary.</span></span><span>$' + subtotal.toFixed(2) + '</span>';
   container.appendChild(subtotalRow);
+
+  // Clear All button
+  var clearWrap = document.createElement('div');
+  clearWrap.className = 'reservation-clear-wrap';
+  var clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn-secondary reservation-clear-btn';
+  clearBtn.textContent = 'Clear Selected Items';
+  clearBtn.addEventListener('click', function () {
+    saveReservation([]);
+    renderReservationItems();
+    refreshReservationDependents();
+  });
+  clearWrap.appendChild(clearBtn);
+  container.appendChild(clearWrap);
 }
 
 function loadTimeslots() {

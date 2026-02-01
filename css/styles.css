@@ -664,7 +664,8 @@ small, .text-small {
 }
 
 [data-page="about"] .content,
-[data-page="contact"] .content {
+[data-page="contact"] .content,
+[data-page="reservation"] .content {
   text-align: center;
 }
 
@@ -1039,6 +1040,16 @@ small, .text-small {
   color: var(--color-green);
 }
 
+.reservation-clear-wrap {
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.reservation-clear-btn {
+  font-size: 0.85rem;
+  padding: 0.4rem 1.2rem;
+}
+
 .reservation-disclaimer {
   font-size: 0.85rem;
   color: var(--color-brown);
@@ -1276,6 +1287,8 @@ small, .text-small {
 /* Reservation form */
 .reservation-form {
   max-width: 600px;
+  margin: 0 auto;
+  text-align: left;
 }
 
 .form-note {
