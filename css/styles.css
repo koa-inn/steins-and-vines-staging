@@ -530,6 +530,76 @@ small, .text-small {
   opacity: 0.75;
 }
 
+/* ===== Product Tabs ===== */
+.product-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  border-bottom: 2px solid var(--color-brown);
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.product-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.product-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 0.75rem 1.5rem;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-brown);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s;
+  margin-bottom: -2px;
+}
+
+.product-tab-btn:hover {
+  color: var(--color-green);
+}
+
+.product-tab-btn.active {
+  color: var(--color-green);
+  border-bottom-color: var(--color-green);
+}
+
+/* Hide controls for inactive tabs */
+.catalog-controls.hidden {
+  display: none !important;
+}
+
+/* Ingredient card additions */
+.ingredient-range {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--color-brown);
+  margin-bottom: 0.25rem;
+}
+
+/* Service card (product catalog version) */
+.product-card .service-description {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+  max-width: 360px;
+}
+
+.product-card .product-prices.service-price {
+  justify-content: center;
+}
+
+.product-card .product-prices.service-price .product-price-box {
+  max-width: 200px;
+}
+
 /* ===== Catalog Controls ===== */
 .catalog-controls {
   display: flex;
@@ -1006,10 +1076,45 @@ small, .text-small {
   color: var(--color-brown);
 }
 
+.reservation-item-time {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-brown);
+  opacity: 0.7;
+}
+
 .reservation-item-price {
   font-family: var(--font-display);
   font-weight: 700;
   color: var(--color-green);
+}
+
+.reservation-item-discount {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background-color: #c0392b;
+  color: #fff;
+}
+
+.reservation-item-stock {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.reservation-item-stock--available {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.reservation-item-stock--order {
+  background-color: #fff3e0;
+  color: #e65100;
 }
 
 .reservation-item-remove {
@@ -2235,6 +2340,21 @@ small, .text-small {
 
   #product-catalog {
     padding-bottom: 5rem;
+  }
+
+  .product-tabs {
+    margin-bottom: 1rem;
+  }
+
+  .product-tab-btn {
+    padding: 0.6rem 0.75rem;
+    font-size: 13px;
+  }
+
+  .catalog-collapsible.open {
+    max-height: 50vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .catalog-search {

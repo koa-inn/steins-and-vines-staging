@@ -42,7 +42,13 @@
     <section class="content">
       <div class="container">
         <div id="product-catalog">
-          <div class="catalog-controls">
+          <div class="product-tabs" id="product-tabs">
+            <button type="button" class="product-tab-btn active" data-product-tab="kits">Kits</button>
+            <button type="button" class="product-tab-btn" data-product-tab="ingredients">Ingredients &amp; Supplies</button>
+            <button type="button" class="product-tab-btn" data-product-tab="services">Services</button>
+          </div>
+
+          <div class="catalog-controls" id="catalog-controls-kits">
             <input type="text" class="catalog-search" id="catalog-search" placeholder="Search products...">
             <button type="button" class="catalog-toggle" id="catalog-toggle" aria-expanded="false">
               <span class="catalog-toggle-text">Filters &amp; Sort</span>
@@ -67,7 +73,32 @@
               </div>
             </div>
           </div>
-          <p class="process-note">Reserve online, visit us to start your fermentation, then come back to bottle when it's ready.</p>
+
+          <div class="catalog-controls hidden" id="catalog-controls-ingredients">
+            <input type="text" class="catalog-search" id="ingredient-search" placeholder="Search ingredients &amp; supplies...">
+            <button type="button" class="catalog-toggle" id="ingredient-toggle" aria-expanded="false">
+              <span class="catalog-toggle-text">Filters &amp; Sort</span>
+              <span class="catalog-toggle-icon" aria-hidden="true">&#9660;</span>
+            </button>
+            <div class="catalog-collapsible" id="ingredient-collapsible">
+              <div class="catalog-filter-row" id="filter-unit"></div>
+              <div class="catalog-filter-row">
+                <label for="ingredient-sort" class="catalog-filter-label">Sort:</label>
+                <select class="catalog-sort" id="ingredient-sort">
+                  <option value="name-asc">Name (A–Z)</option>
+                  <option value="name-desc">Name (Z–A)</option>
+                  <option value="price-asc">Price (low–high)</option>
+                  <option value="price-desc">Price (high–low)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="catalog-controls hidden" id="catalog-controls-services">
+            <input type="text" class="catalog-search" id="service-search" placeholder="Search services...">
+          </div>
+
+          <p class="process-note" id="kits-process-note">Reserve online, visit us to start your fermentation, then come back to bottle when it's ready.</p>
           <noscript><p>Please enable JavaScript to view our product catalog.</p></noscript>
         </div>
       </div>

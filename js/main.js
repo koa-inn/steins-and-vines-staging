@@ -92,6 +92,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (page === 'products') {
     loadProducts();
     initReservationBar();
+    initProductTabs();
   }
 
   // Reservation page
@@ -207,6 +208,17 @@ function loadOpenHours() {
     });
 }
 
+// Shared CSV fetch helper — used by all tab loaders
+function fetchCSV(url) {
+  return fetch(url).then(function (res) {
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.text();
+  });
+}
+
+// Reference to kits applyFilters so tab switcher can re-render
+var applyKitsFilters = null;
+
 function loadProducts() {
   var allProducts = [];
   var userHasSorted = false;
@@ -220,13 +232,6 @@ function loadProducts() {
   var CSV_CACHE_KEY = 'sv-products-csv';
   var CSV_CACHE_TS_KEY = 'sv-products-csv-ts';
   var CSV_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-  function fetchCSV(url) {
-    return fetch(url).then(function (res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.text();
-    });
-  }
 
   function getCachedCSV() {
     try {
@@ -289,6 +294,9 @@ function loadProducts() {
       buildFilterRow('filter-time', 'time', 'Brew Time:');
       buildSaleFilter();
       applyFilters();
+
+      // Expose so tab switcher can re-trigger kits rendering
+      applyKitsFilters = applyFilters;
 
       var searchInput = document.getElementById('catalog-search');
       if (searchInput) {
@@ -739,6 +747,594 @@ function loadProducts() {
   }
 }
 
+// ===== Product Tab Switching =====
+
+function initProductTabs() {
+  var tabs = document.getElementById('product-tabs');
+  if (!tabs) return;
+
+  var ingredientsLoaded = false;
+  var servicesLoaded = false;
+
+  tabs.addEventListener('click', function (e) {
+    var btn = e.target.closest('.product-tab-btn');
+    if (!btn) return;
+
+    var tab = btn.getAttribute('data-product-tab');
+
+    // Swap active button
+    var allBtns = tabs.querySelectorAll('.product-tab-btn');
+    allBtns.forEach(function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+
+    // Show/hide controls
+    var controlIds = ['catalog-controls-kits', 'catalog-controls-ingredients', 'catalog-controls-services'];
+    controlIds.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+    var activeControls = document.getElementById('catalog-controls-' + tab);
+    if (activeControls) activeControls.classList.remove('hidden');
+
+    // Show/hide kits process note
+    var processNote = document.getElementById('kits-process-note');
+    if (processNote) processNote.style.display = (tab === 'kits') ? '' : 'none';
+
+    // Show/hide reservation bar on non-kits tabs
+    var bars = document.querySelectorAll('.reservation-bar');
+    bars.forEach(function (bar) {
+      if (tab === 'kits') {
+        updateReservationBar();
+      } else {
+        bar.classList.add('hidden');
+      }
+    });
+
+    // Clear rendered catalog sections
+    var catalog = document.getElementById('product-catalog');
+    if (catalog) {
+      var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider');
+      sections.forEach(function (el) { el.parentNode.removeChild(el); });
+    }
+
+    // Load the appropriate tab
+    if (tab === 'kits') {
+      if (applyKitsFilters) applyKitsFilters();
+    } else if (tab === 'ingredients') {
+      if (!ingredientsLoaded) {
+        ingredientsLoaded = true;
+        loadIngredients(function () {
+          // After first load, subsequent clicks just re-render
+        });
+      } else {
+        renderIngredients();
+      }
+    } else if (tab === 'services') {
+      if (!servicesLoaded) {
+        servicesLoaded = true;
+        loadServices(function () {});
+      } else {
+        renderServices();
+      }
+    }
+  });
+
+  // Wire up ingredients filter/sort toggle
+  var ingredientToggle = document.getElementById('ingredient-toggle');
+  var ingredientCollapsible = document.getElementById('ingredient-collapsible');
+  if (ingredientToggle && ingredientCollapsible) {
+    ingredientToggle.addEventListener('click', function () {
+      var expanded = ingredientToggle.getAttribute('aria-expanded') === 'true';
+      ingredientToggle.setAttribute('aria-expanded', String(!expanded));
+      ingredientCollapsible.classList.toggle('open');
+    });
+  }
+}
+
+// ===== Ingredients & Supplies =====
+
+var _allIngredients = [];
+var _ingredientFilters = { unit: [] };
+
+function loadIngredients(callback) {
+  var csvUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.PUBLISHED_INGREDIENTS_CSV_URL)
+    ? SHEETS_CONFIG.PUBLISHED_INGREDIENTS_CSV_URL
+    : null;
+
+  var CACHE_KEY = 'sv-ingredients-csv';
+  var CACHE_TS_KEY = 'sv-ingredients-csv-ts';
+  var CACHE_TTL = 5 * 60 * 1000;
+
+  function getCached() {
+    try {
+      var csv = localStorage.getItem(CACHE_KEY);
+      var ts = parseInt(localStorage.getItem(CACHE_TS_KEY), 10) || 0;
+      if (csv) return { csv: csv, fresh: (Date.now() - ts) < CACHE_TTL };
+    } catch (e) {}
+    return null;
+  }
+
+  function setCached(csv) {
+    try {
+      localStorage.setItem(CACHE_KEY, csv);
+      localStorage.setItem(CACHE_TS_KEY, String(Date.now()));
+    } catch (e) {}
+  }
+
+  var cached = getCached();
+  var csvPromise;
+
+  if (cached) {
+    csvPromise = Promise.resolve(cached.csv);
+    if (!cached.fresh) {
+      var refreshUrl = csvUrl || 'content/ingredients.csv';
+      fetchCSV(refreshUrl).then(setCached).catch(function () {});
+    }
+  } else {
+    csvPromise = csvUrl
+      ? fetchCSV(csvUrl).catch(function () { return fetchCSV('content/ingredients.csv'); })
+      : fetchCSV('content/ingredients.csv');
+    csvPromise.then(setCached);
+  }
+
+  csvPromise
+    .then(function (csv) {
+      var lines = csv.trim().split('\n');
+      var headers = lines[0].split(',');
+      _allIngredients = [];
+
+      for (var i = 1; i < lines.length; i++) {
+        var values = parseCSVLine(lines[i]);
+        if (values.length < headers.length) continue;
+        var obj = {};
+        for (var j = 0; j < headers.length; j++) {
+          obj[headers[j].trim()] = values[j].trim();
+        }
+        if (!obj.name && !obj.sku) continue;
+        if (obj.hide && obj.hide.toLowerCase() === 'true') continue;
+        _allIngredients.push(obj);
+      }
+
+      buildIngredientFilters();
+      renderIngredients();
+      wireIngredientEvents();
+      if (callback) callback();
+    })
+    .catch(function () {});
+}
+
+function buildIngredientFilters() {
+  var container = document.getElementById('filter-unit');
+  if (!container || container.children.length > 0) return;
+
+  var labelSpan = document.createElement('span');
+  labelSpan.className = 'catalog-filter-label';
+  labelSpan.textContent = 'Unit:';
+  container.appendChild(labelSpan);
+
+  var units = [];
+  _allIngredients.forEach(function (r) {
+    var val = (r.unit || '').trim();
+    if (val && units.indexOf(val) === -1) units.push(val);
+  });
+  units.sort();
+
+  var allBtn = document.createElement('button');
+  allBtn.className = 'catalog-filter-btn active';
+  allBtn.type = 'button';
+  allBtn.textContent = 'All';
+  allBtn.setAttribute('data-value', 'All');
+  allBtn.addEventListener('click', function () {
+    _ingredientFilters.unit = [];
+    var btns = container.querySelectorAll('.catalog-filter-btn');
+    btns.forEach(function (b) { b.classList.remove('active'); });
+    allBtn.classList.add('active');
+    renderIngredients();
+  });
+  container.appendChild(allBtn);
+
+  units.forEach(function (val) {
+    var btn = document.createElement('button');
+    btn.className = 'catalog-filter-btn';
+    btn.type = 'button';
+    btn.textContent = val;
+    btn.setAttribute('data-value', val);
+    btn.addEventListener('click', function () {
+      var idx = _ingredientFilters.unit.indexOf(val);
+      if (idx !== -1) {
+        _ingredientFilters.unit.splice(idx, 1);
+      } else {
+        _ingredientFilters.unit.push(val);
+      }
+      var btns = container.querySelectorAll('.catalog-filter-btn');
+      btns.forEach(function (b) { b.classList.remove('active'); });
+      if (_ingredientFilters.unit.length === 0) {
+        container.querySelector('[data-value="All"]').classList.add('active');
+      } else {
+        btns.forEach(function (b) {
+          if (_ingredientFilters.unit.indexOf(b.getAttribute('data-value')) !== -1) {
+            b.classList.add('active');
+          }
+        });
+      }
+      renderIngredients();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function wireIngredientEvents() {
+  var searchInput = document.getElementById('ingredient-search');
+  if (searchInput) {
+    var timer;
+    searchInput.addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(renderIngredients, 180);
+    });
+  }
+
+  var sortSelect = document.getElementById('ingredient-sort');
+  if (sortSelect) {
+    sortSelect.addEventListener('change', function () {
+      renderIngredients();
+    });
+  }
+}
+
+function renderIngredients() {
+  var catalog = document.getElementById('product-catalog');
+  if (!catalog) return;
+
+  // Clear existing rendered sections
+  var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider');
+  sections.forEach(function (el) { el.parentNode.removeChild(el); });
+
+  var searchInput = document.getElementById('ingredient-search');
+  var query = searchInput ? searchInput.value.toLowerCase() : '';
+
+  var filtered = _allIngredients.filter(function (r) {
+    if (_ingredientFilters.unit.length > 0 && _ingredientFilters.unit.indexOf(r.unit) === -1) return false;
+    if (!query) return true;
+    var name = (r.name || '').toLowerCase();
+    var desc = (r.description || '').toLowerCase();
+    return name.indexOf(query) !== -1 || desc.indexOf(query) !== -1;
+  });
+
+  var sortSelect = document.getElementById('ingredient-sort');
+  var sortVal = sortSelect ? sortSelect.value : 'name-asc';
+
+  filtered.sort(function (a, b) {
+    switch (sortVal) {
+      case 'name-asc': return (a.name || '').localeCompare(b.name || '');
+      case 'name-desc': return (b.name || '').localeCompare(a.name || '');
+      case 'price-asc': return (parseFloat(a.price_per_unit) || 0) - (parseFloat(b.price_per_unit) || 0);
+      case 'price-desc': return (parseFloat(b.price_per_unit) || 0) - (parseFloat(a.price_per_unit) || 0);
+      default: return 0;
+    }
+  });
+
+  if (filtered.length === 0) {
+    var msg = document.createElement('p');
+    msg.className = 'catalog-no-results';
+    msg.textContent = 'No ingredients or supplies found.';
+    catalog.appendChild(msg);
+    return;
+  }
+
+  var inStock = filtered.filter(function (r) { return (parseInt(r.stock, 10) || 0) > 0; });
+  var outOfStock = filtered.filter(function (r) { return (parseInt(r.stock, 10) || 0) <= 0; });
+
+  renderIngredientSection(catalog, 'In stock', inStock);
+
+  if (inStock.length > 0 && outOfStock.length > 0) {
+    var divider = document.createElement('div');
+    divider.className = 'section-icon catalog-divider';
+    var icon = document.createElement('img');
+    icon.src = 'images/Icon_green.svg';
+    icon.alt = '';
+    icon.setAttribute('aria-hidden', 'true');
+    divider.appendChild(icon);
+    catalog.appendChild(divider);
+  }
+
+  renderIngredientSection(catalog, 'Out of stock', outOfStock, 'catalog-section--order');
+}
+
+function renderIngredientSection(catalog, title, items, extraClass) {
+  if (items.length === 0) return;
+
+  var wrapper = document.createElement('div');
+  wrapper.className = 'catalog-section' + (extraClass ? ' ' + extraClass : '');
+
+  var sectionHeader = document.createElement('div');
+  sectionHeader.className = 'catalog-section-header';
+  var heading = document.createElement('h2');
+  heading.className = 'catalog-section-title';
+  heading.textContent = title;
+  sectionHeader.appendChild(heading);
+  wrapper.appendChild(sectionHeader);
+
+  var grid = document.createElement('div');
+  grid.className = 'product-grid';
+
+  items.forEach(function (item) {
+    var card = document.createElement('div');
+    card.className = 'product-card';
+
+    var header = document.createElement('div');
+    header.className = 'product-card-header';
+
+    var cardName = document.createElement('h4');
+    cardName.textContent = item.name;
+    header.appendChild(cardName);
+    card.appendChild(header);
+
+    // Unit + price detail row
+    var unit = (item.unit || '').trim();
+    var price = (item.price_per_unit || '').trim();
+    if (unit || price) {
+      var detailRow = document.createElement('div');
+      detailRow.className = 'product-detail-row';
+      var details = [];
+      if (unit) details.push(unit);
+      if (price) details.push('$' + price);
+      for (var d = 0; d < details.length; d++) {
+        if (d > 0) {
+          var sep = document.createElement('span');
+          sep.className = 'detail-sep';
+          sep.textContent = '\u00b7';
+          detailRow.appendChild(sep);
+        }
+        var span = document.createElement('span');
+        span.textContent = details[d];
+        detailRow.appendChild(span);
+      }
+      card.appendChild(detailRow);
+    }
+
+    // Quantity range info
+    var low = (item.low_amount || '').trim();
+    var high = (item.high_amount || '').trim();
+    if (low || high) {
+      var rangeEl = document.createElement('p');
+      rangeEl.className = 'ingredient-range';
+      if (low && high) {
+        rangeEl.textContent = 'Quantity: ' + low + ' – ' + high;
+      } else if (low) {
+        rangeEl.textContent = 'Min quantity: ' + low;
+      } else {
+        rangeEl.textContent = 'Max quantity: ' + high;
+      }
+      var step = (item.step || '').trim();
+      if (step) rangeEl.textContent += ' (step: ' + step + ')';
+      card.appendChild(rangeEl);
+    }
+
+    // Collapsible description (reusing product-notes pattern)
+    if (item.description) {
+      var notesWrap = document.createElement('div');
+      notesWrap.className = 'product-notes';
+
+      var notesToggle = document.createElement('button');
+      notesToggle.type = 'button';
+      notesToggle.className = 'product-notes-toggle';
+      notesToggle.setAttribute('aria-expanded', 'false');
+      notesToggle.innerHTML = 'More Information <span class="product-notes-chevron">&#9660;</span>';
+
+      var notesBody = document.createElement('div');
+      notesBody.className = 'product-notes-body';
+      var notesP = document.createElement('p');
+      notesP.textContent = item.description;
+      notesBody.appendChild(notesP);
+
+      notesToggle.addEventListener('click', (function (wrap, toggle) {
+        return function () {
+          var isOpen = wrap.classList.toggle('open');
+          toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        };
+      })(notesWrap, notesToggle));
+
+      notesWrap.appendChild(notesToggle);
+      notesWrap.appendChild(notesBody);
+      card.appendChild(notesWrap);
+    }
+
+    // Stock badge
+    var stockVal = parseInt(item.stock, 10) || 0;
+    var badge = document.createElement('span');
+    badge.className = 'stock-badge';
+    if (stockVal > 0) {
+      badge.classList.add('stock-badge--in');
+      badge.textContent = 'In Stock';
+    } else {
+      badge.classList.add('stock-badge--out');
+      badge.textContent = 'Out of Stock';
+    }
+    card.appendChild(badge);
+
+    grid.appendChild(card);
+  });
+
+  wrapper.appendChild(grid);
+  catalog.appendChild(wrapper);
+}
+
+// ===== Services =====
+
+var _allServices = [];
+
+function loadServices(callback) {
+  var csvUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.PUBLISHED_SERVICES_CSV_URL)
+    ? SHEETS_CONFIG.PUBLISHED_SERVICES_CSV_URL
+    : null;
+
+  var CACHE_KEY = 'sv-services-csv';
+  var CACHE_TS_KEY = 'sv-services-csv-ts';
+  var CACHE_TTL = 5 * 60 * 1000;
+
+  function getCached() {
+    try {
+      var csv = localStorage.getItem(CACHE_KEY);
+      var ts = parseInt(localStorage.getItem(CACHE_TS_KEY), 10) || 0;
+      if (csv) return { csv: csv, fresh: (Date.now() - ts) < CACHE_TTL };
+    } catch (e) {}
+    return null;
+  }
+
+  function setCached(csv) {
+    try {
+      localStorage.setItem(CACHE_KEY, csv);
+      localStorage.setItem(CACHE_TS_KEY, String(Date.now()));
+    } catch (e) {}
+  }
+
+  var cached = getCached();
+  var csvPromise;
+
+  if (cached) {
+    csvPromise = Promise.resolve(cached.csv);
+    if (!cached.fresh) {
+      var refreshUrl = csvUrl || 'content/services.csv';
+      fetchCSV(refreshUrl).then(setCached).catch(function () {});
+    }
+  } else {
+    csvPromise = csvUrl
+      ? fetchCSV(csvUrl).catch(function () { return fetchCSV('content/services.csv'); })
+      : fetchCSV('content/services.csv');
+    csvPromise.then(setCached);
+  }
+
+  csvPromise
+    .then(function (csv) {
+      var lines = csv.trim().split('\n');
+      var headers = lines[0].split(',');
+      _allServices = [];
+
+      for (var i = 1; i < lines.length; i++) {
+        var values = parseCSVLine(lines[i]);
+        if (values.length < headers.length) continue;
+        var obj = {};
+        for (var j = 0; j < headers.length; j++) {
+          obj[headers[j].trim()] = values[j].trim();
+        }
+        if (!obj.name && !obj.sku) continue;
+        if (obj.hide && obj.hide.toLowerCase() === 'true') continue;
+        _allServices.push(obj);
+      }
+
+      renderServices();
+      wireServiceEvents();
+      if (callback) callback();
+    })
+    .catch(function () {});
+}
+
+function wireServiceEvents() {
+  var searchInput = document.getElementById('service-search');
+  if (searchInput) {
+    var timer;
+    searchInput.addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(renderServices, 180);
+    });
+  }
+}
+
+function renderServices() {
+  var catalog = document.getElementById('product-catalog');
+  if (!catalog) return;
+
+  var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider');
+  sections.forEach(function (el) { el.parentNode.removeChild(el); });
+
+  var searchInput = document.getElementById('service-search');
+  var query = searchInput ? searchInput.value.toLowerCase() : '';
+
+  var filtered = _allServices.filter(function (r) {
+    if (!query) return true;
+    var name = (r.name || '').toLowerCase();
+    var desc = (r.desription || r.description || '').toLowerCase();
+    return name.indexOf(query) !== -1 || desc.indexOf(query) !== -1;
+  });
+
+  if (filtered.length === 0) {
+    var msg = document.createElement('p');
+    msg.className = 'catalog-no-results';
+    msg.textContent = 'No services found.';
+    catalog.appendChild(msg);
+    return;
+  }
+
+  var wrapper = document.createElement('div');
+  wrapper.className = 'catalog-section';
+
+  var sectionHeader = document.createElement('div');
+  sectionHeader.className = 'catalog-section-header';
+  var heading = document.createElement('h2');
+  heading.className = 'catalog-section-title';
+  heading.textContent = 'Our Services';
+  sectionHeader.appendChild(heading);
+  wrapper.appendChild(sectionHeader);
+
+  var grid = document.createElement('div');
+  grid.className = 'product-grid';
+
+  filtered.forEach(function (svc) {
+    var card = document.createElement('div');
+    card.className = 'product-card';
+
+    var header = document.createElement('div');
+    header.className = 'product-card-header';
+    var cardName = document.createElement('h4');
+    cardName.textContent = svc.name;
+    header.appendChild(cardName);
+    card.appendChild(header);
+
+    // Description (handles the typo column name)
+    var descText = (svc.desription || svc.description || '').trim();
+    if (descText) {
+      var descEl = document.createElement('p');
+      descEl.className = 'service-description';
+      descEl.textContent = descText;
+      card.appendChild(descEl);
+    }
+
+    // Price with optional discount
+    var price = (svc.price || '').trim();
+    var discount = parseFloat(svc.discount) || 0;
+
+    if (discount > 0) {
+      var badge = document.createElement('span');
+      badge.className = 'product-discount-badge';
+      badge.textContent = Math.round(discount) + '% OFF';
+      card.appendChild(badge);
+    }
+
+    if (price) {
+      var priceRow = document.createElement('div');
+      priceRow.className = 'product-prices service-price';
+      var priceBox = document.createElement('div');
+      priceBox.className = 'product-price-box';
+
+      if (discount > 0) {
+        var priceNum = parseFloat(price.replace(/[^0-9.]/g, ''));
+        var salePrice = (priceNum * (1 - discount / 100)).toFixed(2);
+        priceBox.innerHTML = '<span class="product-price-label">Price</span><span class="product-price-original">' + (price.charAt(0) === '$' ? price : '$' + price) + '</span><span class="product-price-value">$' + salePrice + '</span>';
+      } else {
+        priceBox.innerHTML = '<span class="product-price-label">Price</span><span class="product-price-value">' + (price.charAt(0) === '$' ? price : '$' + price) + '</span>';
+      }
+
+      priceRow.appendChild(priceBox);
+      card.appendChild(priceRow);
+    }
+
+    grid.appendChild(card);
+  });
+
+  wrapper.appendChild(grid);
+  catalog.appendChild(wrapper);
+}
+
 function parseCSVLine(line) {
   var result = [];
   var current = '';
@@ -824,6 +1420,7 @@ function setReservationQty(product, qty) {
       name: product.name,
       brand: product.brand,
       price: product.retail_instore || product.retail_kit || '',
+      discount: product.discount || '',
       stock: effectiveStock,
       time: product.time || '',
       qty: qty
@@ -976,12 +1573,46 @@ function renderReservationItems() {
     brandSpan.textContent = item.brand;
     info.appendChild(brandSpan);
 
+    if (item.time) {
+      var timeSpan = document.createElement('span');
+      timeSpan.className = 'reservation-item-time';
+      timeSpan.textContent = item.time;
+      info.appendChild(timeSpan);
+    }
+
     if (item.price) {
       var priceSpan = document.createElement('span');
       priceSpan.className = 'reservation-item-price';
-      priceSpan.textContent = item.price;
+      var displayPrice = item.price;
+      if (item.discount && parseFloat(item.discount) > 0) {
+        var origNum = parseFloat((item.price || '0').replace('$', '')) || 0;
+        var disc = parseFloat(item.discount);
+        var saleNum = (origNum * (1 - disc / 100)).toFixed(2);
+        displayPrice = '$' + saleNum;
+      }
+      priceSpan.textContent = displayPrice;
       info.appendChild(priceSpan);
     }
+
+    if (item.discount && parseFloat(item.discount) > 0) {
+      var discBadge = document.createElement('span');
+      discBadge.className = 'reservation-item-discount';
+      discBadge.textContent = Math.round(parseFloat(item.discount)) + '% OFF';
+      info.appendChild(discBadge);
+    }
+
+    // Stock status badge
+    var stockNum = parseInt(item.stock, 10) || 0;
+    var stockBadge = document.createElement('span');
+    stockBadge.className = 'reservation-item-stock';
+    if (stockNum > 0) {
+      stockBadge.classList.add('reservation-item-stock--available');
+      stockBadge.textContent = 'In Stock';
+    } else {
+      stockBadge.classList.add('reservation-item-stock--order');
+      stockBadge.textContent = 'Needs Ordering';
+    }
+    info.appendChild(stockBadge);
 
     row.appendChild(info);
 
@@ -1059,10 +1690,12 @@ function renderReservationItems() {
     container.appendChild(row);
   });
 
-  // Subtotal
+  // Subtotal (accounts for discount if stored)
   var subtotal = 0;
   items.forEach(function (item) {
     var price = parseFloat((item.price || '0').replace('$', '')) || 0;
+    var disc = parseFloat(item.discount) || 0;
+    if (disc > 0) price = price * (1 - disc / 100);
     subtotal += price * (item.qty || 1);
   });
 
@@ -1157,7 +1790,17 @@ function loadTimeslots() {
       });
       monthsWithSlots.sort();
 
+      // Start calendar at the current month (or first available if current month has no slots)
+      var nowYM = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
       var currentMonthIndex = 0;
+      for (var mi = 0; mi < monthsWithSlots.length; mi++) {
+        if (monthsWithSlots[mi] >= nowYM) {
+          currentMonthIndex = mi;
+          break;
+        }
+        // If all months are before now, stay at the last one
+        currentMonthIndex = mi;
+      }
 
       container.innerHTML = '';
 
@@ -1425,8 +2068,8 @@ var GOOGLE_FORM_FIELDS = {
   name: 'entry.1466333029',
   email: 'entry.763864451',
   phone: 'entry.304343590',
-  products: 'entry.286083838',
-  timeslot: 'entry.1291378806'
+  products: 'entry.1291378806',
+  timeslot: 'entry.286083838'
 };
 
 function setupReservationForm() {

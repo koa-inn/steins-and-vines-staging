@@ -19,6 +19,12 @@ var SHEETS_CONFIG = {
   // Published CSV URL for the Kits tab (public, no auth required)
   PUBLISHED_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTRpDadhsKBYPuE3pFCYnmeRiUJO_Z972ISX509taCzL8jmYaWPue5DfR9OfEiJD-OlhsxoC_rDerUW/pub?gid=0&single=true&output=csv',
 
+  // Published CSV URL for the Ingredients tab (public, no auth required)
+  PUBLISHED_INGREDIENTS_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTRpDadhsKBYPuE3pFCYnmeRiUJO_Z972ISX509taCzL8jmYaWPue5DfR9OfEiJD-OlhsxoC_rDerUW/pub?gid=608476944&single=true&output=csv',
+
+  // Published CSV URL for the Services tab (public, no auth required)
+  PUBLISHED_SERVICES_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTRpDadhsKBYPuE3pFCYnmeRiUJO_Z972ISX509taCzL8jmYaWPue5DfR9OfEiJD-OlhsxoC_rDerUW/pub?gid=223978911&single=true&output=csv',
+
   // Published CSV URL for the Schedule tab (public, no auth required)
   // Set this after publishing the Schedule tab: File → Share → Publish to web → Schedule tab → CSV
   PUBLISHED_SCHEDULE_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTRpDadhsKBYPuE3pFCYnmeRiUJO_Z972ISX509taCzL8jmYaWPue5DfR9OfEiJD-OlhsxoC_rDerUW/pub?gid=1949632749&single=true&output=csv',
@@ -37,6 +43,7 @@ var SHEETS_CONFIG = {
     HOLDS: 'Holds',
     RESERVATIONS: 'Reservations',
     SCHEDULE: 'Schedule',
-    CONFIG: 'Config'
+    CONFIG: 'Config',
+    SERVICES: 'Services'
   }
 };
