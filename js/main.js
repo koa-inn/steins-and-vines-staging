@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', function () {
 function loadProducts() {
   var allProducts = [];
   var userHasSorted = false;
-  var activeFilters = { type: 'All', brand: 'All', subcategory: 'All', time: 'All' };
+  var activeFilters = { type: [], brand: [], subcategory: [], time: [] };
 
   var csvUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.PUBLISHED_CSV_URL)
     ? SHEETS_CONFIG.PUBLISHED_CSV_URL
@@ -226,15 +226,72 @@ function loadProducts() {
     btn.className = 'catalog-filter-btn';
     btn.type = 'button';
     btn.textContent = label;
+    btn.setAttribute('data-field', field);
+    btn.setAttribute('data-value', label);
     btn.addEventListener('click', function () {
-      activeFilters[field] = label;
+      if (label === 'All') {
+        activeFilters[field] = [];
+      } else {
+        var idx = activeFilters[field].indexOf(label);
+        if (idx !== -1) {
+          activeFilters[field].splice(idx, 1);
+        } else {
+          activeFilters[field].push(label);
+        }
+      }
       var container = document.getElementById(containerId);
       var buttons = container.querySelectorAll('.catalog-filter-btn');
       buttons.forEach(function (b) { b.classList.remove('active'); });
-      btn.classList.add('active');
+      if (activeFilters[field].length === 0) {
+        container.querySelector('[data-value="All"]').classList.add('active');
+      } else {
+        buttons.forEach(function (b) {
+          if (activeFilters[field].indexOf(b.getAttribute('data-value')) !== -1) {
+            b.classList.add('active');
+          }
+        });
+      }
       applyFilters();
+      updateFilterAvailability();
     });
     return btn;
+  }
+
+  function matchesFilters(product, excludeField) {
+    var fields = ['type', 'brand', 'subcategory', 'time'];
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i];
+      if (f === excludeField) continue;
+      if (activeFilters[f].length > 0 && activeFilters[f].indexOf(product[f]) === -1) return false;
+    }
+    return true;
+  }
+
+  function updateFilterAvailability() {
+    var fields = ['type', 'brand', 'subcategory', 'time'];
+    fields.forEach(function (field) {
+      var containerId = 'filter-' + (field === 'subcategory' ? 'subcategory' : field);
+      var container = document.getElementById(containerId);
+      if (!container) return;
+      var buttons = container.querySelectorAll('.catalog-filter-btn');
+      buttons.forEach(function (btn) {
+        var val = btn.getAttribute('data-value');
+        if (val === 'All') return;
+        var hasResults = allProducts.some(function (p) {
+          return p[field] === val && matchesFilters(p, field);
+        });
+        if (hasResults) {
+          btn.classList.remove('disabled');
+          btn.disabled = false;
+        } else {
+          btn.classList.add('disabled');
+          btn.disabled = true;
+          btn.classList.remove('active');
+          var idx = activeFilters[field].indexOf(val);
+          if (idx !== -1) activeFilters[field].splice(idx, 1);
+        }
+      });
+    });
   }
 
   function parsePrice(product) {
@@ -252,10 +309,10 @@ function loadProducts() {
     var query = searchInput ? searchInput.value.toLowerCase() : '';
 
     var filtered = allProducts.filter(function (r) {
-      if (activeFilters.type !== 'All' && r.type !== activeFilters.type) return false;
-      if (activeFilters.brand !== 'All' && r.brand !== activeFilters.brand) return false;
-      if (activeFilters.subcategory !== 'All' && r.subcategory !== activeFilters.subcategory) return false;
-      if (activeFilters.time !== 'All' && r.time !== activeFilters.time) return false;
+      if (activeFilters.type.length > 0 && activeFilters.type.indexOf(r.type) === -1) return false;
+      if (activeFilters.brand.length > 0 && activeFilters.brand.indexOf(r.brand) === -1) return false;
+      if (activeFilters.subcategory.length > 0 && activeFilters.subcategory.indexOf(r.subcategory) === -1) return false;
+      if (activeFilters.time.length > 0 && activeFilters.time.indexOf(r.time) === -1) return false;
       if (!query) return true;
       var name = (r.name || '').toLowerCase();
       var sub = (r.subcategory || '').toLowerCase();
@@ -403,38 +460,42 @@ function loadProducts() {
           notes.textContent = product.tasting_notes;
           header.appendChild(notes);
 
-          // Tap-to-reveal on touch devices
-          header.addEventListener('click', function (e) {
+          var notesBtn = document.createElement('button');
+          notesBtn.type = 'button';
+          notesBtn.className = 'product-notes-btn';
+          notesBtn.setAttribute('aria-label', 'Tasting notes');
+          notesBtn.innerHTML = '&#x1f50d;';
+          notesBtn.addEventListener('click', function (e) {
             e.stopPropagation();
-            // Close any other open tooltips first
             var openTips = document.querySelectorAll('.product-notes-tooltip.show');
             openTips.forEach(function (tip) {
               if (tip !== notes) tip.classList.remove('show');
             });
             notes.classList.toggle('show');
           });
+          header.appendChild(notesBtn);
         }
 
         card.appendChild(header);
 
-        if (product.subcategory || product.time) {
+        var batchSize = (product.batch_size_liters || '').trim();
+        if (product.subcategory || product.time || batchSize) {
           var detailRow = document.createElement('div');
           detailRow.className = 'product-detail-row';
-          if (product.subcategory) {
-            var subSpan = document.createElement('span');
-            subSpan.textContent = product.subcategory;
-            detailRow.appendChild(subSpan);
-          }
-          if (product.subcategory && product.time) {
-            var sep = document.createElement('span');
-            sep.className = 'detail-sep';
-            sep.textContent = '\u00b7';
-            detailRow.appendChild(sep);
-          }
-          if (product.time) {
-            var timeSpan = document.createElement('span');
-            timeSpan.textContent = product.time;
-            detailRow.appendChild(timeSpan);
+          var details = [];
+          if (product.subcategory) details.push(product.subcategory);
+          if (product.time) details.push(product.time);
+          if (batchSize) details.push(batchSize + 'L');
+          for (var d = 0; d < details.length; d++) {
+            if (d > 0) {
+              var sep = document.createElement('span');
+              sep.className = 'detail-sep';
+              sep.textContent = '\u00b7';
+              detailRow.appendChild(sep);
+            }
+            var detailSpan = document.createElement('span');
+            detailSpan.textContent = details[d];
+            detailRow.appendChild(detailSpan);
           }
           card.appendChild(detailRow);
         }
@@ -670,6 +731,17 @@ function initReservationPage() {
   setupReservationForm();
 }
 
+function refreshReservationDependents() {
+  loadTimeslots();
+  var selected = document.querySelector('input[name="timeslot"]:checked');
+  if (selected) {
+    updateCompletionEstimate(selected.value);
+  } else {
+    var estimateEl = document.getElementById('completion-estimate');
+    if (estimateEl) estimateEl.style.display = 'none';
+  }
+}
+
 function renderReservationItems() {
   var container = document.getElementById('reservation-items');
   var emptyMsg = document.getElementById('reservation-empty');
@@ -732,6 +804,7 @@ function renderReservationItems() {
         }
         saveReservation(current);
         renderReservationItems();
+        refreshReservationDependents();
       };
     })(item));
 
@@ -754,6 +827,7 @@ function renderReservationItems() {
         }
         saveReservation(current);
         renderReservationItems();
+        refreshReservationDependents();
       };
     })(item));
 
@@ -773,6 +847,7 @@ function renderReservationItems() {
       });
       saveReservation(filtered);
       renderReservationItems();
+      refreshReservationDependents();
     });
     actions.appendChild(removeBtn);
 
@@ -790,13 +865,8 @@ function renderReservationItems() {
 
   var subtotalRow = document.createElement('div');
   subtotalRow.className = 'reservation-subtotal';
-  subtotalRow.innerHTML = '<span>Estimated Subtotal</span><span>$' + subtotal.toFixed(2) + '</span>';
+  subtotalRow.innerHTML = '<span>Estimated Subtotal <span class="reservation-disclaimer">— Final pricing may vary.</span></span><span>$' + subtotal.toFixed(2) + '</span>';
   container.appendChild(subtotalRow);
-
-  var disclaimer = document.createElement('p');
-  disclaimer.className = 'reservation-disclaimer';
-  disclaimer.textContent = 'This subtotal is an estimate. Final pricing may vary.';
-  container.appendChild(disclaimer);
 }
 
 function loadTimeslots() {
