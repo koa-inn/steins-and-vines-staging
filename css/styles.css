@@ -947,8 +947,8 @@ small, .text-small {
 .reservation-item-actions {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.75rem;
-  flex-shrink: 0;
 }
 
 .reservation-item-actions .product-qty-controls {
@@ -1048,17 +1048,20 @@ small, .text-small {
 
 .reservation-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  text-align: center;
   background: var(--color-white);
   border: 1px solid var(--color-brown);
   border-radius: 4px;
   padding: 1rem 1.25rem;
+  gap: 0.75rem;
 }
 
 .reservation-item-info {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: center;
   gap: 0.75rem;
   flex-wrap: wrap;
 }
@@ -1129,7 +1132,6 @@ small, .text-small {
   cursor: pointer;
   transition: background-color 0.2s, color 0.2s;
   flex-shrink: 0;
-  margin-left: 1rem;
 }
 
 .reservation-item-remove:hover {
@@ -1139,8 +1141,10 @@ small, .text-small {
 
 .reservation-subtotal {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
+  text-align: center;
+  gap: 0.25rem;
   padding: 1rem 1.25rem;
   margin-top: 0.5rem;
   border-top: 2px solid var(--color-brown);
@@ -2390,17 +2394,13 @@ small, .text-small {
 
   .reservation-item {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.5rem;
   }
 
   .reservation-item-actions {
     width: 100%;
-    justify-content: space-between;
-  }
-
-  .reservation-item-remove {
-    margin-left: 0;
+    justify-content: center;
   }
 
   .reservation-bar .container {
