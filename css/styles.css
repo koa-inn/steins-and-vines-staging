@@ -644,6 +644,44 @@ small, .text-small {
   text-align: center;
 }
 
+/* ===== Open Hours ===== */
+
+.open-hours {
+  max-width: 400px;
+  margin: 1.5rem auto;
+}
+
+.open-hours h3 {
+  font-family: var(--font-display);
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+.open-hours-list {
+  list-style: none;
+  padding: 0;
+}
+
+.open-hours-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #e0d9c0;
+  font-size: 0.95rem;
+}
+
+.open-hours-row:last-child {
+  border-bottom: none;
+}
+
+.open-hours-day {
+  font-weight: 700;
+}
+
+.open-hours-row.closed .open-hours-time {
+  color: #999;
+}
+
 /* ===== Contact Form ===== */
 .contact-info {
   margin-bottom: 2rem;
@@ -1282,6 +1320,12 @@ small, .text-small {
   border-bottom: 2px solid var(--color-brown);
   margin-bottom: 2rem;
   overflow-x: auto;
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;         /* IE / Edge */
+}
+
+.admin-tabs::-webkit-scrollbar {
+  display: none;                    /* Chrome / Safari */
 }
 
 .admin-tab-btn {
@@ -1871,6 +1915,35 @@ small, .text-small {
   color: var(--color-white);
 }
 
+.schedule-default-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.5rem 0.25rem;
+}
+
+.schedule-default-slot {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--color-burgundy);
+  border-radius: 999px;
+  background: var(--color-burgundy);
+  color: var(--color-white);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.schedule-default-slot:hover {
+  opacity: 0.85;
+}
+
+.schedule-default-slot.blocked {
+  background: #b33;
+  border-color: #b33;
+  color: var(--color-white);
+  text-decoration: line-through;
+}
+
 .schedule-cal-header {
   display: flex;
   align-items: center;
@@ -1935,6 +2008,34 @@ small, .text-small {
   height: 8px;
   border-radius: 50%;
   margin: 4px auto 0;
+}
+
+.schedule-cal-counts {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.cal-count-open,
+.cal-count-booked {
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  min-width: 14px;
+  text-align: center;
+}
+
+.cal-count-open {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.cal-count-booked {
+  background: #eee;
+  color: #666;
 }
 
 .dot-available {

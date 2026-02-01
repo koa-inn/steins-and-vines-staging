@@ -1957,16 +1957,22 @@
   function getDefaultSchedule() {
     var stored = localStorage.getItem('sv_schedule_defaults');
     if (stored) {
-      try { return JSON.parse(stored); } catch (e) { /* fall through */ }
+      try {
+        var parsed = JSON.parse(stored);
+        parsed.forEach(function (d) {
+          if (!d.blockedSlots) d.blockedSlots = [];
+        });
+        return parsed;
+      } catch (e) { /* fall through */ }
     }
     return [
-      { day: 'Sun', start: '', end: '', open: false },
-      { day: 'Mon', start: '', end: '', open: false },
-      { day: 'Tue', start: '10:00 AM', end: '4:00 PM', open: true },
-      { day: 'Wed', start: '10:00 AM', end: '4:00 PM', open: true },
-      { day: 'Thu', start: '12:00 PM', end: '7:00 PM', open: true },
-      { day: 'Fri', start: '10:00 AM', end: '4:00 PM', open: true },
-      { day: 'Sat', start: '10:00 AM', end: '4:00 PM', open: true }
+      { day: 'Sun', start: '', end: '', open: false, blockedSlots: [] },
+      { day: 'Mon', start: '', end: '', open: false, blockedSlots: [] },
+      { day: 'Tue', start: '10:00 AM', end: '4:00 PM', open: true, blockedSlots: [] },
+      { day: 'Wed', start: '10:00 AM', end: '4:00 PM', open: true, blockedSlots: [] },
+      { day: 'Thu', start: '12:00 PM', end: '7:00 PM', open: true, blockedSlots: [] },
+      { day: 'Fri', start: '10:00 AM', end: '4:00 PM', open: true, blockedSlots: [] },
+      { day: 'Sat', start: '10:00 AM', end: '4:00 PM', open: true, blockedSlots: [] }
     ];
   }
 
@@ -2053,6 +2059,40 @@
       tr.appendChild(tdStatus);
 
       tbody.appendChild(tr);
+
+      // Blocked-slot pills row for open days with valid start/end
+      if (d.open && d.start && d.end) {
+        var pillTr = document.createElement('tr');
+        var pillTd = document.createElement('td');
+        pillTd.colSpan = 4;
+        pillTd.className = 'schedule-default-slots';
+
+        var blocked = d.blockedSlots || [];
+        var slots = generateTimeSlots(d.start, d.end);
+        slots.forEach(function (time) {
+          var pill = document.createElement('button');
+          pill.type = 'button';
+          var isBlocked = blocked.indexOf(time) !== -1;
+          pill.className = 'schedule-default-slot' + (isBlocked ? ' blocked' : '');
+          pill.textContent = time;
+          pill.addEventListener('click', function () {
+            var defs = getDefaultSchedule();
+            if (!defs[idx].blockedSlots) defs[idx].blockedSlots = [];
+            var pos = defs[idx].blockedSlots.indexOf(time);
+            if (pos !== -1) {
+              defs[idx].blockedSlots.splice(pos, 1);
+            } else {
+              defs[idx].blockedSlots.push(time);
+            }
+            saveDefaultSchedule(defs);
+            renderDefaultsTable();
+          });
+          pillTd.appendChild(pill);
+        });
+
+        pillTr.appendChild(pillTd);
+        tbody.appendChild(pillTr);
+      }
     });
   }
 
@@ -2122,8 +2162,10 @@
         if (!def.open || !def.start || !def.end) continue;
 
         var dateStr = formatDateISO(date);
+        var blocked = def.blockedSlots || [];
         var slots = generateTimeSlots(def.start, def.end);
         slots.forEach(function (time) {
+          if (blocked.indexOf(time) !== -1) return;
           if (!existing[dateStr + '|' + time]) {
             newRows.push([dateStr, time, 'available']);
           }
@@ -2222,6 +2264,12 @@
       html += '<div class="schedule-cal-cell' + selectedClass + '" data-date="' + dateStr + '">';
       html += '<span class="schedule-cal-day">' + d + '</span>';
       if (dotClass) html += '<span class="schedule-cal-dot ' + dotClass + '"></span>';
+      if (slots.length > 0) {
+        html += '<span class="schedule-cal-counts">';
+        html += '<span class="cal-count-open">' + available + '</span>';
+        html += '<span class="cal-count-booked">' + booked + '</span>';
+        html += '</span>';
+      }
       html += '</div>';
     }
 

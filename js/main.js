@@ -62,7 +62,103 @@ document.addEventListener('DOMContentLoaded', function () {
   if (page === 'reservation') {
     initReservationPage();
   }
+
+  // Open hours on about & contact pages
+  if (page === 'about' || page === 'contact') {
+    loadOpenHours();
+  }
 });
+
+function loadOpenHours() {
+  var container = document.getElementById('open-hours');
+  if (!container) return;
+
+  var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  var scheduleUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.PUBLISHED_SCHEDULE_CSV_URL)
+    ? SHEETS_CONFIG.PUBLISHED_SCHEDULE_CSV_URL
+    : null;
+  if (!scheduleUrl) return;
+
+  fetch(scheduleUrl)
+    .then(function (res) { return res.text(); })
+    .then(function (csv) {
+      var lines = csv.trim().split('\n');
+      if (lines.length < 2) return;
+
+      var headers = lines[0].split(',');
+      var slots = [];
+      for (var i = 1; i < lines.length; i++) {
+        var values = lines[i].split(',');
+        if (values.length < 3) continue;
+        var obj = {};
+        for (var j = 0; j < headers.length; j++) {
+          obj[headers[j].trim()] = values[j].trim();
+        }
+        slots.push(obj);
+      }
+
+      // Only consider available slots in the future
+      var today = new Date();
+      today.setHours(0, 0, 0, 0);
+      slots = slots.filter(function (s) {
+        if (s.status && s.status !== 'available') return false;
+        var d = new Date(s.date + 'T00:00:00');
+        return d >= today;
+      });
+
+      if (slots.length === 0) return;
+
+      // Group by day-of-week, track earliest start and latest end
+      var dayMap = {};
+      slots.forEach(function (s) {
+        var d = new Date(s.date + 'T00:00:00');
+        var dow = d.getDay();
+        var timeParts = s.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (!timeParts) return;
+        var h = parseInt(timeParts[1], 10);
+        var m = parseInt(timeParts[2], 10);
+        var ampm = timeParts[3].toUpperCase();
+        if (ampm === 'PM' && h !== 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        var mins = h * 60 + m;
+
+        if (!dayMap[dow]) dayMap[dow] = { min: mins, max: mins };
+        if (mins < dayMap[dow].min) dayMap[dow].min = mins;
+        if (mins > dayMap[dow].max) dayMap[dow].max = mins;
+      });
+
+      // Convert minutes back to time string
+      function minsToStr(mins) {
+        var h = Math.floor(mins / 60);
+        var m = mins % 60;
+        var ampm = h >= 12 ? 'PM' : 'AM';
+        var hr12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+        var mm = m < 10 ? '0' + m : '' + m;
+        return hr12 + ':' + mm + ' ' + ampm;
+      }
+
+      // Build the hours list for each day Sun–Sat
+      var html = '<h3>Open Hours</h3><ul class="open-hours-list">';
+      for (var dow = 0; dow < 7; dow++) {
+        var info = dayMap[dow];
+        html += '<li class="open-hours-row' + (info ? '' : ' closed') + '">';
+        html += '<span class="open-hours-day">' + DAY_NAMES[dow] + '</span>';
+        if (info) {
+          // The last slot starts at max, so end time is +30 min
+          html += '<span class="open-hours-time">' + minsToStr(info.min) + ' &ndash; ' + minsToStr(info.max + 30) + '</span>';
+        } else {
+          html += '<span class="open-hours-time">Closed</span>';
+        }
+        html += '</li>';
+      }
+      html += '</ul>';
+      container.innerHTML = html;
+    })
+    .catch(function () {
+      // Silently fail
+    });
+}
 
 function loadProducts() {
   var allProducts = [];
