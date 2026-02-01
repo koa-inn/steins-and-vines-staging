@@ -624,6 +624,10 @@ small, .text-small {
   max-width: 600px;
   margin-left: auto;
   margin-right: auto;
+  text-align: center;
+}
+
+.contact-form .form-group {
   text-align: left;
 }
 
