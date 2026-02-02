@@ -394,7 +394,9 @@
     var filtered = reservationsData;
     if (filterVal !== 'all') {
       filtered = reservationsData.filter(function (r) {
-        return (r.status || '').toLowerCase() === filterVal;
+        var status = (r.status || '').toLowerCase().trim();
+        if (!status) status = 'pending'; // treat empty status as pending
+        return status === filterVal;
       });
     }
 
@@ -481,15 +483,16 @@
 
       var statusTd = document.createElement('td');
       var badge = document.createElement('span');
-      badge.className = 'hold-badge hold-badge--' + (res.status || 'pending').toLowerCase();
-      badge.textContent = res.status || 'pending';
+      var displayStatus = (res.status || '').trim().toLowerCase() || 'pending';
+      badge.className = 'hold-badge hold-badge--' + displayStatus;
+      badge.textContent = displayStatus;
       statusTd.appendChild(badge);
       tr.appendChild(statusTd);
 
       appendTd(tr, res.submitted_at || '');
 
       var actionsTd = document.createElement('td');
-      if ((res.status || '').toLowerCase() === 'pending' && resHolds.length > 0) {
+      if ((displayStatus === 'pending') && resHolds.length > 0) {
         var confirmAllBtn = document.createElement('button');
         confirmAllBtn.type = 'button';
         confirmAllBtn.className = 'btn admin-btn-sm';
@@ -499,7 +502,7 @@
         })(res, resHolds));
         actionsTd.appendChild(confirmAllBtn);
       }
-      if ((res.status || '').toLowerCase() === 'confirmed') {
+      if (displayStatus === 'confirmed') {
         var emailBtn = document.createElement('button');
         emailBtn.type = 'button';
         emailBtn.className = 'btn admin-btn-sm';
