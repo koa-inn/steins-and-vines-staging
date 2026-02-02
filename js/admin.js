@@ -2164,8 +2164,20 @@
     return hr12 + ':' + mm + ' ' + ampm;
   }
 
-  function generateSlots(weeksAhead) {
+  function getMonthPrefix() {
+    var year = scheduleCalMonth.getFullYear();
+    var m = scheduleCalMonth.getMonth() + 1;
+    return year + '-' + (m < 10 ? '0' + m : m);
+  }
+
+  function generateSlotsForMonth() {
+    if (!scheduleCalMonth) return;
     var defaults = getDefaultSchedule();
+    var year = scheduleCalMonth.getFullYear();
+    var month = scheduleCalMonth.getMonth();
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var monthName = scheduleCalMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+
     var today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -2176,34 +2188,34 @@
     });
 
     var newRows = [];
-    for (var w = 0; w < weeksAhead; w++) {
-      for (var d = 0; d < 7; d++) {
-        var date = new Date(today);
-        date.setDate(date.getDate() + (w * 7) + d);
-        var dayOfWeek = date.getDay(); // 0=Sun
-        var def = defaults[dayOfWeek];
-        if (!def.open || !def.start || !def.end) continue;
+    for (var d = 1; d <= daysInMonth; d++) {
+      var date = new Date(year, month, d);
+      if (date < today) continue;
+      var dayOfWeek = date.getDay();
+      var def = defaults[dayOfWeek];
+      if (!def.open || !def.start || !def.end) continue;
 
-        var dateStr = formatDateISO(date);
-        var blocked = def.blockedSlots || [];
-        var slots = generateTimeSlots(def.start, def.end);
-        slots.forEach(function (time) {
-          if (blocked.indexOf(time) !== -1) return;
-          if (!existing[dateStr + '|' + time]) {
-            newRows.push([dateStr, time, 'available']);
-          }
-        });
-      }
+      var dateStr = formatDateISO(date);
+      var blocked = def.blockedSlots || [];
+      var slots = generateTimeSlots(def.start, def.end);
+      slots.forEach(function (time) {
+        if (blocked.indexOf(time) !== -1) return;
+        if (!existing[dateStr + '|' + time]) {
+          newRows.push([dateStr, time, 'available']);
+        }
+      });
     }
 
     if (newRows.length === 0) {
-      alert('No new slots to generate (all slots already exist).');
+      alert('No new slots to generate for ' + monthName + ' (all slots already exist).');
       return;
     }
 
+    if (!confirm('Generate ' + newRows.length + ' new slot(s) for ' + monthName + '?')) return;
+
     sheetsAppend(SHEETS_CONFIG.SHEET_NAMES.SCHEDULE + '!A:C', newRows)
       .then(function () {
-        alert(newRows.length + ' slots generated.');
+        alert(newRows.length + ' slots generated for ' + monthName + '.');
         loadAllData();
       })
       .catch(function (err) {
@@ -2250,6 +2262,10 @@
     html += '<button type="button" class="btn-secondary admin-btn-sm schedule-cal-prev">&laquo;</button>';
     html += '<span class="schedule-cal-title">' + escapeHTML(monthName) + '</span>';
     html += '<button type="button" class="btn-secondary admin-btn-sm schedule-cal-next">&raquo;</button>';
+    html += '</div>';
+    html += '<div class="schedule-cal-actions">';
+    html += '<button type="button" class="btn admin-btn-sm" id="schedule-generate-month-btn">Generate Slots</button>';
+    html += '<button type="button" class="btn-secondary admin-btn-sm" id="schedule-reset-month-btn">Reset to Defaults</button>';
     html += '</div>';
 
     html += '<div class="schedule-cal-grid">';
@@ -2317,6 +2333,12 @@
         renderDaySlots(scheduleSelectedDate);
       });
     });
+
+    // Wire up calendar action buttons
+    var genMonthBtn = container.querySelector('#schedule-generate-month-btn');
+    if (genMonthBtn) genMonthBtn.addEventListener('click', function () { generateSlotsForMonth(); });
+    var resetMonthBtn = container.querySelector('#schedule-reset-month-btn');
+    if (resetMonthBtn) resetMonthBtn.addEventListener('click', function () { resetMonthToDefaults(); });
 
     // If a day is selected, render its slots
     if (scheduleSelectedDate) renderDaySlots(scheduleSelectedDate);
@@ -2445,8 +2467,9 @@
     }
 
     // Find all slots in this month
+    var prefix = getMonthPrefix();
     var monthSlots = scheduleData.filter(function (s) {
-      return s.date && s.date.substring(0, 7) === year + '-' + (month + 1 < 10 ? '0' + (month + 1) : (month + 1));
+      return s.date && s.date.substring(0, 7) === prefix;
     });
 
     var updates = [];
@@ -2489,19 +2512,7 @@
   }
 
   function initScheduleControls() {
-    var generateBtn = document.getElementById('schedule-generate-btn');
-    if (generateBtn) {
-      generateBtn.addEventListener('click', function () {
-        generateSlots(8);
-      });
-    }
-
-    var resetMonthBtn = document.getElementById('schedule-reset-month-btn');
-    if (resetMonthBtn) {
-      resetMonthBtn.addEventListener('click', function () {
-        resetMonthToDefaults();
-      });
-    }
+    // Generate and Reset buttons are wired up in renderScheduleCalendar()
 
     var saveDefaultsBtn = document.getElementById('schedule-save-defaults-btn');
     if (saveDefaultsBtn) {
