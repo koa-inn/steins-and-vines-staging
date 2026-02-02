@@ -3,86 +3,159 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Steins and Vines - Craft your own beer and wine with expert guidance at our ferment-on-premises facility in BC.">
-  <title>Steins &amp; Vines | U-Brew &amp; U-Vin</title>
+  <meta name="description" content="Steins and Vines - Craft your own beer and wine. Opening soon in Squamish, BC.">
+  <title>Steins &amp; Vines | Coming Soon</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="images/Icon_wine.svg" type="image/svg+xml">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-cream: #e5dec1;
+      --color-green: #370e13;
+      --color-burgundy: #4a6f4b;
+      --color-text: #2c2c2c;
+      --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+      --font-body: 'Lato', 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    html { font-size: 16px; }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--color-text);
+      background-color: var(--color-cream);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    img { max-width: 100%; height: auto; display: block; }
+    a { color: var(--color-cream); }
+
+    /* Hero — full viewport */
+    .hero {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--color-burgundy);
+      color: var(--color-cream);
+      text-align: center;
+      padding: 3rem 1.5rem;
+    }
+
+    .hero-inner {
+      max-width: 640px;
+    }
+
+    .hero-logo {
+      height: 100px;
+      width: auto;
+      margin: 0 auto 2.5rem;
+    }
+
+    .hero h1 {
+      font-family: var(--font-display);
+      font-size: 48px;
+      font-weight: 700;
+      color: var(--color-cream);
+      line-height: 1.2;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+    }
+
+    .title-icon {
+      height: 48px;
+      width: auto;
+      opacity: 0.55;
+      flex-shrink: 0;
+    }
+
+    .hero .tagline {
+      font-size: 1.15rem;
+      opacity: 0.9;
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    .hero .detail {
+      font-size: 0.95rem;
+      opacity: 0.75;
+      margin-bottom: 2.5rem;
+      line-height: 1.6;
+    }
+
+    .hero .email-link {
+      display: inline-block;
+      background-color: var(--color-green);
+      color: var(--color-cream);
+      padding: 12px 24px;
+      border: 2px solid var(--color-green);
+      border-radius: 4px;
+      font-family: var(--font-body);
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: background-color 0.2s, color 0.2s;
+    }
+
+    .hero .email-link:hover {
+      background-color: var(--color-cream);
+      border-color: var(--color-cream);
+      color: var(--color-green);
+    }
+
+    .divider {
+      display: block;
+      height: 36px;
+      width: auto;
+      margin: 0 auto 2rem;
+      opacity: 0.4;
+    }
+
+    /* Footer */
+    .site-footer {
+      background-color: var(--color-burgundy);
+      color: var(--color-cream);
+      text-align: center;
+      padding: 1.25rem 1.5rem;
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 32px; gap: 1rem; }
+      .title-icon { height: 32px; }
+      .hero-logo { height: 72px; }
+    }
+  </style>
 </head>
-<body data-page="home">
+<body>
 
-  <header class="site-header">
-    <div class="container">
-      <a href="index.html" class="logo"><img src="images/SV_Logo_Wordmark_green.svg" alt="Steins &amp; Vines — Squamish Brewing and Supply"></a>
-      <nav class="main-nav">
-        <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
-        <ul class="nav-list">
-          <li><a href="index.html" class="active">Home</a></li>
-          <li><a href="about.html">About</a></li>
-          <li><a href="products.html">Products</a></li>
-          <li><a href="contact.html">Contact</a></li>
-        </ul>
-      </nav>
+  <section class="hero">
+    <div class="hero-inner">
+      <img src="images/SV_Logo_PrimaryCircle_offwhite.svg" alt="Steins &amp; Vines" class="hero-logo">
+      <h1>
+        <img src="images/Icon_offwhite.svg" alt="" aria-hidden="true" class="title-icon">
+        Coming Soon
+        <img src="images/Icon_offwhite.svg" alt="" aria-hidden="true" class="title-icon">
+      </h1>
+      <p class="tagline">We're rebranding. New name, same location, same team.</p>
+      <img src="images/Icon_offwhite.svg" alt="" aria-hidden="true" class="divider">
+      <p class="detail">Our ferment-on-premises shop in Squamish is now Steins &amp; Vines. We still offer the full range of wine kits you know, and we're adding craft beer. Our new website is on its way.</p>
+      <a href="mailto:hello@steinsandvines.ca" class="email-link">Get in Touch</a>
     </div>
-  </header>
-
-  <main>
-    <section class="hero">
-      <div class="container">
-        <h1>
-          <img src="images/Icon_offwhite.svg" alt="" aria-hidden="true" class="title-icon">
-          <span data-content="hero-title">Craft Your Own Beer &amp; Wine</span>
-          <img src="images/Icon_offwhite.svg" alt="" aria-hidden="true" class="title-icon">
-        </h1>
-        <p data-content="hero-subtitle">Your brew. Your vintage. Your story.</p>
-        <a href="products.html" class="btn" data-content="hero-cta">Start Crafting</a>
-      </div>
-    </section>
-
-    <section class="intro">
-      <div class="container">
-        <h2 data-content="intro-title">Welcome to Steins &amp; Vines</h2>
-        <p data-content="intro-text">Content coming soon.</p>
-      </div>
-    </section>
-
-    <div class="section-icon">
-      <img src="images/Icon_wine.svg" alt="" aria-hidden="true">
-    </div>
-
-    <section class="intro">
-      <div class="container">
-        <h2 data-content="uferment-title">What is U-Ferment?</h2>
-        <p data-content="uferment-text">Content coming soon.</p>
-      </div>
-    </section>
-
-    <div class="section-icon">
-      <img src="images/Icon_wine.svg" alt="" aria-hidden="true">
-    </div>
-
-    <section class="intro">
-      <div class="container">
-        <h2 data-content="howitworks-title">How It Works</h2>
-        <p data-content="howitworks-text">Content coming soon.</p>
-      </div>
-    </section>
-
-    <div class="section-icon">
-      <img src="images/Icon_wine.svg" alt="" aria-hidden="true">
-    </div>
-  </main>
+  </section>
 
   <footer class="site-footer">
-    <div class="container">
-      <img src="images/SV_Logo_PrimaryCircle_offwhite.svg" alt="Steins &amp; Vines" class="footer-logo">
-      <p data-content="footer-copy">&copy; 2026 Steins &amp; Vines. All rights reserved.</p>
-      <a href="admin.html" class="footer-admin-link">Staff</a>
-    </div>
+    <p>&copy; 2026 Steins &amp; Vines. All rights reserved.</p>
   </footer>
 
-  <script src="js/main.js"></script>
 </body>
 </html>
