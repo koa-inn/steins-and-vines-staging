@@ -153,6 +153,7 @@
     document.getElementById('admin-user-email').textContent = userEmail;
     localStorage.setItem('sv-admin-email', userEmail);
     loadAllData();
+    loadEmailTemplates();
 
     // Set up token refresh (~50 min)
     setInterval(function () {
@@ -818,26 +819,45 @@
 
   // ===== Confirmation Email =====
 
+  var emailTemplates = null;
+
+  function loadEmailTemplates() {
+    return fetch('content/email-templates.json')
+      .then(function (res) { return res.json(); })
+      .then(function (data) { emailTemplates = data; })
+      .catch(function () { emailTemplates = null; });
+  }
+
+  function fillTemplate(template, vars) {
+    var result = template;
+    Object.keys(vars).forEach(function (key) {
+      result = result.replace(new RegExp('\\{\\{' + key + '\\}\\}', 'g'), vars[key]);
+    });
+    return result;
+  }
+
   function openConfirmationEmail(reservation) {
-    var customer = reservation.customer_name || 'Customer';
-    var email = reservation.customer_email || '';
-    var products = reservation.products || '';
-    var timeslot = reservation.timeslot || '';
+    var vars = {
+      customer: reservation.customer_name || 'Customer',
+      email: reservation.customer_email || '',
+      products: reservation.products || '',
+      timeslot: reservation.timeslot || ''
+    };
 
-    var subject = encodeURIComponent('Your Steins & Vines Reservation is Confirmed');
-    var body = encodeURIComponent(
-      'Hi ' + customer + ',\n\n' +
-      'Great news! Your reservation has been confirmed.\n\n' +
-      'Reserved items: ' + products + '\n' +
-      'Appointment: ' + timeslot + '\n\n' +
-      'Your appointment is to start fermentation in store — it takes about 15 minutes. ' +
-      'We\'ll contact you when it\'s time to come back and bottle.\n\n' +
-      'If you need to reschedule, please reply to this email or give us a call.\n\n' +
-      'See you soon!\n' +
-      'Steins & Vines'
-    );
+    function send(subject, body) {
+      window.open('mailto:' + encodeURIComponent(vars.email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body), '_blank');
+    }
 
-    window.open('mailto:' + encodeURIComponent(email) + '?subject=' + subject + '&body=' + body, '_blank');
+    if (emailTemplates && emailTemplates.confirmation) {
+      var tpl = emailTemplates.confirmation;
+      send(fillTemplate(tpl.subject, vars), fillTemplate(tpl.body, vars));
+    } else {
+      // Fallback if templates haven't loaded
+      send(
+        'Your Steins & Vines Reservation is Confirmed',
+        'Hi ' + vars.customer + ',\n\nGreat news! Your reservation has been confirmed.\n\nReserved items: ' + vars.products + '\nAppointment: ' + vars.timeslot + '\n\nYour appointment is to start fermentation in store — it takes about 15 minutes. We\'ll contact you when it\'s time to come back and bottle.\n\nIf you need to reschedule, please reply to this email or give us a call.\n\nSee you soon!\nSteins & Vines'
+      );
+    }
   }
 
   // ===== Kit Inventory Tab =====

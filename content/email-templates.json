@@ -1,0 +1,6 @@
+{
+  "confirmation": {
+    "subject": "Your Steins & Vines Reservation is Confirmed",
+    "body": "Hi {{customer}},\n\nGreat news! Your reservation has been confirmed.\n\nReserved items: {{products}}\nAppointment: {{timeslot}}\n\nYour appointment is to start fermentation in store — it takes about 15 minutes. We'll contact you when it's time to come back and bottle.\n\nIf you need to reschedule, please reply to this email or give us a call.\n\nSee you soon!\nSteins & Vines"
+  }
+}
