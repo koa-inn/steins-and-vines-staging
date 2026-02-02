@@ -801,6 +801,13 @@ small, .text-small {
   line-height: 1.5;
 }
 
+.land-acknowledgement-footer::after {
+  content: '—';
+  display: block;
+  margin-top: 0.75rem;
+  opacity: 0.5;
+}
+
 /* ===== Open Hours ===== */
 
 .open-hours {

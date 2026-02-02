@@ -1214,29 +1214,13 @@
     filtered.forEach(function (ing) {
       var tr = document.createElement('tr');
 
-      var stockQty = parseFloat(ing.stock_qty) || 0;
-      var reorderLevel = parseFloat(ing.reorder_level) || 0;
-      if (stockQty <= reorderLevel) {
-        tr.className = 'admin-row-warning';
-      }
-
       appendTd(tr, ing.sku || '');
       appendTd(tr, ing.type || '');
       appendTd(tr, ing.name || '');
-
-      // Editable stock cell
-      var stockTd = document.createElement('td');
-      stockTd.className = 'admin-editable';
-      stockTd.textContent = ing.stock_qty || '0';
-      stockTd.addEventListener('click', (function (cell, item) {
-        return function () { startInlineEdit(cell, item, 'stock_qty'); };
-      })(stockTd, ing));
-      tr.appendChild(stockTd);
-
-      appendTd(tr, ing.unit || '');
-      appendTd(tr, ing.reorder_level || '');
       appendTd(tr, ing.supplier || '');
-      appendTd(tr, ing.cost || '');
+
+      var rawCost = (ing.cost || '').replace(/\$/g, '').trim();
+      appendTd(tr, rawCost ? '$' + rawCost : '');
 
       var actionsTd = document.createElement('td');
       var deleteBtn = document.createElement('button');
