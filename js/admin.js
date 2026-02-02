@@ -498,26 +498,64 @@
       appendTd(tr, res.submitted_at || '');
 
       var actionsTd = document.createElement('td');
-      if ((displayStatus === 'pending') && resHolds.length > 0) {
-        var confirmAllBtn = document.createElement('button');
-        confirmAllBtn.type = 'button';
-        confirmAllBtn.className = 'btn admin-btn-sm';
-        confirmAllBtn.textContent = 'Confirm All';
-        confirmAllBtn.addEventListener('click', (function (reservation, holds) {
-          return function () { confirmAllHolds(reservation, holds); };
-        })(res, resHolds));
-        actionsTd.appendChild(confirmAllBtn);
-      }
-      if (displayStatus === 'confirmed') {
+      actionsTd.className = 'res-actions';
+
+      // Email button — always available if there's an email
+      if (res.customer_email) {
         var emailBtn = document.createElement('button');
         emailBtn.type = 'button';
         emailBtn.className = 'btn admin-btn-sm';
-        emailBtn.textContent = 'Send Email';
+        emailBtn.textContent = 'Email';
         emailBtn.addEventListener('click', (function (reservation) {
           return function () { openConfirmationEmail(reservation); };
         })(res));
         actionsTd.appendChild(emailBtn);
       }
+
+      if (displayStatus === 'pending') {
+        // Confirm button
+        var confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'btn admin-btn-sm';
+        confirmBtn.textContent = 'Confirm';
+        confirmBtn.addEventListener('click', (function (reservation, holds) {
+          return function () {
+            if (!confirm('Confirm reservation for ' + (reservation.customer_name || 'this customer') + '?')) return;
+            setReservationStatus(reservation, 'confirmed');
+            if (holds.length > 0) confirmAllHolds(reservation, holds);
+          };
+        })(res, resHolds));
+        actionsTd.appendChild(confirmBtn);
+
+        // Cancel button
+        var cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn-secondary admin-btn-sm admin-btn-danger';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.addEventListener('click', (function (reservation) {
+          return function () {
+            if (!confirm('Cancel reservation for ' + (reservation.customer_name || 'this customer') + '? This cannot be undone.')) return;
+            setReservationStatus(reservation, 'cancelled');
+          };
+        })(res));
+        actionsTd.appendChild(cancelBtn);
+      }
+
+      if (displayStatus === 'confirmed') {
+        // Cancel button for confirmed reservations
+        var cancelConfirmedBtn = document.createElement('button');
+        cancelConfirmedBtn.type = 'button';
+        cancelConfirmedBtn.className = 'btn-secondary admin-btn-sm admin-btn-danger';
+        cancelConfirmedBtn.textContent = 'Cancel';
+        cancelConfirmedBtn.addEventListener('click', (function (reservation) {
+          return function () {
+            if (!confirm('Cancel reservation for ' + (reservation.customer_name || 'this customer') + '? This cannot be undone.')) return;
+            setReservationStatus(reservation, 'cancelled');
+          };
+        })(res));
+        actionsTd.appendChild(cancelConfirmedBtn);
+      }
+
       tr.appendChild(actionsTd);
 
       tbody.appendChild(tr);
@@ -729,6 +767,21 @@
         });
       });
     });
+  }
+
+  function setReservationStatus(reservation, newStatus) {
+    var statusCol = reservationsHeaders.indexOf('status');
+    if (statusCol === -1) { alert('Cannot find status column.'); return; }
+
+    var cellRef = SHEETS_CONFIG.SHEET_NAMES.RESERVATIONS + '!' + colLetter(statusCol) + reservation._rowIndex;
+    sheetsUpdate(cellRef, [[newStatus]])
+      .then(function () {
+        reservation.status = newStatus;
+        renderReservationsTab();
+      })
+      .catch(function (err) {
+        alert('Failed to update reservation: ' + err.message);
+      });
   }
 
   function checkReservationStatus(reservation) {

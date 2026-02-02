@@ -1704,6 +1704,12 @@ small, .text-small {
   line-height: 1.4;
 }
 
+.res-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
 .admin-table tbody tr.admin-row-warning td {
   background-color: #fff3e0;
 }
