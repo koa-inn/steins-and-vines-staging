@@ -43,7 +43,7 @@
       <div class="container">
         <h2 data-content="story-title">Our Story</h2>
         <p data-content="story-text">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
-        <p>Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris. Integer in mauris eu nibh euismod gravida. Duis ac tellus et risus vulputate vehicula.</p>
+        <p data-content="story-text-2">Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris. Integer in mauris eu nibh euismod gravida. Duis ac tellus et risus vulputate vehicula.</p>
         <img src="images/cheers.heic" alt="Cheers at Steins &amp; Vines" class="story-image">
       </div>
     </section>
@@ -54,17 +54,17 @@
 
     <section class="content">
       <div class="container">
-        <h2>Meet the Owners</h2>
+        <h2 data-content="owners-title">Meet the Owners</h2>
         <div class="owner-grid">
           <div class="owner-card">
             <img src="images/paul.heic" alt="" class="owner-photo">
-            <h3>Owner Name</h3>
-            <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+            <h3 data-content="owner-1-name">Owner Name</h3>
+            <p data-content="owner-1-bio">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
           </div>
           <div class="owner-card">
             <img src="images/koa.heic" alt="" class="owner-photo">
-            <h3>Owner Name</h3>
-            <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+            <h3 data-content="owner-2-name">Owner Name</h3>
+            <p data-content="owner-2-bio">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
           </div>
         </div>
       </div>
@@ -86,9 +86,9 @@
 
     <section class="content">
       <div class="container">
-        <h2>Credits</h2>
-        <p class="credits-text">Graphic design by <strong>[Designer Name]</strong>.</p>
-        <p class="credits-text">Website by <strong>[Developer Name]</strong>.</p>
+        <h2 data-content="credits-title">Credits</h2>
+        <p class="credits-text" data-content="credits-designer">Graphic design by [Designer Name].</p>
+        <p class="credits-text" data-content="credits-developer">Website by [Developer Name].</p>
       </div>
     </section>
 
@@ -97,9 +97,10 @@
   <footer class="site-footer">
     <div class="container">
       <img src="images/SV_Logo_PrimaryCircle_offwhite.svg" alt="Steins &amp; Vines" class="footer-logo">
-      <p class="land-acknowledgement-footer">Steins &amp; Vines is located on the unceded traditional territory of the S&#x1E35;wx&#x331;w&uacute;7mesh (Squamish) Nation. We are grateful to live, work, and craft on these lands, and we honour the enduring relationship the Squamish people hold with this territory&mdash;its waters, forests, and mountains.</p>
+      <div class="footer-hours" id="footer-hours"></div>
+      <p class="land-acknowledgement-footer" data-content="land-acknowledgement">Steins &amp; Vines is located on the unceded traditional territory of the S&#x1E35;wx&#x331;w&uacute;7mesh (Squamish) Nation. We are grateful to live, work, and craft on these lands, and we honour the enduring relationship the Squamish people hold with this territory&mdash;its waters, forests, and mountains.</p>
       <p data-content="footer-copy">&copy; 2026 Steins &amp; Vines. All rights reserved.</p>
-      <a href="admin.html" class="footer-admin-link">Staff</a>
+      <a href="admin.html" class="footer-admin-link" data-content="footer-admin-link">Staff</a>
     </div>
   </footer>
 

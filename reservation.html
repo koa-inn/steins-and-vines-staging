@@ -43,14 +43,14 @@
       <div class="container">
 
         <div id="reservation-list">
-          <h2>Your reserved items</h2>
+          <h2 data-content="reserved-items-title">Your reserved items</h2>
           <div class="reservation-items" id="reservation-items"></div>
-          <p class="reservation-empty" id="reservation-empty" style="display:none;">No items reserved. <a href="products.html">Browse our catalog</a> to add products.</p>
+          <p class="reservation-empty" id="reservation-empty" style="display:none;"><span data-content="reserved-empty-text">No items reserved.</span> <a href="products.html" data-content="reserved-empty-link">Browse our catalog</a> to add products.</p>
         </div>
 
         <div id="timeslot-picker">
-          <h2>Select a timeslot</h2>
-          <p class="process-note">Your appointment is to start fermentation in store — about 15 minutes. We'll contact you when it's time to come back and bottle.</p>
+          <h2 data-content="timeslot-title">Select a timeslot</h2>
+          <p class="process-note" data-content="timeslot-note">Your appointment is to start fermentation in store — about 15 minutes. We'll contact you when it's time to come back and bottle.</p>
           <div id="timeslot-groups"></div>
         </div>
 
@@ -59,7 +59,7 @@
         </div>
 
         <div id="reservation-form-section">
-          <h2>Your details</h2>
+          <h2 data-content="details-title">Your details</h2>
           <form id="reservation-form" class="reservation-form">
             <div class="form-group">
               <label for="res-name">Name</label>
@@ -78,15 +78,15 @@
               <input type="text" id="res-website" name="website" tabindex="-1" autocomplete="off">
             </div>
             <input type="hidden" id="res-loaded-at" value="">
-            <button type="submit" class="btn">Submit Reservation</button>
-            <p class="form-note">A confirmation email will be sent to the address provided above.</p>
+            <button type="submit" class="btn" data-content="submit-btn">Submit Reservation</button>
+            <p class="form-note" data-content="form-note">A confirmation email will be sent to the address provided above.</p>
           </form>
         </div>
 
         <div class="reservation-confirm" id="reservation-confirm" style="display:none;">
-          <h2>Reservation submitted</h2>
-          <p>Thank you! We've received your reservation and will be in touch to confirm. You'll visit us twice — once at your appointment to start fermentation, and again when we let you know it's ready to bottle and take home.</p>
-          <a href="products.html" class="btn">Back to browsing</a>
+          <h2 data-content="confirm-title">Reservation submitted</h2>
+          <p data-content="confirm-text">Thank you! We've received your reservation and will be in touch to confirm. You'll visit us twice — once at your appointment to start fermentation, and again when we let you know it's ready to bottle and take home.</p>
+          <a href="products.html" class="btn" data-content="confirm-cta">Back to browsing</a>
         </div>
 
       </div>
@@ -103,9 +103,10 @@
   <footer class="site-footer">
     <div class="container">
       <img src="images/SV_Logo_PrimaryCircle_offwhite.svg" alt="Steins &amp; Vines" class="footer-logo">
-      <p class="land-acknowledgement-footer">Steins &amp; Vines is located on the unceded traditional territory of the S&#x1E35;wx&#x331;w&uacute;7mesh (Squamish) Nation. We are grateful to live, work, and craft on these lands, and we honour the enduring relationship the Squamish people hold with this territory&mdash;its waters, forests, and mountains.</p>
+      <div class="footer-hours" id="footer-hours"></div>
+      <p class="land-acknowledgement-footer" data-content="land-acknowledgement">Steins &amp; Vines is located on the unceded traditional territory of the S&#x1E35;wx&#x331;w&uacute;7mesh (Squamish) Nation. We are grateful to live, work, and craft on these lands, and we honour the enduring relationship the Squamish people hold with this territory&mdash;its waters, forests, and mountains.</p>
       <p data-content="footer-copy">&copy; 2026 Steins &amp; Vines. All rights reserved.</p>
-      <a href="admin.html" class="footer-admin-link">Staff</a>
+      <a href="admin.html" class="footer-admin-link" data-content="footer-admin-link">Staff</a>
     </div>
   </footer>
 

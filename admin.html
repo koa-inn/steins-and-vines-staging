@@ -70,6 +70,7 @@
             <button type="button" class="admin-tab-btn" data-tab="ingredients">Ingredients</button>
             <button type="button" class="admin-tab-btn" data-tab="orders">Supplier Orders</button>
             <button type="button" class="admin-tab-btn" data-tab="scheduling">Scheduling</button>
+            <button type="button" class="admin-tab-btn" data-tab="homepage">Homepage</button>
             <button type="button" class="admin-tab-btn" data-tab="export">Export / Sync</button>
           </div>
 
@@ -271,6 +272,45 @@
               <h3>Appointment Slots</h3>
               <div id="schedule-cal"></div>
               <div id="schedule-day-slots"></div>
+            </div>
+          </div>
+
+          <!-- Tab: Homepage Promo -->
+          <div class="admin-tab-panel" id="tab-homepage">
+            <div class="admin-panel-header">
+              <h2>Homepage Promotions</h2>
+            </div>
+            <p class="admin-order-info">Manage the news announcements and featured products shown on the homepage. Changes are saved to <code>content/home.json</code>.</p>
+
+            <div class="admin-export-section">
+              <h3>News &amp; Announcements</h3>
+              <p>Add news items to display on the homepage (newest first).</p>
+              <div id="homepage-news-list"></div>
+              <button type="button" class="btn admin-btn-sm" id="homepage-add-news">Add News Item</button>
+            </div>
+
+            <div class="admin-export-section">
+              <h3>Featured Products Note</h3>
+              <p>Write a short note about the featured products (e.g., "Our staff pick this week...").</p>
+              <textarea id="homepage-featured-note" class="admin-textarea" rows="3" placeholder="Our staff pick this week..."></textarea>
+            </div>
+
+            <div class="admin-export-section">
+              <h3>Featured Products</h3>
+              <p>Select products to feature on the homepage. Search and add by name or SKU.</p>
+              <div class="admin-order-add-row">
+                <div class="admin-kit-search-wrap" id="homepage-kit-search-wrap">
+                  <input type="text" id="homepage-kit-search" class="admin-kit-search-input" placeholder="Type to search products..." autocomplete="off">
+                  <div class="admin-kit-search-dropdown" id="homepage-kit-dropdown" style="display:none;"></div>
+                </div>
+                <button type="button" class="btn admin-btn-sm" id="homepage-add-product">Add</button>
+              </div>
+              <div id="homepage-featured-list" class="homepage-featured-list"></div>
+            </div>
+
+            <div class="admin-export-section">
+              <button type="button" class="btn" id="homepage-save-btn">Save Homepage Settings</button>
+              <button type="button" class="btn" id="homepage-download-btn">Download home.json</button>
             </div>
           </div>
 

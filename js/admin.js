@@ -3007,6 +3007,235 @@
     return result;
   }
 
+  // ===== Homepage Promo Admin =====
+
+  var homepageConfig = {
+    'promo-news': [],
+    'promo-featured-note': '',
+    'promo-featured-skus': []
+  };
+  var homepageSelectedProduct = null;
+
+  function initHomepageTab() {
+    document.addEventListener('DOMContentLoaded', function () {
+      // Load existing home.json
+      fetch('content/home.json')
+        .then(function (res) { return res.ok ? res.json() : {}; })
+        .then(function (data) {
+          if (data['promo-news']) homepageConfig['promo-news'] = data['promo-news'];
+          if (data['promo-featured-note']) homepageConfig['promo-featured-note'] = data['promo-featured-note'];
+          if (data['promo-featured-skus']) homepageConfig['promo-featured-skus'] = data['promo-featured-skus'];
+          renderHomepageNewsItems();
+          renderHomepageFeaturedList();
+          var noteField = document.getElementById('homepage-featured-note');
+          if (noteField) noteField.value = homepageConfig['promo-featured-note'] || '';
+        })
+        .catch(function () {});
+
+      // Add news item button
+      var addNewsBtn = document.getElementById('homepage-add-news');
+      if (addNewsBtn) {
+        addNewsBtn.addEventListener('click', function () {
+          homepageConfig['promo-news'].unshift({ date: '', title: '', text: '' });
+          renderHomepageNewsItems();
+        });
+      }
+
+      // Product search
+      var searchInput = document.getElementById('homepage-kit-search');
+      var dropdown = document.getElementById('homepage-kit-dropdown');
+      if (searchInput && dropdown) {
+        searchInput.addEventListener('input', function () {
+          var query = this.value.toLowerCase().trim();
+          if (query.length < 2) {
+            dropdown.style.display = 'none';
+            return;
+          }
+          var matches = kitsData.filter(function (k) {
+            return (k.name || '').toLowerCase().indexOf(query) !== -1 ||
+                   (k.brand || '').toLowerCase().indexOf(query) !== -1 ||
+                   (k.sku || '').toLowerCase().indexOf(query) !== -1;
+          }).slice(0, 10);
+
+          if (matches.length === 0) {
+            dropdown.style.display = 'none';
+            return;
+          }
+
+          dropdown.innerHTML = '';
+          matches.forEach(function (kit) {
+            var opt = document.createElement('div');
+            opt.className = 'admin-kit-search-option';
+            opt.innerHTML = '<strong>' + escapeHTML(kit.brand || '') + '</strong> ' +
+                            escapeHTML(kit.name || '') +
+                            ' <span style="opacity:0.6">(' + escapeHTML(kit.sku || '') + ')</span>';
+            opt.addEventListener('click', function () {
+              homepageSelectedProduct = kit;
+              searchInput.value = (kit.brand || '') + ' ' + (kit.name || '');
+              dropdown.style.display = 'none';
+            });
+            dropdown.appendChild(opt);
+          });
+          dropdown.style.display = 'block';
+        });
+
+        searchInput.addEventListener('blur', function () {
+          setTimeout(function () { dropdown.style.display = 'none'; }, 200);
+        });
+      }
+
+      // Add product button
+      var addProductBtn = document.getElementById('homepage-add-product');
+      if (addProductBtn) {
+        addProductBtn.addEventListener('click', function () {
+          if (!homepageSelectedProduct || !homepageSelectedProduct.sku) {
+            alert('Please select a product from the search dropdown.');
+            return;
+          }
+          if (homepageConfig['promo-featured-skus'].indexOf(homepageSelectedProduct.sku) === -1) {
+            homepageConfig['promo-featured-skus'].push(homepageSelectedProduct.sku);
+            renderHomepageFeaturedList();
+          }
+          homepageSelectedProduct = null;
+          searchInput.value = '';
+        });
+      }
+
+      // Save button
+      var saveBtn = document.getElementById('homepage-save-btn');
+      if (saveBtn) {
+        saveBtn.addEventListener('click', function () {
+          collectHomepageData();
+          alert('Homepage settings collected. Use "Download home.json" to save the file, then upload it to the content folder.');
+        });
+      }
+
+      // Download button
+      var downloadBtn = document.getElementById('homepage-download-btn');
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', function () {
+          collectHomepageData();
+          downloadHomepageJson();
+        });
+      }
+    });
+  }
+
+  function collectHomepageData() {
+    // Collect news items from DOM
+    var newsItems = [];
+    var newsContainer = document.getElementById('homepage-news-list');
+    if (newsContainer) {
+      var items = newsContainer.querySelectorAll('.homepage-news-item');
+      items.forEach(function (item) {
+        var dateInput = item.querySelector('.news-date');
+        var titleInput = item.querySelector('.news-title');
+        var textInput = item.querySelector('.news-text');
+        if (dateInput && titleInput && textInput) {
+          newsItems.push({
+            date: dateInput.value || '',
+            title: titleInput.value || '',
+            text: textInput.value || ''
+          });
+        }
+      });
+    }
+    homepageConfig['promo-news'] = newsItems;
+
+    // Collect featured note
+    var noteField = document.getElementById('homepage-featured-note');
+    if (noteField) {
+      homepageConfig['promo-featured-note'] = noteField.value || '';
+    }
+  }
+
+  function downloadHomepageJson() {
+    // Merge with existing home.json structure
+    fetch('content/home.json')
+      .then(function (res) { return res.ok ? res.json() : {}; })
+      .then(function (existing) {
+        var merged = Object.assign({}, existing, {
+          'promo-news': homepageConfig['promo-news'],
+          'promo-featured-note': homepageConfig['promo-featured-note'],
+          'promo-featured-skus': homepageConfig['promo-featured-skus']
+        });
+        var json = JSON.stringify(merged, null, 2);
+        var blob = new Blob([json], { type: 'application/json' });
+        var link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'home.json';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      })
+      .catch(function () {
+        alert('Error preparing download.');
+      });
+  }
+
+  function renderHomepageNewsItems() {
+    var container = document.getElementById('homepage-news-list');
+    if (!container) return;
+
+    container.innerHTML = '';
+    homepageConfig['promo-news'].forEach(function (news, idx) {
+      var item = document.createElement('div');
+      item.className = 'homepage-news-item';
+      item.innerHTML =
+        '<div class="homepage-news-item-fields">' +
+          '<input type="text" class="news-date" placeholder="Date (e.g., Jan 15, 2026)" value="' + escapeHTML(news.date || '') + '">' +
+          '<input type="text" class="news-title" placeholder="Title" value="' + escapeHTML(news.title || '') + '">' +
+          '<textarea class="news-text" placeholder="News text...">' + escapeHTML(news.text || '') + '</textarea>' +
+        '</div>' +
+        '<div class="homepage-news-item-actions">' +
+          '<button type="button" class="btn-secondary admin-btn-sm admin-btn-danger news-remove-btn" data-idx="' + idx + '">Remove</button>' +
+        '</div>';
+      container.appendChild(item);
+    });
+
+    // Wire up remove buttons
+    container.querySelectorAll('.news-remove-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var idx = parseInt(this.dataset.idx, 10);
+        homepageConfig['promo-news'].splice(idx, 1);
+        renderHomepageNewsItems();
+      });
+    });
+  }
+
+  function renderHomepageFeaturedList() {
+    var container = document.getElementById('homepage-featured-list');
+    if (!container) return;
+
+    container.innerHTML = '';
+    homepageConfig['promo-featured-skus'].forEach(function (sku, idx) {
+      var kit = kitsData.find(function (k) { return k.sku === sku; });
+      var name = kit ? ((kit.brand || '') + ' ' + (kit.name || '')).trim() : 'Unknown';
+
+      var item = document.createElement('div');
+      item.className = 'homepage-featured-item';
+      item.innerHTML =
+        '<div class="homepage-featured-item-info">' +
+          '<span class="homepage-featured-item-name">' + escapeHTML(name) + '</span>' +
+          '<span class="homepage-featured-item-sku">SKU: ' + escapeHTML(sku) + '</span>' +
+        '</div>' +
+        '<button type="button" class="btn-secondary admin-btn-sm admin-btn-danger featured-remove-btn" data-idx="' + idx + '">Remove</button>';
+      container.appendChild(item);
+    });
+
+    // Wire up remove buttons
+    container.querySelectorAll('.featured-remove-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var idx = parseInt(this.dataset.idx, 10);
+        homepageConfig['promo-featured-skus'].splice(idx, 1);
+        renderHomepageFeaturedList();
+      });
+    });
+  }
+
+  initHomepageTab();
+
   // ===== Utilities =====
 
   function colLetter(index) {
