@@ -474,6 +474,34 @@ small, .text-small {
   position: absolute;
 }
 
+/* Loading skeleton */
+.promo-loading-skeleton {
+  display: flex;
+  justify-content: center;
+  min-height: 420px;
+  align-items: center;
+}
+
+.skeleton-card {
+  width: 100%;
+  max-width: 340px;
+  height: 380px;
+  background: linear-gradient(
+    110deg,
+    rgba(229, 222, 193, 0.6) 8%,
+    rgba(229, 222, 193, 0.9) 18%,
+    rgba(229, 222, 193, 0.6) 33%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .promo-carousel-nav {
   display: flex;
   align-items: center;

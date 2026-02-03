@@ -407,6 +407,11 @@ function loadFeaturedProducts() {
   var productsContainer = document.getElementById('promo-featured-products');
   if (!promoSection) return;
 
+  // Show loading skeleton immediately
+  if (productsContainer) {
+    productsContainer.innerHTML = '<div class="promo-loading-skeleton"><div class="skeleton-card"></div></div>';
+  }
+
   var csvUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.PUBLISHED_CSV_URL)
     ? SHEETS_CONFIG.PUBLISHED_CSV_URL
     : null;
@@ -417,12 +422,19 @@ function loadFeaturedProducts() {
     ? SHEETS_CONFIG.PUBLISHED_HOMEPAGE_CSV_URL
     : null;
 
+  // Fetch both CSVs in parallel for faster loading
   var configPromise = homepageCsvUrl
     ? fetch(homepageCsvUrl).then(function (res) { return res.ok ? res.text() : ''; })
     : fetch('content/home.json').then(function (res) { return res.ok ? res.json() : {}; }).then(function (j) { return { isJson: true, data: j }; });
 
-  configPromise
-    .then(function (result) {
+  var productsPromise = csvUrl
+    ? fetch(csvUrl).then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return fetch(localCsvUrl).then(function (r) { return r.text(); }); })
+    : fetch(localCsvUrl).then(function (r) { return r.text(); });
+
+  Promise.all([configPromise, productsPromise])
+    .then(function (results) {
+      var result = results[0];
+      var productsCsv = results[1];
       var config = { 'promo-news': [], 'promo-featured-note': '', 'promo-featured-skus': [] };
 
       if (result && result.isJson) {
@@ -461,13 +473,14 @@ function loadFeaturedProducts() {
         noteContainer.innerHTML = '<p>' + escapeHTMLPromo(config['promo-featured-note']) + '</p>';
       }
 
-      // Load products and filter by SKUs from config
+      // Parse and render products
       var featuredSkus = config['promo-featured-skus'] || [];
-      loadAndRenderProducts(featuredSkus);
+      var products = productsCsv ? parseCSV(productsCsv) : [];
+      renderFeaturedProducts(products, featuredSkus);
     })
     .catch(function () {
-      // Fallback: load products without SKU filter
-      loadAndRenderProducts([]);
+      // Fallback: hide promo section on error
+      promoSection.style.display = 'none';
     });
 
   function parseHomepageCSVLine(line) {
@@ -503,23 +516,6 @@ function loadFeaturedProducts() {
       html += '</div>';
     });
     newsContainer.innerHTML = html;
-  }
-
-  function loadAndRenderProducts(featuredSkus) {
-    var csvPromise = csvUrl
-      ? fetch(csvUrl).then(function (r) { return r.text(); })
-      : Promise.reject();
-
-    csvPromise
-      .catch(function () { return fetch(localCsvUrl).then(function (r) { return r.text(); }); })
-      .then(function (csv) {
-        var products = parseCSV(csv);
-        renderFeaturedProducts(products, featuredSkus);
-      })
-      .catch(function () {
-        // Hide promo section if no products
-        promoSection.style.display = 'none';
-      });
   }
 
   function parseCSV(csv) {
