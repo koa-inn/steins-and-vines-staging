@@ -3070,6 +3070,7 @@
       var addNewsBtn = document.getElementById('homepage-add-news');
       if (addNewsBtn) {
         addNewsBtn.addEventListener('click', function () {
+          collectHomepageData(); // Save current values first
           homepageConfig['promo-news'].unshift({ date: '', title: '', text: '' });
           renderHomepageNewsItems();
         });
@@ -3247,6 +3248,7 @@
     // Wire up remove buttons
     container.querySelectorAll('.news-remove-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
+        collectHomepageData(); // Save current values first
         var idx = parseInt(this.dataset.idx, 10);
         homepageConfig['promo-news'].splice(idx, 1);
         renderHomepageNewsItems();
