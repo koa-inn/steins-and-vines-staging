@@ -3013,7 +3013,9 @@
   var homepageConfig = {
     'promo-news': [],
     'promo-featured-note': '',
-    'promo-featured-skus': []
+    'promo-featured-skus': [],
+    'social-instagram': '',
+    'social-facebook': ''
   };
   var homepageSelectedProduct = null;
   var homepageHeaders = [];
@@ -3031,6 +3033,8 @@
         homepageConfig['promo-news'] = [];
         homepageConfig['promo-featured-note'] = '';
         homepageConfig['promo-featured-skus'] = [];
+        homepageConfig['social-instagram'] = '';
+        homepageConfig['social-facebook'] = '';
 
         // Parse rows (skip header)
         for (var i = 1; i < rows.length; i++) {
@@ -3049,6 +3053,14 @@
             if (sku) {
               homepageConfig['promo-featured-skus'].push(sku);
             }
+          } else if (type === 'social') {
+            var platform = (row[2] || '').toLowerCase().trim();
+            var url = row[4] || '';
+            if (platform === 'instagram') {
+              homepageConfig['social-instagram'] = url;
+            } else if (platform === 'facebook') {
+              homepageConfig['social-facebook'] = url;
+            }
           }
         }
 
@@ -3056,6 +3068,10 @@
         renderHomepageFeaturedList();
         var noteField = document.getElementById('homepage-featured-note');
         if (noteField) noteField.value = homepageConfig['promo-featured-note'] || '';
+        var igField = document.getElementById('homepage-social-instagram');
+        if (igField) igField.value = homepageConfig['social-instagram'] || '';
+        var fbField = document.getElementById('homepage-social-facebook');
+        if (fbField) fbField.value = homepageConfig['social-facebook'] || '';
       })
       .catch(function (err) {
         console.error('[Homepage] Error loading from sheet:', err);
@@ -3166,6 +3182,14 @@
       rows.push(['featured', '', '', '', sku]);
     });
 
+    // Add social links
+    if (homepageConfig['social-instagram']) {
+      rows.push(['social', '', 'instagram', '', homepageConfig['social-instagram']]);
+    }
+    if (homepageConfig['social-facebook']) {
+      rows.push(['social', '', 'facebook', '', homepageConfig['social-facebook']]);
+    }
+
     // Clear the sheet first, then write new data
     var clearUrl = 'https://sheets.googleapis.com/v4/spreadsheets/' +
       SHEETS_CONFIG.SPREADSHEET_ID + '/values/' +
@@ -3221,6 +3245,16 @@
     var noteField = document.getElementById('homepage-featured-note');
     if (noteField) {
       homepageConfig['promo-featured-note'] = noteField.value || '';
+    }
+
+    // Collect social links
+    var igField = document.getElementById('homepage-social-instagram');
+    if (igField) {
+      homepageConfig['social-instagram'] = igField.value || '';
+    }
+    var fbField = document.getElementById('homepage-social-facebook');
+    if (fbField) {
+      homepageConfig['social-facebook'] = fbField.value || '';
     }
   }
 

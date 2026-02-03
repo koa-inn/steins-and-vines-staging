@@ -126,6 +126,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Footer hours on all public pages
   loadFooterHours();
+
+  // Social links on all pages
+  loadSocialLinks();
 });
 
 function loadOpenHours() {
@@ -324,6 +327,75 @@ function loadFooterHours() {
     .catch(function () {
       return fetchAndRender(localUrl).catch(function () {});
     });
+}
+
+// ===== Social Links =====
+
+function loadSocialLinks() {
+  var container = document.querySelector('.footer-social');
+  if (!container) return;
+
+  var homepageCsvUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.PUBLISHED_HOMEPAGE_CSV_URL)
+    ? SHEETS_CONFIG.PUBLISHED_HOMEPAGE_CSV_URL
+    : null;
+
+  if (!homepageCsvUrl) return; // Keep hardcoded links if no sheet configured
+
+  fetch(homepageCsvUrl)
+    .then(function (res) { return res.ok ? res.text() : ''; })
+    .then(function (csv) {
+      if (!csv.trim()) return;
+
+      var lines = csv.trim().split('\n');
+      var socialLinks = {};
+
+      for (var i = 1; i < lines.length; i++) {
+        var values = parseCSVLine(lines[i]);
+        var type = (values[0] || '').toLowerCase().trim();
+        if (type === 'social') {
+          var platform = (values[2] || '').toLowerCase().trim(); // Title column = platform name
+          var url = (values[4] || '').trim(); // SKU column = URL
+          if (platform && url) {
+            socialLinks[platform] = url;
+          }
+        }
+      }
+
+      // Update existing links if we found any
+      if (Object.keys(socialLinks).length > 0) {
+        var igLink = container.querySelector('a[aria-label*="Instagram"]');
+        var fbLink = container.querySelector('a[aria-label*="Facebook"]');
+
+        if (igLink && socialLinks.instagram) {
+          igLink.href = socialLinks.instagram;
+        }
+        if (fbLink && socialLinks.facebook) {
+          fbLink.href = socialLinks.facebook;
+        }
+      }
+    })
+    .catch(function () {
+      // Keep hardcoded links on error
+    });
+
+  function parseCSVLine(line) {
+    var result = [];
+    var current = '';
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      var c = line[i];
+      if (c === '"') {
+        inQuotes = !inQuotes;
+      } else if (c === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += c;
+      }
+    }
+    result.push(current);
+    return result;
+  }
 }
 
 // ===== Homepage Promo Section =====
