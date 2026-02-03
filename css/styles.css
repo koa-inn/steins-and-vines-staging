@@ -1018,10 +1018,22 @@ small, .text-small {
   text-align: center;
 }
 
+/* Rustic frame styling for about page images */
+.story-image,
+.owner-photo {
+  border: 8px solid #5c4a3a;
+  border-radius: 4px;
+  box-shadow:
+    0 4px 12px rgba(0,0,0,0.3),
+    inset 0 0 0 2px #3d3028,
+    inset 0 0 0 4px #6b5848;
+  background: linear-gradient(135deg, #5c4a3a 0%, #4a3c30 100%);
+  padding: 3px;
+}
+
 .story-image {
   width: 100%;
   max-width: 600px;
-  border-radius: 6px;
   margin: 2rem auto 0;
   display: block;
   object-fit: cover;
@@ -1030,7 +1042,6 @@ small, .text-small {
 .owner-photo {
   width: 180px;
   height: 240px;
-  border-radius: 6px;
   object-fit: cover;
   margin: 0 auto 1rem;
 }
