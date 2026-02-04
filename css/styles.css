@@ -460,12 +460,14 @@ small, .text-small {
   position: absolute;
   left: 0;
   right: 0;
+  pointer-events: none;
 }
 
 .promo-featured-products .product-card.promo-slide-active {
   opacity: 1;
   transform: translateX(0);
   position: relative;
+  pointer-events: auto;
 }
 
 .promo-featured-products .product-card.promo-slide-exit {
