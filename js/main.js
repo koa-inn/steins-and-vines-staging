@@ -730,9 +730,25 @@ function loadFeaturedProducts() {
 
       var notesBody = document.createElement('div');
       notesBody.className = 'product-notes-body';
+
+      if (product.sku) {
+        var imageCol = document.createElement('div');
+        imageCol.className = 'product-notes-image';
+        var img = document.createElement('img');
+        img.src = 'images/products/' + product.sku + '.png';
+        img.alt = product.name || 'Product image';
+        img.loading = 'lazy';
+        img.onerror = function() { this.parentElement.remove(); };
+        imageCol.appendChild(img);
+        notesBody.appendChild(imageCol);
+      }
+
+      var textCol = document.createElement('div');
+      textCol.className = 'product-notes-text';
       var notesP = document.createElement('p');
       notesP.textContent = product.tasting_notes;
-      notesBody.appendChild(notesP);
+      textCol.appendChild(notesP);
+      notesBody.appendChild(textCol);
 
       notesToggle.addEventListener('click', function (wrap, toggle) {
         return function () {
