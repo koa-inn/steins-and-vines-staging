@@ -55,7 +55,7 @@ var KITS_SHEET_NAME = 'Kits';
  * Used for: auth check, reading data
  */
 function doGet(e) {
-  var authResult = checkAuthorization();
+  var authResult = checkAuthorization(e);
   if (!authResult.authorized) {
     return _jsonResponse({ ok: false, error: 'unauthorized', message: authResult.message });
   }
@@ -106,7 +106,7 @@ function doGet(e) {
  * Used for: updating data
  */
 function doPost(e) {
-  var authResult = checkAuthorization();
+  var authResult = checkAuthorization(e);
   if (!authResult.authorized) {
     return _jsonResponse({ ok: false, error: 'unauthorized', message: authResult.message });
   }
@@ -141,14 +141,66 @@ function doPost(e) {
 
 /**
  * Check if the current user is authorized (email in staff_emails)
+ * Validates OAuth token using Google's tokeninfo endpoint
+ * Token can come from: URL parameter (GET) or POST body
+ * @param {Object} e - The event object from doGet/doPost
  */
-function checkAuthorization() {
-  var email = Session.getActiveUser().getEmail();
+function checkAuthorization(e) {
+  var email = null;
+  var token = null;
+
+  // Try to get token from URL parameter (for GET requests)
+  if (e && e.parameter && e.parameter.token) {
+    token = e.parameter.token;
+  }
+
+  // Try to get token from POST body (for POST requests)
+  if (!token && e && e.postData && e.postData.contents) {
+    try {
+      var postBody = JSON.parse(e.postData.contents);
+      if (postBody.token) {
+        token = postBody.token;
+      }
+    } catch (err) {
+      // Not JSON or no token in body
+    }
+  }
+
+  // Validate token with Google's tokeninfo endpoint
+  if (token) {
+    try {
+      var response = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?access_token=' + token, {
+        muteHttpExceptions: true
+      });
+      var statusCode = response.getResponseCode();
+      if (statusCode === 200) {
+        var tokenInfo = JSON.parse(response.getContentText());
+        email = tokenInfo.email;
+        Logger.log('Token validated for: ' + email);
+      } else {
+        Logger.log('Token validation failed with status: ' + statusCode);
+      }
+    } catch (err) {
+      Logger.log('Token validation error: ' + err.message);
+    }
+  }
+
+  // Fallback: try Session.getActiveUser() (works when user directly visits the web app)
+  if (!email) {
+    try {
+      email = Session.getActiveUser().getEmail();
+      if (email) {
+        Logger.log('Got email from Session: ' + email);
+      }
+    } catch (err) {
+      Logger.log('Session.getActiveUser error: ' + err.message);
+    }
+  }
 
   if (!email) {
     return {
       authorized: false,
-      message: 'Could not determine user email. Ensure you are signed in with a Google account.'
+      message: 'Could not determine user email. Please sign in again.'
     };
   }
 

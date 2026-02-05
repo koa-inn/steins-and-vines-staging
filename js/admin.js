@@ -248,15 +248,15 @@
   /**
    * Call the secure Admin API (server-side auth validation)
    * Falls back to direct Sheets API if ADMIN_API_URL is not configured
+   * Note: Token is passed as URL parameter because GAS web apps can't read Authorization headers
    */
   function adminApiGet(action) {
     if (!SHEETS_CONFIG.ADMIN_API_URL) {
       return Promise.reject(new Error('Admin API not configured'));
     }
-    var url = SHEETS_CONFIG.ADMIN_API_URL + '?action=' + encodeURIComponent(action);
+    var url = SHEETS_CONFIG.ADMIN_API_URL + '?action=' + encodeURIComponent(action) + '&token=' + encodeURIComponent(accessToken);
     return fetch(url, {
-      method: 'GET',
-      headers: { Authorization: 'Bearer ' + accessToken }
+      method: 'GET'
     }).then(function (res) {
       return res.json();
     }).then(function (data) {
@@ -272,11 +272,11 @@
       return Promise.reject(new Error('Admin API not configured'));
     }
     payload.action = action;
+    payload.token = accessToken;
     return fetch(SHEETS_CONFIG.ADMIN_API_URL, {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer ' + accessToken,
-        'Content-Type': 'application/json'
+        'Content-Type': 'text/plain' // Use text/plain to avoid CORS preflight
       },
       body: JSON.stringify(payload)
     }).then(function (res) {
