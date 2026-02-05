@@ -169,10 +169,28 @@ small, .text-small {
 
 /* ===== Hero ===== */
 .hero {
+  position: relative;
   background-color: var(--color-green);
   color: var(--color-cream);
   text-align: center;
   padding: 6rem 0;
+  overflow: hidden;
+}
+
+.hero-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  z-index: 0;
+}
+
+.hero .container {
+  position: relative;
+  z-index: 1;
 }
 
 .hero h1 {
@@ -222,6 +240,13 @@ small, .text-small {
   border-color: var(--color-green);
   color: var(--color-cream);
   text-decoration: none;
+}
+
+.btn:disabled,
+.btn-loading {
+  opacity: 0.7;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .btn-secondary {
@@ -500,7 +525,7 @@ small, .text-small {
   position: absolute;
 }
 
-/* Loading skeleton */
+/* Loading skeleton - mimics product card layout */
 .promo-loading-skeleton {
   display: flex;
   justify-content: center;
@@ -511,21 +536,87 @@ small, .text-small {
 .skeleton-card {
   width: 100%;
   max-width: 340px;
-  height: 380px;
+  padding: 1.5rem;
+  background: var(--color-cream);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.skeleton-element {
   background: linear-gradient(
     110deg,
-    rgba(229, 222, 193, 0.6) 8%,
-    rgba(229, 222, 193, 0.9) 18%,
-    rgba(229, 222, 193, 0.6) 33%
+    rgba(200, 193, 163, 0.4) 8%,
+    rgba(200, 193, 163, 0.7) 18%,
+    rgba(200, 193, 163, 0.4) 33%
   );
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.2s ease-in-out infinite;
-  border-radius: 8px;
+  border-radius: 4px;
+}
+
+.skeleton-brand {
+  width: 40%;
+  height: 14px;
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-title {
+  width: 80%;
+  height: 22px;
+  margin-bottom: 0.75rem;
+}
+
+.skeleton-detail {
+  width: 60%;
+  height: 14px;
+  margin-bottom: 1rem;
+}
+
+.skeleton-badges {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.skeleton-badge {
+  width: 70px;
+  height: 24px;
+  border-radius: 12px;
+}
+
+.skeleton-prices {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.skeleton-price-box {
+  flex: 1;
+  height: 70px;
+  border-radius: 6px;
+}
+
+.skeleton-notes {
+  width: 100%;
+  height: 36px;
+  border-radius: 4px;
 }
 
 @keyframes skeleton-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* Catalog grid skeleton */
+.catalog-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+  padding: 1rem 0;
+}
+
+.catalog-skeleton-grid .skeleton-card {
+  max-width: none;
 }
 
 .promo-carousel-nav {

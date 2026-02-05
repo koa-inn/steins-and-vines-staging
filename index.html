@@ -7,9 +7,47 @@
   <title>Steins &amp; Vines | U-Brew &amp; U-Vin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="preconnect" href="https://docs.google.com" crossorigin>
+  <link rel="preload" as="image" href="images/hero-desktop.webp" imagesrcset="images/hero-mobile.webp 600w, images/hero-desktop.webp 1920w" imagesizes="100vw">
   <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="icon" href="images/Icon_wine.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css">
+  <!-- Critical CSS for above-the-fold content (header + hero) -->
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--color-cream:#e5dec1;--color-green:#4a6f4b;--color-burgundy:#370e13;--color-text:#2c2c2c;--font-display:'Playfair Display',Georgia,serif;--font-body:'Lato','Helvetica Neue',Arial,sans-serif;--max-width:1100px}
+    html{font-size:16px}
+    body{font-family:var(--font-body);color:var(--color-text);background-color:var(--color-cream);line-height:1.6;min-height:100vh;display:flex;flex-direction:column}
+    img{max-width:100%;height:auto;display:block}
+    a{color:var(--color-burgundy);text-decoration:none}
+    .container{width:90%;max-width:var(--max-width);margin:0 auto}
+    h1{font-family:var(--font-display);font-size:48px;font-weight:700;line-height:1.2}
+    .site-header{background-color:var(--color-cream);padding:1rem 0;border-bottom:2px solid var(--color-green);position:sticky;top:0;z-index:200}
+    .site-header .container{display:flex;justify-content:space-between;align-items:center}
+    .logo{display:block;line-height:0}
+    .logo img{height:70px;width:auto}
+    .nav-toggle{display:none;background:none;border:none;color:var(--color-green);font-size:1.5rem;cursor:pointer}
+    .nav-list{list-style:none;display:flex;gap:1.5rem}
+    .nav-list a{font-family:var(--font-body);font-weight:700;font-size:14px;color:var(--color-green);padding-bottom:4px;border-bottom:2px solid transparent}
+    .nav-list a.active{color:var(--color-burgundy);border-bottom-color:var(--color-burgundy)}
+    .hero{position:relative;background-color:var(--color-green);color:var(--color-cream);text-align:center;padding:6rem 0;overflow:hidden}
+    .hero-bg{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:center;z-index:0}
+    .hero .container{position:relative;z-index:1}
+    .hero h1{color:var(--color-cream);margin-bottom:.75rem;display:flex;align-items:center;justify-content:center;gap:2rem}
+    .hero p{font-size:1.15rem;margin-bottom:1.5rem;margin-left:auto;margin-right:auto;opacity:.9}
+    .title-icon{height:48px;width:48px;opacity:.55}
+    .btn{display:inline-block;background-color:var(--color-burgundy);color:var(--color-cream);padding:12px 24px;border:2px solid var(--color-burgundy);border-radius:4px;font-family:var(--font-body);font-size:14px;font-weight:700;cursor:pointer}
+    @media(max-width:768px){
+      h1{font-size:32px}
+      .nav-toggle{display:block}
+      .nav-list{display:none;flex-direction:column;position:fixed;top:80px;left:0;right:0;background-color:var(--color-cream);padding:1rem 0;text-align:center;border-bottom:1px solid #77462d;z-index:199}
+      .nav-list.open{display:flex}
+      .hero{padding:4rem 0}
+      .title-icon{height:40px;width:40px}
+    }
+    @media(max-width:480px){.title-icon{display:none}}
+  </style>
+  <link rel="stylesheet" href="css/styles.min.css">
 </head>
 <body data-page="home">
 
@@ -31,6 +69,15 @@
 
   <main>
     <section class="hero">
+      <img
+        class="hero-bg"
+        src="images/hero-desktop.webp"
+        srcset="images/hero-mobile.webp 600w, images/hero-desktop.webp 1920w"
+        sizes="100vw"
+        alt=""
+        aria-hidden="true"
+        loading="eager"
+      >
       <div class="container">
         <h1>
           <img src="images/Icon_offwhite.svg" alt="" aria-hidden="true" class="title-icon">
@@ -129,7 +176,7 @@
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
         </a>
       </div>
-      <div class="footer-hours" id="footer-hours"></div>
+      <div class="footer-hours" id="footer-hours"><span class="footer-hours-day closed"><span class="footer-hours-abbr">Sun</span> Closed</span><span class="footer-hours-day closed"><span class="footer-hours-abbr">Mon</span> Closed</span><span class="footer-hours-day"><span class="footer-hours-abbr">Tue</span> 10AM–4PM</span><span class="footer-hours-day"><span class="footer-hours-abbr">Wed</span> 10AM–4PM</span><span class="footer-hours-day"><span class="footer-hours-abbr">Thu</span> 12PM–7PM</span><span class="footer-hours-day"><span class="footer-hours-abbr">Fri</span> 10AM–4PM</span><span class="footer-hours-day"><span class="footer-hours-abbr">Sat</span> 10AM–4PM</span></div>
       <div class="footer-address">
         <a href="https://maps.app.goo.gl/ZXnczQAtsWeiYTqW7" target="_blank" rel="noopener">
           11-38918 Progress Way<br>
@@ -145,7 +192,7 @@
   <!-- Hidden iframe for beer waitlist form submission -->
   <iframe name="beer-waitlist-iframe" id="beer-waitlist-iframe" style="display:none;"></iframe>
 
-  <script src="js/sheets-config.js"></script>
-  <script src="js/main.js"></script>
+  <script src="js/sheets-config.js" defer></script>
+  <script src="js/main.min.js" defer></script>
 </body>
 </html>

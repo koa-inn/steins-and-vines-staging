@@ -246,6 +246,24 @@
   // ===== Admin API Helper =====
 
   /**
+   * Fetch with automatic retry on failure (e.g., timeout)
+   * Waits 1 second before retrying once
+   */
+  function fetchWithRetry(url, options, retries) {
+    if (retries === undefined) retries = 1;
+    return fetch(url, options).catch(function (err) {
+      if (retries > 0) {
+        return new Promise(function (resolve) {
+          setTimeout(resolve, 1000);
+        }).then(function () {
+          return fetchWithRetry(url, options, retries - 1);
+        });
+      }
+      throw err;
+    });
+  }
+
+  /**
    * Call the secure Admin API (server-side auth validation)
    * Falls back to direct Sheets API if ADMIN_API_URL is not configured
    * Note: Token is passed as URL parameter because GAS web apps can't read Authorization headers
@@ -255,7 +273,7 @@
       return Promise.reject(new Error('Admin API not configured'));
     }
     var url = SHEETS_CONFIG.ADMIN_API_URL + '?action=' + encodeURIComponent(action) + '&token=' + encodeURIComponent(accessToken);
-    return fetch(url, {
+    return fetchWithRetry(url, {
       method: 'GET'
     }).then(function (res) {
       return res.json();
@@ -273,7 +291,7 @@
     }
     payload.action = action;
     payload.token = accessToken;
-    return fetch(SHEETS_CONFIG.ADMIN_API_URL, {
+    return fetchWithRetry(SHEETS_CONFIG.ADMIN_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/plain' // Use text/plain to avoid CORS preflight
@@ -294,7 +312,7 @@
   function sheetsGet(range) {
     var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
       SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range);
-    return fetch(url, {
+    return fetchWithRetry(url, {
       headers: { Authorization: 'Bearer ' + accessToken }
     }).then(function (res) {
       if (!res.ok) throw new Error('Sheets API error: ' + res.status);
@@ -319,7 +337,7 @@
       var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
         SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range) +
         '?valueInputOption=USER_ENTERED';
-      return fetch(url, {
+      return fetchWithRetry(url, {
         method: 'PUT',
         headers: {
           Authorization: 'Bearer ' + accessToken,
@@ -350,7 +368,7 @@
       var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
         SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range) +
         ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
-      return fetch(url, {
+      return fetchWithRetry(url, {
         method: 'POST',
         headers: {
           Authorization: 'Bearer ' + accessToken,
@@ -883,7 +901,13 @@
     }
 
     var kitSearch = document.getElementById('kit-search');
-    if (kitSearch) kitSearch.addEventListener('input', renderKitsTab);
+    var kitSearchTimer;
+    if (kitSearch) {
+      kitSearch.addEventListener('input', function () {
+        clearTimeout(kitSearchTimer);
+        kitSearchTimer = setTimeout(renderKitsTab, 300);
+      });
+    }
 
     var kitBrandFilter = document.getElementById('kit-brand-filter');
     if (kitBrandFilter) kitBrandFilter.addEventListener('change', renderKitsTab);
@@ -2304,7 +2328,13 @@
 
   function initOrderFilterListeners() {
     var searchInput = document.getElementById('order-search');
-    if (searchInput) searchInput.addEventListener('input', renderOrderTab);
+    var orderSearchTimer;
+    if (searchInput) {
+      searchInput.addEventListener('input', function () {
+        clearTimeout(orderSearchTimer);
+        orderSearchTimer = setTimeout(renderOrderTab, 300);
+      });
+    }
 
     var brandFilter = document.getElementById('order-brand-filter');
     if (brandFilter) brandFilter.addEventListener('change', renderOrderTab);
@@ -3923,42 +3953,47 @@
         });
       }
 
-      // Product search
+      // Product search (debounced)
       var searchInput = document.getElementById('homepage-kit-search');
       var dropdown = document.getElementById('homepage-kit-dropdown');
+      var homepageSearchTimer;
       if (searchInput && dropdown) {
         searchInput.addEventListener('input', function () {
-          var query = this.value.toLowerCase().trim();
-          if (query.length < 2) {
-            dropdown.style.display = 'none';
-            return;
-          }
-          var matches = kitsData.filter(function (k) {
-            return (k.name || '').toLowerCase().indexOf(query) !== -1 ||
-                   (k.brand || '').toLowerCase().indexOf(query) !== -1 ||
-                   (k.sku || '').toLowerCase().indexOf(query) !== -1;
-          }).slice(0, 10);
-
-          if (matches.length === 0) {
-            dropdown.style.display = 'none';
-            return;
-          }
-
-          dropdown.innerHTML = '';
-          matches.forEach(function (kit) {
-            var opt = document.createElement('div');
-            opt.className = 'admin-kit-search-option';
-            opt.innerHTML = '<strong>' + escapeHTML(kit.brand || '') + '</strong> ' +
-                            escapeHTML(kit.name || '') +
-                            ' <span style="opacity:0.6">(' + escapeHTML(kit.sku || '') + ')</span>';
-            opt.addEventListener('click', function () {
-              homepageSelectedProduct = kit;
-              searchInput.value = (kit.brand || '') + ' ' + (kit.name || '');
+          var self = this;
+          clearTimeout(homepageSearchTimer);
+          homepageSearchTimer = setTimeout(function () {
+            var query = self.value.toLowerCase().trim();
+            if (query.length < 2) {
               dropdown.style.display = 'none';
+              return;
+            }
+            var matches = kitsData.filter(function (k) {
+              return (k.name || '').toLowerCase().indexOf(query) !== -1 ||
+                     (k.brand || '').toLowerCase().indexOf(query) !== -1 ||
+                     (k.sku || '').toLowerCase().indexOf(query) !== -1;
+            }).slice(0, 10);
+
+            if (matches.length === 0) {
+              dropdown.style.display = 'none';
+              return;
+            }
+
+            dropdown.innerHTML = '';
+            matches.forEach(function (kit) {
+              var opt = document.createElement('div');
+              opt.className = 'admin-kit-search-option';
+              opt.innerHTML = '<strong>' + escapeHTML(kit.brand || '') + '</strong> ' +
+                              escapeHTML(kit.name || '') +
+                              ' <span style="opacity:0.6">(' + escapeHTML(kit.sku || '') + ')</span>';
+              opt.addEventListener('click', function () {
+                homepageSelectedProduct = kit;
+                searchInput.value = (kit.brand || '') + ' ' + (kit.name || '');
+                dropdown.style.display = 'none';
+              });
+              dropdown.appendChild(opt);
             });
-            dropdown.appendChild(opt);
-          });
-          dropdown.style.display = 'block';
+            dropdown.style.display = 'block';
+          }, 300);
         });
 
         searchInput.addEventListener('blur', function () {

@@ -469,9 +469,13 @@ function loadFeaturedProducts() {
   var productsContainer = document.getElementById('promo-featured-products');
   if (!promoSection) return;
 
-  // Show loading skeleton immediately
+  // Show loading skeleton immediately (mimics card layout)
   if (productsContainer) {
-    productsContainer.innerHTML = '<div class="promo-loading-skeleton"><div class="skeleton-card"></div></div>';
+    var skeletonWrap = document.createElement('div');
+    skeletonWrap.className = 'promo-loading-skeleton';
+    skeletonWrap.appendChild(createSkeletonCard());
+    productsContainer.innerHTML = '';
+    productsContainer.appendChild(skeletonWrap);
   }
 
   var csvUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.PUBLISHED_CSV_URL)
@@ -958,6 +962,36 @@ function fetchCSV(url) {
   });
 }
 
+// Skeleton loading helper — creates placeholder cards that mimic real layout
+function createSkeletonCard() {
+  var card = document.createElement('div');
+  card.className = 'skeleton-card';
+  card.innerHTML =
+    '<div class="skeleton-element skeleton-brand"></div>' +
+    '<div class="skeleton-element skeleton-title"></div>' +
+    '<div class="skeleton-element skeleton-detail"></div>' +
+    '<div class="skeleton-badges">' +
+      '<div class="skeleton-element skeleton-badge"></div>' +
+      '<div class="skeleton-element skeleton-badge"></div>' +
+    '</div>' +
+    '<div class="skeleton-prices">' +
+      '<div class="skeleton-element skeleton-price-box"></div>' +
+      '<div class="skeleton-element skeleton-price-box"></div>' +
+    '</div>' +
+    '<div class="skeleton-element skeleton-notes"></div>';
+  return card;
+}
+
+function showCatalogSkeletons(container, count) {
+  if (!container) return;
+  var grid = document.createElement('div');
+  grid.className = 'catalog-skeleton-grid';
+  for (var i = 0; i < count; i++) {
+    grid.appendChild(createSkeletonCard());
+  }
+  container.appendChild(grid);
+}
+
 // Reference to kits applyFilters so tab switcher can re-render
 var applyKitsFilters = null;
 
@@ -993,6 +1027,12 @@ function loadProducts() {
 
   var cached = getCachedCSV();
   var csvPromise;
+
+  // Show skeleton loading if no cached data (first load)
+  var catalog = document.getElementById('product-catalog');
+  if (!cached && catalog) {
+    showCatalogSkeletons(catalog, 6);
+  }
 
   if (cached) {
     // Serve cached data immediately
@@ -1298,8 +1338,8 @@ function loadProducts() {
     var catalog = document.getElementById('product-catalog');
     if (!catalog) return;
 
-    // Remove existing sections, dividers, and no-results message, keep controls and noscript
-    var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider');
+    // Remove existing sections, dividers, skeletons, and no-results message
+    var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider, .catalog-skeleton-grid');
     sections.forEach(function (el) { el.parentNode.removeChild(el); });
 
     if (rows.length === 0) {
@@ -1575,7 +1615,7 @@ function initProductTabs() {
     // Clear rendered catalog sections
     var catalog = document.getElementById('product-catalog');
     if (catalog) {
-      var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider');
+      var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider, .catalog-skeleton-grid');
       sections.forEach(function (el) { el.parentNode.removeChild(el); });
     }
 
@@ -1768,7 +1808,7 @@ function renderIngredients() {
   if (!catalog) return;
 
   // Clear existing rendered sections
-  var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider');
+  var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider, .catalog-skeleton-grid');
   sections.forEach(function (el) { el.parentNode.removeChild(el); });
 
   var searchInput = document.getElementById('ingredient-search');
@@ -2008,7 +2048,7 @@ function renderServices() {
   var catalog = document.getElementById('product-catalog');
   if (!catalog) return;
 
-  var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider');
+  var sections = catalog.querySelectorAll('.catalog-section, .catalog-no-results, .catalog-divider, .catalog-skeleton-grid');
   sections.forEach(function (el) { el.parentNode.removeChild(el); });
 
   var searchInput = document.getElementById('service-search');
@@ -2934,6 +2974,15 @@ function setupReservationForm() {
       return item.name + (q > 1 ? ' x' + q : '');
     }).join(', ');
     var timeslot = selectedTimeslot.value;
+
+    // Disable submit button and show processing state to prevent double-submissions
+    var submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.setAttribute('data-original-text', submitBtn.textContent);
+      submitBtn.textContent = 'Processing...';
+      submitBtn.classList.add('btn-loading');
+    }
 
     // Build hidden form for Google Form submission
     var hiddenForm = document.createElement('form');
