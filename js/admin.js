@@ -267,12 +267,19 @@
    * Call the secure Admin API (server-side auth validation)
    * Falls back to direct Sheets API if ADMIN_API_URL is not configured
    * Note: Token is passed as URL parameter because GAS web apps can't read Authorization headers
+   * @param {string} action - The action name (e.g., 'get_reservations')
+   * @param {object} params - Optional additional URL parameters
    */
-  function adminApiGet(action) {
+  function adminApiGet(action, params) {
     if (!SHEETS_CONFIG.ADMIN_API_URL) {
       return Promise.reject(new Error('Admin API not configured'));
     }
     var url = SHEETS_CONFIG.ADMIN_API_URL + '?action=' + encodeURIComponent(action) + '&token=' + encodeURIComponent(accessToken);
+    if (params) {
+      Object.keys(params).forEach(function (key) {
+        url += '&' + encodeURIComponent(key) + '=' + encodeURIComponent(params[key]);
+      });
+    }
     return fetchWithRetry(url, {
       method: 'GET'
     }).then(function (res) {
@@ -479,12 +486,13 @@
       return Promise.resolve({ data: { values: [] } });
     }
 
-    var params = 'get_reservations' +
-      '&limit=' + reservationsPagination.limit +
-      '&offset=' + reservationsPagination.offset +
-      '&status=' + encodeURIComponent(reservationsPagination.currentFilter);
+    var params = {
+      limit: reservationsPagination.limit,
+      offset: reservationsPagination.offset,
+      status: reservationsPagination.currentFilter
+    };
 
-    return adminApiGet(params).then(function (result) {
+    return adminApiGet('get_reservations', params).then(function (result) {
       // Parse the paginated data
       parseSheetData(result.data, 'reservations');
 
