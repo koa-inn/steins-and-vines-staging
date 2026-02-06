@@ -666,7 +666,7 @@ function loadFeaturedProducts() {
     .then(function (results) {
       var result = results[0];
       var productsCsv = results[1];
-      var config = { 'promo-news': [], 'promo-featured-note': '', 'promo-featured-skus': [] };
+      var config = { 'promo-news': [], 'promo-featured-note': '', 'promo-featured-skus': [], 'instafeed-url': '' };
 
       if (result && result.isJson) {
         // Fallback JSON format
@@ -680,10 +680,13 @@ function loadFeaturedProducts() {
             var type = (values[0] || '').toLowerCase().trim();
             if (type === 'news') {
               config['promo-news'].push({
+                type: 'news',
                 date: (values[1] || '').trim(),
                 title: (values[2] || '').trim(),
                 text: (values[3] || '').trim()
               });
+            } else if (type === 'instafeed') {
+              config['instafeed-url'] = (values[3] || '').trim();
             } else if (type === 'note') {
               config['promo-featured-note'] = (values[3] || '').trim();
             } else if (type === 'featured') {
@@ -694,9 +697,23 @@ function loadFeaturedProducts() {
         }
       }
 
+      // Sort news items by date descending
+      config['promo-news'].sort(function (a, b) {
+        return new Date(b.date) - new Date(a.date);
+      });
+
       // Render news items
       if (newsContainer && config['promo-news'] && config['promo-news'].length > 0) {
         renderNews(config['promo-news']);
+      }
+
+      // Render Instagram feed widget
+      if (newsContainer && config['instafeed-url']) {
+        var feedHtml = '<div class="promo-instagram-feed">';
+        feedHtml += '<h3>Follow Us on Instagram</h3>';
+        feedHtml += '<iframe src="' + escapeHTMLPromo(config['instafeed-url']) + '" frameborder="0" scrolling="no" allowtransparency="true" loading="lazy" class="promo-instagram-feed-iframe"></iframe>';
+        feedHtml += '</div>';
+        newsContainer.innerHTML += feedHtml;
       }
 
       // Render featured note
@@ -978,14 +995,6 @@ function loadFeaturedProducts() {
       body.appendChild(abv);
     }
 
-    if (product.tasting_notes || product.sku) {
-      body.appendChild(buildLabelNotesToggle(product));
-    }
-
-    var spacer = document.createElement('div');
-    spacer.className = 'notes-spacer';
-    body.appendChild(spacer);
-
     card.appendChild(body);
 
     var instore = (product.retail_instore || '').trim();
@@ -1059,14 +1068,6 @@ function loadFeaturedProducts() {
       abv.textContent = product.abv + (product.abv.toLowerCase().indexOf('abv') === -1 ? ' ABV' : '');
       body.appendChild(abv);
     }
-
-    if (product.tasting_notes || product.sku) {
-      body.appendChild(buildLabelNotesToggle(product));
-    }
-
-    var spacer = document.createElement('div');
-    spacer.className = 'notes-spacer';
-    body.appendChild(spacer);
 
     card.appendChild(body);
 
@@ -1362,7 +1363,7 @@ function loadProducts() {
       buildFilterRow('filter-type', 'type', 'Type:');
       buildFilterRow('filter-brand', 'brand', 'Brand:');
       buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
-      buildFilterRow('filter-time', 'time', 'Brew Time:');
+      buildFilterRow('filter-time', 'time', 'Production Time:');
       buildSaleFilter();
       applyFilters();
 

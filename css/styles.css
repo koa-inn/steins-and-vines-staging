@@ -453,6 +453,26 @@ small, .text-small {
   margin: 0;
 }
 
+/* Instagram feed widget */
+.promo-instagram-feed {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+.promo-instagram-feed h3 {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--color-burgundy);
+  margin-bottom: 0.75rem;
+}
+
+.promo-instagram-feed-iframe {
+  width: 100%;
+  min-height: 600px;
+  border: none;
+  border-radius: 4px;
+}
+
 /* Featured column */
 .promo-featured {
   padding-left: 1rem;
@@ -494,7 +514,7 @@ small, .text-small {
 
 .promo-featured-products {
   display: flex;
-  min-height: 420px;
+  min-height: 300px;
 }
 
 .promo-featured-products .product-card,
@@ -536,7 +556,7 @@ small, .text-small {
 .promo-loading-skeleton {
   display: flex;
   justify-content: center;
-  min-height: 420px;
+  min-height: 300px;
   align-items: center;
 }
 
@@ -648,9 +668,9 @@ small, .text-small {
 }
 
 .promo-carousel-btn:hover {
-  background: var(--color-green);
+  background: var(--color-burgundy);
   color: var(--color-white);
-  border-color: var(--color-green);
+  border-color: var(--color-burgundy);
 }
 
 .promo-carousel-dots {
@@ -669,8 +689,8 @@ small, .text-small {
 }
 
 .promo-carousel-dot.active {
-  background: var(--color-green);
-  border-color: var(--color-green);
+  background: var(--color-burgundy);
+  border-color: var(--color-burgundy);
 }
 
 /* Mobile responsive */
@@ -1242,10 +1262,13 @@ small, .text-small {
 .catalog-filter-row {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
+  justify-content: flex-start;
+  align-items: baseline;
   gap: 0.5rem;
   margin-bottom: 0.25rem;
+  width: 40rem;
+  max-width: 100%;
+  padding-left: 8.5rem;
 }
 
 .catalog-filter-label {
@@ -1253,6 +1276,10 @@ small, .text-small {
   font-size: 14px;
   flex-shrink: 0;
   color: var(--color-green);
+  width: 8rem;
+  text-align: right;
+  margin-left: -8.5rem;
+  white-space: nowrap;
 }
 
 .catalog-sort {
@@ -3538,8 +3565,14 @@ small, .text-small {
     max-width: none;
   }
 
+  .catalog-filter-row {
+    padding-left: 0;
+  }
+
   .catalog-filter-label {
     width: 100%;
+    margin-left: 0;
+    text-align: left;
   }
 
   .catalog-sort {
@@ -3871,7 +3904,7 @@ small, .text-small {
   font-family: var(--font-display);
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--color-green);
+  color: var(--color-burgundy);
   line-height: 1.2;
   margin-bottom: 0.35rem;
 }
@@ -3916,7 +3949,7 @@ small, .text-small {
 .label-wine .price-col { flex: 1; padding: 0.6rem 0.5rem; text-align: center; }
 .label-wine .price-col + .price-col { border-left: 1px solid var(--color-brown); }
 .label-wine .price-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-brown); font-weight: 700; }
-.label-wine .price-value { font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--color-green); }
+.label-wine .price-value { font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--color-burgundy); }
 .label-wine .reserve-link {
   display: block; width: 100%;
   background: var(--color-cream);
@@ -3966,7 +3999,7 @@ small, .text-small {
 }
 .label-beer .beer-name {
   font-family: var(--font-condensed); font-size: 1.6rem; font-weight: 700;
-  text-transform: uppercase; color: var(--color-green); line-height: 1.1; margin-bottom: 0.2rem;
+  text-transform: uppercase; color: var(--color-burgundy); line-height: 1.1; margin-bottom: 0.2rem;
 }
 .label-beer .brand { font-size: 11px; font-weight: 700; color: #96792e; letter-spacing: 0.1em; margin-bottom: 0.25rem; }
 .label-beer .time { font-size: 11px; color: #777; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.35rem; }
@@ -3979,7 +4012,7 @@ small, .text-small {
 .label-beer .price-col { flex: 1; padding: 0.6rem 0.5rem; text-align: center; }
 .label-beer .price-col + .price-col { border-left: 1px solid rgba(184,150,62,0.3); }
 .label-beer .price-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #96792e; font-weight: 700; }
-.label-beer .price-value { font-family: var(--font-condensed); font-size: 1.1rem; font-weight: 600; color: var(--color-green); }
+.label-beer .price-value { font-family: var(--font-condensed); font-size: 1.1rem; font-weight: 600; color: var(--color-burgundy); }
 .label-beer .reserve-link {
   display: block; width: 100%;
   background: rgba(184,150,62,0.06);
@@ -4006,5 +4039,7 @@ small, .text-small {
 .label-beer[class*="tint-"] .notes-toggle { color: var(--tint); }
 .label-beer[class*="tint-"] .notes-toggle .chevron { color: var(--tint); }
 .label-beer[class*="tint-"] .price-label { color: var(--tint); }
+.label-beer[class*="tint-"] .beer-name { color: var(--tint); }
+.label-beer[class*="tint-"] .price-value { color: var(--tint); }
 .label-beer[class*="tint-"] .price-footer { border-top-color: var(--tint-border); }
 .label-beer[class*="tint-"] .price-col + .price-col { border-left-color: var(--tint-border); opacity: 0.3; }

@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-06T06:03:48.667Z';
+  var BUILD_TIMESTAMP = '2026-02-06T14:19:45.552Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -1711,6 +1711,7 @@
     'Brand': 'brand',
     'Name': 'name',
     'Type': 'type',
+    'Tint': 'tint',
     'Stock': 'stock',
     'On Hold': 'on_hold',
     'On Order': 'on_order',
@@ -1835,6 +1836,7 @@
       appendTd(tr, kit.brand || '');
       appendTd(tr, kit.name || '');
       appendTd(tr, kit.type || '');
+      appendTd(tr, kit.tint || '');
 
       // Editable stock cell
       var stockTd = document.createElement('td');
@@ -1872,8 +1874,8 @@
       availTd.appendChild(availBadge);
       tr.appendChild(availTd);
 
-      appendTd(tr, kit.retail_instore || '');
-      appendTd(tr, kit.retail_kit || '');
+      appendTd(tr, kit.retail_instore ? '$' + kit.retail_instore.replace('$', '') : '');
+      appendTd(tr, kit.retail_kit ? '$' + kit.retail_kit.replace('$', '') : '');
 
       // Actions column
       var actionsTd = document.createElement('td');
@@ -3897,6 +3899,7 @@
 
   var homepageConfig = {
     'promo-news': [],
+    'instafeed-url': '',
     'promo-featured-note': '',
     'promo-featured-skus': [],
     'social-instagram': '',
@@ -3940,6 +3943,8 @@
             if (sku) {
               homepageConfig['promo-featured-skus'].push(sku);
             }
+          } else if (type === 'instafeed') {
+            homepageConfig['instafeed-url'] = row[3] || '';
           } else if (type === 'social') {
             var platform = (row[2] || '').toLowerCase().trim();
             var url = row[4] || '';
@@ -3961,6 +3966,8 @@
         renderHomepageFeaturedList();
         var noteField = document.getElementById('homepage-featured-note');
         if (noteField) noteField.value = homepageConfig['promo-featured-note'] || '';
+        var feedField = document.getElementById('homepage-instafeed-url');
+        if (feedField) feedField.value = homepageConfig['instafeed-url'] || '';
         var igField = document.getElementById('homepage-social-instagram');
         if (igField) igField.value = homepageConfig['social-instagram'] || '';
         var fbField = document.getElementById('homepage-social-facebook');
@@ -4080,6 +4087,11 @@
       rows.push(['news', news.date || '', news.title || '', news.text || '', '']);
     });
 
+    // Add Instagram feed URL
+    if (homepageConfig['instafeed-url']) {
+      rows.push(['instafeed', '', '', homepageConfig['instafeed-url'], '']);
+    }
+
     // Add featured note
     if (homepageConfig['promo-featured-note']) {
       rows.push(['note', '', '', homepageConfig['promo-featured-note'], '']);
@@ -4167,6 +4179,12 @@
       });
     }
     homepageConfig['promo-news'] = newsItems;
+
+    // Collect Instagram feed URL
+    var feedField = document.getElementById('homepage-instafeed-url');
+    if (feedField) {
+      homepageConfig['instafeed-url'] = sanitizeInput(feedField.value || '');
+    }
 
     // Collect featured note (sanitize to prevent XSS)
     var noteField = document.getElementById('homepage-featured-note');
