@@ -5,7 +5,8 @@
   "scripts": {
     "minify:css": "cleancss -o css/styles.min.css css/styles.css",
     "minify:js": "terser js/main.js -o js/main.min.js -c -m && terser js/admin.js -o js/admin.min.js -c -m",
-    "build": "npm run minify:css && npm run minify:js",
+    "stamp": "node -e \"const fs=require('fs');let f=fs.readFileSync('js/admin.js','utf8');f=f.replace(/BUILD_TIMESTAMP = '[^']+'/,'BUILD_TIMESTAMP = \\''+new Date().toISOString()+'\\'');fs.writeFileSync('js/admin.js',f);console.log('Timestamp updated');\"",
+    "build": "npm run stamp && npm run minify:css && npm run minify:js",
     "watch": "echo 'Run build after making changes'"
   },
   "devDependencies": {
