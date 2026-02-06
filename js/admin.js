@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-06T04:28:14.069Z';
+  var BUILD_TIMESTAMP = '2026-02-06T04:37:56.687Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -556,11 +556,11 @@
     renderScheduleTab();
     populateKitBrandFilter();
     populateOrderKitSelect();
+    // Load order items from sheet's on_order column into localStorage
+    loadOrderFromSheet();
     populateOrderBrandFilter();
     renderOrderTab();
     loadHomepageData();
-    var orderSkus = getOrder().map(function (item) { return item.sku; });
-    if (orderSkus.length > 0) syncOnOrder(orderSkus);
   }
 
   // ===== Dashboard Overview =====
@@ -2384,6 +2384,34 @@
 
   function saveOrder(items) {
     localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(items));
+  }
+
+  /**
+   * Load order items from the sheet's on_order column into localStorage
+   * Called after kitsData is loaded to sync sheet -> localStorage
+   */
+  function loadOrderFromSheet() {
+    if (kitsData.length === 0) return;
+
+    var order = [];
+    kitsData.forEach(function (kit) {
+      var onOrder = parseInt(kit.on_order, 10) || 0;
+      if (onOrder > 0 && kit.sku) {
+        order.push({
+          sku: kit.sku,
+          brand: kit.brand || '',
+          name: kit.name || '',
+          qty: onOrder
+        });
+      }
+    });
+
+    if (order.length > 0) {
+      saveOrder(order);
+      populateOrderBrandFilter();
+      renderOrderTab();
+      console.log('[Admin] Loaded ' + order.length + ' item(s) from sheet on_order column');
+    }
   }
 
   var MULTIPLES_OF_TWO_BRANDS = ['Heritage Estates', 'Orchard Breezin\''];
