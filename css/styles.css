@@ -15,6 +15,7 @@
   --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
   --font-body: 'Lato', 'Helvetica Neue', Arial, sans-serif;
   --max-width: 1100px;
+  --font-condensed: 'Oswald', 'Impact', sans-serif;
 }
 
 html {
@@ -496,7 +497,9 @@ small, .text-small {
   min-height: 420px;
 }
 
-.promo-featured-products .product-card {
+.promo-featured-products .product-card,
+.promo-featured-products .label-wine,
+.promo-featured-products .label-beer {
   flex: 0 0 100%;
   max-width: 340px;
   margin: 0 auto;
@@ -512,14 +515,18 @@ small, .text-small {
   pointer-events: none;
 }
 
-.promo-featured-products .product-card.promo-slide-active {
+.promo-featured-products .product-card.promo-slide-active,
+.promo-featured-products .label-wine.promo-slide-active,
+.promo-featured-products .label-beer.promo-slide-active {
   opacity: 1;
   transform: translateX(0);
   position: relative;
   pointer-events: auto;
 }
 
-.promo-featured-products .product-card.promo-slide-exit {
+.promo-featured-products .product-card.promo-slide-exit,
+.promo-featured-products .label-wine.promo-slide-exit,
+.promo-featured-products .label-beer.promo-slide-exit {
   opacity: 0;
   transform: translateX(-50px);
   position: absolute;
@@ -678,7 +685,9 @@ small, .text-small {
     padding: 0;
   }
 
-  .promo-featured-products .product-card {
+  .promo-featured-products .product-card,
+  .promo-featured-products .label-wine,
+  .promo-featured-products .label-beer {
     max-width: 100%;
   }
 }
@@ -880,7 +889,9 @@ small, .text-small {
   transition: border-color 0.2s ease, box-shadow 0.3s ease;
 }
 
-.product-card.highlight {
+.product-card.highlight,
+.label-wine.highlight,
+.label-beer.highlight {
   box-shadow: 0 0 0 4px var(--color-burgundy), 0 4px 12px rgba(0,0,0,0.2);
 }
 
@@ -3699,3 +3710,301 @@ small, .text-small {
     padding: 10px 16px;
   }
 }
+
+/* ================================================
+   SUBCATEGORY COLOR TINTS
+   ================================================ */
+
+/* Wine subcategories */
+.tint-red      { --tint: #8b2035; --tint-bg: rgba(139,32,53,0.04); --tint-border: #8b2035; }
+.tint-white    { --tint: #b8a44e; --tint-bg: rgba(184,164,78,0.04); --tint-border: #b8a44e; }
+.tint-rose     { --tint: #c27088; --tint-bg: rgba(194,112,136,0.04); --tint-border: #c27088; }
+.tint-fruit    { --tint: #9b59b6; --tint-bg: rgba(155,89,182,0.04); --tint-border: #9b59b6; }
+.tint-specialty { --tint: #c08a3e; --tint-bg: rgba(192,138,62,0.04); --tint-border: #c08a3e; }
+
+/* Beer subcategories */
+.tint-pilsner  { --tint: #c8a84e; --tint-bg: rgba(200,168,78,0.04); --tint-border: #c8a84e; }
+.tint-amber    { --tint: #c0562b; --tint-bg: rgba(192,86,43,0.04); --tint-border: #c0562b; }
+.tint-wheat    { --tint: #d4a930; --tint-bg: rgba(212,169,48,0.04); --tint-border: #d4a930; }
+.tint-ipa      { --tint: #4a8c5c; --tint-bg: rgba(74,140,92,0.04); --tint-border: #4a8c5c; }
+.tint-pale     { --tint: #5a9a6a; --tint-bg: rgba(90,154,106,0.04); --tint-border: #5a9a6a; }
+.tint-session  { --tint: #6aaa5a; --tint-bg: rgba(106,170,90,0.04); --tint-border: #6aaa5a; }
+.tint-saison   { --tint: #b8963e; --tint-bg: rgba(184,150,62,0.04); --tint-border: #b8963e; }
+.tint-lager    { --tint: #b89040; --tint-bg: rgba(184,144,64,0.04); --tint-border: #b89040; }
+.tint-stout    { --tint: #4a3728; --tint-bg: rgba(74,55,40,0.05); --tint-border: #4a3728; }
+.tint-porter   { --tint: #5a4030; --tint-bg: rgba(90,64,48,0.04); --tint-border: #5a4030; }
+.tint-redale   { --tint: #a04030; --tint-bg: rgba(160,64,48,0.04); --tint-border: #a04030; }
+.tint-brown    { --tint: #7a5a3a; --tint-bg: rgba(122,90,58,0.04); --tint-border: #7a5a3a; }
+
+/* ================================================
+   SHARED: Tasting notes toggle (label cards)
+   ================================================ */
+.notes-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  margin-bottom: 0.25rem;
+}
+.notes-toggle .chevron {
+  font-size: 8px;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.notes-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+.notes-wrap.open .notes-body {
+  max-height: 300px;
+  padding: 0.4rem 0;
+}
+.notes-image {
+  flex: 0 0 70px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.notes-image img {
+  max-width: 100%;
+  max-height: 140px;
+  object-fit: contain;
+}
+.notes-text {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+}
+.notes-wrap.open .chevron {
+  transform: rotate(180deg);
+}
+
+.abv {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+  font-weight: 400;
+  margin-bottom: 0.4rem;
+}
+
+/* Discount badge (label cards) */
+.label-wine .discount-badge,
+.label-beer .discount-badge {
+  position: absolute;
+  top: 12px;
+  right: -30px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 36px;
+  transform: rotate(45deg);
+  z-index: 2;
+}
+
+/* ================================================
+   WINE LABEL — Classic Chateau + Vintage Stripes
+   ================================================ */
+.label-wine {
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(119,70,45,0.02) 2px, rgba(119,70,45,0.02) 4px), #faf6ee;
+  border: 3px double var(--color-brown);
+  border-radius: 3px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.label-wine::before {
+  content: '';
+  display: block;
+  height: 6px;
+  background: var(--color-green);
+  border-bottom: 2px solid var(--color-brown);
+}
+.label-wine .label-body {
+  padding: 2rem 1.5rem 1.25rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.label-wine .brand {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--color-brown);
+  margin-bottom: 0.5rem;
+}
+.label-wine .ornament {
+  width: 60%;
+  height: 1px;
+  background: var(--color-brown);
+  position: relative;
+  margin: 0.25rem auto 0.6rem;
+  opacity: 0.5;
+}
+.label-wine .ornament::before {
+  content: '\2767';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #faf6ee;
+  padding: 0 0.5rem;
+  font-size: 12px;
+  color: var(--color-brown);
+}
+.label-wine .wine-name {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-green);
+  line-height: 1.2;
+  margin-bottom: 0.35rem;
+}
+.label-wine .subcategory {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-brown);
+  margin-bottom: 0.15rem;
+}
+.label-wine .time {
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #777;
+  margin-bottom: 0.5rem;
+}
+.label-wine .notes-toggle {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-brown);
+  opacity: 0.85;
+}
+.label-wine .notes-body p {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--color-text);
+  opacity: 0.75;
+  line-height: 1.5;
+  padding: 0.4rem 0;
+  margin: 0;
+}
+.label-wine .notes-spacer { margin-bottom: auto; padding-bottom: 0.75rem; }
+.label-wine .price-footer {
+  width: 100%;
+  border-top: 2px solid var(--color-brown);
+  display: flex;
+  background: var(--color-cream);
+}
+.label-wine .price-col { flex: 1; padding: 0.6rem 0.5rem; text-align: center; }
+.label-wine .price-col + .price-col { border-left: 1px solid var(--color-brown); }
+.label-wine .price-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-brown); font-weight: 700; }
+.label-wine .price-value { font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--color-green); }
+.label-wine .reserve-link {
+  display: block; width: 100%;
+  background: var(--color-cream);
+}
+.label-wine .reserve-link .product-reserve-btn {
+  margin-top: 0;
+  border-radius: 0;
+  border: none;
+  background: var(--color-burgundy);
+  color: var(--color-cream);
+}
+.label-wine .reserve-link .product-qty-controls {
+  border-radius: 0;
+  border: none;
+}
+
+/* Wine tint overrides */
+.label-wine[class*="tint-"]::before { background: var(--tint-border); border-bottom-color: var(--tint-border); }
+.label-wine[class*="tint-"] { border-color: var(--tint-border); }
+.label-wine[class*="tint-"] .label-body { background: var(--tint-bg); }
+.label-wine[class*="tint-"] .ornament { background: var(--tint); }
+.label-wine[class*="tint-"] .ornament::before { color: var(--tint); background: transparent; }
+
+/* ================================================
+   BEER LABEL — Brewery Crest
+   ================================================ */
+.label-beer {
+  background: #faf8f2;
+  border: 2px solid #b8963e;
+  border-radius: 3px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.label-beer .label-body { padding: 1.75rem 1.25rem 1rem; flex: 1; display: flex; flex-direction: column; align-items: center; }
+.label-beer .sv-logo {
+  width: 40px; height: 40px; margin-bottom: 0.5rem;
+  flex-shrink: 0;
+  color: var(--tint, #b8963e);
+}
+.label-beer .sv-logo svg { width: 100%; height: 100%; fill: currentColor; }
+.label-beer .subcategory {
+  font-family: var(--font-condensed); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.25em; color: #b8963e; margin-bottom: 0.35rem;
+}
+.label-beer .beer-name {
+  font-family: var(--font-condensed); font-size: 1.6rem; font-weight: 700;
+  text-transform: uppercase; color: var(--color-green); line-height: 1.1; margin-bottom: 0.2rem;
+}
+.label-beer .brand { font-size: 11px; font-weight: 700; color: #96792e; letter-spacing: 0.1em; margin-bottom: 0.25rem; }
+.label-beer .time { font-size: 11px; color: #777; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.35rem; }
+.label-beer .gold-rule { width: 50%; height: 0; border-top: 1px solid #b8963e; opacity: 0.4; margin: 0.1rem auto 0.35rem; }
+.label-beer .notes-toggle { font-size: 0.8rem; font-weight: 600; color: #96792e; opacity: 0.9; font-family: var(--font-body); }
+.label-beer .notes-toggle .chevron { color: #96792e; }
+.label-beer .notes-body p { font-size: 0.8rem; color: var(--color-text); opacity: 0.75; line-height: 1.5; padding: 0.35rem 0; margin: 0; }
+.label-beer .notes-spacer { margin-bottom: auto; padding-bottom: 0.5rem; }
+.label-beer .price-footer { width: 100%; display: flex; border-top: 1px solid #b8963e; background: rgba(184,150,62,0.06); }
+.label-beer .price-col { flex: 1; padding: 0.6rem 0.5rem; text-align: center; }
+.label-beer .price-col + .price-col { border-left: 1px solid rgba(184,150,62,0.3); }
+.label-beer .price-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #96792e; font-weight: 700; }
+.label-beer .price-value { font-family: var(--font-condensed); font-size: 1.1rem; font-weight: 600; color: var(--color-green); }
+.label-beer .reserve-link {
+  display: block; width: 100%;
+  background: rgba(184,150,62,0.06);
+}
+.label-beer .reserve-link .product-reserve-btn {
+  margin-top: 0;
+  border-radius: 0;
+  border: none;
+  background: var(--color-burgundy);
+  color: var(--color-cream);
+}
+.label-beer .reserve-link .product-qty-controls {
+  border-radius: 0;
+  border: none;
+}
+
+/* Beer tint overrides */
+.label-beer[class*="tint-"] { border-color: var(--tint-border); }
+.label-beer[class*="tint-"] .gold-rule { border-top-color: var(--tint-border); }
+.label-beer[class*="tint-"] .subcategory { color: var(--tint); }
+.label-beer[class*="tint-"] .brand { color: var(--tint); }
+.label-beer[class*="tint-"] .label-body { background: var(--tint-bg); }
+.label-beer[class*="tint-"] .reserve-link { background: var(--tint-bg); }
+.label-beer[class*="tint-"] .notes-toggle { color: var(--tint); }
+.label-beer[class*="tint-"] .notes-toggle .chevron { color: var(--tint); }
+.label-beer[class*="tint-"] .price-label { color: var(--tint); }
+.label-beer[class*="tint-"] .price-footer { border-top-color: var(--tint-border); }
+.label-beer[class*="tint-"] .price-col + .price-col { border-left-color: var(--tint-border); opacity: 0.3; }

@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-06T04:48:05.600Z';
+  var BUILD_TIMESTAMP = '2026-02-06T06:03:48.667Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -2116,6 +2116,8 @@
       { key: 'time', label: 'Time', type: 'text', placeholder: '8 weeks' },
       { key: 'wholesale', label: 'Wholesale', type: 'text', placeholder: '$0.00' },
       { key: 'tasting_notes', label: 'Tasting Notes', type: 'text' },
+      { key: 'abv', label: 'ABV', type: 'text', placeholder: '13%' },
+      { key: 'tint', label: 'Tint Color', type: 'select', options: ['', 'red', 'white', 'rose', 'fruit', 'specialty', 'pilsner', 'amber', 'wheat', 'ipa', 'pale', 'session', 'saison', 'lager', 'stout', 'porter', 'redale', 'brown'] },
       { key: 'stock', label: 'Stock', type: 'number', value: '0' },
       { key: 'on_order', label: 'On Order', type: 'number', value: '0' },
       { key: 'favorite', label: 'Favorite', type: 'select', options: ['FALSE', 'TRUE'] }
