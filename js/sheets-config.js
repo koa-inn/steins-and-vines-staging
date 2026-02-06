@@ -43,7 +43,7 @@ var SHEETS_CONFIG = {
   // Admin API URL (deploy adminApi.gs as web app with "Execute as: User accessing the web app")
   // This provides server-side authentication for admin operations
   // Leave blank to use direct Sheets API (less secure, for development only)
-  ADMIN_API_URL: 'https://script.google.com/macros/s/AKfycbw-81NUO8nnK6YvaU1HNqjidQF4b5mwONN_UQrladQ5LUbyu7dCx_FtBUh7NleARxwYnA/exec',
+  ADMIN_API_URL: 'https://script.google.com/macros/s/AKfycbwp4wHczaMZ4X3otrP_Xa7F3jpR0BM1AMunfzF-60bXFEnJEAiBEpgIf1xCZo06LCc/exec',
 
   SHEET_NAMES: {
     KITS: 'Kits',
