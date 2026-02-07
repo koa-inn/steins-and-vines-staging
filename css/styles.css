@@ -3944,6 +3944,7 @@ small, .text-small {
 .label-wine .price-footer {
   width: 100%;
   border-top: 2px solid var(--color-brown);
+  border-bottom: 2px solid var(--color-brown);
   display: flex;
   background: var(--color-cream);
 }
@@ -4003,6 +4004,7 @@ small, .text-small {
 .label-wine[class*="tint-"] .label-body { background: var(--tint-bg); }
 .label-wine[class*="tint-"] .ornament { background: var(--tint); }
 .label-wine[class*="tint-"] .ornament::before { color: var(--tint); background: transparent; }
+.label-wine[class*="tint-"] .price-footer { border-color: var(--tint-border); }
 .label-wine[class*="tint-"] .trait-label { color: var(--tint); }
 .label-wine[class*="tint-"] .trait-col + .trait-col { border-left-color: var(--tint-border); }
 .label-wine[class*="tint-"] .wine-traits { border-top-color: var(--tint-border); }
