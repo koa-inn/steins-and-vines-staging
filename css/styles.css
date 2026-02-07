@@ -34,6 +34,7 @@ body {
   flex-direction: column;
 }
 
+
 img {
   max-width: 100%;
   height: auto;
@@ -313,15 +314,18 @@ small, .text-small {
   --slat-dark: #a8845c;
   --slat-line: #8b6914;
   background:
+    /* Side shadow gradients */
+    linear-gradient(90deg, rgba(0, 0, 0, 0.15) 0%, transparent 8%),
+    linear-gradient(270deg, rgba(0, 0, 0, 0.15) 0%, transparent 8%),
     /* Barrel curvature shading - lighter top, darker bottom */
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.15) 0%,
-      rgba(255, 255, 255, 0.08) 15%,
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0.11) 15%,
       transparent 25%,
       transparent 75%,
-      rgba(0, 0, 0, 0.08) 85%,
-      rgba(0, 0, 0, 0.15) 100%
+      rgba(0, 0, 0, 0.11) 85%,
+      rgba(0, 0, 0, 0.22) 100%
     ),
     /* Wood grain - vertical wavy lines */
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='200'%3E%3Cpath d='M20 0 Q 15 25, 20 50 T 20 100 T 20 150 T 20 200' stroke='%23a07040' stroke-width='0.5' fill='none' opacity='0.3'/%3E%3Cpath d='M40 0 Q 45 30, 40 60 T 40 120 T 40 180 T 40 200' stroke='%23906030' stroke-width='0.3' fill='none' opacity='0.2'/%3E%3Cpath d='M60 0 Q 55 20, 60 40 T 60 80 T 60 120 T 60 160 T 60 200' stroke='%23a07040' stroke-width='0.4' fill='none' opacity='0.25'/%3E%3C/svg%3E"),
@@ -355,13 +359,17 @@ small, .text-small {
   left: 0;
   right: 0;
   height: 12px;
-  background: linear-gradient(
-    180deg,
-    #5a5a5a 0%,
-    #8a8a8a 30%,
-    #6a6a6a 50%,
-    #4a4a4a 100%
-  );
+  background:
+    /* Curved seam + rivets (SVG overlay) */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='12'%3E%3Cpath d='M14 0 Q12 6,16 12' stroke='%23000' stroke-opacity='0.4' stroke-width='2' fill='none'/%3E%3Cpath d='M16 0 Q14 6,18 12' stroke='%23fff' stroke-opacity='0.2' stroke-width='1' fill='none'/%3E%3Ccircle cx='7' cy='6' r='2.5' fill='%235a5a5a'/%3E%3Ccircle cx='7' cy='6' r='2' fill='%23707070'/%3E%3Ccircle cx='7' cy='4.5' r='0.8' fill='%23999' opacity='0.6'/%3E%3Ccircle cx='23' cy='6' r='2.5' fill='%235a5a5a'/%3E%3Ccircle cx='23' cy='6' r='2' fill='%23707070'/%3E%3Ccircle cx='23' cy='4.5' r='0.8' fill='%23999' opacity='0.6'/%3E%3C/svg%3E") no-repeat,
+    /* Base metal sheen */
+    linear-gradient(
+      180deg,
+      #5a5a5a 0%,
+      #8a8a8a 30%,
+      #6a6a6a 50%,
+      #4a4a4a 100%
+    );
   box-shadow:
     inset 0 2px 0 rgba(255,255,255,0.3),
     inset 0 -2px 0 rgba(0,0,0,0.3);
@@ -369,10 +377,12 @@ small, .text-small {
 
 .promo-section::before {
   top: 12px;
+  background-position: 72% 0, 0 0;
 }
 
 .promo-section::after {
   bottom: 12px;
+  background-position: 30% 0, 0 0;
 }
 
 .promo-section h2 {
@@ -538,6 +548,8 @@ small, .text-small {
 .promo-featured-products {
   display: flex;
   min-height: 300px;
+  padding: 1rem 1rem 2rem;
+  margin: -1rem -1rem -2rem;
 }
 
 .promo-featured-products .product-card,
@@ -547,8 +559,9 @@ small, .text-small {
   max-width: 340px;
   margin: 0 auto;
   box-shadow:
-    0 6px 16px rgba(0,0,0,0.3),
-    0 2px 4px rgba(0,0,0,0.15);
+    0 2px 4px rgba(0,0,0,0.1),
+    0 6px 12px rgba(0,0,0,0.15),
+    0 12px 24px rgba(0,0,0,0.12);
   opacity: 0;
   transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
   transform: translateX(50px);
