@@ -2417,6 +2417,42 @@ function loadProducts() {
           renderReserveControl(tdReserve, product, productKey);
           tr.appendChild(tdReserve);
 
+          // Mobile summary cells (hidden on desktop, shown on mobile via CSS)
+          var metaParts = [];
+          if (visibleFields['brand'] && (product.brand || '').trim()) metaParts.push(product.brand.trim());
+          if (visibleFields['subcategory'] && (product.subcategory || '').trim()) metaParts.push(product.subcategory.trim());
+          if (visibleFields['time'] && (product.time || '').trim()) metaParts.push(product.time.trim());
+          var tdMobileMeta = document.createElement('td');
+          tdMobileMeta.className = 'table-mobile-meta';
+          if (metaParts.length) tdMobileMeta.textContent = metaParts.join(' \u00B7 ');
+          tr.appendChild(tdMobileMeta);
+
+          var priceHtmlParts = [];
+          var mInstore = (product.retail_instore || '').trim();
+          var mKit = (product.retail_kit || '').trim();
+          if (mInstore) {
+            var mInstoreNum = parseFloat(mInstore.replace(/[^0-9.]/g, ''));
+            if (discount > 0 && mInstoreNum) {
+              var mInstoreSale = (mInstoreNum * (1 - discount / 100)).toFixed(2);
+              priceHtmlParts.push('<span class="mp-label">In-store</span> <span class="table-price-original">' + mInstore + '</span> <span class="table-price-sale">$' + mInstoreSale + plusSign + '</span>');
+            } else {
+              priceHtmlParts.push('<span class="mp-label">In-store</span> ' + mInstore + plusSign);
+            }
+          }
+          if (mKit) {
+            var mKitNum = parseFloat(mKit.replace(/[^0-9.]/g, ''));
+            if (discount > 0 && mKitNum) {
+              var mKitSale = (mKitNum * (1 - discount / 100)).toFixed(2);
+              priceHtmlParts.push('<span class="mp-label">Kit</span> <span class="table-price-original">' + mKit + '</span> <span class="table-price-sale">$' + mKitSale + plusSign + '</span>');
+            } else {
+              priceHtmlParts.push('<span class="mp-label">Kit</span> ' + mKit + plusSign);
+            }
+          }
+          var tdMobilePrices = document.createElement('td');
+          tdMobilePrices.className = 'table-mobile-prices';
+          if (priceHtmlParts.length) tdMobilePrices.innerHTML = priceHtmlParts.join(' <span class="mp-sep">\u00B7</span> ');
+          tr.appendChild(tdMobilePrices);
+
           tbody.appendChild(tr);
         });
         table.appendChild(tbody);
