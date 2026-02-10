@@ -4940,22 +4940,22 @@ body[data-page="admin"] .content {
   /* === Compact kit rows (have mobile summary cells) === */
 
   /* Hide desktop-only detail columns */
-  .catalog-table td[data-label="Brand"],
-  .catalog-table td[data-label="Style"],
-  .catalog-table td[data-label="Time"],
-  .catalog-table td[data-label="In-Store"],
-  .catalog-table td[data-label="Kit"] {
+  .catalog-table:not(.reservation-table) td[data-label="Brand"],
+  .catalog-table:not(.reservation-table) td[data-label="Style"],
+  .catalog-table:not(.reservation-table) td[data-label="Time"],
+  .catalog-table:not(.reservation-table) td[data-label="In-Store"],
+  .catalog-table:not(.reservation-table) td[data-label="Kit"] {
     display: none;
   }
 
   /* Show mobile summary cells */
-  .catalog-table .table-mobile-meta,
-  .catalog-table .table-mobile-prices {
+  .catalog-table:not(.reservation-table) .table-mobile-meta,
+  .catalog-table:not(.reservation-table) .table-mobile-prices {
     display: block;
   }
 
   /* Line 1: Product name */
-  .catalog-table td[data-label="Name"] {
+  .catalog-table:not(.reservation-table) td[data-label="Name"] {
     order: 1;
     flex: 0 0 100%;
     font-size: 0.9rem;
@@ -4963,7 +4963,7 @@ body[data-page="admin"] .content {
   }
 
   /* Line 2: Brand · Style · Time */
-  .catalog-table .table-mobile-meta {
+  .catalog-table:not(.reservation-table) .table-mobile-meta {
     order: 2;
     flex: 0 0 100%;
     font-size: 0.78rem;
@@ -4973,7 +4973,7 @@ body[data-page="admin"] .content {
   }
 
   /* Line 3 left: Prices */
-  .catalog-table .table-mobile-prices {
+  .catalog-table:not(.reservation-table) .table-mobile-prices {
     order: 3;
     flex: 1 1 auto;
     font-size: 0.82rem;
@@ -4982,11 +4982,48 @@ body[data-page="admin"] .content {
   }
 
   /* Line 3 right: Reserve button */
-  .catalog-table td[data-label="Reserve"] {
+  .catalog-table:not(.reservation-table) td[data-label="Reserve"] {
     order: 4;
     flex: 0 0 auto;
     margin-left: auto;
     padding-left: 0.5rem;
+  }
+
+  /* === Reservation table mobile layout === */
+  .reservation-table td[data-label="Brand"],
+  .reservation-table td[data-label="Time"] {
+    display: none;
+  }
+
+  .reservation-table td[data-label="Name"] {
+    order: 1;
+    flex: 0 0 100%;
+    font-size: 0.9rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .reservation-table td[data-label="Price"] {
+    order: 2;
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+  }
+
+  .reservation-table td[data-label="Status"] {
+    order: 3;
+    flex: 0 0 auto;
+    margin-left: 0.5rem;
+  }
+
+  .reservation-table td[data-label="Qty"] {
+    order: 5;
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+
+  .reservation-table td[data-label=""] {
+    order: 4;
+    flex: 0 0 auto;
+    margin-left: 0.5rem;
   }
 
   /* === Fallback for tables without mobile cells (ingredients, services) === */
