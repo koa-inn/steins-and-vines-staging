@@ -693,10 +693,10 @@ small, .text-small {
   background: var(--color-cream);
   border: 1px solid var(--color-brown);
   color: var(--color-brown);
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  font-size: 1.25rem;
+  font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
@@ -710,20 +710,34 @@ small, .text-small {
 
 .promo-carousel-dots {
   display: flex;
-  gap: 0.5rem;
+  gap: 0;
 }
 
 .promo-carousel-dot {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.promo-carousel-dot::after {
+  content: '';
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: var(--color-cream);
   border: 1px solid var(--color-brown);
-  cursor: pointer;
   transition: background 0.2s;
 }
 
-.promo-carousel-dot.active {
+.promo-carousel-dot.active::after {
   background: var(--color-burgundy);
   border-color: var(--color-burgundy);
 }
@@ -744,6 +758,10 @@ small, .text-small {
   .promo-featured-products .label-wine,
   .promo-featured-products .label-beer {
     max-width: 100%;
+  }
+
+  .promo-instagram-feed-iframe {
+    min-height: 400px;
   }
 }
 
@@ -1064,7 +1082,8 @@ small, .text-small {
   color: var(--color-brown);
   cursor: pointer;
   padding: 0.25rem 0;
-  display: flex;
+  min-height: 44px;
+  display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   margin: 0 auto;
@@ -1337,6 +1356,7 @@ small, .text-small {
   margin-bottom: 0.25rem;
   width: 40rem;
   max-width: 100%;
+  overflow-x: hidden;
   padding-left: 8.5rem;
 }
 
@@ -1371,7 +1391,7 @@ small, .text-small {
   display: inline-block;
   background-color: transparent;
   color: var(--color-burgundy);
-  padding: 6px 16px;
+  padding: 10px 18px;
   border: 2px solid var(--color-burgundy);
   border-radius: 999px;
   font-family: var(--font-body);
@@ -1741,6 +1761,8 @@ small, .text-small {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
   color: var(--color-cream);
   opacity: 0.7;
   transition: opacity 0.2s, transform 0.2s;
@@ -1851,8 +1873,8 @@ small, .text-small {
   background-color: var(--color-burgundy);
   color: var(--color-cream);
   border: none;
-  width: 40px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   font-size: 18px;
   font-weight: 700;
   cursor: pointer;
@@ -1908,7 +1930,10 @@ small, .text-small {
   font-weight: 700;
   font-size: 14px;
   text-decoration: none;
-  padding: 6px 16px;
+  padding: 10px 16px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   border: 2px solid var(--color-cream);
   border-radius: 4px;
   transition: background-color 0.2s, color 0.2s;
@@ -1934,7 +1959,8 @@ small, .text-small {
   font-size: 12px;
   font-weight: 400;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 10px 12px;
+  min-height: 44px;
   transition: color 0.2s;
 }
 .reservation-bar .reservation-bar-clear:hover {
@@ -4081,6 +4107,29 @@ body[data-page="admin"] .content {
     display: flex;
   }
 
+  .nav-list a {
+    padding: 12px 0;
+  }
+
+  .nav-backdrop {
+    display: none;
+    position: fixed;
+    top: var(--header-height, 80px);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 198;
+  }
+
+  .nav-backdrop.open {
+    display: block;
+  }
+
+  body.nav-open {
+    overflow: hidden;
+  }
+
   .hero {
     padding: 4rem 0;
   }
@@ -4266,15 +4315,6 @@ body[data-page="admin"] .content {
   .cal-nav {
     width: 44px;
     height: 44px;
-  }
-
-  .qty-btn {
-    width: 44px;
-    height: 44px;
-  }
-
-  .catalog-filter-btn {
-    padding: 10px 18px;
   }
 
   .cal-day {
@@ -4672,8 +4712,8 @@ body[data-page="admin"] .content {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border: none;
   background: transparent;
   color: var(--color-brown);
@@ -4874,6 +4914,20 @@ body[data-page="admin"] .content {
 
   .catalog-table .table-price-line {
     display: inline;
+  }
+}
+
+/* ===== Font readability floor (mobile) ===== */
+@media (max-width: 768px) {
+  .price-label,
+  .trait-label,
+  .label-wine .price-label,
+  .label-beer .price-label {
+    font-size: 10px;
+  }
+
+  .label-wine .brand {
+    font-size: 11px;
   }
 }
 

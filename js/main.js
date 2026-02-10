@@ -57,17 +57,50 @@ document.addEventListener('DOMContentLoaded', function () {
   var toggle = document.querySelector('.nav-toggle');
   var navList = document.querySelector('.nav-list');
 
+  // Create backdrop overlay for mobile nav
+  var navBackdrop = document.createElement('div');
+  navBackdrop.className = 'nav-backdrop';
+  var mainNav = document.querySelector('.main-nav');
+  if (mainNav) {
+    mainNav.appendChild(navBackdrop);
+  } else {
+    var header = document.querySelector('header');
+    if (header && header.parentNode) {
+      header.parentNode.insertBefore(navBackdrop, header.nextSibling);
+    }
+  }
+
+  function closeNav() {
+    if (navList) navList.classList.remove('open');
+    navBackdrop.classList.remove('open');
+    document.body.classList.remove('nav-open');
+  }
+
   if (toggle && navList) {
     toggle.addEventListener('click', function () {
       navList.classList.toggle('open');
+      navBackdrop.classList.toggle('open');
+      document.body.classList.toggle('nav-open');
+    });
+
+    // Close mobile nav when backdrop is tapped
+    navBackdrop.addEventListener('click', function () {
+      closeNav();
     });
 
     // Auto-close mobile nav when a link is tapped
     var navLinks = navList.querySelectorAll('a');
     navLinks.forEach(function (link) {
       link.addEventListener('click', function () {
-        navList.classList.remove('open');
+        closeNav();
       });
+    });
+
+    // Close mobile nav on Escape key
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && navList.classList.contains('open')) {
+        closeNav();
+      }
     });
   }
 
