@@ -10,12 +10,13 @@
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link rel="preconnect" href="https://docs.google.com" crossorigin>
   <link rel="preconnect" href="https://sheets.googleapis.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
   <link rel="icon" href="favicon.ico">
   <link rel="stylesheet" href="css/styles.min.css">
 </head>
 <body data-page="admin">
 
+  <!-- Storefront header (hidden by CSS, kept for content loader compatibility) -->
   <header class="site-header">
     <div class="container">
       <a href="index.html" class="logo"><img src="images/SV_Logo_Wordmark_green.svg" alt="Steins &amp; Vines Home"></a>
@@ -31,6 +32,18 @@
       </nav>
     </div>
   </header>
+
+  <!-- Admin shell bar -->
+  <div class="admin-shell-bar">
+    <div class="admin-shell-brand">
+      <a href="index.html"><img src="images/SV_Logo_Wordmark_green.svg" alt="Steins &amp; Vines"></a>
+      <span>Admin</span>
+    </div>
+    <div class="admin-shell-user">
+      <span id="admin-user-email"></span>
+      <button type="button" class="btn-secondary admin-signout-btn" id="admin-signout" style="display:none;">Sign out</button>
+    </div>
+  </div>
 
   <main>
     <section class="page-header">
@@ -62,44 +75,34 @@
 
         <!-- Dashboard (hidden until authenticated) -->
         <div id="admin-dashboard" style="display:none;">
+          <!-- Legacy user bar (hidden, user info now in shell bar) -->
           <div class="admin-user-bar">
-            <span id="admin-user-email"></span>
-            <button type="button" class="btn-secondary admin-signout-btn" id="admin-signout">Sign out</button>
+            <button type="button" class="btn-secondary admin-signout-btn" id="admin-signout-legacy">Sign out</button>
           </div>
 
-          <!-- Dashboard Overview -->
+          <!-- Dashboard Overview: Pipeline + Attention -->
           <div class="admin-dashboard-cards" id="admin-dashboard-cards">
-            <div class="dashboard-card dashboard-card--reservations">
-              <div class="dashboard-card-icon">&#128197;</div>
-              <div class="dashboard-card-content">
-                <div class="dashboard-card-value" id="dash-reservations-today">-</div>
-                <div class="dashboard-card-label">Reservations Today</div>
-                <div class="dashboard-card-detail" id="dash-reservations-week">- this week</div>
+            <!-- Fermentation pipeline strip -->
+            <div class="pipeline-strip">
+              <div class="pipeline-strip-label">Fermentation Pipeline</div>
+              <div class="pipeline-stages" id="pipeline-stages">
+                <div class="pipeline-skeleton"></div>
               </div>
             </div>
-            <div class="dashboard-card dashboard-card--pending">
-              <div class="dashboard-card-icon">&#9888;</div>
-              <div class="dashboard-card-content">
-                <div class="dashboard-card-value" id="dash-pending-actions">-</div>
-                <div class="dashboard-card-label">Pending Actions</div>
-                <div class="dashboard-card-detail" id="dash-pending-detail">- reservations, - holds</div>
-              </div>
-            </div>
-            <div class="dashboard-card dashboard-card--stock">
-              <div class="dashboard-card-icon">&#128230;</div>
-              <div class="dashboard-card-content">
-                <div class="dashboard-card-value" id="dash-low-stock">-</div>
-                <div class="dashboard-card-label">Low Stock Alerts</div>
-                <div class="dashboard-card-detail" id="dash-low-stock-detail">Loading...</div>
-              </div>
-            </div>
-            <div class="dashboard-card dashboard-card--upcoming">
-              <div class="dashboard-card-icon">&#128340;</div>
-              <div class="dashboard-card-content">
-                <div class="dashboard-card-value" id="dash-upcoming-appts">-</div>
-                <div class="dashboard-card-label">Upcoming Appointments</div>
-                <div class="dashboard-card-detail" id="dash-upcoming-detail">Next 7 days</div>
-              </div>
+
+            <!-- Attention items -->
+            <div class="attention-list" id="attention-list"></div>
+
+            <!-- Hidden elements for backward compat with renderDashboard JS -->
+            <div style="display:none;">
+              <span id="dash-reservations-today"></span>
+              <span id="dash-reservations-week"></span>
+              <span id="dash-pending-actions"></span>
+              <span id="dash-pending-detail"></span>
+              <span id="dash-low-stock"></span>
+              <span id="dash-low-stock-detail"></span>
+              <span id="dash-upcoming-appts"></span>
+              <span id="dash-upcoming-detail"></span>
             </div>
           </div>
 
@@ -110,6 +113,7 @@
             <button type="button" class="admin-tab-btn" data-tab="ingredients">Ingredients</button>
             <button type="button" class="admin-tab-btn" data-tab="orders">Supplier Orders</button>
             <button type="button" class="admin-tab-btn" data-tab="scheduling">Scheduling</button>
+            <span class="admin-tab-divider"></span>
             <button type="button" class="admin-tab-btn" data-tab="homepage">Homepage</button>
             <button type="button" class="admin-tab-btn" data-tab="export">Export / Sync</button>
           </div>
@@ -119,7 +123,7 @@
             <div class="admin-panel-header">
               <h2>Reservations &amp; Holds</h2>
               <div class="admin-filter-row">
-                <label for="res-status-filter">Status:</label>
+                <label for="res-status-filter">Status</label>
                 <select id="res-status-filter" class="admin-select">
                   <option value="active">All Active</option>
                   <option value="pending" selected>Pending</option>
@@ -151,7 +155,7 @@
               </table>
             </div>
             <div id="reservations-pagination" class="admin-pagination"></div>
-            <p class="admin-empty" id="reservations-empty" style="display:none;">No reservations found.</p>
+            <p class="admin-empty" id="reservations-empty" style="display:none;">No reservations match this filter. Try selecting a different status above.</p>
           </div>
 
           <!-- Tab 2: Kit Inventory -->
@@ -159,13 +163,13 @@
             <div class="admin-panel-header">
               <h2>Kit Inventory</h2>
               <div class="admin-panel-actions">
-                <input type="text" id="kit-search" class="catalog-search" placeholder="Search kits...">
+                <input type="text" id="kit-search" class="admin-kit-search-input" placeholder="Search kits...">
                 <div class="admin-filter-row">
-                  <label for="kit-brand-filter">Brand:</label>
+                  <label for="kit-brand-filter">Brand</label>
                   <select id="kit-brand-filter" class="admin-select">
                     <option value="all">All</option>
                   </select>
-                  <label for="kit-stock-filter">Stock:</label>
+                  <label for="kit-stock-filter">Stock</label>
                   <select id="kit-stock-filter" class="admin-select">
                     <option value="all">All</option>
                     <option value="in">In Stock</option>
@@ -197,7 +201,7 @@
                 <tbody id="kits-tbody"></tbody>
               </table>
             </div>
-            <p class="admin-empty" id="kits-empty" style="display:none;">No kits found.</p>
+            <p class="admin-empty" id="kits-empty" style="display:none;">No kits found. Add your first kit to get started.</p>
           </div>
 
           <!-- Tab 3: Ingredients -->
@@ -206,7 +210,7 @@
               <h2>Ingredients</h2>
               <div class="admin-panel-actions">
                 <div class="admin-filter-row">
-                  <label for="ing-type-filter">Type:</label>
+                  <label for="ing-type-filter">Type</label>
                   <select id="ing-type-filter" class="admin-select">
                     <option value="all">All</option>
                     <option value="Hops">Hops</option>
@@ -235,7 +239,7 @@
                 <tbody id="ingredients-tbody"></tbody>
               </table>
             </div>
-            <p class="admin-empty" id="ingredients-empty" style="display:none;">No ingredients found.</p>
+            <p class="admin-empty" id="ingredients-empty" style="display:none;">No ingredients found. Add your first ingredient to get started.</p>
           </div>
 
           <!-- Tab: Supplier Orders -->
@@ -243,9 +247,9 @@
             <div class="admin-panel-header">
               <h2>Supplier Order</h2>
               <div class="admin-panel-actions">
-                <input type="text" id="order-search" class="catalog-search" placeholder="Search order...">
+                <input type="text" id="order-search" class="admin-kit-search-input" placeholder="Search order...">
                 <div class="admin-filter-row">
-                  <label for="order-brand-filter">Brand:</label>
+                  <label for="order-brand-filter">Brand</label>
                   <select id="order-brand-filter" class="admin-select">
                     <option value="all">All</option>
                   </select>
@@ -289,7 +293,7 @@
                 <tbody id="order-tbody"></tbody>
               </table>
             </div>
-            <p class="admin-empty" id="order-empty" style="display:none;">No items in order.</p>
+            <p class="admin-empty" id="order-empty" style="display:none;">No items in order. Search and add kits above to build your order.</p>
           </div>
 
           <!-- Tab: Scheduling -->
@@ -384,7 +388,9 @@
 
           <!-- Tab 4: Export / Sync -->
           <div class="admin-tab-panel" id="tab-export">
-            <h2>Export / Sync</h2>
+            <div class="admin-panel-header">
+              <h2>Export / Sync</h2>
+            </div>
 
             <div class="admin-export-section">
               <h3>Export Kits CSV</h3>
@@ -419,14 +425,14 @@
 
             <div class="admin-export-section">
               <h3>Wine Scheduler Export</h3>
-              <p>Download a CSV of all kits and ingredients formatted for Wine Scheduler import. The columns match Wine Scheduler's import fields exactly.</p>
+              <p>Download a CSV of all kits and ingredients formatted for Wine Scheduler import.</p>
               <button type="button" class="btn" id="export-ws-btn">Export for Wine Scheduler</button>
-              <h4 style="margin-top: 1rem;">How to import:</h4>
+              <h4 style="margin-top: 16px;">How to import:</h4>
               <ol>
                 <li>Click "Export for Wine Scheduler" above</li>
-                <li>Open Wine Scheduler → Import Products</li>
+                <li>Open Wine Scheduler &rarr; Import Products</li>
                 <li>Upload the exported CSV file</li>
-                <li>Map each column: Stock Code/SKU → Column A, Name → Column B, etc.</li>
+                <li>Map each column: Stock Code/SKU &rarr; Column A, Name &rarr; Column B, etc.</li>
               </ol>
             </div>
           </div>
@@ -449,12 +455,16 @@
     </div>
   </div>
 
+  <!-- Storefront footer (hidden by CSS) -->
   <footer class="site-footer">
     <div class="container">
       <img src="images/SV_Logo_PrimaryCircle_offwhite.svg" alt="Steins &amp; Vines" class="footer-logo">
       <p data-content="footer-copy">&copy; 2026 Steins &amp; Vines. All rights reserved.</p>
     </div>
   </footer>
+
+  <!-- Toast notification container -->
+  <div class="admin-toast-container" id="admin-toast-container"></div>
 
   <!-- Save changes bar (fixed to bottom) -->
   <div class="admin-save-bar" id="admin-save-bar" style="display:none;">

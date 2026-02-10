@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-09T19:21:50.456Z';
+  var BUILD_TIMESTAMP = '2026-02-10T00:50:36.775Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -69,6 +69,253 @@
     filtered: 0,
     currentFilter: 'pending'
   };
+
+  // ===== Toast Notification System =====
+
+  function showToast(message, type, opts) {
+    if (!type) type = 'info';
+    if (!opts) opts = {};
+    var container = document.getElementById('admin-toast-container');
+    if (!container) return;
+
+    var toast = document.createElement('div');
+    toast.className = 'admin-toast admin-toast--' + type;
+
+    var msgSpan = document.createElement('span');
+    msgSpan.className = 'admin-toast-msg';
+    msgSpan.textContent = message;
+    toast.appendChild(msgSpan);
+
+    if (opts.undo) {
+      var undoBtn = document.createElement('button');
+      undoBtn.className = 'admin-toast-undo';
+      undoBtn.textContent = 'Undo';
+      undoBtn.addEventListener('click', function () {
+        opts.undo();
+        removeToast(toast);
+      });
+      toast.appendChild(undoBtn);
+    }
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'admin-toast-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.addEventListener('click', function () { removeToast(toast); });
+    toast.appendChild(closeBtn);
+
+    container.appendChild(toast);
+
+    var duration = opts.duration || (type === 'error' ? 6000 : 3500);
+    var timer = setTimeout(function () { removeToast(toast); }, duration);
+    toast._timer = timer;
+  }
+
+  function removeToast(toast) {
+    if (toast._removed) return;
+    toast._removed = true;
+    clearTimeout(toast._timer);
+    toast.classList.add('removing');
+    setTimeout(function () {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 150);
+  }
+
+  // ===== Confirm Dialog (replaces browser confirm) =====
+
+  function showConfirm(message, onConfirm, onCancel) {
+    var overlay = document.createElement('div');
+    overlay.className = 'admin-confirm-overlay';
+
+    var box = document.createElement('div');
+    box.className = 'admin-confirm-box';
+
+    var msg = document.createElement('div');
+    msg.className = 'admin-confirm-msg';
+    msg.textContent = message;
+    box.appendChild(msg);
+
+    var actions = document.createElement('div');
+    actions.className = 'admin-confirm-actions';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', function () {
+      document.body.removeChild(overlay);
+      if (onCancel) onCancel();
+    });
+
+    var confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn';
+    confirmBtn.textContent = 'Confirm';
+    confirmBtn.addEventListener('click', function () {
+      document.body.removeChild(overlay);
+      if (onConfirm) onConfirm();
+    });
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+
+    // Close on overlay click
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) {
+        document.body.removeChild(overlay);
+        if (onCancel) onCancel();
+      }
+    });
+
+    document.body.appendChild(overlay);
+    confirmBtn.focus();
+  }
+
+  // ===== Pipeline & Attention Rendering =====
+
+  function renderPipeline(data) {
+    var stages = { pending: 0, confirmed: 0, brewing: 0, ready: 0, completed: 0 };
+    var sourceData = data || reservationsData;
+
+    sourceData.forEach(function (r) {
+      var status = (r.status || '').toLowerCase().trim() || 'pending';
+      if (stages.hasOwnProperty(status)) {
+        stages[status]++;
+      }
+    });
+
+    var stagesEl = document.getElementById('pipeline-stages');
+    if (!stagesEl) return;
+
+    var total = stages.pending + stages.confirmed + stages.brewing + stages.ready + stages.completed;
+    if (total === 0) {
+      stagesEl.innerHTML = '<div class="pipeline-empty">No active batches</div>';
+      return;
+    }
+
+    var html = '';
+    var stageOrder = ['pending', 'confirmed', 'brewing', 'ready', 'completed'];
+    var stageLabels = { pending: 'Pending', confirmed: 'Confirmed', brewing: 'Brewing', ready: 'Ready', completed: 'Done' };
+
+    stageOrder.forEach(function (key) {
+      if (stages[key] > 0) {
+        var pct = Math.max((stages[key] / total) * 100, 12); // min 12% for readability
+        html += '<div class="pipeline-stage pipeline-stage--' + key + '" style="flex:' + stages[key] + ';" data-filter="' + key + '">';
+        html += '<span class="pipeline-stage-count">' + stages[key] + '</span>';
+        html += '<span class="pipeline-stage-name">' + stageLabels[key] + '</span>';
+        html += '</div>';
+      }
+    });
+
+    stagesEl.innerHTML = html;
+
+    // Click to filter reservations tab
+    stagesEl.querySelectorAll('.pipeline-stage').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var filter = el.getAttribute('data-filter');
+        var select = document.getElementById('res-status-filter');
+        if (select) {
+          select.value = filter;
+          select.dispatchEvent(new Event('change'));
+        }
+        document.querySelector('[data-tab="reservations"]').click();
+      });
+    });
+  }
+
+  function renderAttentionItems(summary) {
+    var listEl = document.getElementById('attention-list');
+    if (!listEl) return;
+
+    var items = [];
+
+    // Pending reservations to confirm
+    var pendingRes = summary ? (summary.pendingReservations || 0) : 0;
+    if (!summary) {
+      reservationsData.forEach(function (r) {
+        if ((r.status || '').toLowerCase().trim() === 'pending' || (!r.status && true)) pendingRes++;
+      });
+    }
+    if (pendingRes > 0) {
+      items.push({ text: pendingRes + ' reservation' + (pendingRes !== 1 ? 's' : '') + ' to confirm', dot: 'warning', tab: 'reservations', filter: 'pending' });
+    }
+
+    // Ready for pickup
+    var readyRes = summary ? (summary.readyReservations || 0) : 0;
+    if (!summary) {
+      reservationsData.forEach(function (r) {
+        if ((r.status || '').toLowerCase().trim() === 'ready') readyRes++;
+      });
+    }
+    if (readyRes > 0) {
+      items.push({ text: readyRes + ' ready for pickup', dot: 'success', tab: 'reservations', filter: 'ready' });
+    }
+
+    // Low stock
+    var lowStock = summary ? (summary.lowStockKits || []).length : 0;
+    if (!summary) {
+      kitsData.forEach(function (kit) {
+        var stock = parseInt(kit.stock, 10) || 0;
+        var onHold = parseInt(kit.on_hold, 10) || 0;
+        if (kit.hide !== 'true' && kit.hide !== 'TRUE' && (stock - onHold) <= 3) lowStock++;
+      });
+    }
+    if (lowStock > 0) {
+      items.push({ text: lowStock + ' kit' + (lowStock !== 1 ? 's' : '') + ' low stock', dot: 'danger', tab: 'kits' });
+    }
+
+    // Upcoming appointments
+    var upcoming = summary ? (summary.upcomingAppointments || []).length : 0;
+    if (upcoming > 0) {
+      var nextAppt = summary.upcomingAppointments[0];
+      var label = upcoming + ' upcoming appointment' + (upcoming !== 1 ? 's' : '');
+      if (nextAppt.daysAway === 0) label = 'Appointment today';
+      else if (nextAppt.daysAway === 1) label = 'Appointment tomorrow + ' + (upcoming - 1) + ' more';
+      items.push({ text: label, dot: 'info', tab: 'scheduling' });
+    }
+
+    // Pending holds
+    var pendingHolds = summary ? (summary.pendingHolds || 0) : 0;
+    if (!summary) {
+      holdsData.forEach(function (h) {
+        if ((h.status || '').toLowerCase().trim() === 'pending') pendingHolds++;
+      });
+    }
+    if (pendingHolds > 0) {
+      items.push({ text: pendingHolds + ' hold' + (pendingHolds !== 1 ? 's' : '') + ' to confirm', dot: 'warning', tab: 'reservations', filter: 'pending' });
+    }
+
+    if (items.length === 0) {
+      listEl.innerHTML = '<div class="attention-item"><span class="attention-dot attention-dot--success"></span>All clear — nothing needs attention</div>';
+      return;
+    }
+
+    var html = '';
+    items.forEach(function (item) {
+      html += '<div class="attention-item" data-tab="' + item.tab + '"' + (item.filter ? ' data-filter="' + item.filter + '"' : '') + '>';
+      html += '<span class="attention-dot attention-dot--' + item.dot + '"></span>';
+      html += item.text;
+      html += '</div>';
+    });
+    listEl.innerHTML = html;
+
+    // Click to navigate
+    listEl.querySelectorAll('.attention-item').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var tab = el.getAttribute('data-tab');
+        var filter = el.getAttribute('data-filter');
+        if (tab) document.querySelector('[data-tab="' + tab + '"]').click();
+        if (filter) {
+          var select = document.getElementById('res-status-filter');
+          if (select) {
+            select.value = filter;
+            select.dispatchEvent(new Event('change'));
+          }
+        }
+      });
+    });
+  }
 
   // ===== Initialization =====
 
@@ -219,6 +466,9 @@
     document.getElementById('admin-denied').style.display = 'none';
     document.getElementById('admin-dashboard').style.display = '';
     document.getElementById('admin-user-email').textContent = userEmail;
+    // Show shell bar sign-out
+    var shellSignout = document.getElementById('admin-signout');
+    if (shellSignout) shellSignout.style.display = '';
     localStorage.setItem('sv-admin-email', userEmail);
     loadAllData();
     loadEmailTemplates();
@@ -245,6 +495,10 @@
     document.getElementById('admin-signin').style.display = '';
     document.getElementById('admin-denied').style.display = 'none';
     document.getElementById('admin-dashboard').style.display = 'none';
+    // Hide shell bar sign-out
+    var shellSignout = document.getElementById('admin-signout');
+    if (shellSignout) shellSignout.style.display = 'none';
+    document.getElementById('admin-user-email').textContent = '';
   }
 
   // ===== Admin API Helper =====
@@ -455,7 +709,7 @@
       }).catch(function (err) {
         console.error('Failed to load data via Admin API:', err);
         // Show error to user
-        alert('Failed to load data: ' + err.message);
+        showToast('Failed to load data: ' + err.message, 'error');
       });
       return;
     }
@@ -633,6 +887,10 @@
     } else {
       document.getElementById('dash-upcoming-detail').textContent = 'None in next 7 days';
     }
+
+    // Render pipeline and attention items
+    renderPipeline(null); // uses reservationsData
+    renderAttentionItems(summary);
   }
 
   /**
@@ -760,6 +1018,10 @@
     } else {
       document.getElementById('dash-upcoming-detail').textContent = 'None in next 7 days';
     }
+
+    // Render pipeline and attention items (fallback mode — no summary)
+    renderPipeline(null);
+    renderAttentionItems(null);
   }
 
   function parseTimeslotDate(timeslot) {
@@ -1328,7 +1590,7 @@
               loadAllData();
             }
           } else {
-            alert('Failed to confirm hold: ' + err.message);
+            showToast('Failed to confirm hold: ' + err.message, 'error');
           }
         });
       return;
@@ -1387,7 +1649,7 @@
       renderKitsTab();
       renderDashboard();
     }).catch(function (err) {
-      alert('Failed to confirm hold: ' + err.message);
+      showToast('Failed to confirm hold: ' + err.message, 'error');
     });
   }
 
@@ -1452,7 +1714,7 @@
               loadAllData();
             }
           } else {
-            alert('Failed to release hold: ' + err.message);
+            showToast('Failed to release hold: ' + err.message, 'error');
           }
         });
       return;
@@ -1513,7 +1775,7 @@
       renderKitsTab();
       renderDashboard();
     }).catch(function (err) {
-      alert('Failed to release hold: ' + err.message);
+      showToast('Failed to release hold: ' + err.message, 'error');
     });
   }
 
@@ -1546,7 +1808,7 @@
 
   function setReservationStatus(reservation, newStatus) {
     var statusCol = reservationsHeaders.indexOf('status');
-    if (statusCol === -1) { alert('Cannot find status column.'); return; }
+    if (statusCol === -1) { showToast('Cannot find status column.', 'warning'); return; }
 
     // Use Admin API with version checking if available
     if (SHEETS_CONFIG.ADMIN_API_URL) {
@@ -1569,7 +1831,7 @@
               loadAllData();
             }
           } else {
-            alert('Failed to update reservation: ' + err.message);
+            showToast('Failed to update reservation: ' + err.message, 'error');
           }
         });
       return;
@@ -1592,7 +1854,7 @@
         renderDashboard();
       })
       .catch(function (err) {
-        alert('Failed to update reservation: ' + err.message);
+        showToast('Failed to update reservation: ' + err.message, 'error');
       });
   }
 
@@ -1953,7 +2215,7 @@
           loadAllData();
         })
         .catch(function (err) {
-          alert('Failed to place hold: ' + err.message);
+          showToast('Failed to place hold: ' + err.message, 'error');
         });
     });
   }
@@ -2084,7 +2346,7 @@
       changed.forEach(function (el) { el.classList.remove('admin-cell-changed'); });
       if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save All Changes'; }
     }).catch(function (err) {
-      alert('Failed to save changes: ' + err.message);
+      showToast('Failed to save changes: ' + err.message, 'error');
       if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save All Changes'; }
     });
   }
@@ -2169,7 +2431,7 @@
           loadAllData();
         })
         .catch(function (err) {
-          alert('Failed to add kit: ' + err.message);
+          showToast('Failed to add kit: ' + err.message, 'error');
         });
     });
   }
@@ -2238,7 +2500,7 @@
         renderIngredientsTab();
       })
       .catch(function (err) {
-        alert('Failed to delete: ' + err.message);
+        showToast('Failed to delete: ' + err.message, 'error');
       });
   }
 
@@ -2297,7 +2559,7 @@
           loadAllData();
         })
         .catch(function (err) {
-          alert('Failed to add ingredient: ' + err.message);
+          showToast('Failed to add ingredient: ' + err.message, 'error');
         });
     });
   }
@@ -2670,8 +2932,8 @@
       }
       var lineTotal = unitCost * item.qty;
       orderTotal += lineTotal;
-      appendTd(tr, costStr);
-      appendTd(tr, '$' + lineTotal.toFixed(2));
+      appendTd(tr, unitCost ? '$' + unitCost.toFixed(2) : '');
+      appendTd(tr, unitCost ? '$' + lineTotal.toFixed(2) : '');
 
       var actionsTd = document.createElement('td');
       var removeBtn = document.createElement('button');
@@ -2829,7 +3091,7 @@
 
   function copyOrderToClipboard() {
     var order = getOrder();
-    if (order.length === 0) { alert('Order is empty.'); return; }
+    if (order.length === 0) { showToast('Order is empty.', 'warning'); return; }
 
     var lines = order.map(function (item) {
       return item.qty + 'x  ' + item.brand + ' — ' + item.name + '  (SKU: ' + item.sku + ')';
@@ -2852,7 +3114,7 @@
 
   function acceptDelivery() {
     var order = getOrder();
-    if (order.length === 0) { alert('Order is empty.'); return; }
+    if (order.length === 0) { showToast('Order is empty.', 'warning'); return; }
 
     // Determine which SKUs are checked
     var checkedSkus = {};
@@ -2864,7 +3126,7 @@
     var acceptedItems = order.filter(function (item) { return checkedSkus[item.sku]; });
     var remainingItems = order.filter(function (item) { return !checkedSkus[item.sku]; });
 
-    if (acceptedItems.length === 0) { alert('No items selected.'); return; }
+    if (acceptedItems.length === 0) { showToast('No items selected.', 'warning'); return; }
 
     var msg = 'Accept delivery for ' + acceptedItems.length + ' of ' + order.length + ' item(s)? This will add ordered quantities to stock and subtract from on_order for the selected kits.';
     if (!confirm(msg)) return;
@@ -2908,10 +3170,10 @@
       renderOrderTab();
       renderKitsTab();
       if (acceptBtn) { acceptBtn.disabled = false; acceptBtn.textContent = 'Accept Delivery'; }
-      alert('Delivery accepted. Stock updated for ' + acceptedItems.length + ' item(s).' + (remainingItems.length > 0 ? ' ' + remainingItems.length + ' item(s) remain in the order.' : ''));
+      showToast('Delivery accepted. Stock updated for ' + acceptedItems.length + ' item(s).' + (remainingItems.length > 0 ? ' ' + remainingItems.length + ' item(s) remain in the order.' : ''), 'success');
     }).catch(function (err) {
       if (acceptBtn) { acceptBtn.disabled = false; acceptBtn.textContent = 'Accept Delivery'; }
-      alert('Failed to update stock: ' + err.message);
+      showToast('Failed to update stock: ' + err.message, 'error');
     });
   }
 
@@ -2927,12 +3189,12 @@
     var reader = new FileReader();
     reader.onload = function (e) {
       var lines = e.target.result.split(/\r?\n/).filter(function (l) { return l.trim() !== ''; });
-      if (lines.length < 2) { alert('CSV must have a header row and at least one data row.'); return; }
+      if (lines.length < 2) { showToast('CSV must have a header row and at least one data row.', 'warning'); return; }
 
       var headers = parseCSVLine(lines[0]).map(function (h) { return h.trim().toLowerCase(); });
       var skuCol = headers.indexOf('sku');
       var qtyCol = headers.indexOf('qty');
-      if (skuCol === -1 || qtyCol === -1) { alert('CSV must have "SKU" and "Qty" columns.'); return; }
+      if (skuCol === -1 || qtyCol === -1) { showToast('CSV must have "SKU" and "Qty" columns.', 'warning'); return; }
 
       var added = 0;
       var skippedSkus = [];
@@ -2954,7 +3216,7 @@
       if (skippedSkus.length > 0) {
         msg += '\n' + skippedSkus.length + ' skipped (unrecognized SKUs: ' + skippedSkus.join(', ') + ')';
       }
-      alert(msg);
+      showToast(msg, 'success');
     };
     reader.readAsText(file);
   }
@@ -2969,7 +3231,7 @@
         var searchInput = document.getElementById('order-kit-search');
         var qtyInput = document.getElementById('order-kit-qty');
         var sku = hidden.value;
-        if (!sku) { alert('Type and select a kit first.'); return; }
+        if (!sku) { showToast('Type and select a kit first.', 'warning'); return; }
         var qty = parseInt(qtyInput.value, 10) || 1;
         var brand = hidden.getAttribute('data-brand') || '';
         var name = hidden.getAttribute('data-name') || '';
@@ -3234,7 +3496,7 @@
     }
 
     if (newRows.length === 0) {
-      alert('No new slots to generate for ' + monthName + ' (all slots already exist).');
+      showToast('No new slots to generate for ' + monthName + ' (all slots already exist).', 'warning');
       return;
     }
 
@@ -3242,11 +3504,11 @@
 
     sheetsAppend(SHEETS_CONFIG.SHEET_NAMES.SCHEDULE + '!A:C', newRows)
       .then(function () {
-        alert(newRows.length + ' slots generated for ' + monthName + '.');
+        showToast(newRows.length + ' slots generated for ' + monthName + '.', 'success');
         loadAllData();
       })
       .catch(function (err) {
-        alert('Failed to generate slots: ' + err.message);
+        showToast('Failed to generate slots: ' + err.message, 'error');
       });
   }
 
@@ -3447,7 +3709,7 @@
         renderScheduleCalendar();
       })
       .catch(function (err) {
-        alert('Failed to update slot: ' + err.message);
+        showToast('Failed to update slot: ' + err.message, 'error');
       });
   }
 
@@ -3472,7 +3734,7 @@
         renderScheduleCalendar();
       })
       .catch(function (err) {
-        alert('Failed to update day: ' + err.message);
+        showToast('Failed to update day: ' + err.message, 'error');
       });
   }
 
@@ -3509,7 +3771,7 @@
     });
 
     if (updates.length === 0) {
-      alert('Day already matches defaults.');
+      showToast('Day already matches defaults.', 'warning');
       return;
     }
 
@@ -3525,7 +3787,7 @@
         renderScheduleCalendar();
       })
       .catch(function (err) {
-        alert('Failed to reset day: ' + err.message);
+        showToast('Failed to reset day: ' + err.message, 'error');
       });
   }
 
@@ -3536,7 +3798,7 @@
     var month = scheduleCalMonth.getMonth();
     var daysInMonth = new Date(year, month + 1, 0).getDate();
     var statusCol = scheduleHeaders.indexOf('status');
-    if (statusCol === -1) { alert('Cannot find status column.'); return; }
+    if (statusCol === -1) { showToast('Cannot find status column.', 'warning'); return; }
 
     var today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -3578,7 +3840,7 @@
     });
 
     if (updates.length === 0) {
-      alert('All slots already match defaults.');
+      showToast('All slots already match defaults.', 'warning');
       return;
     }
 
@@ -3595,11 +3857,11 @@
 
     Promise.all(promises)
       .then(function () {
-        alert(updates.length + ' slot(s) updated to match defaults.');
+        showToast(updates.length + ' slot(s) updated to match defaults.', 'success');
         renderScheduleCalendar();
       })
       .catch(function (err) {
-        alert('Failed to reset slots: ' + err.message);
+        showToast('Failed to reset slots: ' + err.message, 'error');
         loadAllData(); // reload to get consistent state
       });
   }
@@ -3612,7 +3874,7 @@
       saveDefaultsBtn.addEventListener('click', function () {
         var defaults = readDefaultsFromTable();
         saveDefaultSchedule(defaults);
-        alert('Default schedule saved.');
+        showToast('Default schedule saved.', 'success');
       });
     }
   }
@@ -3743,7 +4005,7 @@
     reader.onload = function (ev) {
       var text = ev.target.result;
       var lines = text.trim().split('\n');
-      if (lines.length < 2) { alert('CSV file is empty or has no data rows.'); return; }
+      if (lines.length < 2) { showToast('CSV file is empty or has no data rows.', 'warning'); return; }
 
       var headers = parseCSVLine(lines[0]).map(function (h) { return h.trim(); });
       var rows = [];
@@ -3846,12 +4108,12 @@
     var range = SHEETS_CONFIG.SHEET_NAMES.KITS + '!A1:' + colLetter(kitsHeaders.length - 1) + (sheetRows.length);
     sheetsUpdate(range, sheetRows)
       .then(function () {
-        alert('Import applied successfully.');
+        showToast('Import applied successfully.', 'success');
         cancelImport();
         loadAllData();
       })
       .catch(function (err) {
-        alert('Import failed: ' + err.message);
+        showToast('Import failed: ' + err.message, 'error');
       });
   }
 
@@ -4050,7 +4312,7 @@
       if (addProductBtn) {
         addProductBtn.addEventListener('click', function () {
           if (!homepageSelectedProduct || !homepageSelectedProduct.sku) {
-            alert('Please select a product from the search dropdown.');
+            showToast('Please select a product from the search dropdown.', 'warning');
             return;
           }
           var alreadyAdded = homepageConfig['promo-featured-skus'].some(function (e) { return e.sku === homepageSelectedProduct.sku; });
@@ -4142,11 +4404,11 @@
       return sheetsUpdate(SHEETS_CONFIG.SHEET_NAMES.HOMEPAGE + '!A1', rows);
     })
     .then(function () {
-      alert('Homepage settings saved to Google Sheets!');
+      showToast('Homepage settings saved to Google Sheets!', 'success');
     })
     .catch(function (err) {
       console.error('[Homepage] Error saving:', err);
-      alert('Error saving homepage settings: ' + err.message);
+      showToast('Error saving homepage settings: ' + err.message, 'error');
     });
   }
 
