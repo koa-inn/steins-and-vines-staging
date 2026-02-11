@@ -169,6 +169,23 @@ app.get('/api/items', function (req, res) {
 });
 
 /**
+ * POST /api/items
+ * Create a new item in Zoho Books/Inventory.
+ */
+app.post('/api/items', function (req, res) {
+  zohoPost('/items', req.body)
+    .then(function (data) { res.status(201).json(data); })
+    .catch(function (err) {
+      var msg = err.message;
+      if (err.response && err.response.data) {
+        msg = err.response.data.message || err.response.data.error || msg;
+      }
+      console.error('[api/items POST]', msg);
+      res.status(err.response && err.response.status || 502).json({ error: msg });
+    });
+});
+
+/**
  * GET /api/contacts
  * Fetch contacts (customers/vendors) from Zoho Books.
  */
