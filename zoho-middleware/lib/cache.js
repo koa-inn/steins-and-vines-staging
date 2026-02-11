@@ -14,11 +14,16 @@ function getClient() {
   if (client) return Promise.resolve(client);
 
   client = redis.createClient({
-    url: process.env.REDIS_URL || 'redis://localhost:6379'
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    socket: {
+      reconnectStrategy: false   // don't retry — fail fast if Redis is down
+    }
   });
 
   client.on('error', function (err) {
-    console.error('[redis] Connection error:', err.message);
+    if (connected) {
+      console.error('[redis] Connection lost:', err.message);
+    }
     connected = false;
   });
 
@@ -34,7 +39,8 @@ function getClient() {
     console.error('[redis] Failed to connect:', err.message);
     console.error('[redis] Caching disabled — API calls will hit Zoho directly');
     connected = false;
-    return client;
+    client = null;  // allow fresh attempt if Redis comes up later
+    return null;
   });
 }
 

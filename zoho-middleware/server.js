@@ -75,7 +75,18 @@ app.use('/api', function (req, res, next) {
 // Zoho Books API proxy helpers
 // ---------------------------------------------------------------------------
 
-var ZOHO_API_BASE = 'https://www.zohoapis' + (process.env.ZOHO_DOMAIN || '.com') + '/books/v3';
+var API_URLS = {
+  '.com':    'https://www.zohoapis.com',
+  '.eu':     'https://www.zohoapis.eu',
+  '.in':     'https://www.zohoapis.in',
+  '.com.au': 'https://www.zohoapis.com.au',
+  '.ca':     'https://www.zohoapis.ca',
+  '.jp':     'https://www.zohoapis.jp',
+  '.sa':     'https://www.zohoapis.sa'
+};
+
+var apiDomain = process.env.ZOHO_DOMAIN || '.com';
+var ZOHO_API_BASE = (API_URLS[apiDomain] || ('https://www.zohoapis' + apiDomain)) + '/books/v3';
 
 /**
  * Proxy a GET request to the Zoho Books API.

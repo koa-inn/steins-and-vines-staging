@@ -14,8 +14,19 @@ var https = require('https');
 var querystring = require('querystring');
 
 // Zoho accounts base URL — varies by data center
+var ACCOUNTS_URLS = {
+  '.com':    'https://accounts.zoho.com',
+  '.eu':     'https://accounts.zoho.eu',
+  '.in':     'https://accounts.zoho.in',
+  '.com.au': 'https://accounts.zoho.com.au',
+  '.ca':     'https://accounts.zohocloud.ca',
+  '.jp':     'https://accounts.zoho.jp',
+  '.sa':     'https://accounts.zoho.sa'
+};
+
 function accountsBase() {
-  return 'https://accounts.zoho' + (process.env.ZOHO_DOMAIN || '.com');
+  var domain = process.env.ZOHO_DOMAIN || '.com';
+  return ACCOUNTS_URLS[domain] || ('https://accounts.zoho' + domain);
 }
 
 // Token state
