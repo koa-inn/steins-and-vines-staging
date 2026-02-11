@@ -2,7 +2,9 @@ require('dotenv').config();
 
 var express = require('express');
 var cors = require('cors');
+var axios = require('axios');
 var zohoAuth = require('./lib/zohoAuth');
+var cache = require('./lib/cache');
 
 var app = express();
 var PORT = process.env.PORT || 3001;
@@ -73,56 +75,63 @@ app.use('/api', function (req, res, next) {
 // Zoho Books API proxy helpers
 // ---------------------------------------------------------------------------
 
-var https = require('https');
-
-function zohoApiBase() {
-  return 'https://www.zohoapis' + (process.env.ZOHO_DOMAIN || '.com');
-}
+var ZOHO_API_BASE = 'https://www.zohoapis' + (process.env.ZOHO_DOMAIN || '.com') + '/books/v3';
 
 /**
  * Proxy a GET request to the Zoho Books API.
  * Automatically attaches the current access token and organization_id.
  */
-function zohoGet(path) {
+function zohoGet(path, params) {
   return zohoAuth.getAccessToken().then(function (token) {
-    var separator = path.indexOf('?') === -1 ? '?' : '&';
-    var url = zohoApiBase() + '/books/v3' + path + separator + 'organization_id=' + process.env.ZOHO_ORG_ID;
-
-    return new Promise(function (resolve, reject) {
-      var parsed = new URL(url);
-      var options = {
-        hostname: parsed.hostname,
-        path: parsed.pathname + parsed.search,
-        method: 'GET',
-        headers: {
-          Authorization: 'Zoho-oauthtoken ' + token
-        }
-      };
-
-      var req = https.request(options, function (res) {
-        var chunks = [];
-        res.on('data', function (c) { chunks.push(c); });
-        res.on('end', function () {
-          try {
-            resolve(JSON.parse(Buffer.concat(chunks).toString()));
-          } catch (e) {
-            reject(new Error('Failed to parse Zoho response'));
-          }
-        });
-      });
-      req.on('error', reject);
-      req.end();
+    var query = Object.assign({ organization_id: process.env.ZOHO_ORG_ID }, params || {});
+    return axios.get(ZOHO_API_BASE + path, {
+      headers: { Authorization: 'Zoho-oauthtoken ' + token },
+      params: query
+    }).then(function (response) {
+      return response.data;
     });
   });
 }
 
 // ---------------------------------------------------------------------------
-// Example API routes — expand these as you build out the integration
+// API routes
 // ---------------------------------------------------------------------------
+
+var PRODUCTS_CACHE_KEY = 'zoho:products';
+var PRODUCTS_CACHE_TTL = 300; // 5 minutes in seconds
+
+/**
+ * GET /api/products
+ * Returns active items from Zoho Inventory, cached in Redis for 5 minutes.
+ */
+app.get('/api/products', function (req, res) {
+  cache.get(PRODUCTS_CACHE_KEY)
+    .then(function (cached) {
+      if (cached) {
+        console.log('[api/products] Cache hit');
+        return res.json({ source: 'cache', items: cached });
+      }
+
+      console.log('[api/products] Cache miss — fetching from Zoho');
+      return zohoGet('/items', { status: 'active' })
+        .then(function (data) {
+          var items = data.items || [];
+
+          // Store in Redis (fire-and-forget — don't block the response)
+          cache.set(PRODUCTS_CACHE_KEY, items, PRODUCTS_CACHE_TTL);
+
+          res.json({ source: 'zoho', items: items });
+        });
+    })
+    .catch(function (err) {
+      console.error('[api/products]', err.message);
+      res.status(502).json({ error: err.message });
+    });
+});
 
 /**
  * GET /api/items
- * Fetch inventory items from Zoho Books.
+ * Fetch inventory items from Zoho Books (uncached, all statuses).
  */
 app.get('/api/items', function (req, res) {
   zohoGet('/items')
@@ -175,10 +184,13 @@ app.get('/health', function (req, res) {
 // Start
 // ---------------------------------------------------------------------------
 
-app.listen(PORT, function () {
-  console.log('');
-  console.log('  Zoho middleware running on http://localhost:' + PORT);
-  console.log('  Health check:   http://localhost:' + PORT + '/health');
-  console.log('  Connect Zoho:   http://localhost:' + PORT + '/auth/zoho');
-  console.log('');
+// Connect Redis, then start listening
+cache.init().then(function () {
+  app.listen(PORT, function () {
+    console.log('');
+    console.log('  Zoho middleware running on http://localhost:' + PORT);
+    console.log('  Health check:   http://localhost:' + PORT + '/health');
+    console.log('  Connect Zoho:   http://localhost:' + PORT + '/auth/zoho');
+    console.log('');
+  });
 });
