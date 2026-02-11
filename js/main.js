@@ -3779,6 +3779,9 @@ function renderReservationItems() {
   });
   clearWrap.appendChild(clearBtn);
   container.appendChild(clearWrap);
+
+  // Notify listeners (e.g. deposit summary) that reservation items changed
+  window.dispatchEvent(new Event('reservation-changed'));
 }
 
 function loadTimeslots() {
@@ -4193,6 +4196,115 @@ function setupReservationForm() {
   var loadedAtField = document.getElementById('res-loaded-at');
   if (loadedAtField) loadedAtField.value = String(Date.now());
 
+  // --- Payment setup (Global Payments hosted fields) ---
+  var paymentSection = document.getElementById('payment-section');
+  var paymentError = document.getElementById('payment-error');
+  var depositSummary = document.getElementById('deposit-summary');
+  var gpCardForm = null;
+  var gpToken = null;         // populated by token-success callback
+  var paymentConfig = null;   // { publicApiKey, depositAmount, enabled }
+  var isKioskMode = document.body.classList.contains('kiosk-mode');
+
+  var mwUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL)
+    ? SHEETS_CONFIG.MIDDLEWARE_URL : '';
+
+  // Fetch payment config from middleware and initialize hosted fields
+  if (!isKioskMode && paymentSection) {
+    fetch(mwUrl + '/api/payment/config')
+      .then(function (r) { return r.json(); })
+      .then(function (cfg) {
+        paymentConfig = cfg;
+        if (!cfg.enabled || !cfg.accessToken) return;
+
+        // Show the payment section
+        paymentSection.classList.remove('hidden');
+        var headingEl = document.getElementById('payment-heading');
+        var noteEl = document.getElementById('payment-note');
+        if (headingEl) headingEl.textContent = 'Payment — $' + Number(cfg.depositAmount).toFixed(2) + ' deposit';
+        if (noteEl) noteEl.textContent = 'Your card will be charged a $' + Number(cfg.depositAmount).toFixed(2) + ' deposit. The remaining balance is due at your appointment.';
+
+        // Configure Global Payments JS SDK with access token
+        if (typeof GlobalPayments !== 'undefined') {
+          GlobalPayments.configure({
+            accessToken: cfg.accessToken,
+            apiVersion: '2021-03-22',
+            env: cfg.env === 'production' ? 'production' : 'sandbox'
+          });
+
+          gpCardForm = GlobalPayments.ui.form({
+            fields: {
+              'card-number': {
+                placeholder: '•••• •••• •••• ••••',
+                target: '#credit-card-number'
+              },
+              'card-expiration': {
+                placeholder: 'MM / YYYY',
+                target: '#credit-card-expiry'
+              },
+              'card-cvv': {
+                placeholder: '•••',
+                target: '#credit-card-cvv'
+              },
+              'submit': {
+                text: 'Verify Card',
+                target: '#credit-card-submit'
+              }
+            }
+          });
+
+          gpCardForm.on('token-success', function (resp) {
+            gpToken = resp.paymentReference;
+            if (paymentError) {
+              paymentError.textContent = '';
+              paymentError.classList.remove('visible');
+            }
+            // Visual feedback that card is verified
+            var submitEl = document.getElementById('credit-card-submit');
+            if (submitEl) submitEl.classList.add('card-verified');
+          });
+
+          gpCardForm.on('token-error', function (resp) {
+            gpToken = null;
+            if (paymentError) {
+              paymentError.textContent = resp.error ? resp.error.message || 'Card validation failed.' : 'Card validation failed.';
+              paymentError.classList.add('visible');
+            }
+          });
+        }
+      })
+      .catch(function (err) {
+        console.error('[payment] Config fetch failed:', err.message);
+      });
+  }
+
+  /**
+   * Update the deposit summary display based on cart items and payment config.
+   */
+  function updateDepositSummary() {
+    if (!depositSummary || !paymentConfig || !paymentConfig.enabled || isKioskMode) return;
+    var items = getReservation();
+    var total = 0;
+    items.forEach(function (item) {
+      total += (parseFloat(item.price) || 0) * (item.qty || 1);
+    });
+    if (items.length === 0 || total <= 0) {
+      depositSummary.classList.add('hidden');
+      return;
+    }
+    var deposit = Math.min(paymentConfig.depositAmount, total);
+    var balance = Math.max(0, total - deposit);
+    var amountEl = document.getElementById('deposit-summary-amount');
+    var balanceEl = document.getElementById('deposit-summary-balance');
+    if (amountEl) amountEl.textContent = '$' + deposit.toFixed(2);
+    if (balanceEl) balanceEl.textContent = '$' + balance.toFixed(2);
+    depositSummary.classList.remove('hidden');
+  }
+
+  // Update deposit summary whenever reservation items change
+  window.addEventListener('reservation-changed', updateDepositSummary);
+  window.addEventListener('storage', updateDepositSummary);
+  setTimeout(updateDepositSummary, 500);
+
   // Inline validation on blur
   function showFieldError(input, msg) {
     input.classList.add('field-error');
@@ -4297,91 +4409,156 @@ function setupReservationForm() {
       submitBtn.classList.add('btn-loading');
     }
 
-    var middlewareUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL)
-      ? SHEETS_CONFIG.MIDDLEWARE_URL
-      : '';
+    var middlewareUrl = mwUrl;
     var isWalkIn = timeslot === 'Walk-in — Immediate';
+    var needsPayment = !isWalkIn && !isKioskMode && paymentConfig && paymentConfig.enabled;
+
+    // Calculate order total and deposit
+    var orderTotal = 0;
+    items.forEach(function (item) {
+      orderTotal += (parseFloat(item.price) || 0) * (item.qty || 1);
+    });
+    var depositAmt = needsPayment ? Math.min(paymentConfig.depositAmount, orderTotal) : 0;
 
     // Parse date and time from timeslot value (e.g. "2026-02-15 10:00 AM")
     var slotParts = timeslot.split(' ');
     var slotDate = slotParts[0];
     var slotTime = slotParts.slice(1).join(' ');
 
-    // Step 1: Find or create contact
-    fetch(middlewareUrl + '/api/contacts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, email: email, phone: phone })
-    })
-    .then(function (res) {
-      if (!res.ok) throw new Error('Failed to create contact');
-      return res.json();
-    })
-    .then(function (contactData) {
-      var customerId = contactData.contact_id;
-
-      // Step 2: Create booking (skip for walk-in)
-      if (isWalkIn) {
-        return { customerId: customerId, bookingId: null, timeslotLabel: 'Walk-in — Immediate' };
+    // Step 0: Charge deposit (skip for walk-in / kiosk)
+    var paymentPromise;
+    if (needsPayment && depositAmt > 0) {
+      // Validate that we have a token from the hosted fields
+      if (!gpToken) {
+        showToast('Please enter your card details.', 'error');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = submitBtn.getAttribute('data-original-text') || 'Submit Reservation';
+          submitBtn.classList.remove('btn-loading');
+        }
+        return;
       }
 
-      return fetch(middlewareUrl + '/api/bookings', {
+      paymentPromise = fetch(middlewareUrl + '/api/payment/charge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          date: slotDate,
-          time: slotTime,
-          customer: { name: name, email: email, phone: phone },
-          notes: productNames
+          token: gpToken,
+          amount: depositAmt,
+          customer: { name: name, email: email }
         })
       })
-      .then(function (res) {
-        if (!res.ok) throw new Error('Failed to create booking');
-        return res.json();
-      })
-      .then(function (bookingData) {
-        return {
-          customerId: customerId,
-          bookingId: bookingData.booking_id,
-          timeslotLabel: bookingData.timeslot || timeslot
-        };
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'Payment failed'); });
+        return r.json();
       });
-    })
-    .then(function (result) {
-      // Step 3: Create Sales Order
-      var lineItems = items.map(function (item) {
-        var lineItem = {
-          name: item.name + (item.brand ? ' — ' + item.brand : ''),
-          quantity: item.qty || 1,
-          rate: parseFloat(item.price) || 0
-        };
-        if (item.zoho_item_id) lineItem.item_id = item.zoho_item_id;
-        return lineItem;
-      });
+    } else {
+      paymentPromise = Promise.resolve({ transaction_id: '', amount: 0 });
+    }
 
-      return fetch(middlewareUrl + '/api/checkout', {
+    paymentPromise
+    .then(function (paymentResult) {
+      var txnId = paymentResult.transaction_id || '';
+      var chargedAmount = paymentResult.amount || 0;
+
+      // Step 1: Find or create contact
+      return fetch(middlewareUrl + '/api/contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify({ name: name, email: email, phone: phone })
+      })
+      .then(function (res) {
+        if (!res.ok) throw new Error('Failed to create contact');
+        return res.json();
+      })
+      .then(function (contactData) {
+        var customerId = contactData.contact_id;
+
+        // Step 2: Create booking (skip for walk-in)
+        if (isWalkIn) {
+          return { customerId: customerId, bookingId: null, timeslotLabel: 'Walk-in — Immediate' };
+        }
+
+        return fetch(middlewareUrl + '/api/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: slotDate,
+            time: slotTime,
+            customer: { name: name, email: email, phone: phone },
+            notes: productNames
+          })
+        })
+        .then(function (res) {
+          if (!res.ok) throw new Error('Failed to create booking');
+          return res.json();
+        })
+        .then(function (bookingData) {
+          return {
+            customerId: customerId,
+            bookingId: bookingData.booking_id,
+            timeslotLabel: bookingData.timeslot || timeslot
+          };
+        });
+      })
+      .then(function (result) {
+        // Step 3: Create Sales Order (with deposit info)
+        var lineItems = items.map(function (item) {
+          var lineItem = {
+            name: item.name + (item.brand ? ' — ' + item.brand : ''),
+            quantity: item.qty || 1,
+            rate: parseFloat(item.price) || 0
+          };
+          if (item.zoho_item_id) lineItem.item_id = item.zoho_item_id;
+          return lineItem;
+        });
+
+        var checkoutPayload = {
           customer_id: result.customerId,
           items: lineItems,
           notes: 'Reservation for ' + name + ' — ' + timeslot,
           appointment_id: result.bookingId || '',
           timeslot: result.timeslotLabel
+        };
+
+        // Attach payment info if deposit was charged
+        if (txnId) {
+          checkoutPayload.transaction_id = txnId;
+          checkoutPayload.deposit_amount = chargedAmount;
+        }
+
+        return fetch(middlewareUrl + '/api/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(checkoutPayload)
         })
-      })
-      .then(function (res) {
-        if (!res.ok) throw new Error('Failed to create order');
-        return res.json();
+        .then(function (res) {
+          if (!res.ok) throw new Error('Failed to create order');
+          return res.json();
+        });
       });
     })
-    .then(function () {
+    .then(function (orderResult) {
       // Success — clear reservation and show confirmation
       localStorage.removeItem(RESERVATION_KEY);
       document.getElementById('reservation-list').classList.add('hidden');
       document.getElementById('timeslot-picker').classList.add('hidden');
       document.getElementById('reservation-form-section').classList.add('hidden');
-      document.getElementById('reservation-confirm').classList.remove('hidden');
+
+      // Show deposit info in confirmation if applicable
+      var confirmEl = document.getElementById('reservation-confirm');
+      if (confirmEl) {
+        confirmEl.classList.remove('hidden');
+        if (orderResult && orderResult.deposit_amount > 0) {
+          var balDue = orderResult.balance_due || 0;
+          var depositNote = document.createElement('p');
+          depositNote.className = 'deposit-confirm-note';
+          depositNote.textContent = 'Deposit of $' + Number(orderResult.deposit_amount).toFixed(2) + ' charged.'
+            + (balDue > 0 ? ' Balance of $' + Number(balDue).toFixed(2) + ' due at your appointment.' : '');
+          var confirmText = confirmEl.querySelector('p');
+          if (confirmText) confirmText.parentNode.insertBefore(depositNote, confirmText.nextSibling);
+        }
+      }
     })
     .catch(function (err) {
       showToast('Something went wrong: ' + err.message + '. Please try again.', 'error');

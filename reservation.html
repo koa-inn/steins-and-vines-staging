@@ -86,6 +86,41 @@
               <input type="text" id="res-website" name="website" tabindex="-1" autocomplete="off">
             </div>
             <input type="hidden" id="res-loaded-at" value="">
+
+            <div id="payment-section" class="payment-section hidden">
+              <h3 id="payment-heading">Payment</h3>
+              <p class="payment-note" id="payment-note"></p>
+              <div class="payment-fields">
+                <div class="payment-field">
+                  <label>Card Number</label>
+                  <div id="credit-card-number"></div>
+                </div>
+                <div class="payment-field-row">
+                  <div class="payment-field">
+                    <label>Expiry</label>
+                    <div id="credit-card-expiry"></div>
+                  </div>
+                  <div class="payment-field">
+                    <label>CVV</label>
+                    <div id="credit-card-cvv"></div>
+                  </div>
+                </div>
+                <div id="credit-card-submit"></div>
+              </div>
+              <div id="payment-error" class="form-error-msg"></div>
+            </div>
+
+            <div id="deposit-summary" class="deposit-summary hidden">
+              <div class="deposit-summary-row">
+                <span>Deposit</span>
+                <span id="deposit-summary-amount"></span>
+              </div>
+              <div class="deposit-summary-row">
+                <span>Balance due at appointment</span>
+                <span id="deposit-summary-balance"></span>
+              </div>
+            </div>
+
             <button type="submit" class="btn" data-content="submit-btn">Submit Reservation</button>
             <p class="form-note" data-content="form-note">A confirmation email will be sent to the address provided above.</p>
           </form>
@@ -131,6 +166,7 @@
     </div>
   </footer>
 
+  <script src="https://js.globalpay.com/4.1.11/globalpayments.js"></script>
   <script src="js/sheets-config.js" defer></script>
   <script src="js/main.min.js" defer></script>
 </body>

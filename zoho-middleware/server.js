@@ -3,8 +3,17 @@ require('dotenv').config();
 var express = require('express');
 var cors = require('cors');
 var axios = require('axios');
+var crypto = require('crypto');
 var zohoAuth = require('./lib/zohoAuth');
 var cache = require('./lib/cache');
+var gp = require('globalpayments-api');
+
+var ServicesContainer = gp.ServicesContainer;
+var GpApiConfig = gp.GpApiConfig;
+var CreditCardData = gp.CreditCardData;
+var Transaction = gp.Transaction;
+var Channel = gp.Channel;
+var Environment = gp.Environment;
 
 var app = express();
 var PORT = process.env.PORT || 3001;
@@ -18,6 +27,30 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
 }));
+
+// ---------------------------------------------------------------------------
+// Global Payments (GP-API) SDK initialization
+// ---------------------------------------------------------------------------
+
+var GP_DEPOSIT_AMOUNT = parseFloat(process.env.GP_DEPOSIT_AMOUNT) || 50.00;
+
+if (process.env.GP_APP_KEY) {
+  var gpConfig = new GpApiConfig();
+  gpConfig.appId = process.env.GP_APP_ID || '';
+  gpConfig.appKey = process.env.GP_APP_KEY;
+  gpConfig.channel = Channel.CardNotPresent;
+  gpConfig.country = 'CA';
+  gpConfig.deviceCurrency = 'CAD';
+  gpConfig.environment = process.env.GP_ENVIRONMENT === 'production'
+    ? Environment.Production : Environment.Test;
+  if (process.env.GP_MERCHANT_ID) {
+    gpConfig.merchantId = process.env.GP_MERCHANT_ID;
+  }
+  ServicesContainer.configureService(gpConfig);
+  console.log('  Global Payments SDK configured (deposit: $' + GP_DEPOSIT_AMOUNT.toFixed(2) + ')');
+} else {
+  console.log('  Global Payments SDK not configured (GP_APP_KEY missing)');
+}
 
 // ---------------------------------------------------------------------------
 // Auth routes
@@ -87,6 +120,7 @@ var API_URLS = {
 
 var apiDomain = process.env.ZOHO_DOMAIN || '.com';
 var ZOHO_API_BASE = (API_URLS[apiDomain] || ('https://www.zohoapis' + apiDomain)) + '/books/v3';
+var ZOHO_INVENTORY_BASE = (API_URLS[apiDomain] || ('https://www.zohoapis' + apiDomain)) + '/inventory/v1';
 
 /**
  * Proxy a GET request to the Zoho Books API.
@@ -111,6 +145,50 @@ function zohoGet(path, params) {
 function zohoPost(path, body) {
   return zohoAuth.getAccessToken().then(function (token) {
     return axios.post(ZOHO_API_BASE + path, body, {
+      headers: { Authorization: 'Zoho-oauthtoken ' + token },
+      params: { organization_id: process.env.ZOHO_ORG_ID }
+    }).then(function (response) {
+      return response.data;
+    });
+  });
+}
+
+/**
+ * Proxy a PUT request to the Zoho Books API.
+ * Automatically attaches the current access token and organization_id.
+ */
+function zohoPut(path, body) {
+  return zohoAuth.getAccessToken().then(function (token) {
+    return axios.put(ZOHO_API_BASE + path, body, {
+      headers: { Authorization: 'Zoho-oauthtoken ' + token },
+      params: { organization_id: process.env.ZOHO_ORG_ID }
+    }).then(function (response) {
+      return response.data;
+    });
+  });
+}
+
+/**
+ * Proxy a GET request to the Zoho Inventory API.
+ */
+function inventoryGet(path, params) {
+  return zohoAuth.getAccessToken().then(function (token) {
+    var query = Object.assign({ organization_id: process.env.ZOHO_ORG_ID }, params || {});
+    return axios.get(ZOHO_INVENTORY_BASE + path, {
+      headers: { Authorization: 'Zoho-oauthtoken ' + token },
+      params: query
+    }).then(function (response) {
+      return response.data;
+    });
+  });
+}
+
+/**
+ * Proxy a PUT request to the Zoho Inventory API.
+ */
+function inventoryPut(path, body) {
+  return zohoAuth.getAccessToken().then(function (token) {
+    return axios.put(ZOHO_INVENTORY_BASE + path, body, {
       headers: { Authorization: 'Zoho-oauthtoken ' + token },
       params: { organization_id: process.env.ZOHO_ORG_ID }
     }).then(function (response) {
@@ -465,10 +543,187 @@ app.get('/api/invoices', function (req, res) {
     });
 });
 
+// ---------------------------------------------------------------------------
+// API routes — Global Payments
+// ---------------------------------------------------------------------------
+
+var GP_API_BASE = process.env.GP_ENVIRONMENT === 'production'
+  ? 'https://apis.globalpay.com/ucp'
+  : 'https://apis.sandbox.globalpay.com/ucp';
+
+/**
+ * GET /api/payment/config
+ * Generate a restricted access token for client-side tokenization and return
+ * it with the deposit amount. Token expires in 10 minutes.
+ * Card data never touches our server — tokenized client-side by @globalpayments/js.
+ */
+app.get('/api/payment/config', function (req, res) {
+  if (!process.env.GP_APP_KEY) {
+    return res.json({ enabled: false, depositAmount: GP_DEPOSIT_AMOUNT });
+  }
+
+  var nonce = String(Date.now());
+  var secret = crypto.createHash('sha512').update(nonce + process.env.GP_APP_KEY).digest('hex');
+
+  axios.post(GP_API_BASE + '/accesstoken', {
+    app_id: process.env.GP_APP_ID,
+    secret: secret,
+    grant_type: 'client_credentials',
+    nonce: nonce,
+    interval_to_expire: '10_MINUTES',
+    restricted_token: 'YES',
+    permissions: ['PMT_POST_Create_Single']
+  }, {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-GP-Version': '2021-03-22'
+    }
+  })
+  .then(function (tokenResp) {
+    res.json({
+      enabled: true,
+      accessToken: tokenResp.data.token,
+      env: process.env.GP_ENVIRONMENT === 'production' ? 'production' : 'sandbox',
+      depositAmount: GP_DEPOSIT_AMOUNT
+    });
+  })
+  .catch(function (err) {
+    var msg = err.message;
+    if (err.response && err.response.data) {
+      msg = err.response.data.error_description || err.response.data.message || msg;
+    }
+    console.error('[payment/config] Access token failed:', msg);
+    res.status(502).json({ error: 'Payment config failed: ' + msg, enabled: false });
+  });
+});
+
+/**
+ * POST /api/payment/charge
+ * Charge a deposit using a single-use token from the client.
+ *
+ * Expected body:
+ * {
+ *   token: "single-use-token-from-globalpayments-js",
+ *   amount: 50.00,
+ *   customer: { name: "...", email: "..." }
+ * }
+ */
+app.post('/api/payment/charge', function (req, res) {
+  var body = req.body;
+
+  if (!body || !body.token) {
+    return res.status(400).json({ error: 'Missing payment token' });
+  }
+  if (!process.env.GP_APP_KEY) {
+    return res.status(503).json({ error: 'Payment gateway not configured' });
+  }
+
+  var amount = parseFloat(body.amount) || GP_DEPOSIT_AMOUNT;
+
+  var card = new CreditCardData();
+  card.token = body.token;
+
+  card.charge(amount)
+    .withCurrency('CAD')
+    .withAllowDuplicates(true)
+    .execute()
+    .then(function (response) {
+      if (response.responseCode !== '00') {
+        console.error('[payment/charge] Declined:', response.responseCode, response.responseMessage);
+        return res.status(402).json({
+          error: 'Payment declined: ' + (response.responseMessage || 'Unknown error'),
+          code: response.responseCode
+        });
+      }
+
+      console.log('[payment/charge] Success: txn=' + response.transactionId);
+      res.json({
+        transaction_id: response.transactionId,
+        auth_code: response.authorizationCode || '',
+        status: 'approved',
+        amount: amount
+      });
+    })
+    .catch(function (err) {
+      console.error('[payment/charge] Error:', err.message);
+      res.status(502).json({ error: 'Payment processing error: ' + err.message });
+    });
+});
+
+/**
+ * POST /api/payment/void
+ * Void a transaction (used when Zoho order creation fails after payment).
+ *
+ * Expected body: { transaction_id: "..." }
+ */
+app.post('/api/payment/void', function (req, res) {
+  var txnId = req.body && req.body.transaction_id;
+  if (!txnId) {
+    return res.status(400).json({ error: 'Missing transaction_id' });
+  }
+
+  Transaction.fromId(txnId)
+    .void()
+    .execute()
+    .then(function (response) {
+      console.log('[payment/void] Voided txn=' + txnId);
+      res.json({ ok: true, transaction_id: txnId, status: 'voided' });
+    })
+    .catch(function (err) {
+      console.error('[payment/void] Error:', err.message);
+      res.status(502).json({ error: 'Void failed: ' + err.message });
+    });
+});
+
+/**
+ * POST /api/payment/refund
+ * Refund a deposit (for cancellations).
+ *
+ * Expected body: { transaction_id: "...", amount: 50.00 }
+ */
+app.post('/api/payment/refund', function (req, res) {
+  var body = req.body;
+  if (!body || !body.transaction_id) {
+    return res.status(400).json({ error: 'Missing transaction_id' });
+  }
+
+  var amount = parseFloat(body.amount) || GP_DEPOSIT_AMOUNT;
+
+  Transaction.fromId(body.transaction_id)
+    .refund(amount)
+    .withCurrency('CAD')
+    .execute()
+    .then(function (response) {
+      if (response.responseCode !== '00') {
+        return res.status(400).json({
+          error: 'Refund declined: ' + (response.responseMessage || 'Unknown error'),
+          code: response.responseCode
+        });
+      }
+
+      console.log('[payment/refund] Refunded txn=' + body.transaction_id + ' amount=' + amount);
+      res.json({
+        ok: true,
+        transaction_id: response.transactionId,
+        original_transaction_id: body.transaction_id,
+        amount: amount,
+        status: 'refunded'
+      });
+    })
+    .catch(function (err) {
+      console.error('[payment/refund] Error:', err.message);
+      res.status(502).json({ error: 'Refund failed: ' + err.message });
+    });
+});
+
 /**
  * POST /api/checkout
  * Accepts a cart payload, formats it as a Zoho Books Sales Order, and creates
  * it via the API. Invalidates the products cache so stock counts refresh.
+ *
+ * If a payment transaction_id is provided (online deposit was charged),
+ * deposit/balance custom fields are added and a Zoho Books customer payment
+ * is recorded against the sales order.
  *
  * Expected request body:
  * {
@@ -476,7 +731,9 @@ app.get('/api/invoices', function (req, res) {
  *   items: [
  *     { item_id: "zoho_item_id", name: "Product Name", quantity: 2, rate: 14.99 }
  *   ],
- *   notes: "optional order notes"
+ *   notes: "optional order notes",
+ *   transaction_id: "gp-txn-id (optional)",
+ *   deposit_amount: 50.00 (optional)
  * }
  */
 app.post('/api/checkout', function (req, res) {
@@ -490,15 +747,23 @@ app.post('/api/checkout', function (req, res) {
     return res.status(400).json({ error: 'Cart is empty' });
   }
 
-  // --- Build Zoho Sales Order payload ---
+  // --- Calculate order total and deposit ---
+  var orderTotal = 0;
   var lineItems = body.items.map(function (item) {
+    var qty = Number(item.quantity) || 1;
+    var rate = Number(item.rate) || 0;
+    orderTotal += qty * rate;
     return {
       item_id: item.item_id,
       name: item.name || '',
-      quantity: Number(item.quantity) || 1,
-      rate: Number(item.rate) || 0
+      quantity: qty,
+      rate: rate
     };
   });
+
+  var transactionId = body.transaction_id || '';
+  var depositAmount = transactionId ? (parseFloat(body.deposit_amount) || 0) : 0;
+  var balanceDue = Math.max(0, orderTotal - depositAmount);
 
   var salesOrder = {
     customer_id: body.customer_id,
@@ -526,15 +791,66 @@ app.post('/api/checkout', function (req, res) {
     value: body.appointment_id ? 'Pending' : 'Walk-in'
   });
 
+  // Deposit tracking custom fields
+  salesOrder.custom_fields.push({
+    api_name: process.env.ZOHO_CF_DEPOSIT || 'cf_deposit_amount',
+    value: String(depositAmount.toFixed(2))
+  });
+  salesOrder.custom_fields.push({
+    api_name: process.env.ZOHO_CF_BALANCE || 'cf_balance_due',
+    value: String(balanceDue.toFixed(2))
+  });
+  if (transactionId) {
+    salesOrder.custom_fields.push({
+      api_name: process.env.ZOHO_CF_TRANSACTION_ID || 'cf_payment_transaction_id',
+      value: transactionId
+    });
+  }
+
   zohoPost('/salesorders', salesOrder)
     .then(function (data) {
       // Invalidate product cache so stock counts refresh on next fetch
       cache.del(PRODUCTS_CACHE_KEY);
 
+      var soId = data.salesorder ? data.salesorder.salesorder_id : null;
+      var soNumber = data.salesorder ? data.salesorder.salesorder_number : null;
+
+      // If an online deposit was charged, record the payment in Zoho Books
+      if (transactionId && depositAmount > 0 && soId) {
+        return zohoPost('/customerpayments', {
+          customer_id: body.customer_id,
+          payment_mode: 'creditcard',
+          amount: depositAmount,
+          date: new Date().toISOString().slice(0, 10),
+          reference_number: transactionId,
+          notes: 'Online deposit for Sales Order ' + (soNumber || soId),
+          invoices: [{ invoice_id: soId, amount_applied: depositAmount }]
+        })
+        .then(function () {
+          console.log('[api/checkout] Payment recorded for SO=' + soNumber);
+        })
+        .catch(function (payErr) {
+          // Payment recording failed — log but don't fail the order
+          // The deposit custom fields on the SO still have the transaction reference
+          console.error('[api/checkout] Payment recording failed (non-fatal):', payErr.message);
+        })
+        .then(function () {
+          res.status(201).json({
+            ok: true,
+            salesorder_id: soId,
+            salesorder_number: soNumber,
+            deposit_amount: depositAmount,
+            balance_due: balanceDue
+          });
+        });
+      }
+
       res.status(201).json({
         ok: true,
-        salesorder_id: data.salesorder ? data.salesorder.salesorder_id : null,
-        salesorder_number: data.salesorder ? data.salesorder.salesorder_number : null
+        salesorder_id: soId,
+        salesorder_number: soNumber,
+        deposit_amount: depositAmount,
+        balance_due: balanceDue
       });
     })
     .catch(function (err) {
@@ -550,8 +866,486 @@ app.post('/api/checkout', function (req, res) {
         }
       }
 
+      // If payment was already charged but Zoho failed, void the transaction
+      if (transactionId) {
+        console.error('[api/checkout] Zoho failed after payment — voiding txn=' + transactionId);
+        Transaction.fromId(transactionId)
+          .void()
+          .execute()
+          .then(function () {
+            console.log('[api/checkout] Voided txn=' + transactionId);
+          })
+          .catch(function (voidErr) {
+            console.error('[api/checkout] CRITICAL: Void failed for txn=' + transactionId + ':', voidErr.message);
+          })
+          .then(function () {
+            res.status(status).json({
+              error: message,
+              payment_voided: true,
+              voided_transaction_id: transactionId
+            });
+          });
+        return;
+      }
+
       console.error('[api/checkout]', message);
       res.status(status).json({ error: message });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// API routes — Tax Setup (BC FoP rates)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/inventory/items/:id
+ * Fetch a single item from Zoho Inventory (full detail).
+ */
+app.get('/api/inventory/items/:id', function (req, res) {
+  inventoryGet('/items/' + req.params.id)
+    .then(function (data) { res.json(data); })
+    .catch(function (err) {
+      var detail = err.response ? err.response.data : err.message;
+      res.status(502).json({ error: detail });
+    });
+});
+
+/**
+ * GET /api/taxes
+ * List all taxes configured in Zoho Books.
+ */
+app.get('/api/taxes', function (req, res) {
+  zohoGet('/settings/taxes')
+    .then(function (data) { res.json(data); })
+    .catch(function (err) {
+      console.error('[api/taxes]', err.message);
+      res.status(502).json({ error: err.message });
+    });
+});
+
+/**
+ * GET /api/taxes/rules
+ * List tax rules and tax exemptions from Zoho Books settings.
+ */
+app.get('/api/taxes/rules', function (req, res) {
+  Promise.all([
+    zohoGet('/settings/taxrules').catch(function (e) { return { error: e.response ? e.response.data : e.message }; }),
+    zohoGet('/settings/taxexemptions').catch(function (e) { return { error: e.response ? e.response.data : e.message }; }),
+    zohoGet('/settings/taxauthorities').catch(function (e) { return { error: e.response ? e.response.data : e.message }; })
+  ])
+    .then(function (results) {
+      res.json({
+        tax_rules: results[0],
+        tax_exemptions: results[1],
+        tax_authorities: results[2]
+      });
+    })
+    .catch(function (err) {
+      console.error('[api/taxes/rules]', err.message);
+      res.status(502).json({ error: err.message });
+    });
+});
+
+/**
+ * POST /api/taxes/rules
+ * Try creating a tax rule via the API.
+ */
+app.post('/api/taxes/rules', function (req, res) {
+  zohoPost('/settings/taxrules', req.body)
+    .then(function (data) { res.status(201).json(data); })
+    .catch(function (err) {
+      var detail = err.response ? err.response.data : err.message;
+      res.status(502).json({ error: detail });
+    });
+});
+
+/**
+ * POST /api/taxes/setup
+ * One-time setup: create BC PST Liquor (10%) and a GST + BC PST Liquor
+ * tax group. Skips anything that already exists.
+ *
+ * Your org already has:
+ *   GST 5%, BC PST 7%, BC PST + GST 12% (compound), Zero Rate 0%
+ *
+ * After this runs you'll have all 4 retail tax profiles:
+ *   - Zero Rate (0%)                     → Ingredients
+ *   - GST (5%)                           → Facility Services
+ *   - BC PST + GST (12% compound)        → Packaging, Hardware
+ *   - GST + BC PST Liquor (5% + 10%)     → Finished Commercial Liquor
+ */
+app.post('/api/taxes/setup', function (req, res) {
+  var results = { created: [], skipped: [], errors: [] };
+
+  zohoGet('/settings/taxes')
+    .then(function (data) {
+      var existing = data.taxes || [];
+      var existingByName = {};
+      existing.forEach(function (t) { existingByName[t.tax_name] = t; });
+
+      var chain = Promise.resolve();
+
+      // Step 1: Create BC PST Liquor (10%) if missing
+      chain = chain.then(function () {
+        if (existingByName['BC PST Liquor']) {
+          results.skipped.push('BC PST Liquor (already exists: ' + existingByName['BC PST Liquor'].tax_id + ')');
+          return;
+        }
+        // Use same authority as existing BC PST
+        var bcAuthority = existingByName['BC PST'] && existingByName['BC PST'].tax_authority_id;
+        return zohoPost('/settings/taxes', {
+          tax_name: 'BC PST Liquor',
+          tax_percentage: 10,
+          tax_type: 'tax',
+          tax_authority_id: bcAuthority || ''
+        }).then(function (resp) {
+          var created = resp.tax || {};
+          existingByName['BC PST Liquor'] = created;
+          results.created.push('BC PST Liquor (10%) → ' + created.tax_id);
+        }).catch(function (err) {
+          var msg = err.message;
+          if (err.response && err.response.data) msg = err.response.data.message || msg;
+          results.errors.push('BC PST Liquor: ' + msg);
+        });
+      });
+
+      // Step 2: Create GST + BC PST Liquor tax group if missing
+      chain = chain.then(function () {
+        if (existingByName['GST + BC PST Liquor']) {
+          results.skipped.push('GST + BC PST Liquor (already exists: ' + existingByName['GST + BC PST Liquor'].tax_id + ')');
+          return;
+        }
+        var gstId = existingByName['GST'] && existingByName['GST'].tax_id;
+        var pstLiquorId = existingByName['BC PST Liquor'] && existingByName['BC PST Liquor'].tax_id;
+        if (!gstId || !pstLiquorId) {
+          results.errors.push('GST + BC PST Liquor: missing prerequisite taxes (GST=' + gstId + ', PST Liquor=' + pstLiquorId + ')');
+          return;
+        }
+        return zohoPost('/settings/taxes', {
+          tax_name: 'GST + BC PST Liquor',
+          tax_percentage: 15,
+          tax_type: 'compound_tax',
+          tax_authority_id: existingByName['GST'].tax_authority_id || '',
+          taxes: [
+            { tax_id: gstId },
+            { tax_id: pstLiquorId }
+          ]
+        }).then(function (resp) {
+          var created = resp.tax || {};
+          results.created.push('GST + BC PST Liquor (15%) → ' + created.tax_id);
+        }).catch(function (err) {
+          var msg = err.message;
+          if (err.response && err.response.data) msg = err.response.data.message || msg;
+          results.errors.push('GST + BC PST Liquor: ' + msg);
+        });
+      });
+
+      return chain;
+    })
+    .then(function () {
+      res.json({ ok: true, results: results });
+    })
+    .catch(function (err) {
+      console.error('[api/taxes/setup]', err.message);
+      res.status(502).json({ error: err.message });
+    });
+});
+
+/**
+ * POST /api/taxes/apply
+ * Assign tax groups to all active items based on category keyword matching.
+ *
+ * BC FoP retail tax rules:
+ *   - Ingredients (juice, malt, yeast, hops, sugar)     → tax exempt (zero-rated)
+ *   - Facility Services (racking, filtering, etc.)       → GST Only
+ *   - Packaging (bottles, corks, labels, capsules)       → GST + BC PST
+ *   - Hardware (airlocks, siphons, hydrometers)          → GST + BC PST
+ *   - Finished Liquor (commercial wine/beer)             → GST + BC PST Liquor
+ *
+ * Matches on item name, category, or description fields.
+ * Returns a dry-run preview unless body contains { apply: true }.
+ */
+app.post('/api/taxes/apply', function (req, res) {
+  var dryRun = !(req.body && req.body.apply === true);
+
+  // Keyword sets for each tax category (matched case-insensitively)
+  var CATEGORIES = {
+    // Tax rule IDs from Zoho Books UI (Settings → Taxes → Tax Rules)
+    // tax_id = direct sales tax shown on item page
+    // purchase_tax_id = direct purchase tax shown on item page
+    // Capital equipment matched by name pattern (internal use, same tax as packaging/hardware)
+    capital_equipment: {
+      name_patterns: ['bucket', 'carboy', 'boil kettle', 'fermenter', 'pump', 'filter unit'],
+      rule_id: '109900000000033423', // GST + PST - Standard (12%)
+      tax_id: '109900000000029101',  // BC PST + GST [12%]
+      rule_label: 'GST + PST - Standard (12%)'
+    },
+    ingredients: {
+      keywords: ['juice', 'malt', 'yeast', 'hops', 'sugar', 'concentrate', 'grape',
+                 'bentonite', 'oak', 'additive', 'nutrient', 'stabilizer', 'ingredient',
+                 'kit', 'wine kit', 'beer kit', 'cider kit'],
+      rule_id: '109900000000033411', // Zero Rated - Ingredients (0%)
+      tax_id: '109900000000014433',  // Zero Rate [0%]
+      rule_label: 'Zero Rated - Ingredients (0%)'
+    },
+    services: {
+      keywords: ['\\bservice\\b', '\\bracking\\b', '\\bfiltering\\b', '\\bfiltration\\b',
+                 '\\bcarbonation\\b', '\\bguidance\\b', '\\bconsultation\\b',
+                 '\\bfee\\b', '\\blabour\\b', '\\blabor\\b'],
+      rule_id: '109900000000033417', // GST Only - Services (5%)
+      tax_id: '109900000000014425',  // GST [5%]
+      rule_label: 'GST Only - Services (5%)'
+    },
+    packaging: {
+      keywords: ['bottle', 'cork', 'label', 'capsule', 'shrink', '\\bcap\\b', 'closure',
+                 'carton', '\\bcase\\b', '\\bbox\\b', 'packaging'],
+      rule_id: '109900000000033423', // GST + PST - Standard (12%)
+      tax_id: '109900000000029101',  // BC PST + GST [12%]
+      rule_label: 'GST + PST - Standard (12%)'
+    },
+    hardware: {
+      keywords: ['airlock', 'siphon', 'hydrometer', 'thermometer', 'tubing',
+                 'spigot', 'bung', 'stopper', 'brush', 'sanitizer', 'cleaner',
+                 'equipment', 'hardware', '\\btool\\b', 'accessory'],
+      rule_id: '109900000000033423', // GST + PST - Standard (12%)
+      tax_id: '109900000000029101',  // BC PST + GST [12%]
+      rule_label: 'GST + PST - Standard (12%)'
+    },
+    liquor: {
+      keywords: ['commercial wine', 'commercial beer', 'commercial liquor',
+                 'finished wine', 'finished beer', 'ready to drink', 'rtd'],
+      rule_id: '109900000000033429', // GST + PST Liquor (15%)
+      tax_id: '109900000000033001',  // GST + BC PST Liquor [15%]
+      rule_label: 'GST + PST Liquor (15%)'
+    }
+  };
+
+  /**
+   * Test if a keyword (possibly with \b word boundary markers) matches in text.
+   */
+  function keywordMatch(kw, text) {
+    if (kw.indexOf('\\b') !== -1) {
+      return new RegExp(kw, 'i').test(text);
+    }
+    return text.indexOf(kw.toLowerCase()) !== -1;
+  }
+
+  inventoryGet('/items', { status: 'active' })
+    .then(function (data) {
+      var items = data.items || [];
+
+      var assignments = [];
+
+      items.forEach(function (item) {
+        var itemName = (item.name || '').toLowerCase();
+        var searchText = [
+          item.name || '',
+          item.category_name || '',
+          item.description || '',
+          item.group_name || ''
+        ].join(' ').toLowerCase();
+
+        var matched = false;
+
+        // Check capital equipment first (matched on item name only, not description)
+        var capEquip = CATEGORIES.capital_equipment;
+        var isCapEquip = capEquip.name_patterns.some(function (p) {
+          return itemName.indexOf(p) !== -1;
+        });
+        if (isCapEquip) {
+          assignments.push({
+            item_id: item.item_id,
+            item_name: item.name,
+            category: 'capital_equipment',
+            rule_label: capEquip.rule_label,
+            rule_id: capEquip.rule_id,
+            tax_id: capEquip.tax_id,
+            current_purchase_rule: item.purchase_tax_rule_id || '(none)'
+          });
+          matched = true;
+        }
+
+        // Check remaining categories in priority order (ingredients first — kits are zero-rated)
+        if (!matched) {
+          var categoryOrder = ['ingredients', 'services', 'liquor', 'packaging', 'hardware'];
+          for (var c = 0; c < categoryOrder.length; c++) {
+            var catKey = categoryOrder[c];
+            var cat = CATEGORIES[catKey];
+            var hasMatch = cat.keywords.some(function (kw) {
+              return keywordMatch(kw, searchText);
+            });
+
+            if (hasMatch) {
+              assignments.push({
+                item_id: item.item_id,
+                item_name: item.name,
+                category: catKey,
+                rule_label: cat.rule_label,
+                rule_id: cat.rule_id,
+                tax_id: cat.tax_id,
+                current_purchase_rule: item.purchase_tax_rule_id || '(none)'
+              });
+              matched = true;
+              break;
+            }
+          }
+        }
+
+        // Default unmatched items to ingredients (zero-rated)
+        if (!matched) {
+          var ingredientsCat = CATEGORIES.ingredients;
+          assignments.push({
+            item_id: item.item_id,
+            item_name: item.name,
+            category: 'ingredients (default)',
+            rule_label: ingredientsCat.rule_label,
+            rule_id: ingredientsCat.rule_id,
+            tax_id: ingredientsCat.tax_id,
+            current_purchase_rule: item.purchase_tax_rule_id || '(none)'
+          });
+        }
+      });
+
+      if (dryRun) {
+        return res.json({
+          mode: 'dry-run',
+          note: 'Send { "apply": true } to execute these changes',
+          assignments: assignments,
+          summary: {
+            total_items: items.length,
+            assigned: assignments.length
+          }
+        });
+      }
+
+      // Apply in batches of 25 with 2s between items and 60s between batches
+      var BATCH_SIZE = 25;
+      var ITEM_DELAY = 2000;
+      var BATCH_DELAY = 60000;
+
+      var applied = [];
+      var skipped = [];
+      var errors = [];
+
+      function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+      // Filter to only items that need updating
+      var toUpdate = [];
+      assignments.forEach(function (a) {
+        if (a.current_purchase_rule === a.rule_id) {
+          skipped.push(a.item_name);
+        } else {
+          toUpdate.push(a);
+        }
+      });
+
+      // Process one batch of items
+      function processBatch(batch) {
+        var chain = Promise.resolve();
+        batch.forEach(function (a, idx) {
+          chain = chain.then(function () {
+            // Delay before each item (skip delay for first item in batch)
+            return (idx > 0 ? delay(ITEM_DELAY) : Promise.resolve());
+          }).then(function () {
+            console.log('[taxes/apply] Updating: ' + a.item_name);
+            return inventoryPut('/items/' + a.item_id, {
+              purchase_tax_rule_id: a.rule_id
+            });
+          }).then(function () {
+            applied.push(a.item_name + ' → ' + a.rule_label);
+          }).catch(function (err) {
+            var msg = err.message;
+            if (err.response && err.response.data) msg = err.response.data.message || msg;
+            errors.push(a.item_name + ': ' + msg);
+          });
+        });
+        return chain;
+      }
+
+      // Split into batches and process with pauses
+      var batches = [];
+      for (var b = 0; b < toUpdate.length; b += BATCH_SIZE) {
+        batches.push(toUpdate.slice(b, b + BATCH_SIZE));
+      }
+
+      var batchChain = Promise.resolve();
+      batches.forEach(function (batch, batchIdx) {
+        batchChain = batchChain.then(function () {
+          console.log('[taxes/apply] Batch ' + (batchIdx + 1) + '/' + batches.length + ' (' + batch.length + ' items)');
+          return processBatch(batch);
+        }).then(function () {
+          // Pause between batches (skip after last batch)
+          if (batchIdx < batches.length - 1) {
+            console.log('[taxes/apply] Waiting 60s before next batch...');
+            return delay(BATCH_DELAY);
+          }
+        });
+      });
+
+      return batchChain.then(function () {
+        cache.del(PRODUCTS_CACHE_KEY);
+
+        res.json({
+          mode: 'applied',
+          applied: applied,
+          skipped: skipped.length,
+          errors: errors,
+          summary: {
+            updated: applied.length,
+            skipped: skipped.length,
+            errors: errors.length
+          }
+        });
+      });
+    })
+    .catch(function (err) {
+      console.error('[api/taxes/apply]', err.message);
+      res.status(502).json({ error: err.message });
+    });
+});
+
+/**
+ * POST /api/taxes/test-update
+ * Debug route: try updating a single item's tax and return the full Zoho response.
+ * Body: { item_id, tax_id }
+ */
+app.post('/api/taxes/test-update', function (req, res) {
+  var itemId = req.body.item_id;
+  var taxId = req.body.tax_id;
+  var mode = req.body.mode || 'json';
+  if (!itemId || !taxId) return res.status(400).json({ error: 'Need item_id and tax_id' });
+
+  var doUpdate;
+
+  if (mode === 'inventory') {
+    // Update via Zoho Inventory API
+    doUpdate = inventoryPut('/items/' + itemId, { sales_tax_rule_id: taxId });
+  } else if (mode === 'sales_rule') {
+    // Update via Zoho Books API with sales_tax_rule_id
+    doUpdate = zohoPut('/items/' + itemId, { sales_tax_rule_id: taxId });
+  } else {
+    doUpdate = zohoPut('/items/' + itemId, { tax_id: taxId });
+  }
+
+  doUpdate
+    .then(function (data) {
+      // Extract just the tax fields from response
+      var item = data.item || {};
+      res.json({
+        ok: true,
+        mode: mode,
+        result: {
+          tax_id: item.tax_id,
+          tax_name: item.tax_name,
+          tax_percentage: item.tax_percentage,
+          is_taxable: item.is_taxable,
+          tax_exemption_id: item.tax_exemption_id,
+          sales_tax_rule_id: item.sales_tax_rule_id
+        }
+      });
+    })
+    .catch(function (err) {
+      var detail = err.response ? err.response.data : err.message;
+      res.status(502).json({ error: detail });
     });
 });
 

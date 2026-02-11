@@ -2446,6 +2446,110 @@ small, .text-small {
   text-align: left;
 }
 
+/* Payment section (Global Payments hosted fields) */
+.payment-section {
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  border: 1px solid var(--color-brown);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+}
+
+.payment-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-green);
+}
+
+.payment-note {
+  font-size: 13px;
+  color: var(--color-muted-dark);
+  margin-bottom: 1rem;
+}
+
+.payment-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.payment-field label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--color-green);
+}
+
+.payment-field-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.payment-field-row .payment-field {
+  flex: 1;
+}
+
+#credit-card-number,
+#credit-card-expiry,
+#credit-card-cvv {
+  min-height: 42px;
+  border: 1px solid var(--color-brown);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+#credit-card-number iframe,
+#credit-card-expiry iframe,
+#credit-card-cvv iframe {
+  width: 100% !important;
+  height: 38px !important;
+}
+
+#credit-card-submit {
+  margin-top: 0.5rem;
+}
+
+#credit-card-submit iframe {
+  width: 100% !important;
+}
+
+#credit-card-submit.card-verified {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+#payment-error {
+  margin-top: 0.5rem;
+}
+
+/* Deposit summary */
+.deposit-summary {
+  margin: 1rem 0 1.25rem;
+  padding: 0.75rem 1rem;
+  background: #f7f5ee;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+
+.deposit-summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.2rem 0;
+}
+
+.deposit-summary-row span:last-child {
+  font-weight: 700;
+}
+
+/* Deposit confirmation note */
+.deposit-confirm-note {
+  font-weight: 700;
+  color: var(--color-green);
+  margin-bottom: 0.75rem;
+}
+
 .form-note {
   margin-top: 0.75rem;
   font-size: 13px;
