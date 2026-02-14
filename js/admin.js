@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-14T00:10:21.231Z';
+  var BUILD_TIMESTAMP = '2026-02-14T18:14:39.325Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4630,5 +4630,95 @@
 
     return sanitized;
   }
+
+  // ===== Kiosk Orders (Staff Order Board) =====
+
+  var kioskOrdersTimer = null;
+
+  function initKioskOrders() {
+    var refreshBtn = document.getElementById('kiosk-orders-refresh');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', loadKioskOrders);
+    }
+    loadKioskOrders();
+
+    // Auto-refresh every 15 seconds
+    if (kioskOrdersTimer) clearInterval(kioskOrdersTimer);
+    kioskOrdersTimer = setInterval(loadKioskOrders, 15000);
+  }
+
+  function loadKioskOrders() {
+    var mwUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL)
+      ? SHEETS_CONFIG.MIDDLEWARE_URL : '';
+    if (!mwUrl) {
+      var container = document.getElementById('kiosk-orders-list');
+      if (container) container.innerHTML = '<p class="admin-order-info">Middleware URL not configured.</p>';
+      return;
+    }
+
+    fetch(mwUrl + '/api/orders/recent?limit=20')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        renderKioskOrders(data.orders || []);
+      })
+      .catch(function (err) {
+        var container = document.getElementById('kiosk-orders-list');
+        if (container) container.innerHTML = '<p class="admin-order-info">Failed to load orders: ' + err.message + '</p>';
+      });
+  }
+
+  function renderKioskOrders(orders) {
+    var container = document.getElementById('kiosk-orders-list');
+    if (!container) return;
+
+    if (orders.length === 0) {
+      container.innerHTML = '<p class="admin-order-info">No recent orders.</p>';
+      return;
+    }
+
+    var html = '<table class="catalog-table kiosk-orders-table">';
+    html += '<thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Timeslot</th><th>Status</th><th>Payment</th></tr></thead>';
+    html += '<tbody>';
+
+    orders.forEach(function (order) {
+      var itemNames = order.items.map(function (it) {
+        return it.name + (it.quantity > 1 ? ' x' + it.quantity : '');
+      }).join(', ');
+
+      var statusClass = '';
+      var statusLabel = order.status || 'Walk-in';
+      if (statusLabel.toLowerCase() === 'walk-in') statusClass = 'kiosk-status--walkin';
+      else if (statusLabel.toLowerCase() === 'pending') statusClass = 'kiosk-status--pending';
+
+      var paymentBadge = '';
+      if (order.transaction_id) {
+        paymentBadge = '<span class="kiosk-payment-badge kiosk-payment--paid">Paid</span>';
+      } else if (parseFloat(order.deposit) > 0) {
+        paymentBadge = '<span class="kiosk-payment-badge kiosk-payment--deposit">Deposit</span>';
+      } else {
+        paymentBadge = '<span class="kiosk-payment-badge kiosk-payment--pending">Pending</span>';
+      }
+
+      html += '<tr>';
+      html += '<td data-label="Order">' + order.salesorder_number + '</td>';
+      html += '<td data-label="Customer">' + (order.customer_name || '—') + '</td>';
+      html += '<td data-label="Items">' + itemNames + '</td>';
+      html += '<td data-label="Total">$' + Number(order.total).toFixed(2) + '</td>';
+      html += '<td data-label="Timeslot">' + (order.timeslot || '—') + '</td>';
+      html += '<td data-label="Status"><span class="kiosk-status ' + statusClass + '">' + statusLabel + '</span></td>';
+      html += '<td data-label="Payment">' + paymentBadge + '</td>';
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  // Hook kiosk orders into dashboard load
+  var _origShowDashboard = showDashboard;
+  showDashboard = function () {
+    _origShowDashboard();
+    initKioskOrders();
+  };
 
 })();

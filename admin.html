@@ -114,6 +114,7 @@
             <button type="button" class="admin-tab-btn" data-tab="ingredients">Ingredients</button>
             <button type="button" class="admin-tab-btn" data-tab="orders">Supplier Orders</button>
             <button type="button" class="admin-tab-btn" data-tab="scheduling">Scheduling</button>
+            <button type="button" class="admin-tab-btn" data-tab="kiosk-orders">Kiosk Orders</button>
             <span class="admin-tab-divider"></span>
             <button type="button" class="admin-tab-btn" data-tab="homepage">Homepage</button>
             <button type="button" class="admin-tab-btn" data-tab="export">Export / Sync</button>
@@ -323,6 +324,18 @@
               <h3>Appointment Slots</h3>
               <div id="schedule-cal"></div>
               <div id="schedule-day-slots"></div>
+            </div>
+          </div>
+
+          <!-- Tab: Kiosk Orders -->
+          <div class="admin-tab-panel" id="tab-kiosk-orders">
+            <div class="admin-panel-header">
+              <h2>Recent Kiosk Orders</h2>
+              <button type="button" class="btn-secondary" id="kiosk-orders-refresh">Refresh</button>
+            </div>
+            <p class="admin-order-info">Walk-in and kiosk orders from your in-store iPad. Auto-refreshes every 15 seconds.</p>
+            <div id="kiosk-orders-list">
+              <p class="admin-order-info">Loading orders...</p>
             </div>
           </div>
 

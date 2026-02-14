@@ -50,36 +50,60 @@
     <section class="content">
       <div class="container">
 
-        <div id="reservation-list">
+        <!-- Checkout Stepper -->
+        <nav class="checkout-stepper" id="checkout-stepper" aria-label="Checkout progress">
+          <ol class="stepper-list">
+            <li class="stepper-step stepper-step--active" data-step="1">
+              <span class="stepper-number"><span class="stepper-check" aria-hidden="true"></span><span class="stepper-digit">1</span></span>
+              <span class="stepper-label">Review Items</span>
+            </li>
+            <li class="stepper-step" data-step="2">
+              <span class="stepper-number"><span class="stepper-check" aria-hidden="true"></span><span class="stepper-digit">2</span></span>
+              <span class="stepper-label">Pick a Time</span>
+            </li>
+            <li class="stepper-step" data-step="3">
+              <span class="stepper-number"><span class="stepper-check" aria-hidden="true"></span><span class="stepper-digit">3</span></span>
+              <span class="stepper-label">Your Details</span>
+            </li>
+            <li class="stepper-step" data-step="4">
+              <span class="stepper-number"><span class="stepper-check" aria-hidden="true"></span><span class="stepper-digit">4</span></span>
+              <span class="stepper-label">Confirm</span>
+            </li>
+          </ol>
+        </nav>
+
+        <!-- Step 1: Review Items -->
+        <div id="reservation-list" class="checkout-section" data-checkout-step="1">
           <h2 data-content="reserved-items-title">Your reserved items</h2>
           <div class="reservation-items" id="reservation-items"></div>
           <p class="reservation-empty hidden" id="reservation-empty"><span data-content="reserved-empty-text">No items reserved.</span> <a href="products.html" data-content="reserved-empty-link">Browse our catalog</a> to add products.</p>
         </div>
 
-        <div id="timeslot-picker">
+        <!-- Step 2: Timeslot Picker -->
+        <div id="timeslot-picker" class="checkout-section" data-checkout-step="2">
           <h2 data-content="timeslot-title">Select a timeslot</h2>
           <p class="process-note" data-content="timeslot-note">Your appointment is to start fermentation in store — about 15 minutes. We'll contact you when it's time to come back and bottle.</p>
           <div id="timeslot-groups"></div>
+          <div id="completion-estimate" class="completion-estimate hidden">
+            <p id="completion-estimate-text"></p>
+          </div>
         </div>
 
-        <div id="completion-estimate" class="completion-estimate hidden">
-          <p id="completion-estimate-text"></p>
-        </div>
-
-        <div id="reservation-form-section">
+        <!-- Step 3: Customer Details + Payment -->
+        <div id="reservation-form-section" class="checkout-section" data-checkout-step="3">
           <h2 data-content="details-title">Your details</h2>
           <form id="reservation-form" class="reservation-form">
-            <div class="form-group">
+            <div class="form-group form-group--float">
+              <input type="text" id="res-name" name="name" required autocomplete="name" placeholder=" ">
               <label for="res-name">Name</label>
-              <input type="text" id="res-name" name="name" required autocomplete="name">
             </div>
-            <div class="form-group">
+            <div class="form-group form-group--float">
+              <input type="email" id="res-email" name="email" required autocomplete="email" placeholder=" ">
               <label for="res-email">Email</label>
-              <input type="email" id="res-email" name="email" required autocomplete="email">
             </div>
-            <div class="form-group">
+            <div class="form-group form-group--float">
+              <input type="tel" id="res-phone" name="phone" required autocomplete="tel" placeholder=" ">
               <label for="res-phone">Phone</label>
-              <input type="tel" id="res-phone" name="phone" required autocomplete="tel">
             </div>
             <div class="form-group" aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden;opacity:0;">
               <label for="res-website">Website</label>
@@ -88,7 +112,7 @@
             <input type="hidden" id="res-loaded-at" value="">
 
             <div id="payment-section" class="payment-section hidden">
-              <h3 id="payment-heading">Payment</h3>
+              <h3 id="payment-heading"><svg class="payment-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg> Payment</h3>
               <p class="payment-note" id="payment-note"></p>
               <div class="payment-fields">
                 <div class="payment-field">
@@ -111,6 +135,7 @@
                 </div>
                 <div id="credit-card-submit"></div>
               </div>
+              <p class="payment-secure-note"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9z"/></svg> Secure payment via Global Payments</p>
               <div id="payment-error" class="form-error-msg"></div>
             </div>
 
@@ -130,10 +155,31 @@
           </form>
         </div>
 
-        <div class="reservation-confirm hidden" id="reservation-confirm">
+        <!-- Step 4: Confirmation -->
+        <div class="reservation-confirm hidden" id="reservation-confirm" data-checkout-step="4">
+          <div class="confirm-checkmark" aria-hidden="true">
+            <svg viewBox="0 0 52 52" width="72" height="72">
+              <circle class="confirm-checkmark-circle" cx="26" cy="26" r="25" fill="none" stroke="currentColor" stroke-width="2"/>
+              <path class="confirm-checkmark-path" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+            </svg>
+          </div>
           <h2 data-content="confirm-title">Reservation submitted</h2>
+          <div id="confirm-order-number" class="confirm-order-number"></div>
+          <div id="confirm-summary" class="confirm-summary"></div>
           <p data-content="confirm-text">Thank you! We've received your reservation and will be in touch to confirm. You'll visit us twice — once at your appointment to start fermentation, and again when we let you know it's ready to bottle and take home.</p>
-          <a href="products.html" class="btn" data-content="confirm-cta">Back to browsing</a>
+          <div class="confirm-next">
+            <h3>What's Next</h3>
+            <ol>
+              <li>We'll confirm your appointment via email</li>
+              <li>Visit us at your scheduled time to start fermentation (~15 min)</li>
+              <li>We'll notify you when your batch is ready to bottle</li>
+              <li>Come back to bottle and take home your creation</li>
+            </ol>
+          </div>
+          <div class="confirm-actions">
+            <button type="button" class="btn-secondary" id="confirm-print" onclick="window.print()">Print Confirmation</button>
+            <a href="products.html" class="btn" data-content="confirm-cta">Back to browsing</a>
+          </div>
         </div>
 
       </div>

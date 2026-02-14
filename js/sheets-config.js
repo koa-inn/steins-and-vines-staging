@@ -46,7 +46,7 @@ var SHEETS_CONFIG = {
   ADMIN_API_URL: 'https://script.google.com/macros/s/AKfycbw_t1zzpa3AQxvzPqo2wAg-cBU3IdevmyEz8P-dL205VrO2jx4s3DP30WxYoVUSDI968g/exec',
 
   // Zoho middleware URL (for Bookings + Checkout API)
-  MIDDLEWARE_URL: 'https://staging.steinsandvines.ca',
+  MIDDLEWARE_URL: 'http://localhost:3001',
 
   SHEET_NAMES: {
     KITS: 'Kits',

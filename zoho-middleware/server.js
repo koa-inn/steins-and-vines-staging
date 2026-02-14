@@ -14,6 +14,10 @@ var CreditCardData = gp.CreditCardData;
 var Transaction = gp.Transaction;
 var Channel = gp.Channel;
 var Environment = gp.Environment;
+var ConnectionConfig = gp.ConnectionConfig;
+var DeviceService = gp.DeviceService;
+var DeviceType = gp.DeviceType;
+var ConnectionModes = gp.ConnectionModes;
 
 var app = express();
 var PORT = process.env.PORT || 3001;
@@ -50,6 +54,42 @@ if (process.env.GP_APP_KEY) {
   console.log('  Global Payments SDK configured (deposit: $' + GP_DEPOSIT_AMOUNT.toFixed(2) + ')');
 } else {
   console.log('  Global Payments SDK not configured (GP_APP_KEY missing)');
+}
+
+// ---------------------------------------------------------------------------
+// Global Payments Terminal (card-present via Meet in the Cloud)
+// ---------------------------------------------------------------------------
+
+var GP_TERMINAL_ENABLED = process.env.GP_TERMINAL_ENABLED === 'true';
+var gpTerminalDevice = null;
+
+if (GP_TERMINAL_ENABLED && process.env.GP_APP_KEY) {
+  try {
+    var terminalConfig = new ConnectionConfig();
+    terminalConfig.deviceType = DeviceType.UPA_DEVICE;
+    terminalConfig.connectionMode = ConnectionModes.MEET_IN_THE_CLOUD;
+
+    var terminalGateway = new GpApiConfig();
+    terminalGateway.appId = process.env.GP_APP_ID || '';
+    terminalGateway.appKey = process.env.GP_APP_KEY;
+    terminalGateway.channel = Channel.CardPresent;
+    terminalGateway.country = 'CA';
+    terminalGateway.deviceCurrency = 'CAD';
+    terminalGateway.environment = process.env.GP_ENVIRONMENT === 'production'
+      ? Environment.Production : Environment.Test;
+    if (process.env.GP_MERCHANT_ID) {
+      terminalGateway.merchantId = process.env.GP_MERCHANT_ID;
+    }
+
+    terminalConfig.gatewayConfig = terminalGateway;
+    gpTerminalDevice = DeviceService.create(terminalConfig, 'terminal');
+    console.log('  GP Terminal configured (Meet in the Cloud)');
+  } catch (termErr) {
+    console.error('  GP Terminal configuration failed:', termErr.message);
+    gpTerminalDevice = null;
+  }
+} else {
+  console.log('  GP Terminal not enabled (GP_TERMINAL_ENABLED=' + (process.env.GP_TERMINAL_ENABLED || 'false') + ')');
 }
 
 // ---------------------------------------------------------------------------
@@ -552,6 +592,10 @@ app.post('/api/contacts', function (req, res) {
 var PRODUCTS_CACHE_KEY = 'zoho:products';
 var PRODUCTS_CACHE_TTL = 600; // 10 minutes (detail enrichment is expensive)
 
+// In-memory set of kit item IDs (populated by GET /api/products).
+// Used by /api/ingredients to exclude kits even when Redis is down.
+var _kitItemIds = {};
+
 /**
  * GET /api/products
  * Returns active product items from Zoho Inventory, enriched with custom_fields
@@ -566,16 +610,19 @@ app.get('/api/products', function (req, res) {
     .then(function (cached) {
       if (cached) {
         console.log('[api/products] Cache hit (' + cached.length + ' items)');
+        // Repopulate in-memory kit IDs from cache
+        if (!Object.keys(_kitItemIds).length) {
+          cached.forEach(function (item) { _kitItemIds[item.item_id] = true; });
+        }
         return res.json({ source: 'cache', items: cached });
       }
 
       console.log('[api/products] Cache miss — fetching from Zoho Inventory');
       return fetchAllItems({ status: 'active' })
         .then(function (items) {
-          // Filter out non-product groups server-side
+          // Filter out services before enrichment (saves API calls)
           items = items.filter(function (item) {
-            var group = (item.group_name || '').toLowerCase();
-            return group !== 'services' && group !== 'ingredients';
+            return item.product_type !== 'service';
           });
 
           console.log('[api/products] Enriching ' + items.length + ' items with detail data');
@@ -623,8 +670,17 @@ app.get('/api/products', function (req, res) {
           });
 
           return chain.then(function () {
+            // Only return items that have a Type custom field (kits)
+            enriched = enriched.filter(function (item) {
+              return (item.custom_fields || []).some(function (cf) {
+                return cf.label === 'Type' && cf.value;
+              });
+            });
+            // Store kit IDs in memory for /api/ingredients exclusion
+            _kitItemIds = {};
+            enriched.forEach(function (item) { _kitItemIds[item.item_id] = true; });
             cache.set(PRODUCTS_CACHE_KEY, enriched, PRODUCTS_CACHE_TTL);
-            console.log('[api/products] Cached ' + enriched.length + ' enriched items');
+            console.log('[api/products] Cached ' + enriched.length + ' kit items');
             res.json({ source: 'zoho', items: enriched });
           });
         });
@@ -640,7 +696,7 @@ var SERVICES_CACHE_TTL = 300; // 5 minutes
 
 /**
  * GET /api/services
- * Returns active items from the "Services" group in Zoho Books, cached for 5 minutes.
+ * Returns active service-type items from Zoho Inventory, cached for 5 minutes.
  */
 app.get('/api/services', function (req, res) {
   cache.get(SERVICES_CACHE_KEY)
@@ -650,10 +706,12 @@ app.get('/api/services', function (req, res) {
         return res.json({ source: 'cache', items: cached });
       }
 
-      console.log('[api/services] Cache miss — fetching from Zoho');
-      return zohoGet('/items', { status: 'active', group_name: 'Services' })
-        .then(function (data) {
-          var items = data.items || [];
+      console.log('[api/services] Cache miss — fetching from Zoho Inventory');
+      return fetchAllItems({ status: 'active' })
+        .then(function (allItems) {
+          var items = allItems.filter(function (item) {
+            return item.product_type === 'service';
+          });
           cache.set(SERVICES_CACHE_KEY, items, SERVICES_CACHE_TTL);
           res.json({ source: 'zoho', items: items });
         });
@@ -669,7 +727,9 @@ var INGREDIENTS_CACHE_TTL = 300; // 5 minutes
 
 /**
  * GET /api/ingredients
- * Returns active items from the "Ingredients" group in Zoho Books, cached for 5 minutes.
+ * Returns active goods items that are NOT kits (no Type custom field)
+ * and NOT services. These are ingredients, supplies, and equipment.
+ * Uses the products cache to identify kit item IDs to exclude.
  */
 app.get('/api/ingredients', function (req, res) {
   cache.get(INGREDIENTS_CACHE_KEY)
@@ -679,10 +739,12 @@ app.get('/api/ingredients', function (req, res) {
         return res.json({ source: 'cache', items: cached });
       }
 
-      console.log('[api/ingredients] Cache miss — fetching from Zoho');
-      return zohoGet('/items', { status: 'active', group_name: 'Ingredients' })
-        .then(function (data) {
-          var items = data.items || [];
+      console.log('[api/ingredients] Cache miss — fetching from Zoho Inventory');
+      return fetchAllItems({ status: 'active' })
+        .then(function (allItems) {
+          var items = allItems.filter(function (item) {
+            return item.product_type !== 'service' && !_kitItemIds[item.item_id];
+          });
           cache.set(INGREDIENTS_CACHE_KEY, items, INGREDIENTS_CACHE_TTL);
           res.json({ source: 'zoho', items: items });
         });
@@ -1060,6 +1122,19 @@ app.post('/api/checkout', function (req, res) {
  */
 app.get('/api/inventory/items/:id', function (req, res) {
   inventoryGet('/items/' + req.params.id)
+    .then(function (data) { res.json(data); })
+    .catch(function (err) {
+      var detail = err.response ? err.response.data : err.message;
+      res.status(502).json({ error: detail });
+    });
+});
+
+/**
+ * PUT /api/inventory/items/:id
+ * Update a single item in Zoho Inventory.
+ */
+app.put('/api/inventory/items/:id', function (req, res) {
+  inventoryPut('/items/' + req.params.id, req.body)
     .then(function (data) { res.json(data); })
     .catch(function (err) {
       var detail = err.response ? err.response.data : err.message;
@@ -1898,6 +1973,146 @@ app.post('/api/items/migrate', function (req, res) {
       if (err.response && err.response.data) msg = err.response.data.message || msg;
       console.error('[api/items/migrate]', msg);
       res.status(502).json({ error: msg });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// POS Terminal Integration
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/pos/status
+ * Check if the POS terminal is enabled and configured.
+ */
+app.get('/api/pos/status', function (req, res) {
+  res.json({
+    enabled: GP_TERMINAL_ENABLED && !!gpTerminalDevice,
+    terminal_type: GP_TERMINAL_ENABLED ? 'UPA (Meet in the Cloud)' : 'none'
+  });
+});
+
+/**
+ * POST /api/pos/sale
+ * Push a sale to the GP terminal via Meet in the Cloud.
+ * The terminal displays the amount and waits for card tap/insert/swipe.
+ *
+ * Expected body:
+ * {
+ *   amount: 99.99,
+ *   salesorder_number: "SO-00123",
+ *   items: [{ name: "Product Name", price: "49.99", qty: 2 }],
+ *   customer_name: "John Doe"
+ * }
+ *
+ * Returns: { transaction_id, status, auth_code } on success
+ */
+app.post('/api/pos/sale', function (req, res) {
+  if (!GP_TERMINAL_ENABLED || !gpTerminalDevice) {
+    return res.status(503).json({ error: 'POS terminal not configured' });
+  }
+
+  var body = req.body;
+  if (!body || !body.amount) {
+    return res.status(400).json({ error: 'Missing amount' });
+  }
+
+  var amount = parseFloat(body.amount);
+  if (isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Invalid amount' });
+  }
+
+  var soNumber = body.salesorder_number || '';
+
+  console.log('[pos/sale] Initiating terminal sale: $' + amount.toFixed(2) + ' SO=' + soNumber);
+
+  gpTerminalDevice.sale(amount)
+    .withCurrency('CAD')
+    .withInvoiceNumber(soNumber)
+    .execute('terminal')
+    .then(function (response) {
+      if (response.deviceResponseCode === '00' || response.status === 'Success') {
+        console.log('[pos/sale] Terminal sale approved: txn=' + response.transactionId);
+
+        // Record the payment in Zoho if we have a customer_id and SO
+        var txnId = response.transactionId || '';
+        res.json({
+          ok: true,
+          transaction_id: txnId,
+          status: 'approved',
+          auth_code: response.authorizationCode || '',
+          amount: amount
+        });
+      } else {
+        console.error('[pos/sale] Terminal declined:', response.deviceResponseCode, response.deviceResponseText);
+        res.status(402).json({
+          error: 'Terminal payment declined: ' + (response.deviceResponseText || 'Unknown'),
+          code: response.deviceResponseCode
+        });
+      }
+    })
+    .catch(function (err) {
+      console.error('[pos/sale] Terminal error:', err.message);
+      res.status(502).json({ error: 'Terminal error: ' + err.message });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Recent Kiosk Orders (for staff order board)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/orders/recent
+ * Returns the last 20 sales orders, sorted by most recent.
+ * Used by the admin panel's "Recent Kiosk Orders" section.
+ */
+app.get('/api/orders/recent', function (req, res) {
+  var limit = parseInt(req.query.limit, 10) || 20;
+
+  zohoGet('/salesorders', {
+    sort_column: 'created_time',
+    sort_order: 'D',
+    per_page: limit
+  })
+    .then(function (data) {
+      var orders = (data.salesorders || []).map(function (so) {
+        // Extract custom field values
+        var customFields = so.custom_fields || [];
+        var status = '';
+        var timeslot = '';
+        var deposit = '';
+        var txnId = '';
+
+        customFields.forEach(function (cf) {
+          if (cf.api_name === process.env.ZOHO_CF_STATUS) status = cf.value || '';
+          if (cf.api_name === process.env.ZOHO_CF_TIMESLOT) timeslot = cf.value || '';
+          if (cf.api_name === process.env.ZOHO_CF_DEPOSIT) deposit = cf.value || '';
+          if (cf.api_name === process.env.ZOHO_CF_TRANSACTION_ID) txnId = cf.value || '';
+        });
+
+        return {
+          salesorder_number: so.salesorder_number || '',
+          customer_name: so.customer_name || '',
+          total: so.total || 0,
+          status: status,
+          timeslot: timeslot,
+          deposit: deposit,
+          transaction_id: txnId,
+          date: so.date || '',
+          items: (so.line_items || []).map(function (li) {
+            return {
+              name: li.name || li.description || '',
+              quantity: li.quantity || 1,
+              rate: li.rate || 0
+            };
+          })
+        };
+      });
+
+      res.json({ orders: orders });
+    })
+    .catch(function (err) {
+      console.error('[api/orders/recent]', err.message);
+      res.status(502).json({ error: err.message });
     });
 });
 
