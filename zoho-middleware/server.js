@@ -623,15 +623,18 @@ app.get('/api/products', function (req, res) {
       console.log('[api/products] Cache miss — fetching from Zoho Inventory');
       return fetchAllItems({ status: 'active' })
         .then(function (items) {
-          // Filter out services and non-kit items before enrichment
-          // Only items with group_name containing "Kit" need detail enrichment
+          // Filter out services before enrichment
           items = items.filter(function (item) {
-            if (item.product_type === 'service') return false;
-            var gn = (item.group_name || '').toLowerCase();
-            return gn.indexOf('kit') !== -1 || gn.indexOf('wine') !== -1 ||
-                   gn.indexOf('beer') !== -1 || gn.indexOf('cider') !== -1 ||
-                   gn.indexOf('spirit') !== -1;
+            return item.product_type !== 'service';
           });
+
+          // Log group names for debugging (first fetch only)
+          var groups = {};
+          items.forEach(function (item) {
+            var gn = item.group_name || '(none)';
+            groups[gn] = (groups[gn] || 0) + 1;
+          });
+          console.log('[api/products] Item groups: ' + JSON.stringify(groups));
 
           console.log('[api/products] Enriching ' + items.length + ' items with detail data');
 
