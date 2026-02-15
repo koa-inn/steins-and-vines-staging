@@ -1326,12 +1326,8 @@ small, .text-small {
   opacity: 0.85;
 }
 
-.catalog-process-note {
-  text-align: center;
-  font-size: 0.88rem;
-  color: var(--color-brown);
+.catalog-batch-note + .catalog-batch-note {
   margin-bottom: 1.5rem;
-  opacity: 0.7;
 }
 
 /* ===== Catalog Controls ===== */
