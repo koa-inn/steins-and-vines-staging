@@ -593,7 +593,10 @@ app.post('/api/contacts', function (req, res) {
 // ---------------------------------------------------------------------------
 
 var PRODUCTS_CACHE_KEY = 'zoho:products';
-var PRODUCTS_CACHE_TTL = 600; // 10 minutes (detail enrichment is expensive)
+var PRODUCTS_CACHE_TTL = 3600; // 1 hour hard TTL
+var PRODUCTS_SOFT_TTL = 600;   // 10 minutes — triggers background refresh
+var PRODUCTS_CACHE_TS_KEY = 'zoho:products:ts'; // timestamp of last enrichment
+var _productsRefreshing = false; // prevent concurrent background refreshes
 
 // In-memory set of kit item IDs (populated by GET /api/products).
 // Used by /api/ingredients to exclude kits even when Redis is down.
@@ -608,87 +611,120 @@ var _kitItemIds = {};
  * detail (5 concurrent) to get type, subcategory, tasting notes, body, oak,
  * sweetness, ABV, etc. Services and Ingredients groups are filtered out.
  */
+function refreshProducts() {
+  if (_productsRefreshing) {
+    console.log('[api/products] Background refresh already in progress, skipping');
+    return Promise.resolve();
+  }
+  _productsRefreshing = true;
+  console.log('[api/products] Refreshing product data from Zoho Inventory');
+
+  return fetchAllItems({ status: 'active' })
+    .then(function (items) {
+      var serialPattern = /\s—\s[A-Z]+-\d+$/;
+      items = items.filter(function (item) {
+        if (item.product_type === 'service') return false;
+        if (serialPattern.test(item.group_name || '')) return false;
+        return true;
+      });
+
+      console.log('[api/products] Enriching ' + items.length + ' items (parallel batches of 5)');
+
+      var BATCH_SIZE = 5;
+      var BATCH_PAUSE = 3500; // ms between batches (~85 req/min)
+      var MAX_RETRIES = 2;
+      var enriched = [];
+
+      function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+      function fetchDetail(item, retries) {
+        return inventoryGet('/items/' + item.item_id)
+          .then(function (data) {
+            var detail = data.item || {};
+            item.custom_fields = detail.custom_fields || [];
+            item.brand = detail.brand || '';
+            return item;
+          })
+          .catch(function (err) {
+            if (err.response && err.response.status === 429 && retries < MAX_RETRIES) {
+              var backoff = Math.pow(2, retries + 1) * 1000;
+              console.log('[api/products] Rate limited on ' + item.name + ', retrying in ' + backoff + 'ms');
+              return delay(backoff).then(function () { return fetchDetail(item, retries + 1); });
+            }
+            console.error('[api/products] Detail fetch failed for ' + item.name + ':', err.message);
+            item.custom_fields = [];
+            item.brand = item.brand || '';
+            return item;
+          });
+      }
+
+      // Process items in parallel batches
+      var batches = [];
+      for (var i = 0; i < items.length; i += BATCH_SIZE) {
+        batches.push(items.slice(i, i + BATCH_SIZE));
+      }
+
+      var chain = Promise.resolve();
+      batches.forEach(function (batch, idx) {
+        chain = chain.then(function () {
+          return Promise.all(batch.map(function (item) {
+            return fetchDetail(item, 0);
+          })).then(function (results) {
+            results.forEach(function (r) { enriched.push(r); });
+            // Pause between batches (skip after last batch)
+            if (idx < batches.length - 1) return delay(BATCH_PAUSE);
+          });
+        });
+      });
+
+      return chain.then(function () {
+        enriched = enriched.filter(function (item) {
+          return (item.custom_fields || []).some(function (cf) {
+            return cf.label === 'Type' && cf.value;
+          });
+        });
+        _kitItemIds = {};
+        enriched.forEach(function (item) { _kitItemIds[item.item_id] = true; });
+        cache.set(PRODUCTS_CACHE_KEY, enriched, PRODUCTS_CACHE_TTL);
+        cache.set(PRODUCTS_CACHE_TS_KEY, Date.now(), PRODUCTS_CACHE_TTL);
+        console.log('[api/products] Cached ' + enriched.length + ' kit items');
+        _productsRefreshing = false;
+        return enriched;
+      });
+    })
+    .catch(function (err) {
+      _productsRefreshing = false;
+      throw err;
+    });
+}
+
 app.get('/api/products', function (req, res) {
   cache.get(PRODUCTS_CACHE_KEY)
     .then(function (cached) {
       if (cached) {
         console.log('[api/products] Cache hit (' + cached.length + ' items)');
-        // Repopulate in-memory kit IDs from cache
         if (!Object.keys(_kitItemIds).length) {
           cached.forEach(function (item) { _kitItemIds[item.item_id] = true; });
         }
-        return res.json({ source: 'cache', items: cached });
+        res.json({ source: 'cache', items: cached });
+
+        // Stale-while-revalidate: if cache is older than soft TTL, refresh in background
+        cache.get(PRODUCTS_CACHE_TS_KEY).then(function (ts) {
+          var age = ts ? (Date.now() - ts) / 1000 : PRODUCTS_SOFT_TTL + 1;
+          if (age > PRODUCTS_SOFT_TTL) {
+            console.log('[api/products] Cache stale (' + Math.round(age) + 's old), refreshing in background');
+            refreshProducts().catch(function (err) {
+              console.error('[api/products] Background refresh failed:', err.message);
+            });
+          }
+        });
+        return;
       }
 
       console.log('[api/products] Cache miss — fetching from Zoho Inventory');
-      return fetchAllItems({ status: 'active' })
-        .then(function (items) {
-          // Filter out services and serialized equipment before enrichment.
-          // Equipment items have " — " followed by a serial (e.g. "Carboy PET 23L — PCB-001").
-          // Only kit/ingredient items need detail enrichment for custom fields.
-          var serialPattern = /\s—\s[A-Z]+-\d+$/;
-          items = items.filter(function (item) {
-            if (item.product_type === 'service') return false;
-            if (serialPattern.test(item.group_name || '')) return false;
-            return true;
-          });
-
-          console.log('[api/products] Enriching ' + items.length + ' items with detail data');
-
-          // Fetch item details sequentially with delay to stay within
-          // Zoho's rate limits (~100 req/min for Inventory API)
-          var BATCH_DELAY = 700; // ms between requests (~85 req/min)
-          var MAX_RETRIES = 2;
-          var enriched = [];
-
-          function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-
-          function fetchDetail(item, retries) {
-            return inventoryGet('/items/' + item.item_id)
-              .then(function (data) {
-                var detail = data.item || {};
-                item.custom_fields = detail.custom_fields || [];
-                item.brand = detail.brand || '';
-                return item;
-              })
-              .catch(function (err) {
-                // Retry on 429 (rate limit) with exponential backoff
-                if (err.response && err.response.status === 429 && retries < MAX_RETRIES) {
-                  var backoff = Math.pow(2, retries + 1) * 1000; // 2s, 4s
-                  console.log('[api/products] Rate limited on ' + item.name + ', retrying in ' + backoff + 'ms');
-                  return delay(backoff).then(function () { return fetchDetail(item, retries + 1); });
-                }
-                console.error('[api/products] Detail fetch failed for ' + item.name + ':', err.message);
-                item.custom_fields = [];
-                item.brand = item.brand || '';
-                return item;
-              });
-          }
-
-          var chain = Promise.resolve();
-          items.forEach(function (item) {
-            chain = chain.then(function () {
-              return fetchDetail(item, 0).then(function (result) {
-                enriched.push(result);
-                return delay(BATCH_DELAY);
-              });
-            });
-          });
-
-          return chain.then(function () {
-            // Only return items that have a Type custom field (kits)
-            enriched = enriched.filter(function (item) {
-              return (item.custom_fields || []).some(function (cf) {
-                return cf.label === 'Type' && cf.value;
-              });
-            });
-            // Store kit IDs in memory for /api/ingredients exclusion
-            _kitItemIds = {};
-            enriched.forEach(function (item) { _kitItemIds[item.item_id] = true; });
-            cache.set(PRODUCTS_CACHE_KEY, enriched, PRODUCTS_CACHE_TTL);
-            console.log('[api/products] Cached ' + enriched.length + ' kit items');
-            res.json({ source: 'zoho', items: enriched });
-          });
+      return refreshProducts()
+        .then(function (enriched) {
+          res.json({ source: 'zoho', items: enriched });
         });
     })
     .catch(function (err) {

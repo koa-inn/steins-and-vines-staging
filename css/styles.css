@@ -1324,6 +1324,10 @@ small, .text-small {
   color: var(--color-brown);
   margin-bottom: 0.5rem;
   opacity: 0.85;
+  max-width: 540px;
+  margin-left: auto;
+  margin-right: auto;
+  text-wrap: balance;
 }
 
 .catalog-batch-note + .catalog-batch-note {
