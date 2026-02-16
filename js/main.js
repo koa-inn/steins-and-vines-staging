@@ -4266,15 +4266,17 @@ function isWeightUnit(unit) {
 }
 
 function hasWeightConfig(item) {
-  return isWeightUnit(item.unit) && parseFloat(item.high_amount) > 0;
+  return isWeightUnit(item.unit);
 }
 
 function renderWeightControl(wrap, product, productKey) {
   wrap.innerHTML = '';
   var unit = (product.unit || '').trim();
-  var minVal = parseFloat(product.low_amount) || 0.1;
-  var maxVal = parseFloat(product.high_amount);
-  var stepVal = parseFloat(product.step) || 0.1;
+  var unitLower = unit.toLowerCase();
+  var isKg = unitLower === 'kg' || unitLower.indexOf('kg') !== -1;
+  var minVal = parseFloat(product.low_amount) || (isKg ? 0.1 : 50);
+  var maxVal = parseFloat(product.high_amount) || (isKg ? 5 : 5000);
+  var stepVal = parseFloat(product.step) || (isKg ? 0.1 : 50);
   var pricePerUnit = parseFloat((product.price_per_unit || '0').replace(/[^0-9.]/g, '')) || 0;
   var currentQty = getReservedQty(productKey);
 
@@ -4356,9 +4358,11 @@ function renderWeightControl(wrap, product, productKey) {
 function renderWeightControlCompact(wrap, product, productKey) {
   wrap.innerHTML = '';
   var unit = (product.unit || '').trim();
-  var minVal = parseFloat(product.low_amount) || 0.1;
-  var maxVal = parseFloat(product.high_amount);
-  var stepVal = parseFloat(product.step) || 0.1;
+  var unitLower = unit.toLowerCase();
+  var isKg = unitLower === 'kg' || unitLower.indexOf('kg') !== -1;
+  var minVal = parseFloat(product.low_amount) || (isKg ? 0.1 : 50);
+  var maxVal = parseFloat(product.high_amount) || (isKg ? 5 : 5000);
+  var stepVal = parseFloat(product.step) || (isKg ? 0.1 : 50);
   var currentQty = getReservedQty(productKey);
 
   var container = document.createElement('div');
