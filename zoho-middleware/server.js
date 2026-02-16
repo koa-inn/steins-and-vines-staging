@@ -648,6 +648,10 @@ function refreshProducts() {
             item.custom_fields = detail.custom_fields || [];
             item.brand = detail.brand || '';
             item.image_name = detail.image_name || '';
+            item.tax_id = detail.tax_id || '';
+            item.tax_name = detail.tax_name || '';
+            item.tax_percentage = (detail.tax_percentage !== undefined && detail.tax_percentage !== null)
+              ? detail.tax_percentage : 0;
             return item;
           })
           .catch(function (err) {
@@ -659,6 +663,10 @@ function refreshProducts() {
             console.error('[api/products] Detail fetch failed for ' + item.name + ':', err.message);
             item.custom_fields = [];
             item.brand = item.brand || '';
+            item.tax_id = item.tax_id || '';
+            item.tax_name = item.tax_name || '';
+            item.tax_percentage = (item.tax_percentage !== undefined && item.tax_percentage !== null)
+              ? item.tax_percentage : 0;
             return item;
           });
       }
@@ -862,6 +870,23 @@ app.get('/api/ingredients', function (req, res) {
           var items = allItems.filter(function (item) {
             return item.product_type !== 'service' && !_kitItemIds[item.item_id];
           });
+
+          // Ensure each ingredient has tax fields.
+          // The list endpoint may include tax_id/tax_name/tax_percentage;
+          // default to 0% if missing (ingredients are zero-rated food items).
+          items = items.map(function (item) {
+            if (item.tax_percentage === undefined || item.tax_percentage === null) {
+              item.tax_percentage = 0;
+            }
+            if (!item.tax_name) {
+              item.tax_name = '';
+            }
+            if (!item.tax_id) {
+              item.tax_id = '';
+            }
+            return item;
+          });
+
           cache.set(INGREDIENTS_CACHE_KEY, items, INGREDIENTS_CACHE_TTL);
           res.json({ source: 'zoho', items: items });
         });

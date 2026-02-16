@@ -895,7 +895,28 @@ function loadFeaturedProducts() {
   var middlewareUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL)
     ? SHEETS_CONFIG.MIDDLEWARE_URL : '';
 
-  function loadProductsFromMiddleware() {
+  // Middleware cache (shared keys with products page for cross-page benefit)
+  var MW_FP_KEY = 'sv-products-mw';
+  var MW_FP_TS_KEY = 'sv-products-mw-ts';
+  var MW_FP_TTL = 10 * 60 * 1000; // 10 minutes
+
+  function getMWCache() {
+    try {
+      var data = localStorage.getItem(MW_FP_KEY);
+      var ts = parseInt(localStorage.getItem(MW_FP_TS_KEY), 10) || 0;
+      if (data) return { data: JSON.parse(data), fresh: (Date.now() - ts) < MW_FP_TTL };
+    } catch (e) {}
+    return null;
+  }
+
+  function setMWCache(items) {
+    try {
+      localStorage.setItem(MW_FP_KEY, JSON.stringify(items));
+      localStorage.setItem(MW_FP_TS_KEY, String(Date.now()));
+    } catch (e) {}
+  }
+
+  function fetchProductsFromMW() {
     return fetch(middlewareUrl + '/api/products')
       .then(function (r) {
         if (!r.ok) throw new Error('Middleware ' + r.status);
@@ -926,6 +947,20 @@ function loadFeaturedProducts() {
           return obj;
         });
       });
+  }
+
+  function loadProductsFromMiddleware() {
+    var cached = getMWCache();
+    if (cached) {
+      if (!cached.fresh) {
+        fetchProductsFromMW().then(setMWCache).catch(function () {});
+      }
+      return Promise.resolve(cached.data);
+    }
+    return fetchProductsFromMW().then(function (items) {
+      setMWCache(items);
+      return items;
+    });
   }
 
   function loadProductsFromCSV() {
@@ -4204,7 +4239,8 @@ function setReservationQty(product, qty) {
       qty: qty,
       item_type: product._item_type || 'kit',
       sku: product.sku || '',
-      unit: product.unit || ''
+      unit: product.unit || '',
+      tax_percentage: parseFloat(product.tax_percentage) || 0
     });
   }
 
@@ -4277,15 +4313,29 @@ function renderWeightControl(wrap, product, productKey) {
   var minVal = parseFloat(product.low_amount) || (isKg ? 0.1 : 50);
   var maxVal = parseFloat(product.high_amount) || (isKg ? 5 : 5000);
   var stepVal = parseFloat(product.step) || (isKg ? 0.1 : 50);
+  var decimals = isKg ? 1 : 0;
   var pricePerUnit = parseFloat((product.price_per_unit || '0').replace(/[^0-9.]/g, '')) || 0;
   var currentQty = getReservedQty(productKey);
+  var initVal = currentQty > 0 ? currentQty : minVal;
 
   var container = document.createElement('div');
   container.className = 'weight-control';
 
-  // Slider row
+  // Amount display badge
+  var amountBadge = document.createElement('div');
+  amountBadge.className = 'weight-control-amount-badge';
+  amountBadge.textContent = parseFloat(initVal).toFixed(decimals) + ' ' + unit;
+  container.appendChild(amountBadge);
+
+  // Slider row: minus button, range, plus button
   var sliderRow = document.createElement('div');
   sliderRow.className = 'weight-control-slider-row';
+
+  var minusBtn = document.createElement('button');
+  minusBtn.type = 'button';
+  minusBtn.className = 'weight-control-step-btn';
+  minusBtn.textContent = '\u2212';
+  minusBtn.setAttribute('aria-label', 'Decrease amount');
 
   var rangeInput = document.createElement('input');
   rangeInput.type = 'range';
@@ -4293,7 +4343,38 @@ function renderWeightControl(wrap, product, productKey) {
   rangeInput.min = String(minVal);
   rangeInput.max = String(maxVal);
   rangeInput.step = String(stepVal);
-  rangeInput.value = currentQty > 0 ? String(currentQty) : String(minVal);
+  rangeInput.value = String(initVal);
+  rangeInput.setAttribute('aria-label', 'Select amount in ' + unit);
+
+  var plusBtn = document.createElement('button');
+  plusBtn.type = 'button';
+  plusBtn.className = 'weight-control-step-btn';
+  plusBtn.textContent = '+';
+  plusBtn.setAttribute('aria-label', 'Increase amount');
+
+  sliderRow.appendChild(minusBtn);
+  sliderRow.appendChild(rangeInput);
+  sliderRow.appendChild(plusBtn);
+  container.appendChild(sliderRow);
+
+  // Min/max labels below slider
+  var rangeLabels = document.createElement('div');
+  rangeLabels.className = 'weight-control-range-labels';
+  var minLabel = document.createElement('span');
+  minLabel.textContent = parseFloat(minVal).toFixed(decimals) + ' ' + unit;
+  var maxLabel = document.createElement('span');
+  maxLabel.textContent = parseFloat(maxVal).toFixed(decimals) + ' ' + unit;
+  rangeLabels.appendChild(minLabel);
+  rangeLabels.appendChild(maxLabel);
+  container.appendChild(rangeLabels);
+
+  // Exact input row
+  var inputRow = document.createElement('div');
+  inputRow.className = 'weight-control-input-row';
+
+  var inputLabel = document.createElement('span');
+  inputLabel.className = 'weight-control-input-label';
+  inputLabel.textContent = 'Exact:';
 
   var numInput = document.createElement('input');
   numInput.type = 'number';
@@ -4301,56 +4382,109 @@ function renderWeightControl(wrap, product, productKey) {
   numInput.min = String(minVal);
   numInput.max = String(maxVal);
   numInput.step = String(stepVal);
-  numInput.value = currentQty > 0 ? String(currentQty) : String(minVal);
+  numInput.value = parseFloat(initVal).toFixed(decimals);
+  numInput.setAttribute('aria-label', 'Type exact amount in ' + unit);
 
   var unitLabel = document.createElement('span');
   unitLabel.className = 'weight-control-unit-label';
   unitLabel.textContent = unit;
 
-  sliderRow.appendChild(rangeInput);
-  sliderRow.appendChild(numInput);
-  sliderRow.appendChild(unitLabel);
-  container.appendChild(sliderRow);
+  inputRow.appendChild(inputLabel);
+  inputRow.appendChild(numInput);
+  inputRow.appendChild(unitLabel);
+  container.appendChild(inputRow);
 
   // Price display
   var priceDisplay = document.createElement('div');
   priceDisplay.className = 'weight-control-price';
-  var displayVal = currentQty > 0 ? currentQty : minVal;
-  priceDisplay.textContent = displayVal + unit + ' \u00D7 $' + pricePerUnit.toFixed(2) + '/' + unit + ' = $' + (displayVal * pricePerUnit).toFixed(2);
   container.appendChild(priceDisplay);
-
-  function updatePriceDisplay() {
-    var amt = parseFloat(numInput.value) || minVal;
-    priceDisplay.textContent = amt + unit + ' \u00D7 $' + pricePerUnit.toFixed(2) + '/' + unit + ' = $' + (amt * pricePerUnit).toFixed(2);
-  }
-
-  rangeInput.addEventListener('input', function () {
-    numInput.value = rangeInput.value;
-    updatePriceDisplay();
-  });
-
-  numInput.addEventListener('input', function () {
-    var val = parseFloat(numInput.value);
-    if (val < minVal) val = minVal;
-    if (val > maxVal) val = maxVal;
-    rangeInput.value = String(val);
-    updatePriceDisplay();
-  });
 
   // Add to cart button
   var addBtn = document.createElement('button');
   addBtn.type = 'button';
   addBtn.className = 'weight-control-add';
-  addBtn.textContent = currentQty > 0 ? 'Update Cart (' + currentQty + unit + ')' : 'Add to Cart';
+  container.appendChild(addBtn);
+
+  // Helper: snap value to nearest step and clamp
+  function snapVal(v) {
+    var snapped = Math.round(v / stepVal) * stepVal;
+    if (snapped < minVal) snapped = minVal;
+    if (snapped > maxVal) snapped = maxVal;
+    return parseFloat(snapped.toFixed(decimals + 2));
+  }
+
+  // Helper: compute fill percentage for the range track
+  function fillPercent(v) {
+    if (maxVal === minVal) return 0;
+    return ((v - minVal) / (maxVal - minVal)) * 100;
+  }
+
+  // Update all UI from current slider value
+  function syncUI() {
+    var amt = snapVal(parseFloat(rangeInput.value) || minVal);
+    var total = amt * pricePerUnit;
+    amountBadge.textContent = parseFloat(amt).toFixed(decimals) + ' ' + unit;
+    priceDisplay.textContent = parseFloat(amt).toFixed(decimals) + ' ' + unit + ' \u00D7 $' + pricePerUnit.toFixed(2) + '/' + unit + ' = $' + total.toFixed(2);
+
+    if (currentQty > 0) {
+      addBtn.textContent = 'Update Cart \u2014 $' + total.toFixed(2);
+      addBtn.className = 'weight-control-add weight-control-add--update';
+    } else {
+      addBtn.textContent = 'Add to Cart \u2014 $' + total.toFixed(2);
+      addBtn.className = 'weight-control-add';
+    }
+
+    // Update filled track via CSS custom property
+    rangeInput.style.setProperty('--fill', fillPercent(amt) + '%');
+  }
+
+  syncUI();
+
+  // Slider input
+  rangeInput.addEventListener('input', function () {
+    numInput.value = parseFloat(snapVal(parseFloat(rangeInput.value))).toFixed(decimals);
+    syncUI();
+  });
+
+  // Numeric input
+  numInput.addEventListener('input', function () {
+    var val = parseFloat(numInput.value);
+    if (isNaN(val)) return;
+    if (val < minVal) val = minVal;
+    if (val > maxVal) val = maxVal;
+    rangeInput.value = String(val);
+    syncUI();
+  });
+
+  numInput.addEventListener('blur', function () {
+    var val = snapVal(parseFloat(numInput.value) || minVal);
+    numInput.value = parseFloat(val).toFixed(decimals);
+    rangeInput.value = String(val);
+    syncUI();
+  });
+
+  // Step buttons
+  minusBtn.addEventListener('click', function () {
+    var val = snapVal((parseFloat(rangeInput.value) || minVal) - stepVal);
+    rangeInput.value = String(val);
+    numInput.value = parseFloat(val).toFixed(decimals);
+    syncUI();
+  });
+
+  plusBtn.addEventListener('click', function () {
+    var val = snapVal((parseFloat(rangeInput.value) || minVal) + stepVal);
+    rangeInput.value = String(val);
+    numInput.value = parseFloat(val).toFixed(decimals);
+    syncUI();
+  });
+
+  // Add to cart
   addBtn.addEventListener('click', function () {
-    var amt = parseFloat(numInput.value) || minVal;
-    if (amt < minVal) amt = minVal;
-    if (amt > maxVal) amt = maxVal;
+    var amt = snapVal(parseFloat(numInput.value) || minVal);
     setReservationQty(product, amt);
     trackEvent('add_to_cart', product.sku || '', product.name || '');
     renderWeightControl(wrap, product, productKey);
   });
-  container.appendChild(addBtn);
 
   wrap.appendChild(container);
 }
@@ -4363,10 +4497,38 @@ function renderWeightControlCompact(wrap, product, productKey) {
   var minVal = parseFloat(product.low_amount) || (isKg ? 0.1 : 50);
   var maxVal = parseFloat(product.high_amount) || (isKg ? 5 : 5000);
   var stepVal = parseFloat(product.step) || (isKg ? 0.1 : 50);
+  var decimals = isKg ? 1 : 0;
+  var pricePerUnit = parseFloat((product.price_per_unit || '0').replace(/[^0-9.]/g, '')) || 0;
   var currentQty = getReservedQty(productKey);
+  var initVal = currentQty > 0 ? currentQty : minVal;
 
   var container = document.createElement('div');
   container.className = 'weight-control-compact';
+
+  // Top row: slider with amount badge
+  var sliderRow = document.createElement('div');
+  sliderRow.className = 'weight-control-compact-slider-row';
+
+  var rangeInput = document.createElement('input');
+  rangeInput.type = 'range';
+  rangeInput.className = 'weight-control-range weight-control-range--compact';
+  rangeInput.min = String(minVal);
+  rangeInput.max = String(maxVal);
+  rangeInput.step = String(stepVal);
+  rangeInput.value = String(initVal);
+  rangeInput.setAttribute('aria-label', 'Select amount in ' + unit);
+
+  var amountTag = document.createElement('span');
+  amountTag.className = 'weight-control-compact-amount';
+  amountTag.textContent = parseFloat(initVal).toFixed(decimals) + ' ' + unit;
+
+  sliderRow.appendChild(rangeInput);
+  sliderRow.appendChild(amountTag);
+  container.appendChild(sliderRow);
+
+  // Bottom row: input + price + add button
+  var actionRow = document.createElement('div');
+  actionRow.className = 'weight-control-compact-action-row';
 
   var numInput = document.createElement('input');
   numInput.type = 'number';
@@ -4374,28 +4536,77 @@ function renderWeightControlCompact(wrap, product, productKey) {
   numInput.min = String(minVal);
   numInput.max = String(maxVal);
   numInput.step = String(stepVal);
-  numInput.value = currentQty > 0 ? String(currentQty) : String(minVal);
+  numInput.value = parseFloat(initVal).toFixed(decimals);
 
   var unitLabel = document.createElement('span');
   unitLabel.className = 'weight-control-unit-label';
   unitLabel.textContent = unit;
 
+  var priceTag = document.createElement('span');
+  priceTag.className = 'weight-control-compact-price';
+  priceTag.textContent = '$' + (initVal * pricePerUnit).toFixed(2);
+
   var addBtn = document.createElement('button');
   addBtn.type = 'button';
   addBtn.className = 'weight-control-add';
   addBtn.textContent = currentQty > 0 ? 'Update' : 'Add';
+
+  actionRow.appendChild(numInput);
+  actionRow.appendChild(unitLabel);
+  actionRow.appendChild(priceTag);
+  actionRow.appendChild(addBtn);
+  container.appendChild(actionRow);
+
+  // Helper: snap value to nearest step and clamp
+  function snapVal(v) {
+    var snapped = Math.round(v / stepVal) * stepVal;
+    if (snapped < minVal) snapped = minVal;
+    if (snapped > maxVal) snapped = maxVal;
+    return parseFloat(snapped.toFixed(decimals + 2));
+  }
+
+  function fillPercent(v) {
+    if (maxVal === minVal) return 0;
+    return ((v - minVal) / (maxVal - minVal)) * 100;
+  }
+
+  function syncCompactUI() {
+    var amt = snapVal(parseFloat(rangeInput.value) || minVal);
+    amountTag.textContent = parseFloat(amt).toFixed(decimals) + ' ' + unit;
+    priceTag.textContent = '$' + (amt * pricePerUnit).toFixed(2);
+    rangeInput.style.setProperty('--fill', fillPercent(amt) + '%');
+  }
+
+  syncCompactUI();
+
+  rangeInput.addEventListener('input', function () {
+    numInput.value = parseFloat(snapVal(parseFloat(rangeInput.value))).toFixed(decimals);
+    syncCompactUI();
+  });
+
+  numInput.addEventListener('input', function () {
+    var val = parseFloat(numInput.value);
+    if (isNaN(val)) return;
+    if (val < minVal) val = minVal;
+    if (val > maxVal) val = maxVal;
+    rangeInput.value = String(val);
+    syncCompactUI();
+  });
+
+  numInput.addEventListener('blur', function () {
+    var val = snapVal(parseFloat(numInput.value) || minVal);
+    numInput.value = parseFloat(val).toFixed(decimals);
+    rangeInput.value = String(val);
+    syncCompactUI();
+  });
+
   addBtn.addEventListener('click', function () {
-    var amt = parseFloat(numInput.value) || minVal;
-    if (amt < minVal) amt = minVal;
-    if (amt > maxVal) amt = maxVal;
+    var amt = snapVal(parseFloat(numInput.value) || minVal);
     setReservationQty(product, amt);
     trackEvent('add_to_cart', product.sku || '', product.name || '');
     renderWeightControlCompact(wrap, product, productKey);
   });
 
-  container.appendChild(numInput);
-  container.appendChild(unitLabel);
-  container.appendChild(addBtn);
   wrap.appendChild(container);
 }
 
@@ -4643,6 +4854,31 @@ function initReservationPage() {
   if (!hasKits) {
     var batchNotes = document.querySelectorAll('.catalog-batch-note');
     batchNotes.forEach(function (n) { n.classList.add('hidden'); });
+  }
+
+  // Adapt page for product orders (non-kit items)
+  if (!hasKits && items.length > 0) {
+    var pageTitle = document.querySelector('[data-content="page-title"]');
+    if (pageTitle) pageTitle.textContent = 'Complete Your Order';
+    document.title = 'Order | Steins & Vines';
+    var reservedTitle = document.querySelector('[data-content="reserved-items-title"]');
+    if (reservedTitle) reservedTitle.textContent = 'Your items';
+    var submitBtn = document.querySelector('[data-content="submit-btn"]');
+    if (submitBtn) submitBtn.textContent = 'Place Order';
+    var formNote = document.querySelector('[data-content="form-note"]');
+    if (formNote) formNote.textContent = 'A confirmation email will be sent to the address provided above. All orders are in-store pickup only.';
+    var confirmTitle = document.querySelector('[data-content="confirm-title"]');
+    if (confirmTitle) confirmTitle.textContent = 'Order confirmed';
+    var confirmText = document.querySelector('[data-content="confirm-text"]');
+    if (confirmText) confirmText.textContent = 'Thank you for your order! We will prepare your items for in-store pickup. You will receive a confirmation email shortly.';
+    var confirmNextEl = document.querySelector('.confirm-next');
+    if (confirmNextEl) {
+      confirmNextEl.innerHTML = '<h3>What\'s Next</h3><ol>'
+        + '<li>We\'ll send a confirmation email with your order details</li>'
+        + '<li>We\'ll notify you when your order is ready for pickup</li>'
+        + '<li>Visit us in-store to collect your items</li>'
+        + '</ol>';
+    }
   }
 
   setupReservationForm();
@@ -4928,10 +5164,51 @@ function renderReservationItems() {
     subtotal += price * (item.qty || 1);
   });
 
-  var subtotalRow = document.createElement('div');
-  subtotalRow.className = 'reservation-subtotal';
-  subtotalRow.innerHTML = '<span>Estimated Subtotal <span class="reservation-disclaimer">— Final pricing may vary.</span></span><span>$' + subtotal.toFixed(2) + '</span>';
-  container.appendChild(subtotalRow);
+  var isProductOrder = !items.some(function (item) { return (item.item_type || 'kit') === 'kit'; });
+
+  if (isProductOrder) {
+    var taxTotal = 0;
+    items.forEach(function (item) {
+      var price = parseFloat((item.price || '0').replace('$', '')) || 0;
+      var disc = parseFloat(item.discount) || 0;
+      if (disc > 0) price = price * (1 - disc / 100);
+      var taxPct = parseFloat(item.tax_percentage) || 0;
+      taxTotal += price * (item.qty || 1) * (taxPct / 100);
+    });
+    var grandTotal = subtotal + taxTotal;
+
+    var summaryWrap = document.createElement('div');
+    summaryWrap.className = 'order-summary-totals';
+
+    var subtotalDiv = document.createElement('div');
+    subtotalDiv.className = 'reservation-subtotal';
+    subtotalDiv.innerHTML = '<span>Subtotal</span><span>$' + subtotal.toFixed(2) + '</span>';
+    summaryWrap.appendChild(subtotalDiv);
+
+    if (taxTotal > 0) {
+      var taxDiv = document.createElement('div');
+      taxDiv.className = 'reservation-subtotal reservation-subtotal--detail';
+      taxDiv.innerHTML = '<span>Tax</span><span>$' + taxTotal.toFixed(2) + '</span>';
+      summaryWrap.appendChild(taxDiv);
+    }
+
+    var totalDiv = document.createElement('div');
+    totalDiv.className = 'reservation-subtotal reservation-subtotal--total';
+    totalDiv.innerHTML = '<span>Total</span><span>$' + grandTotal.toFixed(2) + '</span>';
+    summaryWrap.appendChild(totalDiv);
+
+    var pickupNote = document.createElement('div');
+    pickupNote.className = 'reservation-pickup-note';
+    pickupNote.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/></svg> In-store pickup only';
+    summaryWrap.appendChild(pickupNote);
+
+    container.appendChild(summaryWrap);
+  } else {
+    var subtotalRow = document.createElement('div');
+    subtotalRow.className = 'reservation-subtotal';
+    subtotalRow.innerHTML = '<span>Estimated Subtotal <span class="reservation-disclaimer">\u2014 Final pricing may vary.</span></span><span>$' + subtotal.toFixed(2) + '</span>';
+    container.appendChild(subtotalRow);
+  }
 
   // Clear All button
   var clearWrap = document.createElement('div');
@@ -5388,8 +5665,14 @@ function setupReservationForm() {
         paymentSection.classList.remove('hidden');
         var headingEl = document.getElementById('payment-heading');
         var noteEl = document.getElementById('payment-note');
-        if (headingEl) headingEl.textContent = 'Payment — $' + Number(cfg.depositAmount).toFixed(2) + ' deposit';
-        if (noteEl) noteEl.textContent = 'Your card will be charged a $' + Number(cfg.depositAmount).toFixed(2) + ' deposit. The remaining balance is due at your appointment.';
+        var cfgItems = getReservation();
+        var cfgIsProductOrder = !cfgItems.some(function (item) { return (item.item_type || 'kit') === 'kit'; });
+        if (cfgIsProductOrder) {
+          if (noteEl) noteEl.textContent = 'Your card will be charged the full amount. In-store pickup only.';
+        } else {
+          if (headingEl) headingEl.textContent = 'Payment \u2014 $' + Number(cfg.depositAmount).toFixed(2) + ' deposit';
+          if (noteEl) noteEl.textContent = 'Your card will be charged a $' + Number(cfg.depositAmount).toFixed(2) + ' deposit. The remaining balance is due at your appointment.';
+        }
 
         // Configure Global Payments JS SDK with access token
         if (typeof GlobalPayments !== 'undefined') {
@@ -5472,19 +5755,47 @@ function setupReservationForm() {
     var items = getReservation();
     var total = 0;
     items.forEach(function (item) {
-      total += (parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0) * (item.qty || 1);
+      var p = (parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0);
+      var disc = parseFloat(item.discount) || 0;
+      if (disc > 0) p = p * (1 - disc / 100);
+      total += p * (item.qty || 1);
     });
     if (items.length === 0 || total <= 0) {
       depositSummary.classList.add('hidden');
       return;
     }
-    var deposit = Math.min(paymentConfig.depositAmount, total);
-    var balance = Math.max(0, total - deposit);
-    var amountEl = document.getElementById('deposit-summary-amount');
-    var balanceEl = document.getElementById('deposit-summary-balance');
-    if (amountEl) amountEl.textContent = '$' + deposit.toFixed(2);
-    if (balanceEl) balanceEl.textContent = '$' + balance.toFixed(2);
-    depositSummary.classList.remove('hidden');
+
+    var depIsProductOrder = !items.some(function (item) { return (item.item_type || 'kit') === 'kit'; });
+
+    if (depIsProductOrder) {
+      var depTaxTotal = 0;
+      items.forEach(function (item) {
+        var p = (parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0);
+        var disc = parseFloat(item.discount) || 0;
+        if (disc > 0) p = p * (1 - disc / 100);
+        var taxPct = parseFloat(item.tax_percentage) || 0;
+        depTaxTotal += p * (item.qty || 1) * (taxPct / 100);
+      });
+      var depGrandTotal = total + depTaxTotal;
+
+      var depHtml = '<div class="deposit-summary-row"><span>Subtotal</span><span>$' + total.toFixed(2) + '</span></div>';
+      if (depTaxTotal > 0) {
+        depHtml += '<div class="deposit-summary-row"><span>Tax</span><span>$' + depTaxTotal.toFixed(2) + '</span></div>';
+      }
+      depHtml += '<div class="deposit-summary-row deposit-summary-row--total"><span>Total</span><span>$' + depGrandTotal.toFixed(2) + '</span></div>';
+      depositSummary.innerHTML = depHtml;
+      depositSummary.classList.remove('hidden');
+
+      // Update payment heading with total
+      var depHeadingEl = document.getElementById('payment-heading');
+      if (depHeadingEl) depHeadingEl.innerHTML = '<svg class="payment-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg> Payment \u2014 $' + depGrandTotal.toFixed(2);
+    } else {
+      var deposit = Math.min(paymentConfig.depositAmount, total);
+      var balance = Math.max(0, total - deposit);
+      depositSummary.innerHTML = '<div class="deposit-summary-row"><span>Deposit</span><span id="deposit-summary-amount">$' + deposit.toFixed(2) + '</span></div>'
+        + '<div class="deposit-summary-row"><span>Balance due at appointment</span><span id="deposit-summary-balance">$' + balance.toFixed(2) + '</span></div>';
+      depositSummary.classList.remove('hidden');
+    }
   }
 
   // Update deposit summary whenever reservation items change
@@ -5603,7 +5914,7 @@ function setupReservationForm() {
       var q = item.qty || 1;
       return item.name + (q > 1 ? ' x' + q : '');
     }).join(', ');
-    var timeslot = selectedTimeslot ? selectedTimeslot.value : 'No timeslot — Pickup only';
+    var timeslot = selectedTimeslot ? selectedTimeslot.value : (!hasKits ? 'In-store pickup' : 'No timeslot \u2014 Pickup only');
 
     // Disable submit button and show processing state to prevent double-submissions
     var submitBtn = form.querySelector('button[type="submit"]');
@@ -5622,9 +5933,26 @@ function setupReservationForm() {
     var orderTotal = 0;
     items.forEach(function (item) {
       var p = String(item.price || '0').replace(/[^0-9.]/g, '');
-      orderTotal += (parseFloat(p) || 0) * (item.qty || 1);
+      var disc = parseFloat(item.discount) || 0;
+      var effectiveP = (parseFloat(p) || 0);
+      if (disc > 0) effectiveP = effectiveP * (1 - disc / 100);
+      orderTotal += effectiveP * (item.qty || 1);
     });
-    var depositAmt = needsPayment ? Math.min(paymentConfig.depositAmount, orderTotal) : 0;
+
+    var submitIsProductOrder = !items.some(function (item) { return (item.item_type || 'kit') === 'kit'; });
+    var orderTax = 0;
+    if (submitIsProductOrder) {
+      items.forEach(function (item) {
+        var p = String(item.price || '0').replace(/[^0-9.]/g, '');
+        var disc = parseFloat(item.discount) || 0;
+        var effectiveP = (parseFloat(p) || 0);
+        if (disc > 0) effectiveP = effectiveP * (1 - disc / 100);
+        var taxPct = parseFloat(item.tax_percentage) || 0;
+        orderTax += effectiveP * (item.qty || 1) * (taxPct / 100);
+      });
+    }
+    var chargeTotal = orderTotal + orderTax;
+    var depositAmt = needsPayment ? (submitIsProductOrder ? chargeTotal : Math.min(paymentConfig.depositAmount, orderTotal)) : 0;
 
     // Parse date and time from timeslot value (e.g. "2026-02-15 10:00 AM")
     var slotParts = timeslot.split(' ');
@@ -5726,7 +6054,7 @@ function setupReservationForm() {
         var checkoutPayload = {
           customer_id: result.customerId,
           items: lineItems,
-          notes: 'Reservation for ' + name + ' — ' + timeslot,
+          notes: (submitIsProductOrder ? 'Order' : 'Reservation') + ' for ' + name + ' \u2014 ' + timeslot,
           appointment_id: result.bookingId || '',
           timeslot: result.timeslotLabel
         };
@@ -5826,23 +6154,32 @@ function setupReservationForm() {
                 + '<span>$' + (p * q).toFixed(2) + '</span>'
                 + '</div>';
             });
-            summaryHtml += '<div class="confirm-summary-row"><span>Timeslot</span><span>' + escapeHTML(orderedTimeslot) + '</span></div>';
-
-            // Show terminal payment result
-            if (posResult && posResult.ok) {
-              summaryHtml += '<div class="confirm-summary-row"><span>Paid via terminal</span><span>$' + Number(posResult.amount).toFixed(2) + '</span></div>';
-            } else if (orderResult && orderResult.deposit_amount > 0) {
-              summaryHtml += '<div class="confirm-summary-row"><span>Deposit paid</span><span>$' + Number(orderResult.deposit_amount).toFixed(2) + '</span></div>';
-              if (orderResult.balance_due > 0) {
-                summaryHtml += '<div class="confirm-summary-row confirm-summary-row--total"><span>Balance due</span><span>$' + Number(orderResult.balance_due).toFixed(2) + '</span></div>';
+            if (submitIsProductOrder) {
+              summaryHtml += '<div class="confirm-summary-row"><span>Pickup</span><span>In-store</span></div>';
+              summaryHtml += '<div class="confirm-summary-row"><span>Subtotal</span><span>$' + orderTotal.toFixed(2) + '</span></div>';
+              if (orderTax > 0) {
+                summaryHtml += '<div class="confirm-summary-row"><span>Tax</span><span>$' + orderTax.toFixed(2) + '</span></div>';
               }
+              summaryHtml += '<div class="confirm-summary-row confirm-summary-row--total"><span>Total paid</span><span>$' + chargeTotal.toFixed(2) + '</span></div>';
             } else {
-              summaryHtml += '<div class="confirm-summary-row confirm-summary-row--total"><span>Total</span><span>$' + orderTotal.toFixed(2) + '</span></div>';
-            }
+              summaryHtml += '<div class="confirm-summary-row"><span>Timeslot</span><span>' + escapeHTML(orderedTimeslot) + '</span></div>';
 
-            // If terminal failed, show fallback message
-            if (posResult && posResult.error) {
-              summaryHtml += '<div class="confirm-summary-row" style="color:var(--color-brown);"><span>Please pay at the counter</span><span></span></div>';
+              // Show terminal payment result
+              if (posResult && posResult.ok) {
+                summaryHtml += '<div class="confirm-summary-row"><span>Paid via terminal</span><span>$' + Number(posResult.amount).toFixed(2) + '</span></div>';
+              } else if (orderResult && orderResult.deposit_amount > 0) {
+                summaryHtml += '<div class="confirm-summary-row"><span>Deposit paid</span><span>$' + Number(orderResult.deposit_amount).toFixed(2) + '</span></div>';
+                if (orderResult.balance_due > 0) {
+                  summaryHtml += '<div class="confirm-summary-row confirm-summary-row--total"><span>Balance due</span><span>$' + Number(orderResult.balance_due).toFixed(2) + '</span></div>';
+                }
+              } else {
+                summaryHtml += '<div class="confirm-summary-row confirm-summary-row--total"><span>Total</span><span>$' + orderTotal.toFixed(2) + '</span></div>';
+              }
+
+              // If terminal failed, show fallback message
+              if (posResult && posResult.error) {
+                summaryHtml += '<div class="confirm-summary-row" style="color:var(--color-brown);"><span>Please pay at the counter</span><span></span></div>';
+              }
             }
 
             summaryEl.innerHTML = summaryHtml;
@@ -5857,7 +6194,7 @@ function setupReservationForm() {
       showToast('Something went wrong: ' + err.message + '. Please try again.', 'error');
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = submitBtn.getAttribute('data-original-text') || 'Submit Reservation';
+        submitBtn.textContent = submitBtn.getAttribute('data-original-text') || (submitIsProductOrder ? 'Place Order' : 'Submit Reservation');
         submitBtn.classList.remove('btn-loading');
       }
     });

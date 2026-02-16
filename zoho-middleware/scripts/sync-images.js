@@ -74,7 +74,7 @@ async function main() {
 
   // Verify middleware is running and authenticated
   try {
-    var health = await axios.get(MIDDLEWARE_URL + '/health');
+    var health = await axios.get(MIDDLEWARE_URL + '/auth/status');
     if (!health.data.authenticated) {
       console.error('[sync-images] Middleware is not authenticated. Visit ' +
         MIDDLEWARE_URL + '/auth/zoho first.');
