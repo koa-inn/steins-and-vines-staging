@@ -596,6 +596,7 @@ var PRODUCTS_CACHE_KEY = 'zoho:products';
 var PRODUCTS_CACHE_TTL = 3600; // 1 hour hard TTL
 var PRODUCTS_SOFT_TTL = 600;   // 10 minutes — triggers background refresh
 var PRODUCTS_CACHE_TS_KEY = 'zoho:products:ts'; // timestamp of last enrichment
+var PRODUCT_IMAGE_HASHES_KEY = 'zoho:product-image-hashes'; // image change detection
 var _productsRefreshing = false; // prevent concurrent background refreshes
 
 // In-memory set of kit item IDs (populated by GET /api/products).
@@ -643,6 +644,7 @@ function refreshProducts() {
             var detail = data.item || {};
             item.custom_fields = detail.custom_fields || [];
             item.brand = detail.brand || '';
+            item.image_name = detail.image_name || '';
             return item;
           })
           .catch(function (err) {
@@ -688,6 +690,45 @@ function refreshProducts() {
         cache.set(PRODUCTS_CACHE_KEY, enriched, PRODUCTS_CACHE_TTL);
         cache.set(PRODUCTS_CACHE_TS_KEY, Date.now(), PRODUCTS_CACHE_TTL);
         console.log('[api/products] Cached ' + enriched.length + ' kit items');
+
+        // --- Image change detection ---
+        // Build a map of item_id → image_name from the enriched detail data.
+        // The detail endpoint includes image_name when an item has an image.
+        var currentImageMap = {};
+        enriched.forEach(function (item) {
+          if (item.image_name) {
+            currentImageMap[item.item_id] = item.image_name;
+          }
+        });
+
+        // Compare against the previously cached image map (fire-and-forget)
+        cache.get(PRODUCT_IMAGE_HASHES_KEY)
+          .then(function (previousImageMap) {
+            previousImageMap = previousImageMap || {};
+            var changed = [];
+            var newImages = [];
+
+            Object.keys(currentImageMap).forEach(function (itemId) {
+              if (!previousImageMap[itemId]) {
+                newImages.push(itemId);
+              } else if (previousImageMap[itemId] !== currentImageMap[itemId]) {
+                changed.push(itemId);
+              }
+            });
+
+            if (changed.length > 0 || newImages.length > 0) {
+              console.log('[api/products] Image changes detected (' +
+                changed.length + ' changed, ' + newImages.length + ' new) ' +
+                '— run sync-images to update');
+            }
+
+            // Store the new image map in Redis (same TTL as products cache)
+            return cache.set(PRODUCT_IMAGE_HASHES_KEY, currentImageMap, PRODUCTS_CACHE_TTL);
+          })
+          .catch(function (imgErr) {
+            console.error('[api/products] Image change detection error:', imgErr.message);
+          });
+
         _productsRefreshing = false;
         return enriched;
       });
@@ -1185,6 +1226,43 @@ app.put('/api/inventory/items/:id', function (req, res) {
     .catch(function (err) {
       var detail = err.response ? err.response.data : err.message;
       res.status(502).json({ error: detail });
+    });
+});
+
+/**
+ * GET /api/items/:item_id/image
+ * Proxy the Zoho Inventory item image endpoint.
+ * Returns the raw image binary with the correct Content-Type.
+ * Returns 404 if the item has no image.
+ */
+app.get('/api/items/:item_id/image', function (req, res) {
+  zohoAuth.getAccessToken()
+    .then(function (token) {
+      return axios.get(ZOHO_INVENTORY_BASE + '/items/' + req.params.item_id + '/image', {
+        headers: { Authorization: 'Zoho-oauthtoken ' + token },
+        params: { organization_id: process.env.ZOHO_ORG_ID },
+        responseType: 'arraybuffer',
+        validateStatus: function (status) { return status < 500; }
+      });
+    })
+    .then(function (response) {
+      if (response.status === 404 || !response.data || response.data.length === 0) {
+        return res.status(404).json({ error: 'No image for this item' });
+      }
+      // Zoho may return a JSON error body even with 200 — detect by checking
+      // if the Content-Type is application/json
+      var contentType = response.headers['content-type'] || '';
+      if (contentType.indexOf('application/json') !== -1) {
+        // Zoho returned a JSON error (e.g. "no image uploaded")
+        return res.status(404).json({ error: 'No image for this item' });
+      }
+      res.set('Content-Type', contentType || 'image/png');
+      res.set('Content-Length', response.data.length);
+      res.send(Buffer.from(response.data));
+    })
+    .catch(function (err) {
+      console.error('[api/items/image] Error for item ' + req.params.item_id + ':', err.message);
+      res.status(502).json({ error: 'Failed to fetch image: ' + err.message });
     });
 });
 

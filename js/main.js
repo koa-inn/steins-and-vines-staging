@@ -3133,14 +3133,26 @@ function loadIngredients(callback) {
       .then(function (data) {
         var items = data.items || [];
         return items.map(function (z) {
-          return {
+          var obj = {
             name: z.name || '',
             unit: z.unit || '',
             price_per_unit: z.rate != null ? String(z.rate) : '',
             stock: z.stock_on_hand != null ? String(z.stock_on_hand) : '0',
             description: z.description || '',
-            sku: z.sku || ''
+            sku: z.sku || '',
+            low_amount: '',
+            high_amount: '',
+            step: ''
           };
+          if (z.custom_fields && z.custom_fields.length) {
+            z.custom_fields.forEach(function (cf) {
+              var key = (cf.label || '').toLowerCase().replace(/\s+/g, '_');
+              if (key && cf.value !== undefined && cf.value !== null) {
+                obj[key] = String(cf.value);
+              }
+            });
+          }
+          return obj;
         });
       });
   }
@@ -3384,12 +3396,20 @@ function renderIngredientSection(catalog, title, items, extraClass) {
           stock: item.stock,
           time: '',
           sku: item.sku || '',
+          unit: item.unit || '',
+          low_amount: item.low_amount || '',
+          high_amount: item.high_amount || '',
+          step: item.step || '',
           _item_type: 'ingredient'
         };
         var ingReserveWrap = document.createElement('div');
         ingReserveWrap.className = 'product-reserve-wrap';
         var ingProductKey = item.name + '|';
-        renderReserveControl(ingReserveWrap, ingForCart, ingProductKey);
+        if (hasWeightConfig(item)) {
+          renderWeightControlCompact(ingReserveWrap, ingForCart, ingProductKey);
+        } else {
+          renderReserveControl(ingReserveWrap, ingForCart, ingProductKey);
+        }
         tdCart.appendChild(ingReserveWrap);
       }
       tr.appendChild(tdCart);
@@ -3545,12 +3565,20 @@ function renderIngredientSection(catalog, title, items, extraClass) {
           stock: item.stock,
           time: '',
           sku: item.sku || '',
+          unit: item.unit || '',
+          low_amount: item.low_amount || '',
+          high_amount: item.high_amount || '',
+          step: item.step || '',
           _item_type: 'ingredient'
         };
         var reserveWrap = document.createElement('div');
         reserveWrap.className = 'product-reserve-wrap';
         var productKey = item.name + '|';
-        renderReserveControl(reserveWrap, ingredientForCart, productKey);
+        if (hasWeightConfig(item)) {
+          renderWeightControl(reserveWrap, ingredientForCart, productKey);
+        } else {
+          renderReserveControl(reserveWrap, ingredientForCart, productKey);
+        }
         card.appendChild(reserveWrap);
       }
 
@@ -4064,7 +4092,8 @@ function setReservationQty(product, qty) {
       time: product.time || '',
       qty: qty,
       item_type: product._item_type || 'kit',
-      sku: product.sku || ''
+      sku: product.sku || '',
+      unit: product.unit || ''
     });
   }
 
@@ -4118,6 +4147,141 @@ function renderReserveControl(wrap, product, productKey) {
     controls.appendChild(plusBtn);
     wrap.appendChild(controls);
   }
+}
+
+function isWeightUnit(unit) {
+  var u = (unit || '').toLowerCase().trim();
+  return u === 'kg' || u === 'g' || u.indexOf('kg') !== -1 || u.indexOf(' g') !== -1 || u === 'gram' || u === 'grams';
+}
+
+function hasWeightConfig(item) {
+  return isWeightUnit(item.unit) && parseFloat(item.high_amount) > 0;
+}
+
+function renderWeightControl(wrap, product, productKey) {
+  wrap.innerHTML = '';
+  var unit = (product.unit || '').trim();
+  var minVal = parseFloat(product.low_amount) || 0.1;
+  var maxVal = parseFloat(product.high_amount);
+  var stepVal = parseFloat(product.step) || 0.1;
+  var pricePerUnit = parseFloat((product.price_per_unit || '0').replace(/[^0-9.]/g, '')) || 0;
+  var currentQty = getReservedQty(productKey);
+
+  var container = document.createElement('div');
+  container.className = 'weight-control';
+
+  // Slider row
+  var sliderRow = document.createElement('div');
+  sliderRow.className = 'weight-control-slider-row';
+
+  var rangeInput = document.createElement('input');
+  rangeInput.type = 'range';
+  rangeInput.className = 'weight-control-range';
+  rangeInput.min = String(minVal);
+  rangeInput.max = String(maxVal);
+  rangeInput.step = String(stepVal);
+  rangeInput.value = currentQty > 0 ? String(currentQty) : String(minVal);
+
+  var numInput = document.createElement('input');
+  numInput.type = 'number';
+  numInput.className = 'weight-control-input';
+  numInput.min = String(minVal);
+  numInput.max = String(maxVal);
+  numInput.step = String(stepVal);
+  numInput.value = currentQty > 0 ? String(currentQty) : String(minVal);
+
+  var unitLabel = document.createElement('span');
+  unitLabel.className = 'weight-control-unit-label';
+  unitLabel.textContent = unit;
+
+  sliderRow.appendChild(rangeInput);
+  sliderRow.appendChild(numInput);
+  sliderRow.appendChild(unitLabel);
+  container.appendChild(sliderRow);
+
+  // Price display
+  var priceDisplay = document.createElement('div');
+  priceDisplay.className = 'weight-control-price';
+  var displayVal = currentQty > 0 ? currentQty : minVal;
+  priceDisplay.textContent = displayVal + unit + ' \u00D7 $' + pricePerUnit.toFixed(2) + '/' + unit + ' = $' + (displayVal * pricePerUnit).toFixed(2);
+  container.appendChild(priceDisplay);
+
+  function updatePriceDisplay() {
+    var amt = parseFloat(numInput.value) || minVal;
+    priceDisplay.textContent = amt + unit + ' \u00D7 $' + pricePerUnit.toFixed(2) + '/' + unit + ' = $' + (amt * pricePerUnit).toFixed(2);
+  }
+
+  rangeInput.addEventListener('input', function () {
+    numInput.value = rangeInput.value;
+    updatePriceDisplay();
+  });
+
+  numInput.addEventListener('input', function () {
+    var val = parseFloat(numInput.value);
+    if (val < minVal) val = minVal;
+    if (val > maxVal) val = maxVal;
+    rangeInput.value = String(val);
+    updatePriceDisplay();
+  });
+
+  // Add to cart button
+  var addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'weight-control-add';
+  addBtn.textContent = currentQty > 0 ? 'Update Cart (' + currentQty + unit + ')' : 'Add to Cart';
+  addBtn.addEventListener('click', function () {
+    var amt = parseFloat(numInput.value) || minVal;
+    if (amt < minVal) amt = minVal;
+    if (amt > maxVal) amt = maxVal;
+    setReservationQty(product, amt);
+    trackEvent('add_to_cart', product.sku || '', product.name || '');
+    renderWeightControl(wrap, product, productKey);
+  });
+  container.appendChild(addBtn);
+
+  wrap.appendChild(container);
+}
+
+function renderWeightControlCompact(wrap, product, productKey) {
+  wrap.innerHTML = '';
+  var unit = (product.unit || '').trim();
+  var minVal = parseFloat(product.low_amount) || 0.1;
+  var maxVal = parseFloat(product.high_amount);
+  var stepVal = parseFloat(product.step) || 0.1;
+  var currentQty = getReservedQty(productKey);
+
+  var container = document.createElement('div');
+  container.className = 'weight-control-compact';
+
+  var numInput = document.createElement('input');
+  numInput.type = 'number';
+  numInput.className = 'weight-control-input';
+  numInput.min = String(minVal);
+  numInput.max = String(maxVal);
+  numInput.step = String(stepVal);
+  numInput.value = currentQty > 0 ? String(currentQty) : String(minVal);
+
+  var unitLabel = document.createElement('span');
+  unitLabel.className = 'weight-control-unit-label';
+  unitLabel.textContent = unit;
+
+  var addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'weight-control-add';
+  addBtn.textContent = currentQty > 0 ? 'Update' : 'Add';
+  addBtn.addEventListener('click', function () {
+    var amt = parseFloat(numInput.value) || minVal;
+    if (amt < minVal) amt = minVal;
+    if (amt > maxVal) amt = maxVal;
+    setReservationQty(product, amt);
+    trackEvent('add_to_cart', product.sku || '', product.name || '');
+    renderWeightControlCompact(wrap, product, productKey);
+  });
+
+  container.appendChild(numInput);
+  container.appendChild(unitLabel);
+  container.appendChild(addBtn);
+  wrap.appendChild(container);
 }
 
 function initReservationBar() {
@@ -4190,12 +4354,14 @@ function renderCartSidebar() {
   var container = document.getElementById('cart-sidebar-items');
   var footer = document.getElementById('cart-sidebar-footer');
   var totalEl = document.getElementById('cart-sidebar-total');
+  var sidebarEl = document.getElementById('cart-sidebar');
   if (!container) return;
 
   var items = getReservation();
   container.innerHTML = '';
 
   if (items.length === 0) {
+    if (sidebarEl) sidebarEl.classList.remove('cart-sidebar--active');
     var emptyMsg = document.createElement('p');
     emptyMsg.className = 'cart-sidebar-empty';
     emptyMsg.textContent = 'Your cart is empty.';
@@ -4203,6 +4369,8 @@ function renderCartSidebar() {
     if (footer) footer.classList.add('hidden');
     return;
   }
+
+  if (sidebarEl) sidebarEl.classList.add('cart-sidebar--active');
 
   if (footer) footer.classList.remove('hidden');
 
@@ -4246,56 +4414,65 @@ function renderCartSidebar() {
     var controls = document.createElement('div');
     controls.className = 'cart-sidebar-item-controls';
 
-    var qtyControls = document.createElement('div');
-    qtyControls.className = 'product-qty-controls';
+    var itemIsWeighted = isWeightUnit(item.unit);
 
-    var minusBtn = document.createElement('button');
-    minusBtn.type = 'button';
-    minusBtn.className = 'qty-btn';
-    minusBtn.textContent = '\u2212';
-    minusBtn.addEventListener('click', (function (itm) {
-      return function () {
-        var current = getReservation();
-        for (var i = 0; i < current.length; i++) {
-          if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
-            current[i].qty = (current[i].qty || 1) - 1;
-            if (current[i].qty <= 0) current.splice(i, 1);
-            break;
+    if (itemIsWeighted) {
+      var weightDisplay = document.createElement('div');
+      weightDisplay.className = 'cart-sidebar-item-weight';
+      weightDisplay.textContent = (item.qty || 0) + ' ' + item.unit;
+      controls.appendChild(weightDisplay);
+    } else {
+      var qtyControls = document.createElement('div');
+      qtyControls.className = 'product-qty-controls';
+
+      var minusBtn = document.createElement('button');
+      minusBtn.type = 'button';
+      minusBtn.className = 'qty-btn';
+      minusBtn.textContent = '\u2212';
+      minusBtn.addEventListener('click', (function (itm) {
+        return function () {
+          var current = getReservation();
+          for (var i = 0; i < current.length; i++) {
+            if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
+              current[i].qty = (current[i].qty || 1) - 1;
+              if (current[i].qty <= 0) current.splice(i, 1);
+              break;
+            }
           }
-        }
-        saveReservation(current);
-        updateReservationBar();
-        renderCartSidebar();
-      };
-    })(item));
+          saveReservation(current);
+          updateReservationBar();
+          renderCartSidebar();
+        };
+      })(item));
 
-    var qtySpan = document.createElement('span');
-    qtySpan.className = 'qty-value';
-    qtySpan.textContent = item.qty || 1;
+      var qtySpan = document.createElement('span');
+      qtySpan.className = 'qty-value';
+      qtySpan.textContent = item.qty || 1;
 
-    var plusBtn = document.createElement('button');
-    plusBtn.type = 'button';
-    plusBtn.className = 'qty-btn';
-    plusBtn.textContent = '+';
-    plusBtn.addEventListener('click', (function (itm) {
-      return function () {
-        var current = getReservation();
-        for (var i = 0; i < current.length; i++) {
-          if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
-            current[i].qty = (current[i].qty || 1) + 1;
-            break;
+      var plusBtn = document.createElement('button');
+      plusBtn.type = 'button';
+      plusBtn.className = 'qty-btn';
+      plusBtn.textContent = '+';
+      plusBtn.addEventListener('click', (function (itm) {
+        return function () {
+          var current = getReservation();
+          for (var i = 0; i < current.length; i++) {
+            if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
+              current[i].qty = (current[i].qty || 1) + 1;
+              break;
+            }
           }
-        }
-        saveReservation(current);
-        updateReservationBar();
-        renderCartSidebar();
-      };
-    })(item));
+          saveReservation(current);
+          updateReservationBar();
+          renderCartSidebar();
+        };
+      })(item));
 
-    qtyControls.appendChild(minusBtn);
-    qtyControls.appendChild(qtySpan);
-    qtyControls.appendChild(plusBtn);
-    controls.appendChild(qtyControls);
+      qtyControls.appendChild(minusBtn);
+      qtyControls.appendChild(qtySpan);
+      qtyControls.appendChild(plusBtn);
+      controls.appendChild(qtyControls);
+    }
 
     var removeBtn = document.createElement('button');
     removeBtn.type = 'button';

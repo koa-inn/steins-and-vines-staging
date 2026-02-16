@@ -2046,10 +2046,13 @@ small, .text-small {
 .reservation-bar.reservation-bar-inline {
   position: static;
   border-radius: 8px;
-  margin: 1.5rem auto;
+  margin: 0;
   max-width: var(--max-width, 1200px);
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   display: none;
+  width: 100%;
+  flex-basis: 100%;
+  order: -1;
 }
 
 @media (min-height: 750px) {
@@ -4356,6 +4359,7 @@ small, .text-small {
 /* ===== Cart Sidebar ===== */
 .catalog-layout {
   display: flex;
+  flex-wrap: wrap;
   gap: 1.5rem;
   align-items: flex-start;
 }
@@ -4374,14 +4378,24 @@ small, .text-small {
     display: block;
     position: sticky;
     top: calc(var(--header-height, 60px) + 1rem);
-    width: 300px;
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    padding: 0;
+    border: none;
     flex-shrink: 0;
     background: var(--color-white);
-    border: 1px solid rgba(119,70,45,0.2);
     border-radius: var(--radius-sm);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     max-height: calc(100vh - var(--header-height, 60px) - 2rem);
+    transition: width 0.3s ease, opacity 0.3s ease, padding 0.3s ease, border 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .cart-sidebar.cart-sidebar--active {
+    width: 300px;
+    opacity: 1;
     overflow-y: auto;
+    border: 1px solid rgba(119,70,45,0.2);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   }
 }
 
@@ -4553,4 +4567,138 @@ small, .text-small {
   .catalog-layout {
     display: block;
   }
+}
+
+/* ===== Weight Control (kg/g Slider) ===== */
+.weight-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.weight-control-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.weight-control-range {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 6px;
+  background: rgba(119,70,45,0.15);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.weight-control-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-green, #5a7247);
+  border: 2px solid var(--color-white, #fff);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.weight-control-range::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.weight-control-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-green, #5a7247);
+  border: 2px solid var(--color-white, #fff);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+
+.weight-control-input {
+  width: 70px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid rgba(119,70,45,0.3);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.85rem;
+  text-align: center;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-white, #fff);
+}
+
+.weight-control-input:focus {
+  outline: none;
+  border-color: var(--color-green, #5a7247);
+  box-shadow: 0 0 0 2px rgba(90,114,71,0.2);
+}
+
+.weight-control-unit-label {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.weight-control-price {
+  font-size: 0.82rem;
+  color: var(--color-brown, #77462d);
+  font-weight: 600;
+  text-align: center;
+}
+
+.weight-control-add {
+  display: inline-block;
+  padding: 0.45rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+  color: var(--color-white, #fff);
+  background: var(--color-green, #5a7247);
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+  text-align: center;
+  width: 100%;
+}
+
+.weight-control-add:hover {
+  background: var(--color-green-dark, #4a6237);
+  transform: translateY(-1px);
+}
+
+/* Compact weight control for table view */
+.weight-control-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.weight-control-compact .weight-control-input {
+  width: 60px;
+  padding: 0.25rem 0.3rem;
+  font-size: 0.8rem;
+}
+
+.weight-control-compact .weight-control-unit-label {
+  font-size: 0.75rem;
+}
+
+.weight-control-compact .weight-control-add {
+  width: auto;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+}
+
+/* Cart sidebar weight display */
+.cart-sidebar-item-weight {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+  margin-top: 0.1rem;
 }
