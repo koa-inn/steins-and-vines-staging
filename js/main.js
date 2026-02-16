@@ -1805,7 +1805,27 @@ function loadProducts() {
     });
   }
 
-  function loadFromMiddleware() {
+  var MW_CACHE_KEY = 'sv-products-mw';
+  var MW_CACHE_TS_KEY = 'sv-products-mw-ts';
+  var MW_CACHE_TTL = 10 * 60 * 1000;
+
+  function getCachedMW() {
+    try {
+      var data = localStorage.getItem(MW_CACHE_KEY);
+      var ts = parseInt(localStorage.getItem(MW_CACHE_TS_KEY), 10) || 0;
+      if (data) return { data: JSON.parse(data), fresh: (Date.now() - ts) < MW_CACHE_TTL };
+    } catch (e) {}
+    return null;
+  }
+
+  function setCachedMW(items) {
+    try {
+      localStorage.setItem(MW_CACHE_KEY, JSON.stringify(items));
+      localStorage.setItem(MW_CACHE_TS_KEY, String(Date.now()));
+    } catch (e) {}
+  }
+
+  function fetchFromMiddleware() {
     return fetch(middlewareUrl + '/api/products')
       .then(function (r) {
         if (!r.ok) throw new Error('Middleware returned ' + r.status);
@@ -1845,6 +1865,23 @@ function loadProducts() {
           return obj;
         });
       });
+  }
+
+  function loadFromMiddleware() {
+    var cached = getCachedMW();
+
+    if (cached) {
+      var promise = Promise.resolve(cached.data);
+      if (!cached.fresh) {
+        fetchFromMiddleware().then(setCachedMW).catch(function () {});
+      }
+      return promise;
+    }
+
+    return fetchFromMiddleware().then(function (items) {
+      setCachedMW(items);
+      return items;
+    });
   }
 
   // Show skeleton loading on first load
@@ -3124,7 +3161,27 @@ function loadIngredients(callback) {
     });
   }
 
-  function loadFromMiddleware() {
+  var MW_CACHE_KEY = 'sv-ingredients-mw';
+  var MW_CACHE_TS_KEY = 'sv-ingredients-mw-ts';
+  var MW_CACHE_TTL = 10 * 60 * 1000;
+
+  function getCachedMW() {
+    try {
+      var data = localStorage.getItem(MW_CACHE_KEY);
+      var ts = parseInt(localStorage.getItem(MW_CACHE_TS_KEY), 10) || 0;
+      if (data) return { data: JSON.parse(data), fresh: (Date.now() - ts) < MW_CACHE_TTL };
+    } catch (e) {}
+    return null;
+  }
+
+  function setCachedMW(items) {
+    try {
+      localStorage.setItem(MW_CACHE_KEY, JSON.stringify(items));
+      localStorage.setItem(MW_CACHE_TS_KEY, String(Date.now()));
+    } catch (e) {}
+  }
+
+  function fetchFromMiddleware() {
     return fetch(middlewareUrl + '/api/ingredients')
       .then(function (r) {
         if (!r.ok) throw new Error('Middleware returned ' + r.status);
@@ -3155,6 +3212,23 @@ function loadIngredients(callback) {
           return obj;
         });
       });
+  }
+
+  function loadFromMiddleware() {
+    var cached = getCachedMW();
+
+    if (cached) {
+      var promise = Promise.resolve(cached.data);
+      if (!cached.fresh) {
+        fetchFromMiddleware().then(setCachedMW).catch(function () {});
+      }
+      return promise;
+    }
+
+    return fetchFromMiddleware().then(function (items) {
+      setCachedMW(items);
+      return items;
+    });
   }
 
   var dataPromise = middlewareUrl
@@ -3660,7 +3734,27 @@ function loadServices(callback) {
     });
   }
 
-  function loadFromMiddleware() {
+  var MW_CACHE_KEY = 'sv-services-mw';
+  var MW_CACHE_TS_KEY = 'sv-services-mw-ts';
+  var MW_CACHE_TTL = 10 * 60 * 1000;
+
+  function getCachedMW() {
+    try {
+      var data = localStorage.getItem(MW_CACHE_KEY);
+      var ts = parseInt(localStorage.getItem(MW_CACHE_TS_KEY), 10) || 0;
+      if (data) return { data: JSON.parse(data), fresh: (Date.now() - ts) < MW_CACHE_TTL };
+    } catch (e) {}
+    return null;
+  }
+
+  function setCachedMW(items) {
+    try {
+      localStorage.setItem(MW_CACHE_KEY, JSON.stringify(items));
+      localStorage.setItem(MW_CACHE_TS_KEY, String(Date.now()));
+    } catch (e) {}
+  }
+
+  function fetchFromMiddleware() {
     return fetch(middlewareUrl + '/api/services')
       .then(function (r) {
         if (!r.ok) throw new Error('Middleware returned ' + r.status);
@@ -3679,6 +3773,23 @@ function loadServices(callback) {
           };
         });
       });
+  }
+
+  function loadFromMiddleware() {
+    var cached = getCachedMW();
+
+    if (cached) {
+      var promise = Promise.resolve(cached.data);
+      if (!cached.fresh) {
+        fetchFromMiddleware().then(setCachedMW).catch(function () {});
+      }
+      return promise;
+    }
+
+    return fetchFromMiddleware().then(function (items) {
+      setCachedMW(items);
+      return items;
+    });
   }
 
   var dataPromise = middlewareUrl

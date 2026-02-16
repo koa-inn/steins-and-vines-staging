@@ -6,6 +6,8 @@ var axios = require('axios');
 var crypto = require('crypto');
 var zohoAuth = require('./lib/zohoAuth');
 var cache = require('./lib/cache');
+var fs = require('fs');
+var path = require('path');
 var gp = require('globalpayments-api');
 
 var ServicesContainer = gp.ServicesContainer;
@@ -598,6 +600,7 @@ var PRODUCTS_SOFT_TTL = 600;   // 10 minutes — triggers background refresh
 var PRODUCTS_CACHE_TS_KEY = 'zoho:products:ts'; // timestamp of last enrichment
 var PRODUCT_IMAGE_HASHES_KEY = 'zoho:product-image-hashes'; // image change detection
 var _productsRefreshing = false; // prevent concurrent background refreshes
+var PRODUCTS_FILE_CACHE = path.join(__dirname, 'products-cache.json');
 
 // In-memory set of kit item IDs (populated by GET /api/products).
 // Used by /api/ingredients to exclude kits even when Redis is down.
@@ -691,6 +694,14 @@ function refreshProducts() {
         cache.set(PRODUCTS_CACHE_TS_KEY, Date.now(), PRODUCTS_CACHE_TTL);
         console.log('[api/products] Cached ' + enriched.length + ' kit items');
 
+        // Write file fallback
+        try {
+          fs.writeFileSync(PRODUCTS_FILE_CACHE, JSON.stringify(enriched));
+          console.log('[api/products] Wrote file fallback (' + enriched.length + ' items)');
+        } catch (fileErr) {
+          console.error('[api/products] File fallback write failed:', fileErr.message);
+        }
+
         // --- Image change detection ---
         // Build a map of item_id → image_name from the enriched detail data.
         // The detail endpoint includes image_name when an item has an image.
@@ -758,6 +769,29 @@ app.get('/api/products', function (req, res) {
               console.error('[api/products] Background refresh failed:', err.message);
             });
           }
+        });
+        return;
+      }
+
+      // Try file fallback before slow enrichment
+      var fileData = null;
+      try {
+        if (fs.existsSync(PRODUCTS_FILE_CACHE)) {
+          fileData = JSON.parse(fs.readFileSync(PRODUCTS_FILE_CACHE, 'utf8'));
+        }
+      } catch (e) {}
+
+      if (fileData && fileData.length > 0) {
+        console.log('[api/products] File fallback hit (' + fileData.length + ' items)');
+        // Populate in-memory kit IDs
+        fileData.forEach(function (item) { _kitItemIds[item.item_id] = true; });
+        // Also populate Redis cache from file
+        cache.set(PRODUCTS_CACHE_KEY, fileData, PRODUCTS_CACHE_TTL);
+        cache.set(PRODUCTS_CACHE_TS_KEY, Date.now(), PRODUCTS_CACHE_TTL);
+        res.json({ source: 'file-cache', items: fileData });
+        // Trigger background refresh
+        refreshProducts().catch(function (err) {
+          console.error('[api/products] Background refresh failed:', err.message);
         });
         return;
       }
@@ -2268,6 +2302,13 @@ cache.init().then(function () {
       console.log('  Connect Zoho:   http://localhost:' + PORT + '/auth/zoho');
     } else {
       console.log('  Zoho:           Connected');
+      // Pre-warm product cache on startup
+      console.log('  Pre-warming product cache...');
+      refreshProducts().then(function () {
+        console.log('  Product cache pre-warmed');
+      }).catch(function (err) {
+        console.error('  Pre-warm failed:', err.message);
+      });
     }
     console.log('');
   });
