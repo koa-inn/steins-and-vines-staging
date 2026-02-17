@@ -951,24 +951,64 @@ app.get('/api/ingredients', function (req, res) {
             return item.product_type !== 'service' && !_kitItemIds[item.item_id];
           });
 
-          // Ensure each ingredient has tax fields.
-          // The list endpoint may include tax_id/tax_name/tax_percentage;
-          // default to 0% if missing (ingredients are zero-rated food items).
-          items = items.map(function (item) {
-            if (item.tax_percentage === undefined || item.tax_percentage === null) {
-              item.tax_percentage = 0;
-            }
-            if (!item.tax_name) {
-              item.tax_name = '';
-            }
-            if (!item.tax_id) {
-              item.tax_id = '';
-            }
-            return item;
+          console.log('[api/ingredients] Enriching ' + items.length + ' items for custom fields');
+
+          var BATCH_SIZE = 5;
+          var BATCH_PAUSE = 3500;
+          var MAX_RETRIES = 2;
+          var enriched = [];
+
+          function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+          function fetchDetail(item, retries) {
+            return inventoryGet('/items/' + item.item_id)
+              .then(function (data) {
+                var detail = data.item || {};
+                item.custom_fields = detail.custom_fields || [];
+                item.brand = detail.brand || '';
+                item.tax_id = detail.tax_id || '';
+                item.tax_name = detail.tax_name || '';
+                item.tax_percentage = (detail.tax_percentage !== undefined && detail.tax_percentage !== null)
+                  ? detail.tax_percentage : 0;
+                return item;
+              })
+              .catch(function (err) {
+                if (err.response && err.response.status === 429 && retries < MAX_RETRIES) {
+                  var backoff = Math.pow(2, retries + 1) * 1000;
+                  console.log('[api/ingredients] Rate limited on ' + item.name + ', retrying in ' + backoff + 'ms');
+                  return delay(backoff).then(function () { return fetchDetail(item, retries + 1); });
+                }
+                console.error('[api/ingredients] Detail fetch failed for ' + item.name + ':', err.message);
+                item.custom_fields = [];
+                item.tax_percentage = (item.tax_percentage !== undefined && item.tax_percentage !== null)
+                  ? item.tax_percentage : 0;
+                item.tax_name = item.tax_name || '';
+                item.tax_id = item.tax_id || '';
+                return item;
+              });
+          }
+
+          var batches = [];
+          for (var i = 0; i < items.length; i += BATCH_SIZE) {
+            batches.push(items.slice(i, i + BATCH_SIZE));
+          }
+
+          var chain = Promise.resolve();
+          batches.forEach(function (batch, idx) {
+            chain = chain.then(function () {
+              return Promise.all(batch.map(function (item) {
+                return fetchDetail(item, 0);
+              })).then(function (results) {
+                results.forEach(function (r) { enriched.push(r); });
+                if (idx < batches.length - 1) return delay(BATCH_PAUSE);
+              });
+            });
           });
 
-          cache.set(INGREDIENTS_CACHE_KEY, items, INGREDIENTS_CACHE_TTL);
-          res.json({ source: 'zoho', items: items });
+          return chain.then(function () {
+            cache.set(INGREDIENTS_CACHE_KEY, enriched, INGREDIENTS_CACHE_TTL);
+            res.json({ source: 'zoho', items: enriched });
+          });
         });
     })
     .catch(function (err) {

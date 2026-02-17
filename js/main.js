@@ -3129,7 +3129,7 @@ function initProductTabs() {
 // ===== Ingredients & Supplies =====
 
 var _allIngredients = [];
-var _ingredientFilters = { unit: [], category: [], price: [] };
+var _ingredientFilters = { unit: [], category: [], subcategory: [], price: [] };
 
 function loadIngredients(callback) {
   var middlewareUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL)
@@ -3348,6 +3348,15 @@ function buildIngredientFilters() {
   categories.sort();
   buildIngredientFilterRow('filter-category', 'category', 'Category:', categories);
 
+  // Subcategory filter
+  var subcategories = [];
+  _allIngredients.forEach(function (r) {
+    var val = (r.subcategory || '').trim();
+    if (val && subcategories.indexOf(val) === -1) subcategories.push(val);
+  });
+  subcategories.sort();
+  buildIngredientFilterRow('filter-subcategory-ing', 'subcategory', 'Subcategory:', subcategories);
+
   // Unit filter
   var units = [];
   _allIngredients.forEach(function (r) {
@@ -3394,6 +3403,7 @@ function renderIngredients() {
   var filtered = _allIngredients.filter(function (r) {
     if (_ingredientFilters.unit.length > 0 && _ingredientFilters.unit.indexOf(r.unit) === -1) return false;
     if (_ingredientFilters.category.length > 0 && _ingredientFilters.category.indexOf(r.category || '') === -1) return false;
+    if (_ingredientFilters.subcategory.length > 0 && _ingredientFilters.subcategory.indexOf(r.subcategory || '') === -1) return false;
     if (_ingredientFilters.price.length > 0) {
       var p = parseFloat(r.price_per_unit) || 0;
       var matchPrice = _ingredientFilters.price.some(function (bracket) {
@@ -3460,6 +3470,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
     var ingCurrentSort = ingSortSelect ? ingSortSelect.value : 'name-asc';
     var ingCols = [
       { label: 'Name', sort: 'name' },
+      { label: 'Category', sort: null },
       { label: 'Unit', sort: null },
       { label: 'Price', sort: 'price' },
       { label: '', sort: null }
@@ -3510,6 +3521,14 @@ function renderIngredientSection(catalog, title, items, extraClass) {
       tdName.className = 'table-name';
       tdName.textContent = item.name || '';
       tr.appendChild(tdName);
+
+      var tdCat = document.createElement('td');
+      tdCat.setAttribute('data-label', 'Category');
+      var catParts = [];
+      if (item.category) catParts.push(item.category);
+      if (item.subcategory) catParts.push(item.subcategory);
+      tdCat.textContent = catParts.join(' / ');
+      tr.appendChild(tdCat);
 
       var tdUnit = document.createElement('td');
       tdUnit.setAttribute('data-label', 'Unit');
@@ -3570,7 +3589,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
         var iDetailTr = document.createElement('tr');
         iDetailTr.className = 'table-detail-row';
         var iDetailTd = document.createElement('td');
-        iDetailTd.setAttribute('colspan', '4');
+        iDetailTd.setAttribute('colspan', '5');
         iDetailTd.className = 'table-detail-cell';
         var iDetailContent = document.createElement('div');
         iDetailContent.className = 'table-detail-content';
@@ -3631,6 +3650,17 @@ function renderIngredientSection(catalog, title, items, extraClass) {
       var cardName = document.createElement('h4');
       cardName.textContent = item.name;
       header.appendChild(cardName);
+
+      var catParts = [];
+      if (item.category) catParts.push(item.category);
+      if (item.subcategory) catParts.push(item.subcategory);
+      if (catParts.length) {
+        var catLabel = document.createElement('span');
+        catLabel.className = 'product-card-category';
+        catLabel.textContent = catParts.join(' / ');
+        header.appendChild(catLabel);
+      }
+
       card.appendChild(header);
 
       // Unit + price detail row
