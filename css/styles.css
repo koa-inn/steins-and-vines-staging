@@ -2089,7 +2089,7 @@ small, .text-small {
 
   .catalog-controls {
     position: sticky;
-    top: var(--header-height, 0px);
+    top: calc(var(--header-height, 0px) + var(--tabs-height, 48px));
     z-index: 100;
     background-color: var(--color-cream);
     padding: 1rem 0;

@@ -186,6 +186,16 @@ document.addEventListener('DOMContentLoaded', function () {
     window.addEventListener('resize', setHeaderHeight);
   }
 
+  // Expose product-tabs height as CSS variable for sticky offsets
+  var productTabs = document.getElementById('product-tabs');
+  if (productTabs) {
+    var setTabsHeight = function () {
+      document.documentElement.style.setProperty('--tabs-height', productTabs.offsetHeight + 'px');
+    };
+    setTabsHeight();
+    window.addEventListener('resize', setTabsHeight);
+  }
+
   // Product catalog loader
   if (page === 'products') {
     loadProducts();
