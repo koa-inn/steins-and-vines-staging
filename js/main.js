@@ -3007,7 +3007,7 @@ function loadProducts() {
             (function(mainRow, detail, chev) {
               mainRow.style.cursor = 'pointer';
               mainRow.addEventListener('click', function(e) {
-                if (e.target.closest('.qty-btn') || e.target.closest('.product-reserve-btn') || e.target.closest('.product-qty-controls')) return;
+                if (e.target.closest('.product-reserve-wrap')) return;
                 var isOpen = detail.classList.toggle('open');
                 chev.classList.toggle('open', isOpen);
                 mainRow.classList.toggle('expanded', isOpen);
@@ -3640,7 +3640,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
         (function(mainRow, detail, chev) {
           mainRow.style.cursor = 'pointer';
           mainRow.addEventListener('click', function(e) {
-            if (e.target.closest('.qty-btn') || e.target.closest('.product-reserve-btn') || e.target.closest('.product-qty-controls')) return;
+            if (e.target.closest('.product-reserve-wrap')) return;
             var isOpen = detail.classList.toggle('open');
             chev.classList.toggle('open', isOpen);
             mainRow.classList.toggle('expanded', isOpen);
@@ -4111,7 +4111,7 @@ function renderServices() {
         (function(mainRow, detail, chev) {
           mainRow.style.cursor = 'pointer';
           mainRow.addEventListener('click', function(e) {
-            if (e.target.closest('.qty-btn') || e.target.closest('.product-reserve-btn') || e.target.closest('.product-qty-controls')) return;
+            if (e.target.closest('.product-reserve-wrap')) return;
             var isOpen = detail.classList.toggle('open');
             chev.classList.toggle('open', isOpen);
             mainRow.classList.toggle('expanded', isOpen);
