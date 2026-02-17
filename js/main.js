@@ -2918,7 +2918,7 @@ function loadProducts() {
           var detailTr = document.createElement('tr');
           detailTr.className = 'table-detail-row';
           var detailTd = document.createElement('td');
-          detailTd.setAttribute('colspan', String(visibleCols.length));
+          detailTd.setAttribute('colspan', String(visibleCols.length + 2));
           detailTd.className = 'table-detail-cell';
 
           var detailContent = document.createElement('div');
