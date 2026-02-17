@@ -4347,8 +4347,8 @@ small, .text-small {
 
 .table-detail-content {
   display: flex;
-  gap: 1.25rem;
-  padding: 0.75rem 0.6rem 1rem;
+  gap: 0.75rem;
+  padding: 0.6rem 0.6rem 0.75rem;
   background: rgba(229,222,193,0.2);
   border-radius: 0 0 var(--radius-sm) var(--radius-sm);
   animation: tableDetailFadeIn 0.25s ease;
@@ -4367,6 +4367,8 @@ small, .text-small {
 .table-detail-image img {
   width: 100%;
   height: auto;
+  max-height: 100px;
+  object-fit: contain;
   border-radius: var(--radius-sm);
   box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
@@ -4380,14 +4382,14 @@ small, .text-small {
   font-size: 0.82rem;
   line-height: 1.5;
   color: var(--color-text);
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.35rem;
 }
 
 .table-detail-traits {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .table-detail-trait {

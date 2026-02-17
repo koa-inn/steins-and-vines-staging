@@ -3909,8 +3909,7 @@ function renderServices() {
     var svcCols = [
       { label: 'Name', sort: 'name' },
       { label: 'Description', sort: null },
-      { label: 'Price', sort: 'price' },
-      { label: '', sort: null }
+      { label: 'Price', sort: 'price' }
     ];
     var svcTheadTr = document.createElement('tr');
     svcCols.forEach(function (col) {
@@ -3983,31 +3982,6 @@ function renderServices() {
       }
       tr.appendChild(tdPrice);
 
-      var tdSvcCart = document.createElement('td');
-      tdSvcCart.setAttribute('data-label', '');
-      var svcStock = parseInt(svc.stock, 10) || 0;
-      if (svcStock > 0 || (svc.price || '').trim()) {
-        var svcForCartTbl = {
-          name: svc.name,
-          brand: '',
-          retail_instore: '',
-          retail_kit: '',
-          price_per_unit: '',
-          price: svc.price || '',
-          discount: svc.discount || '',
-          stock: svc.stock || '999',
-          time: '',
-          sku: svc.sku || '',
-          _item_type: 'service'
-        };
-        var svcReserveWrap = document.createElement('div');
-        svcReserveWrap.className = 'product-reserve-wrap';
-        var svcProductKey = svc.name + '|';
-        renderReserveControl(svcReserveWrap, svcForCartTbl, svcProductKey);
-        tdSvcCart.appendChild(svcReserveWrap);
-      }
-      tr.appendChild(tdSvcCart);
-
       var svcDescText = (svc.desription || svc.description || '').trim();
       var svcHasDetail = svcDescText || svc.sku;
       if (svcHasDetail) {
@@ -4020,7 +3994,7 @@ function renderServices() {
         var svcDetailTr = document.createElement('tr');
         svcDetailTr.className = 'table-detail-row';
         var svcDetailTd = document.createElement('td');
-        svcDetailTd.setAttribute('colspan', '4');
+        svcDetailTd.setAttribute('colspan', '3');
         svcDetailTd.className = 'table-detail-cell';
         var svcDetailContent = document.createElement('div');
         svcDetailContent.className = 'table-detail-content';
@@ -4118,28 +4092,6 @@ function renderServices() {
 
         priceRow.appendChild(priceBox);
         card.appendChild(priceRow);
-      }
-
-      var svcStock = parseInt(svc.stock, 10) || 0;
-      if (svcStock > 0 || (svc.price || '').trim()) {
-        var svcForCart = {
-          name: svc.name,
-          brand: '',
-          retail_instore: '',
-          retail_kit: '',
-          price_per_unit: '',
-          price: svc.price || '',
-          discount: svc.discount || '',
-          stock: svc.stock || '999',
-          time: '',
-          sku: svc.sku || '',
-          _item_type: 'service'
-        };
-        var reserveWrap = document.createElement('div');
-        reserveWrap.className = 'product-reserve-wrap';
-        var productKey = svc.name + '|';
-        renderReserveControl(reserveWrap, svcForCart, productKey);
-        card.appendChild(reserveWrap);
       }
 
       grid.appendChild(card);
@@ -4320,7 +4272,22 @@ function renderWeightControl(wrap, product, productKey) {
   var decimals = isKg ? 1 : 0;
   var pricePerUnit = parseFloat((product.price_per_unit || '0').replace(/[^0-9.]/g, '')) || 0;
   var currentQty = getReservedQty(productKey);
-  var initVal = currentQty > 0 ? currentQty : minVal;
+
+  if (currentQty === 0) {
+    var addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'reserve-btn';
+    addBtn.textContent = 'Add to Cart';
+    addBtn.addEventListener('click', function () {
+      setReservationQty(product, minVal);
+      trackEvent('add_to_cart', product.sku || '', product.name || '');
+      renderWeightControl(wrap, product, productKey);
+    });
+    wrap.appendChild(addBtn);
+    return;
+  }
+
+  var initVal = currentQty;
 
   var container = document.createElement('div');
   container.className = 'weight-control';
@@ -4504,7 +4471,22 @@ function renderWeightControlCompact(wrap, product, productKey) {
   var decimals = isKg ? 1 : 0;
   var pricePerUnit = parseFloat((product.price_per_unit || '0').replace(/[^0-9.]/g, '')) || 0;
   var currentQty = getReservedQty(productKey);
-  var initVal = currentQty > 0 ? currentQty : minVal;
+
+  if (currentQty === 0) {
+    var addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'reserve-btn reserve-btn--compact';
+    addBtn.textContent = 'Add to Cart';
+    addBtn.addEventListener('click', function () {
+      setReservationQty(product, minVal);
+      trackEvent('add_to_cart', product.sku || '', product.name || '');
+      renderWeightControlCompact(wrap, product, productKey);
+    });
+    wrap.appendChild(addBtn);
+    return;
+  }
+
+  var initVal = currentQty;
 
   var container = document.createElement('div');
   container.className = 'weight-control-compact';
