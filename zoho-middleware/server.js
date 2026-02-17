@@ -774,7 +774,7 @@ function refreshProducts() {
       return chain.then(function () {
         // Kit categories that belong on the products page.
         // Items whose "Category" CF is set to something else are excluded.
-        var KIT_CATEGORIES = ['wine', 'beer'];
+        var KIT_CATEGORIES = ['wine', 'beer', 'cider', 'seltzer'];
 
         enriched = enriched.filter(function (item) {
           var hasType = (item.custom_fields || []).some(function (cf) {
