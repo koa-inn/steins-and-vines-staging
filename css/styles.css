@@ -4711,8 +4711,8 @@ small, .text-small {
 .weight-control-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: radial-gradient(circle at 40% 38%, #6b9e52, var(--color-green, #4a6f4b));
   border: 2.5px solid var(--color-white, #fff);
@@ -4733,8 +4733,8 @@ small, .text-small {
 
 /* Firefox thumb */
 .weight-control-range::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: radial-gradient(circle at 40% 38%, #6b9e52, var(--color-green, #4a6f4b));
   border: 2.5px solid var(--color-white, #fff);

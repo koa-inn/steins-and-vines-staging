@@ -3490,7 +3490,8 @@ function renderIngredientSection(catalog, title, items, extraClass) {
       tdPrice.setAttribute('data-label', 'Price');
       var price = (item.price_per_unit || '').trim();
       if (price) {
-        tdPrice.textContent = price.charAt(0) === '$' ? price : '$' + price;
+        var priceNum = parseFloat(price.replace(/[^0-9.]/g, ''));
+        tdPrice.textContent = isNaN(priceNum) ? price : '$' + priceNum.toFixed(2);
       }
       tr.appendChild(tdPrice);
 
@@ -3609,7 +3610,10 @@ function renderIngredientSection(catalog, title, items, extraClass) {
         detailRow.className = 'product-detail-row';
         var details = [];
         if (unit) details.push(unit);
-        if (price) details.push(price.charAt(0) === '$' ? price : '$' + price);
+        if (price) {
+          var priceNum = parseFloat(price.replace(/[^0-9.]/g, ''));
+          details.push(isNaN(priceNum) ? price : '$' + priceNum.toFixed(2));
+        }
         for (var d = 0; d < details.length; d++) {
           if (d > 0) {
             var sep = document.createElement('span');
@@ -4276,7 +4280,7 @@ function renderWeightControl(wrap, product, productKey) {
   if (currentQty === 0) {
     var addBtn = document.createElement('button');
     addBtn.type = 'button';
-    addBtn.className = 'reserve-btn';
+    addBtn.className = 'product-reserve-btn';
     addBtn.textContent = 'Add to Cart';
     addBtn.addEventListener('click', function () {
       setReservationQty(product, minVal);
@@ -4475,7 +4479,7 @@ function renderWeightControlCompact(wrap, product, productKey) {
   if (currentQty === 0) {
     var addBtn = document.createElement('button');
     addBtn.type = 'button';
-    addBtn.className = 'reserve-btn reserve-btn--compact';
+    addBtn.className = 'product-reserve-btn';
     addBtn.textContent = 'Add to Cart';
     addBtn.addEventListener('click', function () {
       setReservationQty(product, minVal);

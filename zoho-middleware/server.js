@@ -29,7 +29,7 @@ var PORT = process.env.PORT || 3001;
 // Middleware
 // ---------------------------------------------------------------------------
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
@@ -783,13 +783,14 @@ function refreshProducts() {
         cache.set(PRODUCTS_CACHE_TS_KEY, Date.now(), PRODUCTS_CACHE_TTL);
         console.log('[api/products] Cached ' + enriched.length + ' kit items');
 
-        // Write file fallback
-        try {
-          fs.writeFileSync(PRODUCTS_FILE_CACHE, JSON.stringify(enriched));
-          console.log('[api/products] Wrote file fallback (' + enriched.length + ' items)');
-        } catch (fileErr) {
-          console.error('[api/products] File fallback write failed:', fileErr.message);
-        }
+        // Write file fallback (async, fire-and-forget)
+        fs.writeFile(PRODUCTS_FILE_CACHE, JSON.stringify(enriched), function (fileErr) {
+          if (fileErr) {
+            console.error('[api/products] File fallback write failed:', fileErr.message);
+          } else {
+            console.log('[api/products] Wrote file fallback (' + enriched.length + ' items)');
+          }
+        });
 
         // --- Image change detection ---
         // Build a map of item_id → image_name from the enriched detail data.
@@ -865,9 +866,7 @@ app.get('/api/products', function (req, res) {
       // Try file fallback before slow enrichment
       var fileData = null;
       try {
-        if (fs.existsSync(PRODUCTS_FILE_CACHE)) {
-          fileData = JSON.parse(fs.readFileSync(PRODUCTS_FILE_CACHE, 'utf8'));
-        }
+        fileData = JSON.parse(fs.readFileSync(PRODUCTS_FILE_CACHE, 'utf8'));
       } catch (e) {}
 
       if (fileData && fileData.length > 0) {
