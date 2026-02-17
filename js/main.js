@@ -4758,7 +4758,7 @@ function updateReservationBar() {
   if (bars.length === 0) return;
   var items = getReservation();
   var total = 0;
-  items.forEach(function (item) { total += (item.qty || 1); });
+  items.forEach(function (item) { total += isWeightUnit(item.unit) ? 1 : (item.qty || 1); });
   var label = total + (total === 1 ? ' item in cart' : ' items in cart');
   for (var i = 0; i < bars.length; i++) {
     var countEl = bars[i].querySelector('.reservation-bar-count');
