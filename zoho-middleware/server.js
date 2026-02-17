@@ -782,13 +782,15 @@ function refreshProducts() {
           });
           if (!hasType) return false;
 
+          // Check both the CF "Category" and the standard Zoho category_name
           var categoryCF = (item.custom_fields || []).find(function (cf) {
             return cf.label === 'Category';
           });
-          if (categoryCF && categoryCF.value) {
-            var catVal = categoryCF.value.toLowerCase();
+          var catVal = (categoryCF && categoryCF.value) ? categoryCF.value : (item.category_name || '');
+          if (catVal) {
+            catVal = catVal.toLowerCase();
             if (!KIT_CATEGORIES.some(function (kc) { return catVal.indexOf(kc) !== -1; })) {
-              console.log('[api/products] Excluding non-kit item: ' + item.name + ' (Category: ' + categoryCF.value + ')');
+              console.log('[api/products] Excluding non-kit item: ' + item.name + ' (category: ' + catVal + ')');
               return false;
             }
           }

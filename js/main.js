@@ -938,7 +938,8 @@ function loadFeaturedProducts() {
             brand: z.brand || '',
             stock: z.stock_on_hand != null ? String(z.stock_on_hand) : '0',
             description: z.description || '',
-            discount: z.discount != null ? String(z.discount) : '0'
+            discount: z.discount != null ? String(z.discount) : '0',
+            _zoho_category: z.category_name || ''
           };
           if (z.custom_fields && z.custom_fields.length) {
             z.custom_fields.forEach(function (cf) {
@@ -953,8 +954,8 @@ function loadFeaturedProducts() {
           }
           return obj;
         }).filter(function (obj) {
-          if (!obj.category) return true;
-          var cat = obj.category.toLowerCase();
+          var cat = (obj.category || obj._zoho_category || '').toLowerCase();
+          if (!cat) return true;
           return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
         });
       });
