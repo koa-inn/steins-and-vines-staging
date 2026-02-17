@@ -4314,12 +4314,6 @@ function renderReserveControl(wrap, product, productKey) {
       });
     }
     wrap.appendChild(reserveBtn);
-    if (maxQty > 0 && maxQty < Infinity) {
-      var hint = document.createElement('span');
-      hint.className = 'qty-limit-hint';
-      hint.textContent = maxQty + ' available';
-      wrap.appendChild(hint);
-    }
   } else {
     var controls = document.createElement('div');
     controls.className = 'product-qty-controls';
@@ -4355,12 +4349,6 @@ function renderReserveControl(wrap, product, productKey) {
     controls.appendChild(qtySpan);
     controls.appendChild(plusBtn);
     wrap.appendChild(controls);
-    if (maxQty < Infinity) {
-      var hint = document.createElement('span');
-      hint.className = 'qty-limit-hint';
-      hint.textContent = qty + ' of ' + maxQty;
-      wrap.appendChild(hint);
-    }
   }
 }
 
@@ -5246,12 +5234,6 @@ function renderReservationItems() {
     qtyControls.appendChild(qtySpan);
     qtyControls.appendChild(plusBtn);
     tdQty.appendChild(qtyControls);
-    if (itemMax < Infinity) {
-      var qtyHint = document.createElement('span');
-      qtyHint.className = 'qty-limit-hint';
-      qtyHint.textContent = (item.qty || 1) + ' of ' + itemMax;
-      tdQty.appendChild(qtyHint);
-    }
     tr.appendChild(tdQty);
 
     // Remove button

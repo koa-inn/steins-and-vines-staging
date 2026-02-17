@@ -1268,6 +1268,10 @@ small, .text-small {
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  position: sticky;
+  top: var(--header-height, 60px);
+  z-index: 150;
+  background-color: var(--color-cream);
 }
 
 .product-tabs::-webkit-scrollbar {
@@ -1949,14 +1953,6 @@ small, .text-small {
   opacity: 0.4;
   cursor: not-allowed;
   pointer-events: none;
-}
-
-.qty-limit-hint {
-  display: block;
-  text-align: center;
-  font-size: 0.68rem;
-  color: var(--color-muted);
-  margin-top: 2px;
 }
 
 .product-reserve-wrap {
