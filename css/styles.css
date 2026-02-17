@@ -4432,26 +4432,26 @@ small, .text-small {
 }
 
 .table-detail-traits {
-  display: flex;
-  gap: 0.15rem 0;
-  flex-wrap: wrap;
-  align-items: baseline;
-  margin-bottom: 0.2rem;
-  font-size: 0.82rem;
-  line-height: 1.5;
+  display: inline-flex;
+  gap: 0;
+  margin-bottom: 0.3rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
   color: var(--color-text);
+  border: 1px solid rgba(119,70,45,0.2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 
 .table-detail-trait {
-  font-size: inherit;
-  color: inherit;
+  flex: 1;
+  text-align: center;
+  padding: 0.25rem 0.6rem;
+  white-space: nowrap;
 }
 
-.table-detail-trait + .table-detail-trait::before {
-  content: '\00b7';
-  margin: 0 0.45rem;
-  color: var(--color-muted);
-  font-weight: 700;
+.table-detail-trait + .table-detail-trait {
+  border-left: 1px solid rgba(119,70,45,0.2);
 }
 
 .table-detail-trait strong {
