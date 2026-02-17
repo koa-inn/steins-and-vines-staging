@@ -3005,8 +3005,13 @@ function loadProducts() {
 
             // Click to toggle
             (function(mainRow, detail, chev) {
+              var skipClick = false;
+              mainRow.addEventListener('mousedown', function(e) {
+                if (e.target.closest('.product-reserve-wrap')) skipClick = true;
+              });
               mainRow.style.cursor = 'pointer';
               mainRow.addEventListener('click', function(e) {
+                if (skipClick) { skipClick = false; return; }
                 if (e.target.closest('.product-reserve-wrap')) return;
                 var isOpen = detail.classList.toggle('open');
                 chev.classList.toggle('open', isOpen);
@@ -3638,8 +3643,13 @@ function renderIngredientSection(catalog, title, items, extraClass) {
         tbody.appendChild(iDetailTr);
 
         (function(mainRow, detail, chev) {
+          var skipClick = false;
+          mainRow.addEventListener('mousedown', function(e) {
+            if (e.target.closest('.product-reserve-wrap')) skipClick = true;
+          });
           mainRow.style.cursor = 'pointer';
           mainRow.addEventListener('click', function(e) {
+            if (skipClick) { skipClick = false; return; }
             if (e.target.closest('.product-reserve-wrap')) return;
             var isOpen = detail.classList.toggle('open');
             chev.classList.toggle('open', isOpen);
@@ -4109,8 +4119,13 @@ function renderServices() {
         tbody.appendChild(svcDetailTr);
 
         (function(mainRow, detail, chev) {
+          var skipClick = false;
+          mainRow.addEventListener('mousedown', function(e) {
+            if (e.target.closest('.product-reserve-wrap')) skipClick = true;
+          });
           mainRow.style.cursor = 'pointer';
           mainRow.addEventListener('click', function(e) {
+            if (skipClick) { skipClick = false; return; }
             if (e.target.closest('.product-reserve-wrap')) return;
             var isOpen = detail.classList.toggle('open');
             chev.classList.toggle('open', isOpen);
