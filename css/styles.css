@@ -4539,6 +4539,15 @@ small, .text-small {
   font-style: italic;
 }
 
+.cart-sidebar-note {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+  text-align: center;
+  padding: 0.5rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--color-border, #e0d6c8);
+}
+
 .cart-sidebar-item {
   display: flex;
   align-items: flex-start;
