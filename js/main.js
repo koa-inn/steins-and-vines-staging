@@ -3316,7 +3316,10 @@ function loadIngredients(callback) {
 
   dataPromise
     .then(function (items) {
-      _allIngredients = items;
+      _allIngredients = items.filter(function (r) {
+        var p = parseFloat(r.price_per_unit || r.rate || r.price || '0') || 0;
+        return p > 0;
+      });
       buildIngredientFilters();
       renderIngredients();
       wireIngredientEvents();
