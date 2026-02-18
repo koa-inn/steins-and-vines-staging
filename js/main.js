@@ -3955,7 +3955,10 @@ function loadServices(callback) {
 
   dataPromise
     .then(function (items) {
-      _allServices = items;
+      _allServices = items.filter(function (r) {
+        var p = parseFloat(r.price_per_unit || r.rate || r.price || '0') || 0;
+        return p > 0;
+      });
       renderServices();
       wireServiceEvents();
       if (callback) callback();
