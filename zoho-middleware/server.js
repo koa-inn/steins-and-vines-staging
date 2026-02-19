@@ -1073,7 +1073,8 @@ app.post('/api/items', function (req, res) {
  */
 app.get('/api/contacts', function (req, res) {
   var params = {};
-  if (req.query.search) params.contact_name_contains = req.query.search;
+  if (req.query.search) params.search_text = req.query.search;
+  if (req.query.contact_name) params.contact_name = req.query.contact_name;
   if (req.query.email) params.email = req.query.email;
   zohoGet('/contacts', params)
     .then(function (data) { res.json(data); })
