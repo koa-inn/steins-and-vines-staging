@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-19T17:40:19.255Z';
+  var BUILD_TIMESTAMP = '2026-02-19T20:32:27.825Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -5256,7 +5256,8 @@
     dropdownEl.style.display = '';
 
     dropdownEl.querySelectorAll('.admin-kit-search-option').forEach(function (opt) {
-      opt.addEventListener('click', function () {
+      opt.addEventListener('mousedown', function (e) {
+        e.preventDefault();
         var vid = opt.getAttribute('data-vid');
         if (!vid) return;
         hiddenEl.value = vid;
@@ -5357,23 +5358,29 @@
     var searchInput = document.getElementById('batch-product-search');
     var dropdown = document.getElementById('batch-product-dropdown');
     var searchTimer;
+    function kitSku(k) { return k.sku || k.SKU || k.Sku || ''; }
+    function kitName(k) { return k.name || k.Name || k.item_name || ''; }
+
     searchInput.addEventListener('input', function () {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(function () {
         var term = searchInput.value.toLowerCase();
         if (term.length < 2) { dropdown.style.display = 'none'; return; }
         var matches = kitsData.filter(function (k) {
-          return (String(k.name || '') + ' ' + String(k.sku || '')).toLowerCase().indexOf(term) !== -1;
+          return (String(kitName(k)) + ' ' + String(kitSku(k))).toLowerCase().indexOf(term) !== -1;
         }).slice(0, 10);
         if (matches.length === 0) { dropdown.style.display = 'none'; return; }
         var dHtml = '';
         matches.forEach(function (k) {
-          dHtml += '<div class="admin-kit-search-option" data-sku="' + (k.sku || '') + '" data-name="' + (k.name || '') + '">' + (k.sku || '') + ' — ' + (k.name || '') + '</div>';
+          var sku = kitSku(k);
+          var nm = kitName(k);
+          dHtml += '<div class="admin-kit-search-option" data-sku="' + sku + '" data-name="' + nm + '">' + sku + ' — ' + nm + '</div>';
         });
         dropdown.innerHTML = dHtml;
         dropdown.style.display = '';
         dropdown.querySelectorAll('.admin-kit-search-option').forEach(function (opt) {
-          opt.addEventListener('click', function () {
+          opt.addEventListener('mousedown', function (e) {
+            e.preventDefault();
             document.getElementById('batch-product-sku').value = opt.getAttribute('data-sku');
             document.getElementById('batch-product-name').value = opt.getAttribute('data-name');
             searchInput.value = opt.getAttribute('data-sku') + ' — ' + opt.getAttribute('data-name');
@@ -5427,7 +5434,8 @@
           // No middleware — show "use as new customer" option
           custDropdown.innerHTML = '<div class="admin-kit-search-option batch-cust-new" data-name="' + term.replace(/"/g, '&quot;') + '">Use "' + term + '" as new customer</div>';
           custDropdown.style.display = '';
-          custDropdown.querySelector('.batch-cust-new').addEventListener('click', function () {
+          custDropdown.querySelector('.batch-cust-new').addEventListener('mousedown', function (e) {
+            e.preventDefault();
             selectCustomer(term, '', '');
           });
           return;
@@ -5453,18 +5461,21 @@
             custDropdown.style.display = '';
 
             custDropdown.querySelectorAll('.batch-cust-option').forEach(function (opt) {
-              opt.addEventListener('click', function () {
+              opt.addEventListener('mousedown', function (e) {
+                e.preventDefault();
                 selectCustomer(opt.getAttribute('data-name'), opt.getAttribute('data-email'), opt.getAttribute('data-id'));
               });
             });
-            custDropdown.querySelector('.batch-cust-new').addEventListener('click', function () {
+            custDropdown.querySelector('.batch-cust-new').addEventListener('mousedown', function (e) {
+              e.preventDefault();
               selectCustomer(term, '', '');
             });
           })
           .catch(function () {
             custDropdown.innerHTML = '<div class="admin-kit-search-option batch-cust-new" data-name="' + term.replace(/"/g, '&quot;') + '">Use "' + term + '" as new customer</div>';
             custDropdown.style.display = '';
-            custDropdown.querySelector('.batch-cust-new').addEventListener('click', function () {
+            custDropdown.querySelector('.batch-cust-new').addEventListener('mousedown', function (e) {
+              e.preventDefault();
               selectCustomer(term, '', '');
             });
           });
