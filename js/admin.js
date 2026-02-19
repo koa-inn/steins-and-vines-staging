@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-19T16:47:29.210Z';
+  var BUILD_TIMESTAMP = '2026-02-19T17:40:19.255Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4907,8 +4907,8 @@
     html += '<div class="admin-kit-search-dropdown" id="batch-edit-vessel-dropdown" style="display:none;"></div>';
     html += '<input type="hidden" id="batch-edit-vessel" value="' + (b.vessel_id || '') + '">';
     html += '</div>';
-    html += '<input type="text" id="batch-edit-shelf" value="' + (b.shelf_id || '') + '" placeholder="Shelf" class="admin-inline-input">';
-    html += '<input type="text" id="batch-edit-bin" value="' + (b.bin_id || '') + '" placeholder="Bin" class="admin-inline-input">';
+    html += '<input type="text" id="batch-edit-shelf" value="' + (b.shelf_id || '') + '" placeholder="A" class="admin-inline-input">';
+    html += '<input type="text" id="batch-edit-bin" value="' + (b.bin_id || '') + '" placeholder="01" class="admin-inline-input">';
     html += '<button type="button" class="btn admin-btn-sm" id="batch-save-location">Save</button>';
     html += '</div></details>';
 
@@ -5015,6 +5015,12 @@
         if (!detailVesselDropdown.contains(e.target) && e.target !== detailVesselInput) detailVesselDropdown.style.display = 'none';
       });
     }
+
+    // Shelf / Bin validation in detail modal
+    var detailShelf = document.getElementById('batch-edit-shelf');
+    var detailBin = document.getElementById('batch-edit-bin');
+    if (detailShelf) bindShelfInput(detailShelf);
+    if (detailBin) bindBinInput(detailBin);
 
     // Save location
     var saveLocBtn = document.getElementById('batch-save-location');
@@ -5261,6 +5267,29 @@
     });
   }
 
+  function bindShelfInput(el) {
+    el.setAttribute('maxlength', '1');
+    el.addEventListener('input', function () {
+      el.value = el.value.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    });
+    el.addEventListener('blur', function () {
+      el.value = el.value.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    });
+  }
+
+  function bindBinInput(el) {
+    el.setAttribute('maxlength', '2');
+    el.addEventListener('input', function () {
+      el.value = el.value.replace(/[^0-9]/g, '');
+    });
+    el.addEventListener('blur', function () {
+      var n = parseInt(el.value, 10);
+      if (isNaN(n) || n < 1) { el.value = ''; return; }
+      if (n > 36) { el.value = '36'; n = 36; }
+      el.value = n < 10 ? '0' + n : String(n);
+    });
+  }
+
   function buildCreateBatchForm() {
     // Ensure vessels are loaded
     if (!vesselsData) {
@@ -5312,8 +5341,8 @@
     html += '<div class="admin-kit-search-dropdown" id="batch-vessel-dropdown" style="display:none;"></div>';
     html += '<input type="hidden" id="batch-vessel" value="">';
     html += '</div></div>';
-    html += '<div><label>Shelf</label><input type="text" id="batch-shelf" class="admin-input" placeholder="S-A"></div>';
-    html += '<div><label>Bin</label><input type="text" id="batch-bin" class="admin-input" placeholder="B-1"></div>';
+    html += '<div><label>Shelf</label><input type="text" id="batch-shelf" class="admin-input" placeholder="A"></div>';
+    html += '<div><label>Bin</label><input type="text" id="batch-bin" class="admin-input" placeholder="01"></div>';
     html += '</div>';
 
     // Notes
@@ -5447,6 +5476,10 @@
     var vesselDropdown = document.getElementById('batch-vessel-dropdown');
     var vesselHidden = document.getElementById('batch-vessel');
     bindVesselSearch(vesselInput, vesselDropdown, vesselHidden, '');
+
+    // Shelf / Bin validation
+    bindShelfInput(document.getElementById('batch-shelf'));
+    bindBinInput(document.getElementById('batch-bin'));
 
     // Close dropdowns on outside click
     document.addEventListener('click', function closeDropdowns(e) {
