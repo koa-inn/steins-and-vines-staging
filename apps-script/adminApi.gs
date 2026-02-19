@@ -186,6 +186,9 @@ function doPost(e) {
       case 'update_batch_task':
         return _jsonResponse(updateBatchTask(payload, authResult.email));
 
+      case 'add_batch_task':
+        return _jsonResponse(addBatchTask(payload, authResult.email));
+
       case 'add_plato_reading':
         return _jsonResponse(addPlatoReading(payload, authResult.email));
 
@@ -901,7 +904,9 @@ function sheetToObjects(sheetName) {
   for (var i = 1; i < data.length; i++) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
-      obj[headers[j]] = data[i][j];
+      var val = data[i][j];
+      if (val instanceof Date) val = val.toISOString();
+      obj[headers[j]] = val;
     }
     obj._row = i + 1; // 1-based row for updates
     result.push(obj);
@@ -922,7 +927,9 @@ function findRowById(sheetName, id) {
     if (String(data[i][0]) === String(id)) {
       var obj = {};
       for (var j = 0; j < headers.length; j++) {
-        obj[headers[j]] = data[i][j];
+        var val = data[i][j];
+        if (val instanceof Date) val = val.toISOString();
+        obj[headers[j]] = val;
       }
       return { sheet: sheet, row: i + 1, data: obj, headers: headers };
     }
@@ -1359,6 +1366,7 @@ function createBatch(payload, userEmail) {
       step.day_offset,
       dueDate,
       step.is_packaging ? 'TRUE' : 'FALSE',
+      step.is_transfer ? 'TRUE' : 'FALSE',
       'FALSE', // completed
       '',      // completed_at
       '',      // completed_by
@@ -1562,6 +1570,7 @@ function updateBatchSchedule(payload, userEmail) {
         sanitizeInput(step.title || ''), sanitizeInput(step.description || ''),
         step.day_offset, dueDate2,
         step.is_packaging ? 'TRUE' : 'FALSE',
+        step.is_transfer ? 'TRUE' : 'FALSE',
         'FALSE', '', '', '', now
       ]);
       tasksCreated++;
@@ -1613,6 +1622,19 @@ function updateBatchTask(payload, completedBy) {
       if (String(current.is_packaging).toUpperCase() === 'TRUE') {
         handlePackagingCompletion(current.batch_id, now);
       }
+
+      // If transfer task with location data, update batch location
+      if (String(current.is_transfer).toUpperCase() === 'TRUE' && payload.transfer_location) {
+        var loc = payload.transfer_location;
+        updateBatch({
+          batch_id: current.batch_id,
+          updates: {
+            vessel_id: loc.vessel_id || '',
+            shelf_id: loc.shelf_id || '',
+            bin_id: loc.bin_id || ''
+          }
+        }, completedBy || '');
+      }
     } else {
       // Un-checking
       if (completedCol !== -1) sheet.getRange(row, completedCol + 1).setValue('FALSE');
@@ -1635,6 +1657,62 @@ function updateBatchTask(payload, completedBy) {
   if (luCol !== -1) sheet.getRange(row, luCol + 1).setValue(now);
 
   return { ok: true, message: 'Task updated' };
+}
+
+// --- POST: Add Ad-Hoc Batch Task ---
+
+function addBatchTask(payload, userEmail) {
+  if (!payload.batch_id || !payload.title) {
+    return { ok: false, error: 'missing_fields', message: 'batch_id and title are required' };
+  }
+
+  // Verify batch exists
+  var batchResult = findRowById(BATCHES_SHEET_NAME, payload.batch_id);
+  if (batchResult.row === -1) {
+    return { ok: false, error: 'not_found', message: 'Batch not found: ' + payload.batch_id };
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tasksSheet = ss.getSheetByName(BATCH_TASKS_SHEET_NAME);
+  if (!tasksSheet) return { ok: false, error: 'sheet_not_found' };
+
+  // Find highest step_number for this batch to auto-number
+  var existingTasks = sheetToObjects(BATCH_TASKS_SHEET_NAME).filter(function (t) {
+    return String(t.batch_id) === String(payload.batch_id);
+  });
+  var maxStep = 0;
+  existingTasks.forEach(function (t) {
+    var sn = Number(t.step_number) || 0;
+    if (sn > maxStep) maxStep = sn;
+  });
+
+  var taskId = generateNextId(BATCH_TASKS_SHEET_NAME, 'BT-', 6);
+  var now = new Date().toISOString();
+  var startDate = batchResult.data.start_date || '';
+  var dayOffset = payload.day_offset !== undefined ? Number(payload.day_offset) : -1;
+  var dueDate = payload.due_date || '';
+  if (!dueDate && dayOffset >= 0 && startDate) {
+    dueDate = calculateDueDate(startDate, dayOffset);
+  }
+
+  tasksSheet.appendRow([
+    taskId,
+    payload.batch_id,
+    maxStep + 1,
+    sanitizeInput(payload.title),
+    sanitizeInput(payload.description || ''),
+    dayOffset,
+    dueDate,
+    'FALSE', // is_packaging
+    payload.is_transfer ? 'TRUE' : 'FALSE',
+    'FALSE', // completed
+    '',      // completed_at
+    '',      // completed_by
+    sanitizeInput(payload.notes || ''),
+    now      // last_updated
+  ]);
+
+  return { ok: true, task_id: taskId, message: 'Task added' };
 }
 
 function handlePackagingCompletion(batchId, timestamp) {

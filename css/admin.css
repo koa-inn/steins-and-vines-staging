@@ -1830,6 +1830,20 @@ body[data-page="admin"] .content {
 .batch-task-meta { font-size: 0.75rem; color: var(--ink-muted); }
 .batch-task-row--done .batch-task-title { text-decoration: line-through; opacity: 0.5; }
 .batch-task-row--overdue .batch-task-due { color: #c62828; font-weight: 700; }
+.batch-detail-tasks-header { display: flex; align-items: center; justify-content: space-between; }
+.batch-detail-tasks-header h4 { margin: 0; }
+.batch-task-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.batch-task-badge--transfer { background: #e3f2fd; color: #1565c0; }
+.batch-task-badge--pkg { background: #f3e5f5; color: #7b1fa2; }
 
 /* Plato */
 .batch-plato-svg { width: 100%; height: auto; margin-bottom: 0.5rem; }
@@ -1990,7 +2004,9 @@ body[data-page="admin"] .content {
 .sched-col-day { width: 60px; }
 .sched-col-title { flex: 1; }
 .sched-col-desc { flex: 1; }
+.sched-col-transfer { width: 60px; text-align: center; }
 .sched-col-actions { width: 28px; }
+.sched-transfer-check { display: flex; align-items: center; justify-content: center; width: 60px; cursor: pointer; }
 .sched-step-row {
   display: flex;
   gap: 0.35rem;

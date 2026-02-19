@@ -6,6 +6,12 @@
   var batchData = null;
   var apiUrl = '';
 
+  // Safely extract YYYY-MM-DD from any date value (ISO string, Date object, etc.)
+  function toDateStr(val) {
+    if (!val) return '';
+    return String(val).substring(0, 10);
+  }
+
   function init() {
     apiUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.ADMIN_API_URL) || '';
     if (!apiUrl) { showError('Configuration error'); return; }
@@ -55,7 +61,7 @@
     document.getElementById('batch-title').textContent = b.batch_id;
     document.getElementById('batch-product').textContent = b.product_name || '';
     document.getElementById('batch-customer').textContent = b.customer_name || '';
-    document.getElementById('batch-start-date').textContent = b.start_date ? 'Started: ' + b.start_date : '';
+    document.getElementById('batch-start-date').textContent = b.start_date ? 'Started: ' + toDateStr(b.start_date) : '';
     document.getElementById('batch-vessel').textContent = b.vessel_id || '—';
     document.getElementById('batch-shelf').textContent = b.shelf_id || '—';
     document.getElementById('batch-bin').textContent = b.bin_id || '—';
@@ -89,8 +95,9 @@
     tasks.forEach(function (t) {
       var done = String(t.completed).toUpperCase() === 'TRUE';
       var isPkg = String(t.is_packaging).toUpperCase() === 'TRUE';
-      var dueLabel = t.due_date || (isPkg ? 'TBD' : '—');
-      var overdue = !done && t.due_date && t.due_date < todayStr;
+      var isTransfer = String(t.is_transfer).toUpperCase() === 'TRUE';
+      var dueLabel = t.due_date ? toDateStr(t.due_date) : (isPkg ? 'TBD' : '—');
+      var overdue = !done && t.due_date && toDateStr(t.due_date) < todayStr;
 
       var cls = 'batch-task';
       if (done) cls += ' batch-task--done';
@@ -100,6 +107,8 @@
       html += '<label class="batch-task-label">';
       html += '<input type="checkbox" class="batch-task-checkbox" data-task-id="' + t.task_id + '" ' + (done ? 'checked' : '') + '>';
       html += '<span class="batch-task-title">' + (t.title || 'Step ' + t.step_number) + '</span>';
+      if (isTransfer) html += '<span class="batch-badge batch-badge--transfer">Transfer</span>';
+      if (isPkg) html += '<span class="batch-badge batch-badge--pkg">Packaging</span>';
       html += '</label>';
       html += '<span class="batch-task-due">' + dueLabel + '</span>';
       if (t.description) html += '<p class="batch-task-desc">' + t.description + '</p>';
@@ -158,7 +167,7 @@
     // Table
     var html = '<table class="batch-readings-table"><thead><tr><th>Date</th><th>&deg;P</th><th>Notes</th></tr></thead><tbody>';
     readings.slice().reverse().forEach(function (r) {
-      html += '<tr><td>' + (r.timestamp || '').substring(0, 10) + '</td><td>' + r.degrees_plato + '</td><td>' + (r.notes || '') + '</td></tr>';
+      html += '<tr><td>' + toDateStr(r.timestamp) + '</td><td>' + r.degrees_plato + '</td><td>' + (r.notes || '') + '</td></tr>';
     });
     html += '</tbody></table>';
     listEl.innerHTML = html;
@@ -209,7 +218,7 @@
     var html = '';
     history.forEach(function (h) {
       html += '<div class="batch-vh-entry">';
-      html += '<strong>' + (h.transferred_at || '').substring(0, 10) + '</strong> ';
+      html += '<strong>' + toDateStr(h.transferred_at) + '</strong> ';
       html += 'V:' + (h.vessel_id || '?') + ' S:' + (h.shelf_id || '?') + ' B:' + (h.bin_id || '?');
       if (h.notes) html += ' — ' + h.notes;
       html += '</div>';

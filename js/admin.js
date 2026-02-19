@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-19T20:46:21.623Z';
+  var BUILD_TIMESTAMP = '2026-02-19T23:23:24.715Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4913,22 +4913,27 @@
     html += '</div></details>';
 
     // Tasks
-    html += '<h4>Tasks</h4>';
+    html += '<div class="batch-detail-tasks-header"><h4>Tasks</h4>';
+    html += '<button type="button" class="btn-secondary admin-btn-sm" id="batch-add-task-btn">+ Add Task</button></div>';
     html += '<div class="batch-detail-tasks">';
     tasks.forEach(function (t) {
       var done = String(t.completed).toUpperCase() === 'TRUE';
       var isPkg = String(t.is_packaging).toUpperCase() === 'TRUE';
-      var dueLabel = t.due_date || (isPkg ? 'TBD' : '—');
-      var overdue = !done && t.due_date && t.due_date < new Date().toISOString().substring(0, 10);
+      var isTransfer = String(t.is_transfer).toUpperCase() === 'TRUE';
+      var dueLabel = t.due_date ? String(t.due_date).substring(0, 10) : (isPkg ? 'TBD' : '—');
+      var overdue = !done && t.due_date && String(t.due_date).substring(0, 10) < new Date().toISOString().substring(0, 10);
       var cls = 'batch-task-row';
       if (done) cls += ' batch-task-row--done';
       if (overdue) cls += ' batch-task-row--overdue';
 
       html += '<div class="' + cls + '">';
-      html += '<label class="batch-task-check"><input type="checkbox" ' + (done ? 'checked' : '') + ' data-task-id="' + t.task_id + '" data-batch-id="' + b.batch_id + '"> ';
-      html += '<span class="batch-task-title">' + (t.title || 'Step ' + t.step_number) + '</span></label>';
+      html += '<label class="batch-task-check"><input type="checkbox" ' + (done ? 'checked' : '') + ' data-task-id="' + t.task_id + '" data-batch-id="' + b.batch_id + '" data-is-transfer="' + (isTransfer ? '1' : '') + '"> ';
+      html += '<span class="batch-task-title">' + (t.title || 'Step ' + t.step_number) + '</span>';
+      if (isTransfer) html += '<span class="batch-task-badge batch-task-badge--transfer">Transfer</span>';
+      if (isPkg) html += '<span class="batch-task-badge batch-task-badge--pkg">Packaging</span>';
+      html += '</label>';
       html += '<span class="batch-task-due">' + dueLabel + '</span>';
-      if (done && t.completed_at) html += '<span class="batch-task-meta">Done ' + t.completed_at.substring(0, 10) + '</span>';
+      if (done && t.completed_at) html += '<span class="batch-task-meta">Done ' + String(t.completed_at).substring(0, 10) + '</span>';
       html += '</div>';
     });
     html += '</div>';
@@ -4939,7 +4944,7 @@
       html += renderPlatoChart(readings, b.start_date);
       html += '<table class="admin-table batch-plato-table"><thead><tr><th>Date</th><th>&deg;P</th><th>Notes</th></tr></thead><tbody>';
       readings.slice().reverse().forEach(function (r) {
-        html += '<tr><td>' + (r.timestamp || '').substring(0, 10) + '</td><td>' + r.degrees_plato + '</td><td>' + (r.notes || '') + '</td></tr>';
+        html += '<tr><td>' + String(r.timestamp || '').substring(0, 10) + '</td><td>' + r.degrees_plato + '</td><td>' + (r.notes || '') + '</td></tr>';
       });
       html += '</tbody></table>';
     } else {
@@ -4962,7 +4967,7 @@
       html += '<div class="batch-vessel-history">';
       history.forEach(function (h) {
         html += '<div class="batch-vh-entry">';
-        html += '<strong>' + (h.transferred_at || '').substring(0, 10) + '</strong> ';
+        html += '<strong>' + String(h.transferred_at || '').substring(0, 10) + '</strong> ';
         html += 'V:' + (h.vessel_id || '?') + ' S:' + (h.shelf_id || '?') + ' B:' + (h.bin_id || '?');
         if (h.notes) html += ' — ' + h.notes;
         html += '</div>';
@@ -4995,14 +5000,27 @@
     document.querySelectorAll('.batch-task-check input[type="checkbox"]').forEach(function (cb) {
       cb.addEventListener('change', function () {
         var taskId = cb.getAttribute('data-task-id');
+        var isTransfer = cb.getAttribute('data-is-transfer') === '1';
+
+        // If checking off a transfer task, prompt for new location
+        if (cb.checked && isTransfer) {
+          showTransferPrompt(batchId, taskId);
+          return;
+        }
+
         adminApiPost('update_batch_task', { task_id: taskId, updates: { completed: cb.checked } })
           .then(function () {
             showToast('Task ' + (cb.checked ? 'completed' : 'unchecked'), 'success');
-            // Reload detail
             openBatchDetail(batchId);
           })
           .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
       });
+    });
+
+    // Add Task button
+    var addTaskBtn = document.getElementById('batch-add-task-btn');
+    if (addTaskBtn) addTaskBtn.addEventListener('click', function () {
+      showAddTaskForm(batchId);
     });
 
     // Vessel search in detail modal
@@ -5107,6 +5125,102 @@
           })
           .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
       });
+    });
+  }
+
+  // --- Transfer Prompt (shown when completing a transfer task) ---
+
+  function showTransferPrompt(batchId, taskId) {
+    var html = '<div class="batch-transfer-prompt">';
+    html += '<p>This is a transfer step. Enter the new location:</p>';
+    html += '<div class="form-group form-group-row">';
+    html += '<div style="flex:2;"><label>Vessel</label>';
+    html += '<div class="admin-kit-search-wrap" id="transfer-vessel-search-wrap">';
+    html += '<input type="text" id="transfer-vessel-search" class="admin-inline-input" placeholder="Search vessels..." autocomplete="off">';
+    html += '<div class="admin-kit-search-dropdown" id="transfer-vessel-dropdown" style="display:none;"></div>';
+    html += '<input type="hidden" id="transfer-vessel" value="">';
+    html += '</div></div>';
+    html += '<div><label>Shelf</label><input type="text" id="transfer-shelf" class="admin-inline-input" placeholder="A"></div>';
+    html += '<div><label>Bin</label><input type="text" id="transfer-bin" class="admin-inline-input" placeholder="01"></div>';
+    html += '</div>';
+    html += '<div style="margin-top:8px;display:flex;gap:8px;">';
+    html += '<button type="button" class="btn" id="transfer-confirm">Complete Transfer</button>';
+    html += '<button type="button" class="btn-secondary" id="transfer-skip">Complete Without Transfer</button>';
+    html += '</div>';
+    html += '</div>';
+
+    openModal('Transfer Step', html);
+
+    // Bind vessel search
+    var vInput = document.getElementById('transfer-vessel-search');
+    var vDropdown = document.getElementById('transfer-vessel-dropdown');
+    var vHidden = document.getElementById('transfer-vessel');
+    if (vInput && vDropdown && vHidden) {
+      bindVesselSearch(vInput, vDropdown, vHidden, '');
+    }
+    var shelfEl = document.getElementById('transfer-shelf');
+    var binEl = document.getElementById('transfer-bin');
+    if (shelfEl) bindShelfInput(shelfEl);
+    if (binEl) bindBinInput(binEl);
+
+    document.getElementById('transfer-confirm').addEventListener('click', function () {
+      var vesselId = document.getElementById('transfer-vessel').value;
+      var shelfId = document.getElementById('transfer-shelf').value;
+      var binId = document.getElementById('transfer-bin').value;
+      if (!vesselId) { showToast('Select a vessel', 'error'); return; }
+
+      adminApiPost('update_batch_task', {
+        task_id: taskId,
+        updates: { completed: true },
+        transfer_location: { vessel_id: vesselId, shelf_id: shelfId, bin_id: binId }
+      }).then(function () {
+        showToast('Transfer completed', 'success');
+        vesselsData = null; // refresh vessel cache
+        openBatchDetail(batchId);
+      }).catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+    });
+
+    document.getElementById('transfer-skip').addEventListener('click', function () {
+      adminApiPost('update_batch_task', { task_id: taskId, updates: { completed: true } })
+        .then(function () {
+          showToast('Task completed', 'success');
+          openBatchDetail(batchId);
+        })
+        .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+    });
+  }
+
+  // --- Add Ad-Hoc Task Form ---
+
+  function showAddTaskForm(batchId) {
+    var html = '<div class="batch-add-task-form">';
+    html += '<div class="form-group"><label>Title</label><input type="text" id="add-task-title" class="admin-input" placeholder="Task title"></div>';
+    html += '<div class="form-group"><label>Description</label><input type="text" id="add-task-desc" class="admin-input" placeholder="Optional description"></div>';
+    html += '<div class="form-group"><label>Due Date</label><input type="date" id="add-task-date" class="admin-input"></div>';
+    html += '<div class="form-group"><label><input type="checkbox" id="add-task-transfer"> This is a transfer step (vessel change)</label></div>';
+    html += '<button type="button" class="btn" id="add-task-submit">Add Task</button>';
+    html += '</div>';
+
+    openModal('Add Task to Batch', html);
+
+    document.getElementById('add-task-submit').addEventListener('click', function () {
+      var title = document.getElementById('add-task-title').value;
+      if (!title) { showToast('Enter a task title', 'error'); return; }
+
+      var payload = {
+        batch_id: batchId,
+        title: title,
+        description: document.getElementById('add-task-desc').value,
+        due_date: document.getElementById('add-task-date').value || '',
+        is_transfer: document.getElementById('add-task-transfer').checked
+      };
+
+      adminApiPost('add_batch_task', payload)
+        .then(function () {
+          showToast('Task added', 'success');
+          openBatchDetail(batchId);
+        })
+        .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
     });
   }
 
@@ -5532,7 +5646,10 @@
       var pHtml = '<div class="schedule-preview-steps">';
       steps.forEach(function (s) {
         var dayLabel = s.is_packaging ? 'TBD' : ('Day ' + s.day_offset);
-        pHtml += '<div class="schedule-preview-step"><strong>' + dayLabel + ':</strong> ' + s.title + (s.description ? ' — ' + s.description : '') + '</div>';
+        var badges = '';
+        if (s.is_transfer) badges += ' <span class="batch-task-badge batch-task-badge--transfer">Transfer</span>';
+        if (s.is_packaging) badges += ' <span class="batch-task-badge batch-task-badge--pkg">Packaging</span>';
+        pHtml += '<div class="schedule-preview-step"><strong>' + dayLabel + ':</strong> ' + s.title + badges + (s.description ? ' — ' + s.description : '') + '</div>';
       });
       pHtml += '</div>';
       preview.innerHTML = pHtml;
@@ -5643,7 +5760,10 @@
       html += '<div class="schedule-card-steps">';
       steps.forEach(function (st) {
         var dayLabel = st.is_packaging ? 'TBD' : ('Day ' + st.day_offset);
-        html += '<div class="schedule-step-line"><span class="schedule-step-day">' + dayLabel + '</span> ' + st.title + '</div>';
+        var stBadges = '';
+        if (st.is_transfer) stBadges += ' <span class="batch-task-badge batch-task-badge--transfer">Transfer</span>';
+        if (st.is_packaging) stBadges += ' <span class="batch-task-badge batch-task-badge--pkg">Packaging</span>';
+        html += '<div class="schedule-step-line"><span class="schedule-step-day">' + dayLabel + '</span> ' + st.title + stBadges + '</div>';
       });
       html += '</div></div>';
     });
@@ -5715,8 +5835,8 @@
     html += '</select></div>';
 
     html += '<h4>Fermentation Steps</h4>';
-    html += '<p class="sched-form-hint">Add each step with its day offset from the start date. Steps are sorted by day automatically.</p>';
-    html += '<div class="sched-steps-header"><span class="sched-col-day">Day</span><span class="sched-col-title">Title</span><span class="sched-col-desc">Description</span><span class="sched-col-actions"></span></div>';
+    html += '<p class="sched-form-hint">Add each step with its day offset from the start date. Steps are sorted by day automatically. Check "Transfer" if the step involves moving to a new vessel.</p>';
+    html += '<div class="sched-steps-header"><span class="sched-col-day">Day</span><span class="sched-col-title">Title</span><span class="sched-col-desc">Description</span><span class="sched-col-transfer">Transfer</span><span class="sched-col-actions"></span></div>';
     html += '<div id="sched-steps-container"></div>';
     html += '<button type="button" class="btn-secondary admin-btn-sm" id="sched-add-step">+ Add Step</button>';
 
@@ -5742,6 +5862,7 @@
         sHtml += '<input type="number" class="admin-inline-input sched-step-day" value="' + s.day_offset + '" placeholder="Day" min="0" style="width:60px;">';
         sHtml += '<input type="text" class="admin-inline-input sched-step-title" value="' + (s.title || '') + '" placeholder="Step title" style="flex:1;">';
         sHtml += '<input type="text" class="admin-inline-input sched-step-desc" value="' + (s.description || '') + '" placeholder="Description (optional)" style="flex:1;">';
+        sHtml += '<label class="sched-transfer-check"><input type="checkbox" class="sched-step-transfer"' + (s.is_transfer ? ' checked' : '') + '></label>';
         sHtml += '<button type="button" class="btn-secondary admin-btn-sm admin-btn-danger sched-step-remove" title="Remove step">&times;</button>';
         sHtml += '</div>';
       });
@@ -5757,6 +5878,9 @@
         });
         row.querySelector('.sched-step-desc').addEventListener('change', function () {
           window._schedSteps[idx].description = this.value;
+        });
+        row.querySelector('.sched-step-transfer').addEventListener('change', function () {
+          window._schedSteps[idx].is_transfer = this.checked;
         });
         row.querySelector('.sched-step-remove').addEventListener('click', function () {
           if (window._schedSteps.length <= 1) { showToast('Need at least 1 fermentation step', 'error'); return; }
@@ -5784,6 +5908,7 @@
         window._schedSteps[idx].day_offset = parseInt(row.querySelector('.sched-step-day').value, 10) || 0;
         window._schedSteps[idx].title = row.querySelector('.sched-step-title').value;
         window._schedSteps[idx].description = row.querySelector('.sched-step-desc').value;
+        window._schedSteps[idx].is_transfer = row.querySelector('.sched-step-transfer').checked;
       });
 
       // Validate regular steps have titles
@@ -5794,7 +5919,7 @@
       // Sort regular steps by day_offset, then build final steps array
       var sorted = window._schedSteps.slice().sort(function (a, b) { return a.day_offset - b.day_offset; });
       var steps = sorted.map(function (s, idx) {
-        return { step_number: idx + 1, day_offset: s.day_offset, title: s.title, description: s.description, is_packaging: false };
+        return { step_number: idx + 1, day_offset: s.day_offset, title: s.title, description: s.description, is_packaging: false, is_transfer: !!s.is_transfer };
       });
 
       // Append packaging as final step

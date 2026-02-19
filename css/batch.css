@@ -98,6 +98,18 @@
   color: #c62828;
   font-weight: 700;
 }
+.batch-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.batch-badge--transfer { background: #e3f2fd; color: #1565c0; }
+.batch-badge--pkg { background: #f3e5f5; color: #7b1fa2; }
 
 /* Plato */
 .batch-plato-svg {
