@@ -2014,6 +2014,24 @@ body[data-page="admin"] .content {
 .form-group-row { display: flex; gap: 0.5rem; }
 .form-group-row > div { flex: 1; }
 
+/* Customer search */
+.batch-customer-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.4rem 0.6rem;
+  margin: -0.5rem 0 0.75rem;
+  background: var(--surface-warm);
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+.batch-customer-tag { font-weight: 600; color: var(--ink-primary); }
+.batch-customer-email { color: var(--ink-secondary); }
+.batch-customer-zoho { color: var(--ink-tertiary); font-size: 0.75rem; }
+.batch-cust-email-hint { color: var(--ink-tertiary); font-size: 0.82rem; }
+.batch-cust-new { font-style: italic; color: var(--ink-secondary); }
+
 /* Schedule preview */
 .batch-schedule-preview { margin: 0.5rem 0; }
 .schedule-preview-steps { font-size: 0.85rem; }

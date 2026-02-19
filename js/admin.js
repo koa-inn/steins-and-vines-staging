@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-19T14:05:33.695Z';
+  var BUILD_TIMESTAMP = '2026-02-19T14:29:56.521Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4897,7 +4897,19 @@
     // Location edit
     html += '<details class="batch-detail-section"><summary>Edit Location</summary>';
     html += '<div class="batch-detail-location-edit">';
-    html += '<input type="text" id="batch-edit-vessel" value="' + (b.vessel_id || '') + '" placeholder="Vessel" class="admin-inline-input">';
+    html += '<select id="batch-edit-vessel" class="admin-inline-input">';
+    html += '<option value="">No vessel</option>';
+    if (vesselsData) {
+      vesselsData.forEach(function (v) {
+        var vid = String(v.vessel_id || '');
+        var label = vid;
+        if (v.type) label += ' (' + v.type + ')';
+        if (v.capacity_liters) label += ' — ' + v.capacity_liters + 'L';
+        var selected = vid === String(b.vessel_id || '') ? ' selected' : '';
+        html += '<option value="' + vid + '"' + selected + '>' + label + '</option>';
+      });
+    }
+    html += '</select>';
     html += '<input type="text" id="batch-edit-shelf" value="' + (b.shelf_id || '') + '" placeholder="Shelf" class="admin-inline-input">';
     html += '<input type="text" id="batch-edit-bin" value="' + (b.bin_id || '') + '" placeholder="Bin" class="admin-inline-input">';
     html += '<button type="button" class="btn admin-btn-sm" id="batch-save-location">Save</button>';
@@ -5139,7 +5151,31 @@
     }
   }
 
+  // Vessel data cache
+  var vesselsData = null;
+
+  function loadVesselsData(cb) {
+    adminApiGet('get_vessels')
+      .then(function (result) {
+        vesselsData = (result.data && result.data.vessels) || [];
+        if (cb) cb();
+      })
+      .catch(function () {
+        vesselsData = [];
+        if (cb) cb();
+      });
+  }
+
   function buildCreateBatchForm() {
+    // Ensure vessels are loaded
+    if (!vesselsData) {
+      loadVesselsData(function () { buildCreateBatchFormInner(); });
+    } else {
+      buildCreateBatchFormInner();
+    }
+  }
+
+  function buildCreateBatchFormInner() {
     var html = '<div class="batch-create-form">';
 
     // Product search
@@ -5151,9 +5187,16 @@
     html += '<input type="hidden" id="batch-product-name" value="">';
     html += '</div></div>';
 
-    // Customer
-    html += '<div class="form-group"><label>Customer Name</label><input type="text" id="batch-customer-name" class="admin-input" placeholder="Customer name"></div>';
-    html += '<div class="form-group"><label>Customer Email (optional)</label><input type="email" id="batch-customer-email" class="admin-input" placeholder="Email"></div>';
+    // Customer search
+    html += '<div class="form-group"><label>Customer</label>';
+    html += '<div class="admin-kit-search-wrap" id="batch-customer-search-wrap">';
+    html += '<input type="text" id="batch-customer-search" class="admin-kit-search-input" placeholder="Search Zoho contacts or type new name..." autocomplete="off">';
+    html += '<div class="admin-kit-search-dropdown" id="batch-customer-dropdown" style="display:none;"></div>';
+    html += '<input type="hidden" id="batch-customer-id" value="">';
+    html += '<input type="hidden" id="batch-customer-name" value="">';
+    html += '<input type="hidden" id="batch-customer-email-val" value="">';
+    html += '</div></div>';
+    html += '<div id="batch-customer-info" class="batch-customer-info" style="display:none;"></div>';
 
     // Start date
     html += '<div class="form-group"><label>Start Date</label><input type="date" id="batch-start-date" class="admin-input" value="' + new Date().toISOString().substring(0, 10) + '"></div>';
@@ -5166,9 +5209,20 @@
     html += '</select></div>';
     html += '<div id="batch-schedule-preview" class="batch-schedule-preview"></div>';
 
-    // Location
+    // Location - vessel dropdown + shelf/bin text
     html += '<div class="form-group form-group-row">';
-    html += '<div><label>Vessel</label><input type="text" id="batch-vessel" class="admin-input" placeholder="V-01"></div>';
+    html += '<div style="flex:2;"><label>Vessel</label><select id="batch-vessel" class="admin-select"><option value="">Select vessel...</option>';
+    if (vesselsData) {
+      vesselsData.forEach(function (v) {
+        var vid = String(v.vessel_id || '');
+        var label = vid;
+        if (v.type) label += ' (' + v.type + ')';
+        if (v.capacity_liters) label += ' — ' + v.capacity_liters + 'L';
+        if (v.status && String(v.status).toLowerCase() !== 'available') label += ' [' + v.status + ']';
+        html += '<option value="' + vid + '">' + label + '</option>';
+      });
+    }
+    html += '</select></div>';
     html += '<div><label>Shelf</label><input type="text" id="batch-shelf" class="admin-input" placeholder="S-A"></div>';
     html += '<div><label>Bin</label><input type="text" id="batch-bin" class="admin-input" placeholder="B-1"></div>';
     html += '</div>';
@@ -5211,6 +5265,100 @@
       }, 200);
     });
 
+    // Customer search behavior
+    var custInput = document.getElementById('batch-customer-search');
+    var custDropdown = document.getElementById('batch-customer-dropdown');
+    var custInfo = document.getElementById('batch-customer-info');
+    var custTimer;
+    var mwUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL) ? SHEETS_CONFIG.MIDDLEWARE_URL : '';
+
+    function selectCustomer(name, email, contactId) {
+      document.getElementById('batch-customer-name').value = name;
+      document.getElementById('batch-customer-email-val').value = email || '';
+      document.getElementById('batch-customer-id').value = contactId || '';
+      custInput.value = name;
+      custDropdown.style.display = 'none';
+
+      if (email || contactId) {
+        var infoHtml = '<span class="batch-customer-tag">' + name + '</span>';
+        if (email) infoHtml += '<span class="batch-customer-email">' + email + '</span>';
+        if (contactId) infoHtml += '<span class="batch-customer-zoho">Zoho: ' + contactId + '</span>';
+        infoHtml += '<button type="button" class="btn-secondary admin-btn-sm batch-customer-clear">&times; Clear</button>';
+        custInfo.innerHTML = infoHtml;
+        custInfo.style.display = '';
+        custInfo.querySelector('.batch-customer-clear').addEventListener('click', function () {
+          document.getElementById('batch-customer-name').value = '';
+          document.getElementById('batch-customer-email-val').value = '';
+          document.getElementById('batch-customer-id').value = '';
+          custInput.value = '';
+          custInfo.style.display = 'none';
+          custInput.focus();
+        });
+      } else {
+        custInfo.style.display = 'none';
+      }
+    }
+
+    custInput.addEventListener('input', function () {
+      clearTimeout(custTimer);
+      custTimer = setTimeout(function () {
+        var term = custInput.value.trim();
+        if (term.length < 2) { custDropdown.style.display = 'none'; return; }
+
+        if (!mwUrl) {
+          // No middleware — show "use as new customer" option
+          custDropdown.innerHTML = '<div class="admin-kit-search-option batch-cust-new" data-name="' + term.replace(/"/g, '&quot;') + '">Use "' + term + '" as new customer</div>';
+          custDropdown.style.display = '';
+          custDropdown.querySelector('.batch-cust-new').addEventListener('click', function () {
+            selectCustomer(term, '', '');
+          });
+          return;
+        }
+
+        fetch(mwUrl + '/api/contacts?search=' + encodeURIComponent(term))
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var contacts = data.contacts || [];
+            var dHtml = '';
+            contacts.slice(0, 8).forEach(function (c) {
+              var cName = c.contact_name || '';
+              var cEmail = c.email || '';
+              var cId = c.contact_id || '';
+              dHtml += '<div class="admin-kit-search-option batch-cust-option" data-name="' + cName.replace(/"/g, '&quot;') + '" data-email="' + cEmail.replace(/"/g, '&quot;') + '" data-id="' + cId + '">';
+              dHtml += '<strong>' + cName + '</strong>';
+              if (cEmail) dHtml += ' <span class="batch-cust-email-hint">' + cEmail + '</span>';
+              dHtml += '</div>';
+            });
+            // Always show "new customer" option at bottom
+            dHtml += '<div class="admin-kit-search-option batch-cust-new" data-name="' + term.replace(/"/g, '&quot;') + '">+ New customer: "' + term + '"</div>';
+            custDropdown.innerHTML = dHtml;
+            custDropdown.style.display = '';
+
+            custDropdown.querySelectorAll('.batch-cust-option').forEach(function (opt) {
+              opt.addEventListener('click', function () {
+                selectCustomer(opt.getAttribute('data-name'), opt.getAttribute('data-email'), opt.getAttribute('data-id'));
+              });
+            });
+            custDropdown.querySelector('.batch-cust-new').addEventListener('click', function () {
+              selectCustomer(term, '', '');
+            });
+          })
+          .catch(function () {
+            custDropdown.innerHTML = '<div class="admin-kit-search-option batch-cust-new" data-name="' + term.replace(/"/g, '&quot;') + '">Use "' + term + '" as new customer</div>';
+            custDropdown.style.display = '';
+            custDropdown.querySelector('.batch-cust-new').addEventListener('click', function () {
+              selectCustomer(term, '', '');
+            });
+          });
+      }, 300);
+    });
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', function closeDropdowns(e) {
+      if (!custDropdown.contains(e.target) && e.target !== custInput) custDropdown.style.display = 'none';
+      if (!dropdown.contains(e.target) && e.target !== searchInput) dropdown.style.display = 'none';
+    });
+
     // Schedule preview
     document.getElementById('batch-schedule-select').addEventListener('change', function () {
       var schedId = this.value;
@@ -5233,35 +5381,70 @@
     // Submit
     document.getElementById('batch-submit-create').addEventListener('click', function () {
       var sku = document.getElementById('batch-product-sku').value;
-      var name = document.getElementById('batch-product-name').value;
-      var customer = document.getElementById('batch-customer-name').value;
+      var productName = document.getElementById('batch-product-name').value;
+      var customerName = document.getElementById('batch-customer-name').value || custInput.value.trim();
+      var customerEmail = document.getElementById('batch-customer-email-val').value;
+      var customerId = document.getElementById('batch-customer-id').value;
       var schedId = document.getElementById('batch-schedule-select').value;
       var startDate = document.getElementById('batch-start-date').value;
 
       if (!sku) { showToast('Select a product', 'error'); return; }
-      if (!customer) { showToast('Enter customer name', 'error'); return; }
+      if (!customerName) { showToast('Enter customer name', 'error'); return; }
       if (!schedId) { showToast('Select a schedule', 'error'); return; }
       if (!startDate) { showToast('Enter a start date', 'error'); return; }
 
-      adminApiPost('create_batch', {
-        product_sku: sku,
-        product_name: name,
-        customer_name: customer,
-        customer_email: document.getElementById('batch-customer-email').value,
-        start_date: startDate,
-        schedule_id: schedId,
-        vessel_id: document.getElementById('batch-vessel').value,
-        shelf_id: document.getElementById('batch-shelf').value,
-        bin_id: document.getElementById('batch-bin').value,
-        notes: document.getElementById('batch-create-notes').value
-      }).then(function (result) {
-        showToast('Batch ' + result.batch_id + ' created with ' + result.tasks_created + ' tasks', 'success');
-        closeModal();
-        loadBatchesData();
-        loadBatchDashboardSummary();
-      }).catch(function (err) {
-        showToast('Failed: ' + err.message, 'error');
-      });
+      var submitBtn = document.getElementById('batch-submit-create');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating...';
+
+      function doCreateBatch(resolvedId) {
+        adminApiPost('create_batch', {
+          product_sku: sku,
+          product_name: productName,
+          customer_id: resolvedId || customerId,
+          customer_name: customerName,
+          customer_email: customerEmail,
+          start_date: startDate,
+          schedule_id: schedId,
+          vessel_id: document.getElementById('batch-vessel').value,
+          shelf_id: document.getElementById('batch-shelf').value,
+          bin_id: document.getElementById('batch-bin').value,
+          notes: document.getElementById('batch-create-notes').value
+        }).then(function (result) {
+          showToast('Batch ' + result.batch_id + ' created with ' + result.tasks_created + ' tasks', 'success');
+          closeModal();
+          loadBatchesData();
+          loadBatchDashboardSummary();
+        }).catch(function (err) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create Batch';
+          showToast('Failed: ' + err.message, 'error');
+        });
+      }
+
+      // If new customer (no Zoho ID) and we have middleware, create in Zoho first
+      if (!customerId && mwUrl && customerEmail) {
+        fetch(mwUrl + '/api/contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: customerName, email: customerEmail })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.contact_id) {
+            document.getElementById('batch-customer-id').value = data.contact_id;
+            doCreateBatch(data.contact_id);
+          } else {
+            doCreateBatch('');
+          }
+        })
+        .catch(function () { doCreateBatch(''); });
+      } else if (!customerId && mwUrl && !customerEmail) {
+        // No email — can't create Zoho contact, proceed without
+        doCreateBatch('');
+      } else {
+        doCreateBatch(customerId);
+      }
     });
   }
 

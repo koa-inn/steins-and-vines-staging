@@ -1072,7 +1072,10 @@ app.post('/api/items', function (req, res) {
  * Fetch contacts (customers/vendors) from Zoho Books.
  */
 app.get('/api/contacts', function (req, res) {
-  zohoGet('/contacts')
+  var params = {};
+  if (req.query.search) params.contact_name_contains = req.query.search;
+  if (req.query.email) params.email = req.query.email;
+  zohoGet('/contacts', params)
     .then(function (data) { res.json(data); })
     .catch(function (err) {
       console.error('[api/contacts]', err.message);

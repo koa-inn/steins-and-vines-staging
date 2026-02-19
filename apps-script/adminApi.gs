@@ -126,6 +126,9 @@ function doGet(e) {
       case 'get_batch_dashboard_summary':
         return _jsonResponse({ ok: true, data: getBatchDashboardSummary() });
 
+      case 'get_vessels':
+        return _jsonResponse({ ok: true, data: getVessels() });
+
       default:
         return _jsonResponse({ ok: false, error: 'invalid_action', message: 'Unknown action: ' + action });
     }
@@ -1239,6 +1242,25 @@ function getBatchDashboardSummary() {
   });
 
   return summary;
+}
+
+// --- GET: Vessels ---
+
+function getVessels() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Vessels');
+  if (!sheet || sheet.getLastRow() <= 1) return { vessels: [] };
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var vessels = [];
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[String(headers[j]).trim()] = data[i][j];
+    }
+    vessels.push(obj);
+  }
+  return { vessels: vessels };
 }
 
 // --- POST: Create Batch ---
