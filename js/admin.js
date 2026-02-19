@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-19T05:14:11.083Z';
+  var BUILD_TIMESTAMP = '2026-02-19T14:05:33.695Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -5339,18 +5339,25 @@
 
   function renderScheduleForm(existing) {
     var isEdit = !!existing;
-    var steps = [];
+    var regularSteps = [];
+    var pkgTitle = 'Bottling / Packaging';
+    var pkgDesc = '';
     if (existing) {
-      steps = existing.steps_parsed || [];
-      if (!steps.length && existing.steps) {
-        try { steps = JSON.parse(existing.steps); } catch (e) {}
+      var allSteps = existing.steps_parsed || [];
+      if (!allSteps.length && existing.steps) {
+        try { allSteps = JSON.parse(existing.steps); } catch (e) {}
       }
+      allSteps.forEach(function (s) {
+        if (s.is_packaging) {
+          pkgTitle = s.title || pkgTitle;
+          pkgDesc = s.description || pkgDesc;
+        } else {
+          regularSteps.push(s);
+        }
+      });
     }
-    if (steps.length === 0) {
-      steps = [
-        { step_number: 1, day_offset: 0, title: '', description: '', is_packaging: false },
-        { step_number: 2, day_offset: -1, title: 'Bottling / Packaging', description: '', is_packaging: true }
-      ];
+    if (regularSteps.length === 0) {
+      regularSteps = [{ step_number: 1, day_offset: 0, title: '', description: '' }];
     }
 
     var html = '<div class="schedule-form">';
@@ -5363,35 +5370,39 @@
     });
     html += '</select></div>';
 
-    html += '<h4>Steps</h4>';
+    html += '<h4>Fermentation Steps</h4>';
+    html += '<p class="sched-form-hint">Add each step with its day offset from the start date. Steps are sorted by day automatically.</p>';
+    html += '<div class="sched-steps-header"><span class="sched-col-day">Day</span><span class="sched-col-title">Title</span><span class="sched-col-desc">Description</span><span class="sched-col-actions"></span></div>';
     html += '<div id="sched-steps-container"></div>';
     html += '<button type="button" class="btn-secondary admin-btn-sm" id="sched-add-step">+ Add Step</button>';
-    html += '<br><br>';
+
+    html += '<h4>Packaging Step <span class="sched-pkg-note">(always last, date TBD until all other steps are done)</span></h4>';
+    html += '<div class="sched-pkg-row">';
+    html += '<input type="text" id="sched-pkg-title" class="admin-inline-input" value="' + pkgTitle + '" placeholder="Title" style="flex:1;">';
+    html += '<input type="text" id="sched-pkg-desc" class="admin-inline-input" value="' + pkgDesc + '" placeholder="Description (optional)" style="flex:1;">';
+    html += '</div>';
+
+    html += '<br>';
     html += '<button type="button" class="btn" id="sched-submit">' + (isEdit ? 'Update Template' : 'Create Template') + '</button>';
     html += '</div>';
 
     openModal((isEdit ? 'Edit' : 'New') + ' Schedule Template', html);
 
-    // Render steps
     var stepsContainer = document.getElementById('sched-steps-container');
-    window._schedSteps = steps.slice(); // mutable copy
+    window._schedSteps = regularSteps.slice();
 
     function renderSteps() {
       var sHtml = '';
       window._schedSteps.forEach(function (s, idx) {
         sHtml += '<div class="sched-step-row" data-idx="' + idx + '">';
-        sHtml += '<input type="number" class="admin-inline-input sched-step-day" value="' + s.day_offset + '" placeholder="Day" style="width:60px;" ' + (s.is_packaging ? 'disabled' : '') + '>';
-        sHtml += '<input type="text" class="admin-inline-input sched-step-title" value="' + (s.title || '') + '" placeholder="Title" style="flex:1;">';
-        sHtml += '<input type="text" class="admin-inline-input sched-step-desc" value="' + (s.description || '') + '" placeholder="Description" style="flex:1;">';
-        sHtml += '<label class="sched-step-pkg"><input type="checkbox" class="sched-step-ispkg" ' + (s.is_packaging ? 'checked' : '') + '> Pkg</label>';
-        sHtml += '<button type="button" class="btn-secondary admin-btn-sm sched-step-up" title="Move up">&uarr;</button>';
-        sHtml += '<button type="button" class="btn-secondary admin-btn-sm sched-step-down" title="Move down">&darr;</button>';
-        sHtml += '<button type="button" class="btn-secondary admin-btn-sm admin-btn-danger sched-step-remove" title="Remove">&times;</button>';
+        sHtml += '<input type="number" class="admin-inline-input sched-step-day" value="' + s.day_offset + '" placeholder="Day" min="0" style="width:60px;">';
+        sHtml += '<input type="text" class="admin-inline-input sched-step-title" value="' + (s.title || '') + '" placeholder="Step title" style="flex:1;">';
+        sHtml += '<input type="text" class="admin-inline-input sched-step-desc" value="' + (s.description || '') + '" placeholder="Description (optional)" style="flex:1;">';
+        sHtml += '<button type="button" class="btn-secondary admin-btn-sm admin-btn-danger sched-step-remove" title="Remove step">&times;</button>';
         sHtml += '</div>';
       });
       stepsContainer.innerHTML = sHtml;
 
-      // Bind step events
       stepsContainer.querySelectorAll('.sched-step-row').forEach(function (row) {
         var idx = parseInt(row.getAttribute('data-idx'), 10);
         row.querySelector('.sched-step-day').addEventListener('change', function () {
@@ -5403,29 +5414,8 @@
         row.querySelector('.sched-step-desc').addEventListener('change', function () {
           window._schedSteps[idx].description = this.value;
         });
-        row.querySelector('.sched-step-ispkg').addEventListener('change', function () {
-          window._schedSteps[idx].is_packaging = this.checked;
-          if (this.checked) window._schedSteps[idx].day_offset = -1;
-          renderSteps();
-        });
-        row.querySelector('.sched-step-up').addEventListener('click', function () {
-          if (idx > 0) {
-            var tmp = window._schedSteps[idx];
-            window._schedSteps[idx] = window._schedSteps[idx - 1];
-            window._schedSteps[idx - 1] = tmp;
-            renderSteps();
-          }
-        });
-        row.querySelector('.sched-step-down').addEventListener('click', function () {
-          if (idx < window._schedSteps.length - 1) {
-            var tmp = window._schedSteps[idx];
-            window._schedSteps[idx] = window._schedSteps[idx + 1];
-            window._schedSteps[idx + 1] = tmp;
-            renderSteps();
-          }
-        });
         row.querySelector('.sched-step-remove').addEventListener('click', function () {
-          if (window._schedSteps.length <= 2) { showToast('Minimum 2 steps', 'error'); return; }
+          if (window._schedSteps.length <= 1) { showToast('Need at least 1 fermentation step', 'error'); return; }
           window._schedSteps.splice(idx, 1);
           renderSteps();
         });
@@ -5434,9 +5424,9 @@
     renderSteps();
 
     document.getElementById('sched-add-step').addEventListener('click', function () {
-      var maxStep = 0;
-      window._schedSteps.forEach(function (s) { if (s.step_number > maxStep) maxStep = s.step_number; });
-      window._schedSteps.push({ step_number: maxStep + 1, day_offset: 0, title: '', description: '', is_packaging: false });
+      var maxDay = 0;
+      window._schedSteps.forEach(function (s) { if (s.day_offset > maxDay) maxDay = s.day_offset; });
+      window._schedSteps.push({ step_number: 0, day_offset: maxDay + 7, title: '', description: '' });
       renderSteps();
     });
 
@@ -5444,13 +5434,33 @@
       var name = document.getElementById('sched-name').value;
       if (!name) { showToast('Enter a template name', 'error'); return; }
 
-      // Re-number steps
-      var steps = window._schedSteps.map(function (s, idx) {
-        return { step_number: idx + 1, day_offset: s.day_offset, title: s.title, description: s.description, is_packaging: !!s.is_packaging };
+      // Read current values from inputs (in case user typed without triggering change)
+      stepsContainer.querySelectorAll('.sched-step-row').forEach(function (row) {
+        var idx = parseInt(row.getAttribute('data-idx'), 10);
+        window._schedSteps[idx].day_offset = parseInt(row.querySelector('.sched-step-day').value, 10) || 0;
+        window._schedSteps[idx].title = row.querySelector('.sched-step-title').value;
+        window._schedSteps[idx].description = row.querySelector('.sched-step-desc').value;
       });
 
-      var hasPkg = steps.some(function (s) { return s.is_packaging; });
-      if (!hasPkg) { showToast('One step must be a packaging step', 'error'); return; }
+      // Validate regular steps have titles
+      var emptyTitle = false;
+      window._schedSteps.forEach(function (s) { if (!s.title.trim()) emptyTitle = true; });
+      if (emptyTitle) { showToast('Every step needs a title', 'error'); return; }
+
+      // Sort regular steps by day_offset, then build final steps array
+      var sorted = window._schedSteps.slice().sort(function (a, b) { return a.day_offset - b.day_offset; });
+      var steps = sorted.map(function (s, idx) {
+        return { step_number: idx + 1, day_offset: s.day_offset, title: s.title, description: s.description, is_packaging: false };
+      });
+
+      // Append packaging as final step
+      steps.push({
+        step_number: steps.length + 1,
+        day_offset: -1,
+        title: document.getElementById('sched-pkg-title').value || 'Bottling / Packaging',
+        description: document.getElementById('sched-pkg-desc').value || '',
+        is_packaging: true
+      });
 
       var payload = {
         name: name,

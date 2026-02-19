@@ -1973,14 +1973,40 @@ body[data-page="admin"] .content {
 }
 
 /* Schedule form */
+.sched-form-hint { font-size: 0.82rem; color: var(--ink-tertiary); margin: 0 0 0.5rem; }
+.sched-steps-header {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sched-col-day { width: 60px; }
+.sched-col-title { flex: 1; }
+.sched-col-desc { flex: 1; }
+.sched-col-actions { width: 28px; }
 .sched-step-row {
   display: flex;
   gap: 0.35rem;
   align-items: center;
   margin-bottom: 0.35rem;
-  flex-wrap: wrap;
 }
-.sched-step-pkg { font-size: 0.78rem; white-space: nowrap; display: flex; align-items: center; gap: 2px; }
+.sched-pkg-note { font-size: 0.78rem; font-weight: 400; color: var(--ink-tertiary); }
+.sched-pkg-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.5rem;
+  background: var(--surface-warm);
+  border-radius: 4px;
+  border: 1px dashed var(--border);
+}
 
 /* Create batch form */
 .batch-create-form .form-group { margin-bottom: 0.75rem; }
