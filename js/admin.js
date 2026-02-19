@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-19T20:34:53.867Z';
+  var BUILD_TIMESTAMP = '2026-02-19T20:46:21.623Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -5355,6 +5355,9 @@
 
     openModal('New Fermentation Batch', html);
 
+    // Middleware URL — used by both product and customer search
+    var mwUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL) ? SHEETS_CONFIG.MIDDLEWARE_URL : '';
+
     // Product search behavior — load from Zoho via middleware
     var searchInput = document.getElementById('batch-product-search');
     var dropdown = document.getElementById('batch-product-dropdown');
@@ -5413,7 +5416,6 @@
     var custDropdown = document.getElementById('batch-customer-dropdown');
     var custInfo = document.getElementById('batch-customer-info');
     var custTimer;
-    var mwUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL) ? SHEETS_CONFIG.MIDDLEWARE_URL : '';
 
     function selectCustomer(name, email, contactId) {
       document.getElementById('batch-customer-name').value = name;
