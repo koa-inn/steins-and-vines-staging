@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-20T18:27:52.263Z';
+  var BUILD_TIMESTAMP = '2026-02-20T18:43:14.433Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -6460,8 +6460,8 @@
     '.label{width:4in;height:6in;padding:0.2in 0.25in;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;}' +
     '.top-row{display:flex;align-items:center;justify-content:space-between;padding-bottom:5px;border-bottom:1.5px solid #000;margin-bottom:6px;}' +
     '.logo-stack{display:flex;align-items:center;gap:8px;}' +
-    '.logo-icon{height:36px;}' +
-    '.logo-wordmark{height:16px;}' +
+    '.logo-icon{height:48px;}' +
+    '.logo-wordmark{height:20px;}' +
     '.qr-box{width:72px;height:72px;display:flex;align-items:center;justify-content:center;}' +
     '.qr-box svg{width:72px;height:72px;}' +
     '.qr-empty{width:72px;height:72px;border:1.5px solid #000;}' +
@@ -6511,7 +6511,7 @@
     h += '</div>';
     if (qrSvg) {
       h += '<div class="qr-box">' + qrSvg + '</div>';
-    } else {
+    } else if (!isBlank) {
       h += '<div class="qr-empty"></div>';
     }
     h += '</div>';
