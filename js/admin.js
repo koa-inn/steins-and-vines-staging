@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-20T18:43:14.433Z';
+  var BUILD_TIMESTAMP = '2026-02-20T19:11:59.313Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4971,25 +4971,7 @@
     html += '</div>';
 
     // Plato Readings
-    html += '<h4>Plato Readings</h4>';
-    if (readings.length > 0) {
-      html += renderPlatoChart(readings, b.start_date);
-      html += '<table class="admin-table batch-plato-table"><thead><tr><th>Date</th><th>&deg;P</th><th>Temp</th><th>pH</th><th>Notes</th></tr></thead><tbody>';
-      readings.slice().reverse().forEach(function (r) {
-        html += '<tr><td>' + String(r.timestamp || '').substring(0, 10) + '</td><td>' + escapeHTML(r.degrees_plato) + '</td><td>' + escapeHTML(r.temperature != null && r.temperature !== '' ? r.temperature : '') + '</td><td>' + escapeHTML(r.ph != null && r.ph !== '' ? r.ph : '') + '</td><td>' + escapeHTML(r.notes || '') + '</td></tr>';
-      });
-      html += '</tbody></table>';
-    } else {
-      html += '<p class="admin-order-info">No readings recorded yet.</p>';
-    }
-    html += '<div class="batch-plato-add" style="display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;">';
-    html += '<input type="date" id="plato-date" class="admin-inline-input" style="width:130px;">';
-    html += '<input type="number" id="plato-value" step="0.1" min="0" max="40" placeholder="&deg;P" class="admin-inline-input" style="width:70px;">';
-    html += '<input type="number" id="plato-temp" step="0.1" placeholder="Temp &deg;C" class="admin-inline-input" style="width:90px;">';
-    html += '<input type="number" id="plato-ph" step="0.01" min="0" max="14" placeholder="pH" class="admin-inline-input" style="width:60px;">';
-    html += '<input type="text" id="plato-notes" placeholder="Notes" class="admin-inline-input">';
-    html += '<button type="button" class="btn admin-btn-sm" id="plato-add-btn">Record</button>';
-    html += '</div>';
+    html += '<div id="plato-section">' + renderPlatoSection(readings, b.start_date) + '</div>';
 
     // Notes
     html += '<h4>Notes</h4>';
@@ -5125,30 +5107,8 @@
       }).catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
     });
 
-    // Default date input to today
-    var platoDateInput = document.getElementById('plato-date');
-    if (platoDateInput) platoDateInput.value = new Date().toISOString().substring(0, 10);
-
-    // Add plato reading
-    var platoBtn = document.getElementById('plato-add-btn');
-    if (platoBtn) platoBtn.addEventListener('click', function () {
-      var val = parseFloat(document.getElementById('plato-value').value);
-      if (isNaN(val)) { showToast('Enter a valid Plato value', 'error'); return; }
-      var tempRaw = document.getElementById('plato-temp').value;
-      var phRaw = document.getElementById('plato-ph').value;
-      var payload = {
-        batch_id: batchId,
-        degrees_plato: val,
-        timestamp: document.getElementById('plato-date').value,
-        notes: document.getElementById('plato-notes').value
-      };
-      if (tempRaw !== '') payload.temperature = parseFloat(tempRaw);
-      if (phRaw !== '') payload.ph = parseFloat(phRaw);
-      adminApiPost('add_plato_reading', payload).then(function () {
-        showToast('Reading recorded', 'success');
-        openBatchDetail(batchId);
-      }).catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
-    });
+    // Plato staging rows and handlers
+    bindPlatoHandlers(batchId);
 
     // Save notes
     var notesBtn = document.getElementById('batch-save-notes');
@@ -5356,6 +5316,212 @@
           addBtn.textContent = 'Add Task';
           showToast('Failed: ' + err.message, 'error');
         });
+    });
+  }
+
+  // --- Plato Section (chart + table + staging add form) ---
+
+  var _platoStagingRows = [];
+
+  function renderPlatoSection(readings, startDate) {
+    var html = '<h4>Plato Readings</h4>';
+    if (readings.length > 0) {
+      html += renderPlatoChart(readings, startDate);
+      html += '<table class="admin-table batch-plato-table"><thead><tr><th>Date</th><th>&deg;P</th><th>Temp</th><th>pH</th><th>Notes</th><th style="width:60px;">Actions</th></tr></thead><tbody>';
+      readings.slice().reverse().forEach(function (r) {
+        html += '<tr data-reading-id="' + escapeHTML(r.reading_id) + '">';
+        html += '<td>' + String(r.timestamp || '').substring(0, 10) + '</td>';
+        html += '<td>' + escapeHTML(r.degrees_plato) + '</td>';
+        html += '<td>' + escapeHTML(r.temperature != null && r.temperature !== '' ? r.temperature : '') + '</td>';
+        html += '<td>' + escapeHTML(r.ph != null && r.ph !== '' ? r.ph : '') + '</td>';
+        html += '<td>' + escapeHTML(r.notes || '') + '</td>';
+        html += '<td class="plato-actions">';
+        html += '<button type="button" class="plato-edit-btn" title="Edit">&#9998;</button>';
+        html += '<button type="button" class="plato-delete-btn" title="Delete">&times;</button>';
+        html += '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    } else {
+      html += '<p class="admin-order-info">No readings recorded yet.</p>';
+    }
+
+    // Add row inputs
+    html += '<div class="batch-plato-add" style="display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;">';
+    html += '<input type="date" id="plato-date" class="admin-inline-input" style="width:130px;">';
+    html += '<input type="number" id="plato-value" step="0.1" min="0" max="40" placeholder="&deg;P" class="admin-inline-input" style="width:70px;">';
+    html += '<input type="number" id="plato-temp" step="0.1" placeholder="Temp &deg;C" class="admin-inline-input" style="width:90px;">';
+    html += '<input type="number" id="plato-ph" step="0.01" min="0" max="14" placeholder="pH" class="admin-inline-input" style="width:60px;">';
+    html += '<input type="text" id="plato-notes" placeholder="Notes" class="admin-inline-input">';
+    html += '<button type="button" class="btn admin-btn-sm" id="plato-add-row-btn">Add Row</button>';
+    html += '</div>';
+
+    // Staging table
+    html += '<div id="plato-staging-wrap">' + renderPlatoStagingTable() + '</div>';
+
+    return html;
+  }
+
+  function renderPlatoStagingTable() {
+    if (_platoStagingRows.length === 0) return '';
+    var html = '<table class="admin-table batch-plato-table batch-plato-staging"><thead><tr><th>Date</th><th>&deg;P</th><th>Temp</th><th>pH</th><th>Notes</th><th style="width:36px;"></th></tr></thead><tbody>';
+    _platoStagingRows.forEach(function (r, i) {
+      html += '<tr>';
+      html += '<td>' + escapeHTML(r.timestamp) + '</td>';
+      html += '<td>' + escapeHTML(r.degrees_plato) + '</td>';
+      html += '<td>' + escapeHTML(r.temperature !== undefined ? r.temperature : '') + '</td>';
+      html += '<td>' + escapeHTML(r.ph !== undefined ? r.ph : '') + '</td>';
+      html += '<td>' + escapeHTML(r.notes || '') + '</td>';
+      html += '<td><button type="button" class="plato-staging-remove" data-idx="' + i + '" title="Remove">&times;</button></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<button type="button" class="btn admin-btn-sm" id="plato-submit-all-btn">Submit All (' + _platoStagingRows.length + ')</button>';
+    return html;
+  }
+
+  function refreshPlatoSection(batchId) {
+    adminApiGet('get_batch', { batch_id: batchId })
+      .then(function (result) {
+        var data = result.data;
+        var readings = data.plato_readings || [];
+        var container = document.getElementById('plato-section');
+        if (!container) return;
+        container.innerHTML = renderPlatoSection(readings, data.batch.start_date);
+        bindPlatoHandlers(batchId);
+      })
+      .catch(function (err) { showToast('Failed to refresh readings: ' + err.message, 'error'); });
+  }
+
+  function bindPlatoHandlers(batchId) {
+    // Default date
+    var platoDateInput = document.getElementById('plato-date');
+    if (platoDateInput) platoDateInput.value = new Date().toISOString().substring(0, 10);
+
+    // Add Row button
+    var addRowBtn = document.getElementById('plato-add-row-btn');
+    if (addRowBtn) addRowBtn.addEventListener('click', function () {
+      var val = parseFloat(document.getElementById('plato-value').value);
+      if (isNaN(val) || val < 0 || val > 40) { showToast('Enter a valid Plato value (0-40)', 'error'); return; }
+      var dateVal = document.getElementById('plato-date').value;
+      if (!dateVal) { showToast('Enter a date', 'error'); return; }
+      var tempRaw = document.getElementById('plato-temp').value;
+      var phRaw = document.getElementById('plato-ph').value;
+      if (phRaw !== '' && (isNaN(parseFloat(phRaw)) || parseFloat(phRaw) < 0 || parseFloat(phRaw) > 14)) {
+        showToast('pH must be between 0 and 14', 'error'); return;
+      }
+      var row = { degrees_plato: val, timestamp: dateVal, notes: document.getElementById('plato-notes').value };
+      if (tempRaw !== '') row.temperature = parseFloat(tempRaw);
+      if (phRaw !== '') row.ph = parseFloat(phRaw);
+      _platoStagingRows.push(row);
+
+      // Update staging table
+      var stagingWrap = document.getElementById('plato-staging-wrap');
+      if (stagingWrap) stagingWrap.innerHTML = renderPlatoStagingTable();
+      bindStagingHandlers(batchId);
+
+      // Clear inputs except date
+      document.getElementById('plato-value').value = '';
+      document.getElementById('plato-temp').value = '';
+      document.getElementById('plato-ph').value = '';
+      document.getElementById('plato-notes').value = '';
+    });
+
+    bindStagingHandlers(batchId);
+
+    // Edit / delete buttons on existing readings
+    document.querySelectorAll('.plato-edit-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var tr = btn.closest('tr');
+        var readingId = tr.getAttribute('data-reading-id');
+        startPlatoInlineEdit(tr, readingId, batchId);
+      });
+    });
+    document.querySelectorAll('.plato-delete-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var tr = btn.closest('tr');
+        var readingId = tr.getAttribute('data-reading-id');
+        if (!confirm('Delete this reading?')) return;
+        adminApiPost('delete_plato_reading', { reading_id: readingId, batch_id: batchId })
+          .then(function () {
+            showToast('Reading deleted', 'success');
+            refreshPlatoSection(batchId);
+          })
+          .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+      });
+    });
+  }
+
+  function bindStagingHandlers(batchId) {
+    // Remove buttons
+    document.querySelectorAll('.plato-staging-remove').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var idx = parseInt(btn.getAttribute('data-idx'), 10);
+        _platoStagingRows.splice(idx, 1);
+        var stagingWrap = document.getElementById('plato-staging-wrap');
+        if (stagingWrap) stagingWrap.innerHTML = renderPlatoStagingTable();
+        bindStagingHandlers(batchId);
+      });
+    });
+
+    // Submit All button
+    var submitAllBtn = document.getElementById('plato-submit-all-btn');
+    if (submitAllBtn) submitAllBtn.addEventListener('click', function () {
+      if (_platoStagingRows.length === 0) { showToast('No readings to submit', 'error'); return; }
+      submitAllBtn.disabled = true;
+      submitAllBtn.textContent = 'Submitting...';
+      adminApiPost('bulk_add_plato_readings', { batch_id: batchId, readings: _platoStagingRows })
+        .then(function () {
+          showToast(_platoStagingRows.length + ' reading' + (_platoStagingRows.length !== 1 ? 's' : '') + ' recorded', 'success');
+          _platoStagingRows = [];
+          refreshPlatoSection(batchId);
+        })
+        .catch(function (err) {
+          showToast('Failed: ' + err.message, 'error');
+          submitAllBtn.disabled = false;
+          submitAllBtn.textContent = 'Submit All (' + _platoStagingRows.length + ')';
+        });
+    });
+  }
+
+  function startPlatoInlineEdit(tr, readingId, batchId) {
+    var cells = tr.querySelectorAll('td');
+    var origDate = cells[0].textContent.trim();
+    var origPlato = cells[1].textContent.trim();
+    var origTemp = cells[2].textContent.trim();
+    var origPh = cells[3].textContent.trim();
+    var origNotes = cells[4].textContent.trim();
+
+    cells[0].innerHTML = '<input type="date" class="admin-inline-input" value="' + escapeHTML(origDate) + '" style="width:120px;">';
+    cells[1].innerHTML = '<input type="number" class="admin-inline-input" step="0.1" min="0" max="40" value="' + escapeHTML(origPlato) + '" style="width:60px;">';
+    cells[2].innerHTML = '<input type="number" class="admin-inline-input" step="0.1" value="' + escapeHTML(origTemp) + '" style="width:70px;">';
+    cells[3].innerHTML = '<input type="number" class="admin-inline-input" step="0.01" min="0" max="14" value="' + escapeHTML(origPh) + '" style="width:50px;">';
+    cells[4].innerHTML = '<input type="text" class="admin-inline-input" value="' + escapeHTML(origNotes) + '">';
+    cells[5].innerHTML = '<button type="button" class="btn admin-btn-sm plato-save-edit" style="font-size:0.75rem;padding:2px 6px;">Save</button> <button type="button" class="btn-secondary admin-btn-sm plato-cancel-edit" style="font-size:0.75rem;padding:2px 6px;">Cancel</button>';
+
+    cells[5].querySelector('.plato-cancel-edit').addEventListener('click', function () {
+      refreshPlatoSection(batchId);
+    });
+    cells[5].querySelector('.plato-save-edit').addEventListener('click', function () {
+      var newPlato = parseFloat(cells[1].querySelector('input').value);
+      if (isNaN(newPlato) || newPlato < 0 || newPlato > 40) { showToast('Plato must be 0-40', 'error'); return; }
+      var newPhRaw = cells[3].querySelector('input').value;
+      if (newPhRaw !== '' && (isNaN(parseFloat(newPhRaw)) || parseFloat(newPhRaw) < 0 || parseFloat(newPhRaw) > 14)) {
+        showToast('pH must be 0-14', 'error'); return;
+      }
+      var updates = {
+        timestamp: cells[0].querySelector('input').value,
+        degrees_plato: newPlato,
+        temperature: cells[2].querySelector('input').value !== '' ? parseFloat(cells[2].querySelector('input').value) : '',
+        ph: newPhRaw !== '' ? parseFloat(newPhRaw) : '',
+        notes: cells[4].querySelector('input').value
+      };
+      adminApiPost('update_plato_reading', { reading_id: readingId, batch_id: batchId, updates: updates })
+        .then(function () {
+          showToast('Reading updated', 'success');
+          refreshPlatoSection(batchId);
+        })
+        .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
     });
   }
 

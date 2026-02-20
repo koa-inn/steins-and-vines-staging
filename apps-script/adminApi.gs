@@ -227,6 +227,21 @@ function doPost(e) {
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(r);
       }
+      case 'bulk_add_plato_readings': {
+        var r = bulkAddPlatoReadings(payload, authResult.email);
+        _invalidateBatchCache(payload.batch_id);
+        return _jsonResponse(r);
+      }
+      case 'update_plato_reading': {
+        var r = updatePlatoReading(payload, authResult.email);
+        _invalidateBatchCache(payload.batch_id);
+        return _jsonResponse(r);
+      }
+      case 'delete_plato_reading': {
+        var r = deletePlatoReading(payload);
+        _invalidateBatchCache(payload.batch_id);
+        return _jsonResponse(r);
+      }
       case 'create_ferm_schedule':
         return _jsonResponse(createFermSchedule(payload, authResult.email));
 
@@ -2176,6 +2191,103 @@ function addPlatoReading(payload, recordedBy) {
   }
 }
 
+// --- POST: Bulk Add Plato Readings ---
+
+function bulkAddPlatoReadings(payload, recordedBy) {
+  if (!payload.batch_id) {
+    return { ok: false, error: 'missing_id', message: 'batch_id is required' };
+  }
+  if (!payload.readings || !Array.isArray(payload.readings) || payload.readings.length === 0) {
+    return { ok: false, error: 'invalid_input', message: 'readings array is required' };
+  }
+  if (payload.readings.length > 20) {
+    return { ok: false, error: 'too_many', message: 'Maximum 20 readings per request' };
+  }
+  var results = [];
+  for (var i = 0; i < payload.readings.length; i++) {
+    var reading = payload.readings[i];
+    reading.batch_id = payload.batch_id;
+    results.push(addPlatoReading(reading, recordedBy));
+  }
+  return { ok: true, results: results };
+}
+
+// --- POST: Update Plato Reading ---
+
+function updatePlatoReading(payload, userEmail) {
+  if (!payload.reading_id) {
+    return { ok: false, error: 'missing_id', message: 'reading_id is required' };
+  }
+  var updates = payload.updates || {};
+  var result = findRowById(PLATO_READINGS_SHEET_NAME, payload.reading_id);
+  if (result.row === -1) {
+    return { ok: false, error: 'not_found', message: 'Reading not found: ' + payload.reading_id };
+  }
+
+  // Validate provided fields
+  if (updates.degrees_plato !== undefined) {
+    var plato = parseFloat(updates.degrees_plato);
+    if (isNaN(plato) || plato < 0 || plato > 40) {
+      return { ok: false, error: 'invalid_value', message: 'degrees_plato must be between 0 and 40' };
+    }
+  }
+  if (updates.timestamp !== undefined && updates.timestamp !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(updates.timestamp)) {
+    return { ok: false, error: 'invalid_value', message: 'timestamp must be YYYY-MM-DD format' };
+  }
+  if (updates.temperature !== undefined && updates.temperature !== '') {
+    if (isNaN(parseFloat(updates.temperature))) {
+      return { ok: false, error: 'invalid_value', message: 'temperature must be a number' };
+    }
+  }
+  if (updates.ph !== undefined && updates.ph !== '') {
+    var phVal = parseFloat(updates.ph);
+    if (isNaN(phVal) || phVal < 0 || phVal > 14) {
+      return { ok: false, error: 'invalid_value', message: 'ph must be a number between 0 and 14' };
+    }
+  }
+
+  // Map field names to column headers
+  var fieldMap = {
+    degrees_plato: 'degrees_plato',
+    timestamp: 'timestamp',
+    temperature: 'temperature',
+    ph: 'ph',
+    notes: 'notes'
+  };
+
+  var headers = result.headers;
+  for (var field in updates) {
+    if (!fieldMap[field]) continue;
+    var colName = fieldMap[field];
+    var colIdx = headers.indexOf(colName);
+    if (colIdx === -1) continue;
+    var val = updates[field];
+    if (field === 'notes') val = sanitizeInput(val || '');
+    if (field === 'degrees_plato') val = parseFloat(val);
+    if (field === 'temperature') val = (val !== '' && val !== undefined) ? parseFloat(val) : '';
+    if (field === 'ph') val = (val !== '' && val !== undefined) ? parseFloat(val) : '';
+    result.sheet.getRange(result.row, colIdx + 1).setValue(val);
+  }
+
+  invalidateSheetCache(PLATO_READINGS_SHEET_NAME);
+  return { ok: true, reading_id: payload.reading_id };
+}
+
+// --- POST: Delete Plato Reading ---
+
+function deletePlatoReading(payload) {
+  if (!payload.reading_id) {
+    return { ok: false, error: 'missing_id', message: 'reading_id is required' };
+  }
+  var result = findRowById(PLATO_READINGS_SHEET_NAME, payload.reading_id);
+  if (result.row === -1) {
+    return { ok: false, error: 'not_found', message: 'Reading not found: ' + payload.reading_id };
+  }
+  result.sheet.deleteRow(result.row);
+  invalidateSheetCache(PLATO_READINGS_SHEET_NAME);
+  return { ok: true, reading_id: payload.reading_id };
+}
+
 // --- POST: Batch Token Auth (public URL) ---
 
 function handleBatchTokenPost(payload, action) {
@@ -2200,6 +2312,10 @@ function handleBatchTokenPost(payload, action) {
       return updateBatchTask(payload, 'batch-url');
     case 'add_plato_reading':
       return addPlatoReading(payload, 'batch-url');
+    case 'bulk_add_plato_readings':
+      return bulkAddPlatoReadings(payload, 'batch-url');
+    case 'delete_plato_reading':
+      return deletePlatoReading(payload);
     default:
       return { ok: false, error: 'unauthorized_action', message: 'Action not allowed from batch URL' };
   }
