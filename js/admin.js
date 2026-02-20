@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-19T23:23:24.715Z';
+  var BUILD_TIMESTAMP = '2026-02-20T01:31:19.142Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4822,7 +4822,7 @@
       var total = b.tasks_total || 0;
       var done = b.tasks_done || 0;
       var pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      var startDate = b.start_date || '—';
+      var startDate = b.start_date ? String(b.start_date).substring(0, 10) : '—';
 
       html += '<tr data-batch-id="' + b.batch_id + '">';
       html += '<td class="batch-id-cell">' + b.batch_id + '</td>';
@@ -4890,7 +4890,7 @@
     html += '<div class="batch-detail-grid">';
     html += '<div class="batch-detail-col"><strong>Product:</strong> ' + (b.product_name || b.product_sku) + '</div>';
     html += '<div class="batch-detail-col"><strong>Customer:</strong> ' + (b.customer_name || '—') + '</div>';
-    html += '<div class="batch-detail-col"><strong>Start Date:</strong> ' + (b.start_date || '—') + '</div>';
+    html += '<div class="batch-detail-col"><strong>Start Date:</strong> ' + (b.start_date ? String(b.start_date).substring(0, 10) : '—') + '</div>';
     html += '<div class="batch-detail-col"><strong>Vessel:</strong> ' + (b.vessel_id || '—') + ' &nbsp;<strong>Shelf:</strong> ' + (b.shelf_id || '—') + ' &nbsp;<strong>Bin:</strong> ' + (b.bin_id || '—') + '</div>';
     html += '</div>';
 
@@ -4985,6 +4985,7 @@
     html += '<button type="button" class="btn-secondary admin-btn-sm" id="batch-view-url">Open Batch URL</button>';
     html += '<button type="button" class="btn-secondary admin-btn-sm" id="batch-print-qr">Print QR</button>';
     html += '<button type="button" class="btn-secondary admin-btn-sm" id="batch-regen-token">Regenerate URL</button>';
+    html += '<button type="button" class="btn-secondary admin-btn-sm admin-btn-danger" id="batch-delete-btn">Delete Batch</button>';
     html += '</div>';
 
     html += '</div>';
@@ -5126,6 +5127,28 @@
           .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
       });
     });
+
+    // Delete batch
+    var deleteBtn = document.getElementById('batch-delete-btn');
+    if (deleteBtn) deleteBtn.addEventListener('click', function () {
+      showConfirm('Delete batch ' + batchId + '? This will remove all tasks, readings, and history. This cannot be undone.', function () {
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = 'Deleting...';
+        adminApiPost('delete_batch', { batch_id: batchId })
+          .then(function () {
+            showToast('Batch ' + batchId + ' deleted', 'success');
+            closeModal();
+            vesselsData = null;
+            loadBatchesData();
+            loadBatchDashboardSummary();
+          })
+          .catch(function (err) {
+            deleteBtn.disabled = false;
+            deleteBtn.textContent = 'Delete Batch';
+            showToast('Failed: ' + err.message, 'error');
+          });
+      });
+    });
   }
 
   // --- Transfer Prompt (shown when completing a transfer task) ---
@@ -5163,11 +5186,18 @@
     if (shelfEl) bindShelfInput(shelfEl);
     if (binEl) bindBinInput(binEl);
 
-    document.getElementById('transfer-confirm').addEventListener('click', function () {
+    var confirmBtn = document.getElementById('transfer-confirm');
+    var skipBtn = document.getElementById('transfer-skip');
+
+    confirmBtn.addEventListener('click', function () {
       var vesselId = document.getElementById('transfer-vessel').value;
       var shelfId = document.getElementById('transfer-shelf').value;
       var binId = document.getElementById('transfer-bin').value;
       if (!vesselId) { showToast('Select a vessel', 'error'); return; }
+
+      confirmBtn.disabled = true;
+      skipBtn.disabled = true;
+      confirmBtn.textContent = 'Saving...';
 
       adminApiPost('update_batch_task', {
         task_id: taskId,
@@ -5175,18 +5205,32 @@
         transfer_location: { vessel_id: vesselId, shelf_id: shelfId, bin_id: binId }
       }).then(function () {
         showToast('Transfer completed', 'success');
-        vesselsData = null; // refresh vessel cache
+        vesselsData = null;
         openBatchDetail(batchId);
-      }).catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+      }).catch(function (err) {
+        confirmBtn.disabled = false;
+        skipBtn.disabled = false;
+        confirmBtn.textContent = 'Complete Transfer';
+        showToast('Failed: ' + err.message, 'error');
+      });
     });
 
-    document.getElementById('transfer-skip').addEventListener('click', function () {
+    skipBtn.addEventListener('click', function () {
+      confirmBtn.disabled = true;
+      skipBtn.disabled = true;
+      skipBtn.textContent = 'Saving...';
+
       adminApiPost('update_batch_task', { task_id: taskId, updates: { completed: true } })
         .then(function () {
           showToast('Task completed', 'success');
           openBatchDetail(batchId);
         })
-        .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+        .catch(function (err) {
+          confirmBtn.disabled = false;
+          skipBtn.disabled = false;
+          skipBtn.textContent = 'Complete Without Transfer';
+          showToast('Failed: ' + err.message, 'error');
+        });
     });
   }
 
@@ -5207,6 +5251,10 @@
       var title = document.getElementById('add-task-title').value;
       if (!title) { showToast('Enter a task title', 'error'); return; }
 
+      var addBtn = document.getElementById('add-task-submit');
+      addBtn.disabled = true;
+      addBtn.textContent = 'Adding...';
+
       var payload = {
         batch_id: batchId,
         title: title,
@@ -5220,7 +5268,11 @@
           showToast('Task added', 'success');
           openBatchDetail(batchId);
         })
-        .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+        .catch(function (err) {
+          addBtn.disabled = false;
+          addBtn.textContent = 'Add Task';
+          showToast('Failed: ' + err.message, 'error');
+        });
     });
   }
 
@@ -5941,13 +5993,21 @@
       var action = isEdit ? 'update_ferm_schedule' : 'create_ferm_schedule';
       if (isEdit) payload.schedule_id = existing.schedule_id;
 
+      var schedSubmitBtn = document.getElementById('sched-submit');
+      schedSubmitBtn.disabled = true;
+      schedSubmitBtn.textContent = 'Saving...';
+
       adminApiPost(action, payload)
         .then(function (result) {
           showToast('Schedule ' + (isEdit ? 'updated' : 'created'), 'success');
           closeModal();
           loadScheduleTemplates();
         })
-        .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+        .catch(function (err) {
+          schedSubmitBtn.disabled = false;
+          schedSubmitBtn.textContent = isEdit ? 'Update Template' : 'Create Template';
+          showToast('Failed: ' + err.message, 'error');
+        });
     });
   }
 
@@ -6157,7 +6217,7 @@
         html += '<strong>' + t.title + '</strong></label>';
         html += '<span class="upcoming-task-meta">' + t.batch_id + ' — ' + (t.product_name || '') + '</span>';
         html += '<span class="upcoming-task-loc">' + [t.vessel_id, t.shelf_id, t.bin_id].filter(Boolean).join('/') + '</span>';
-        if (t.due_date) html += '<span class="upcoming-task-date">' + t.due_date + '</span>';
+        if (t.due_date) html += '<span class="upcoming-task-date">' + String(t.due_date).substring(0, 10) + '</span>';
         html += '</div>';
       });
       html += '</div>';

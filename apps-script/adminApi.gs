@@ -180,6 +180,9 @@ function doPost(e) {
       case 'update_batch':
         return _jsonResponse(updateBatch(payload, authResult.email));
 
+      case 'delete_batch':
+        return _jsonResponse(deleteBatch(payload, authResult.email));
+
       case 'update_batch_schedule':
         return _jsonResponse(updateBatchSchedule(payload, authResult.email));
 
@@ -883,6 +886,38 @@ function generateNextId(sheetName, prefix, padLength) {
 /**
  * Calculate due date from start date + day offset
  */
+/**
+ * Truncate a date value to YYYY-MM-DD (10 chars).
+ * Handles ISO strings, Date objects, and Sheets empty-date artifacts.
+ */
+function toDateOnly(val) {
+  if (!val) return '';
+  var s = String(val).substring(0, 10);
+  if (s === '1899-12-30' || s === '1899-12-31') return '';
+  return s;
+}
+
+/**
+ * Check if a vessel+shelf+bin combo is already used by another active batch.
+ * Returns the conflicting batch_id or empty string if no conflict.
+ */
+function checkLocationConflict(vesselId, shelfId, binId, excludeBatchId) {
+  if (!vesselId) return '';
+  var batches = sheetToObjects(BATCHES_SHEET_NAME);
+  for (var i = 0; i < batches.length; i++) {
+    var b = batches[i];
+    if (excludeBatchId && String(b.batch_id) === String(excludeBatchId)) continue;
+    var s = String(b.status || '').toLowerCase();
+    if (s !== 'primary' && s !== 'secondary') continue;
+    if (String(b.vessel_id || '') === String(vesselId) &&
+        String(b.shelf_id || '') === String(shelfId || '') &&
+        String(b.bin_id || '') === String(binId || '')) {
+      return String(b.batch_id);
+    }
+  }
+  return '';
+}
+
 function calculateDueDate(startDateStr, dayOffset) {
   if (dayOffset < 0) return ''; // TBD for packaging
   var parts = startDateStr.split('-');
@@ -987,8 +1022,11 @@ function getBatches(limit, offset, status) {
     batches = batches.slice(offset);
   }
 
-  // Strip internal _row
-  batches.forEach(function (b) { delete b._row; });
+  // Clean up: strip _row and truncate date fields
+  batches.forEach(function (b) {
+    delete b._row;
+    if (b.start_date) b.start_date = String(b.start_date).substring(0, 10);
+  });
 
   return { batches: batches, total: total, filtered: filtered };
 }
@@ -1001,6 +1039,7 @@ function getBatchDetail(batchId) {
 
   var batch = result.data;
   delete batch._row;
+  if (batch.start_date) batch.start_date = toDateOnly(batch.start_date);
 
   // Parse schedule_snapshot
   if (batch.schedule_snapshot && typeof batch.schedule_snapshot === 'string') {
@@ -1010,19 +1049,29 @@ function getBatchDetail(batchId) {
   var tasks = sheetToObjects(BATCH_TASKS_SHEET_NAME).filter(function (t) {
     return String(t.batch_id) === String(batchId);
   });
-  tasks.forEach(function (t) { delete t._row; });
+  tasks.forEach(function (t) {
+    delete t._row;
+    t.due_date = toDateOnly(t.due_date);
+    if (t.completed_at) t.completed_at = String(t.completed_at).substring(0, 10);
+  });
   tasks.sort(function (a, b) { return (Number(a.step_number) || 0) - (Number(b.step_number) || 0); });
 
   var readings = sheetToObjects(PLATO_READINGS_SHEET_NAME).filter(function (r) {
     return String(r.batch_id) === String(batchId);
   });
-  readings.forEach(function (r) { delete r._row; });
+  readings.forEach(function (r) {
+    delete r._row;
+    if (r.timestamp) r.timestamp = String(r.timestamp).substring(0, 10);
+  });
   readings.sort(function (a, b) { return String(a.timestamp || '').localeCompare(String(b.timestamp || '')); });
 
   var history = sheetToObjects(VESSEL_HISTORY_SHEET_NAME).filter(function (h) {
     return String(h.batch_id) === String(batchId);
   });
-  history.forEach(function (h) { delete h._row; });
+  history.forEach(function (h) {
+    delete h._row;
+    if (h.transferred_at) h.transferred_at = String(h.transferred_at).substring(0, 10);
+  });
   history.sort(function (a, b) { return String(b.transferred_at || '').localeCompare(String(a.transferred_at || '')); });
 
   return { batch: batch, tasks: tasks, plato_readings: readings, vessel_history: history };
@@ -1052,6 +1101,7 @@ function handleGetBatchPublic(e) {
   delete batch.reservation_id;
   delete batch.access_token;
   delete batch._row;
+  if (batch.start_date) batch.start_date = toDateOnly(batch.start_date);
 
   if (batch.schedule_snapshot && typeof batch.schedule_snapshot === 'string') {
     try { batch.schedule_snapshot_parsed = JSON.parse(batch.schedule_snapshot); } catch (e) {}
@@ -1060,19 +1110,29 @@ function handleGetBatchPublic(e) {
   var tasks = sheetToObjects(BATCH_TASKS_SHEET_NAME).filter(function (t) {
     return String(t.batch_id) === String(batchId);
   });
-  tasks.forEach(function (t) { delete t._row; });
+  tasks.forEach(function (t) {
+    delete t._row;
+    t.due_date = toDateOnly(t.due_date);
+    if (t.completed_at) t.completed_at = String(t.completed_at).substring(0, 10);
+  });
   tasks.sort(function (a, b) { return (Number(a.step_number) || 0) - (Number(b.step_number) || 0); });
 
   var readings = sheetToObjects(PLATO_READINGS_SHEET_NAME).filter(function (r) {
     return String(r.batch_id) === String(batchId);
   });
-  readings.forEach(function (r) { delete r._row; });
+  readings.forEach(function (r) {
+    delete r._row;
+    if (r.timestamp) r.timestamp = String(r.timestamp).substring(0, 10);
+  });
   readings.sort(function (a, b) { return String(a.timestamp || '').localeCompare(String(b.timestamp || '')); });
 
   var history = sheetToObjects(VESSEL_HISTORY_SHEET_NAME).filter(function (h) {
     return String(h.batch_id) === String(batchId);
   });
-  history.forEach(function (h) { delete h._row; });
+  history.forEach(function (h) {
+    delete h._row;
+    if (h.transferred_at) h.transferred_at = String(h.transferred_at).substring(0, 10);
+  });
   history.sort(function (a, b) { return String(b.transferred_at || '').localeCompare(String(a.transferred_at || '')); });
 
   return { ok: true, data: { batch: batch, tasks: tasks, plato_readings: readings, vessel_history: history } };
@@ -1115,7 +1175,7 @@ function getTasksCalendar(startDate, endDate) {
     var batch = batchMap[String(t.batch_id)];
     if (!batch) return; // skip tasks for inactive batches
 
-    var dueDate = String(t.due_date || '');
+    var dueDate = toDateOnly(t.due_date);
     // Include tasks within date range, plus packaging tasks (empty due_date)
     if (dueDate && (dueDate < startDate || dueDate > endDate)) return;
     if (!dueDate && String(t.is_packaging).toUpperCase() !== 'TRUE') return;
@@ -1130,7 +1190,8 @@ function getTasksCalendar(startDate, endDate) {
       title: t.title || '',
       due_date: dueDate,
       completed: String(t.completed).toUpperCase() === 'TRUE',
-      is_packaging: String(t.is_packaging).toUpperCase() === 'TRUE'
+      is_packaging: String(t.is_packaging).toUpperCase() === 'TRUE',
+      is_transfer: String(t.is_transfer).toUpperCase() === 'TRUE'
     });
   });
 
@@ -1167,8 +1228,9 @@ function getTasksUpcoming(limit) {
       bin_id: batch.bin_id || '',
       title: t.title || '',
       description: t.description || '',
-      due_date: String(t.due_date || ''),
-      is_packaging: String(t.is_packaging).toUpperCase() === 'TRUE'
+      due_date: toDateOnly(t.due_date),
+      is_packaging: String(t.is_packaging).toUpperCase() === 'TRUE',
+      is_transfer: String(t.is_transfer).toUpperCase() === 'TRUE'
     });
   });
 
@@ -1319,6 +1381,14 @@ function createBatch(payload, userEmail) {
     return { ok: false, error: 'sheet_not_found', message: 'Required sheets not found. Create Batches, BatchTasks, and VesselHistory sheets.' };
   }
 
+  // Check for location conflict
+  if (payload.vessel_id) {
+    var conflict = checkLocationConflict(payload.vessel_id, payload.shelf_id, payload.bin_id, '');
+    if (conflict) {
+      return { ok: false, error: 'location_conflict', message: 'Location already in use by batch ' + conflict };
+    }
+  }
+
   var batchId = generateNextId(BATCHES_SHEET_NAME, 'SV-B-', 6);
   var accessToken = Utilities.getUuid().replace(/-/g, '');
   var now = new Date().toISOString();
@@ -1440,6 +1510,17 @@ function updateBatch(payload, userEmail) {
   });
 
   if (locationChanged) {
+    // Check for location conflict
+    var newVessel = updates.vessel_id !== undefined ? updates.vessel_id : current.vessel_id || '';
+    var newShelf = updates.shelf_id !== undefined ? updates.shelf_id : current.shelf_id || '';
+    var newBin = updates.bin_id !== undefined ? updates.bin_id : current.bin_id || '';
+    if (newVessel) {
+      var conflict = checkLocationConflict(newVessel, newShelf, newBin, payload.batch_id);
+      if (conflict) {
+        return { ok: false, error: 'location_conflict', message: 'Location already in use by batch ' + conflict };
+      }
+    }
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var vesselSheet = ss.getSheetByName(VESSEL_HISTORY_SHEET_NAME);
     if (vesselSheet) {
@@ -1481,6 +1562,55 @@ function updateBatch(payload, userEmail) {
   if (luCol !== -1) sheet.getRange(row, luCol + 1).setValue(now);
 
   return { ok: true, message: 'Batch updated', newVersion: now };
+}
+
+// --- POST: Delete Batch (and all related data) ---
+
+function deleteBatch(payload, userEmail) {
+  if (!payload.batch_id) {
+    return { ok: false, error: 'missing_id', message: 'batch_id is required' };
+  }
+
+  var batchResult = findRowById(BATCHES_SHEET_NAME, payload.batch_id);
+  if (batchResult.row === -1) {
+    return { ok: false, error: 'not_found', message: 'Batch not found: ' + payload.batch_id };
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var batchId = payload.batch_id;
+
+  // Release vessel if in-use
+  var vesselId = String(batchResult.data.vessel_id || '');
+  if (vesselId) {
+    setVesselStatus(vesselId, 'available');
+  }
+
+  // Delete related rows from child sheets (bottom-up to avoid row shifting)
+  var childSheets = [BATCH_TASKS_SHEET_NAME, PLATO_READINGS_SHEET_NAME, VESSEL_HISTORY_SHEET_NAME];
+  childSheets.forEach(function (sheetName) {
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() <= 1) return;
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var bidCol = headers.indexOf('batch_id');
+    if (bidCol === -1) return;
+    // Collect rows to delete (from bottom up)
+    var rowsToDelete = [];
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][bidCol]) === String(batchId)) {
+        rowsToDelete.push(i + 1); // 1-based
+      }
+    }
+    // Delete from bottom up so row numbers stay valid
+    for (var j = rowsToDelete.length - 1; j >= 0; j--) {
+      sheet.deleteRow(rowsToDelete[j]);
+    }
+  });
+
+  // Delete the batch row itself
+  batchResult.sheet.deleteRow(batchResult.row);
+
+  return { ok: true, message: 'Batch ' + batchId + ' deleted' };
 }
 
 // --- POST: Update Batch Schedule (mid-fermentation edits) ---
