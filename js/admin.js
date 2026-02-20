@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-20T13:35:51.674Z';
+  var BUILD_TIMESTAMP = '2026-02-20T15:11:56.906Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -5018,6 +5018,7 @@
     });
     html += '</select>';
     html += '<button type="button" class="btn-secondary admin-btn-sm" id="batch-view-url">Open Batch URL</button>';
+    html += '<button type="button" class="btn-secondary admin-btn-sm" id="batch-print-label">Print Label</button>';
     html += '<button type="button" class="btn-secondary admin-btn-sm" id="batch-print-qr">Print QR</button>';
     html += '<button type="button" class="btn-secondary admin-btn-sm" id="batch-regen-token">Regenerate URL</button>';
     html += '<button type="button" class="btn-secondary admin-btn-sm admin-btn-danger" id="batch-delete-btn">Delete Batch</button>';
@@ -5183,6 +5184,12 @@
     if (viewUrlBtn) viewUrlBtn.addEventListener('click', function () {
       var url = window.location.origin + '/batch.html?id=' + encodeURIComponent(batchId) + '&token=' + encodeURIComponent(batchToken);
       window.open(url, '_blank');
+    });
+
+    // Print Label
+    var printLabelBtn = document.getElementById('batch-print-label');
+    if (printLabelBtn) printLabelBtn.addEventListener('click', function () {
+      printBatchLabel(b, tasks, batchToken);
     });
 
     // Print QR
@@ -6445,6 +6452,173 @@
     setTimeout(function () { pw.print(); }, 250);
   }
 
+  // --- Batch Label (4x6 thermal) ---
+
+  var LABEL_CSS =
+    '@page{size:4in 6in;margin:0;}' +
+    'body{margin:0;font-family:Arial,Helvetica,sans-serif;}' +
+    '.label{width:4in;height:6in;padding:0.2in 0.25in;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;}' +
+    '.top-row{display:flex;align-items:center;justify-content:space-between;padding-bottom:5px;border-bottom:1.5px solid #000;margin-bottom:6px;}' +
+    '.logo-stack{display:flex;align-items:center;gap:8px;}' +
+    '.logo-icon{height:36px;}' +
+    '.logo-wordmark{height:16px;}' +
+    '.qr-box{width:72px;height:72px;display:flex;align-items:center;justify-content:center;}' +
+    '.qr-box svg{width:72px;height:72px;}' +
+    '.qr-empty{width:72px;height:72px;border:1.5px solid #000;}' +
+    '.batch-id{font-size:15px;font-weight:bold;text-align:center;margin:2px 0 1px;letter-spacing:1px;}' +
+    '.product-name{font-size:11px;text-align:center;font-weight:600;margin-bottom:5px;}' +
+    '.info-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 8px;font-size:9.5px;line-height:1.5;margin-bottom:4px;}' +
+    '.info-grid .lbl{font-weight:bold;text-align:right;white-space:nowrap;}' +
+    '.write-line{border-bottom:1px solid #000;min-width:100px;display:inline-block;height:12px;}' +
+    '.section-title{font-size:8.5px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;margin:4px 0 2px;border-bottom:0.5px solid #ccc;padding-bottom:1px;}' +
+    '.schedule-wrap{min-height:108px;margin-bottom:4px;}' +
+    '.schedule-table{width:100%;border-collapse:collapse;font-size:8.5px;line-height:1.4;}' +
+    '.schedule-table td{padding:1px 4px 1px 0;vertical-align:top;}' +
+    '.schedule-table td:first-child{white-space:nowrap;font-weight:600;width:52px;}' +
+    '.schedule-table td:last-child{color:#555;font-size:8px;text-align:right;white-space:nowrap;}' +
+    '.notes-box{border:1px solid #999;border-radius:2px;flex:1;min-height:40px;margin:0 0 6px;position:relative;}' +
+    '.notes-box-label{position:absolute;top:-1px;left:4px;font-size:7px;font-weight:bold;color:#888;text-transform:uppercase;background:#fff;padding:0 2px;}' +
+    '.agreement{flex-shrink:0;border-top:1px solid #999;padding-top:3px;}' +
+    '.agreement-title{font-size:7px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;}' +
+    '.agreement-text{font-size:6.5px;line-height:1.35;text-align:justify;color:#333;margin-bottom:4px;}' +
+    '.sig-area{display:flex;gap:6px;align-items:flex-end;}' +
+    '.sig-block{flex:1;}.sig-block .sig-line{border-bottom:1px solid #000;height:14px;}' +
+    '.sig-block .sig-label{font-size:6px;text-align:center;margin-top:1px;color:#555;}' +
+    '.sig-block.sm{flex:0.4;}' +
+    '.email-row{margin-bottom:4px;}.email-row .sig-line{border-bottom:1px solid #000;height:12px;}' +
+    '.email-row .sig-label{font-size:6px;margin-top:1px;color:#555;}';
+
+  var AGREEMENT_TEXT = 'This document constitutes a request for assistance and guidance, as required, in preparing my wine must for fermentation. I acknowledge that by default, Steins &amp; Vines will add a natural shell fish derivative, Chitosan, for the purpose of clearing. I consent to my name, telephone number, address and email (if supplied) being kept in a database with the understanding that this information will not be sold or exchanged. I acknowledge that the wine made for me by Steins &amp; Vines is for my personal use only. I acknowledge that Steins &amp; Vines has transferred ownership of my wine and all ingredients to me. Adding my email address below authorizes Steins &amp; Vines to send me emails about promotions and special events and to contact me as required.';
+
+  function buildBatchLabelHTML(opts) {
+    var b = opts.batch || {};
+    var tasks = opts.tasks || [];
+    var qrSvg = opts.qrSvg || '';
+    var isBlank = opts.blank || false;
+    var origin = window.location.origin;
+
+    var iconUrl = origin + '/images/label-icon.png';
+    var wordmarkUrl = origin + '/images/label-wordmark.png';
+
+    var h = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
+    h += '<title>' + (isBlank ? 'Blank Batch Form' : 'Batch ' + escapeHTML(b.batch_id || '')) + '</title>';
+    h += '<style>' + LABEL_CSS + '</style></head><body><div class="label">';
+
+    // Top row: logos + QR
+    h += '<div class="top-row"><div class="logo-stack">';
+    h += '<img class="logo-icon" src="' + iconUrl + '" alt="">';
+    h += '<img class="logo-wordmark" src="' + wordmarkUrl + '" alt="">';
+    h += '</div>';
+    if (qrSvg) {
+      h += '<div class="qr-box">' + qrSvg + '</div>';
+    } else {
+      h += '<div class="qr-empty"></div>';
+    }
+    h += '</div>';
+
+    // Batch ID + Product
+    h += '<div class="batch-id">' + (isBlank ? '<span class="write-line" style="min-width:160px;"></span>' : escapeHTML(b.batch_id || '')) + '</div>';
+    h += '<div class="product-name">' + (isBlank ? '<span class="write-line" style="min-width:200px;"></span>' : escapeHTML(b.product_name || b.product_sku || '')) + '</div>';
+
+    // Info grid
+    h += '<div class="info-grid">';
+    h += '<span class="lbl">Customer:</span><span class="val">' + (isBlank ? '<span class="write-line"></span>' : escapeHTML(b.customer_name || '')) + '</span>';
+    h += '<span class="lbl">Start Date:</span><span class="val">' + (isBlank ? '<span class="write-line"></span>' : escapeHTML(String(b.start_date || '').substring(0, 10))) + '</span>';
+    var loc = isBlank ? '<span class="write-line"></span>' : escapeHTML([b.vessel_id, b.shelf_id, b.bin_id].filter(Boolean).join(' / ') || '—');
+    h += '<span class="lbl">Primary Location:</span><span class="val">' + loc + '</span>';
+    h += '<span class="lbl">Secondary Vessel:</span><span class="val"><span class="write-line"></span></span>';
+    h += '</div>';
+
+    // Schedule
+    h += '<div class="section-title">Schedule</div>';
+    h += '<div class="schedule-wrap"><table class="schedule-table">';
+
+    if (!isBlank && tasks.length > 0) {
+      var startMs = b.start_date ? new Date(String(b.start_date).substring(0, 10)).getTime() : 0;
+      tasks.forEach(function (t) {
+        var dayLabel = '—';
+        var dateLabel = '';
+        if (t.due_date) {
+          var dueStr = String(t.due_date).substring(0, 10);
+          dateLabel = dueStr;
+          if (startMs) {
+            var dayNum = Math.round((new Date(dueStr).getTime() - startMs) / 86400000);
+            dayLabel = 'Day ' + (dayNum < 1 ? 1 : dayNum);
+          }
+        } else {
+          dayLabel = 'TBD';
+        }
+        // First task is Day 1
+        if (t.step_number === 1 || t.step_number === '1') dayLabel = 'Day 1';
+        h += '<tr><td>' + escapeHTML(dayLabel) + '</td>';
+        h += '<td>' + escapeHTML(t.title || 'Step ' + t.step_number) + '</td>';
+        h += '<td>' + escapeHTML(dateLabel) + '</td></tr>';
+      });
+    } else {
+      // Blank rows
+      for (var i = 0; i < 9; i++) {
+        h += '<tr><td style="border-bottom:0.5px solid #ccc;">____</td>';
+        h += '<td style="border-bottom:0.5px solid #ccc;">&nbsp;</td>';
+        h += '<td style="border-bottom:0.5px solid #ccc;">&nbsp;</td></tr>';
+      }
+    }
+    h += '</table></div>';
+
+    // Notes box
+    h += '<div class="notes-box"><span class="notes-box-label">Notes</span></div>';
+
+    // Agreement
+    h += '<div class="agreement">';
+    h += '<div class="agreement-title">Customer Agreement</div>';
+    h += '<div class="agreement-text">' + AGREEMENT_TEXT + '</div>';
+    h += '<div class="email-row"><div class="sig-line"></div><div class="sig-label">Email Address</div></div>';
+    h += '<div class="sig-area">';
+    h += '<div class="sig-block"><div class="sig-line"></div><div class="sig-label">Signature</div></div>';
+    h += '<div class="sig-block sm"><div class="sig-line"></div><div class="sig-label">Date</div></div>';
+    h += '</div></div>';
+
+    h += '</div></body></html>';
+    return h;
+  }
+
+  function printBatchLabel(batchData, tasks, accessToken) {
+    var qrSvg = '';
+    if (typeof qrcode !== 'undefined' && batchData.batch_id && accessToken) {
+      var qr = generateBatchQR(batchData.batch_id, accessToken);
+      qrSvg = qr.createSvgTag(4);
+    }
+    var html = buildBatchLabelHTML({ batch: batchData, tasks: tasks, qrSvg: qrSvg });
+    var pw = window.open('', '_blank');
+    pw.document.write(html);
+    pw.document.close();
+    // Wait for images to load before printing
+    var imgs = pw.document.querySelectorAll('img');
+    var loaded = 0;
+    var total = imgs.length;
+    function checkPrint() { if (++loaded >= total) setTimeout(function () { pw.print(); }, 100); }
+    if (total === 0) { setTimeout(function () { pw.print(); }, 250); return; }
+    imgs.forEach(function (img) {
+      if (img.complete) { checkPrint(); }
+      else { img.onload = checkPrint; img.onerror = checkPrint; }
+    });
+  }
+
+  function printBlankBatchLabel() {
+    var html = buildBatchLabelHTML({ blank: true });
+    var pw = window.open('', '_blank');
+    pw.document.write(html);
+    pw.document.close();
+    var imgs = pw.document.querySelectorAll('img');
+    var loaded = 0;
+    var total = imgs.length;
+    function checkPrint() { if (++loaded >= total) setTimeout(function () { pw.print(); }, 100); }
+    if (total === 0) { setTimeout(function () { pw.print(); }, 250); return; }
+    imgs.forEach(function (img) {
+      if (img.complete) { checkPrint(); }
+      else { img.onload = checkPrint; img.onerror = checkPrint; }
+    });
+  }
+
   // --- Dashboard Integration ---
 
   function renderBatchPipeline() {
@@ -6521,6 +6695,9 @@
 
     var createBtn = document.getElementById('create-batch-btn');
     if (createBtn) createBtn.addEventListener('click', openCreateBatchModal);
+
+    var blankLabelBtn = document.getElementById('print-blank-label-btn');
+    if (blankLabelBtn) blankLabelBtn.addEventListener('click', function () { printBlankBatchLabel(); });
 
     var createSchedBtn = document.getElementById('create-schedule-btn');
     if (createSchedBtn) createSchedBtn.addEventListener('click', openCreateScheduleModal);
