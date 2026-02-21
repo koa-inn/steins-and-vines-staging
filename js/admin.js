@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-21T02:31:23.322Z';
+  var BUILD_TIMESTAMP = '2026-02-21T02:59:50.965Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4792,8 +4792,31 @@
 
   // --- Data Loading ---
 
+  function loadBatchInit() {
+    var statusFilter = document.getElementById('batch-status-filter') ? document.getElementById('batch-status-filter').value : 'active';
+    adminApiGet('get_batch_init', { status: statusFilter })
+      .then(function (result) {
+        var data = result.data || {};
+        // Batches
+        var batchData = data.batches || {};
+        batchesData = batchData.batches || [];
+        renderBatchList();
+        // Schedules
+        fermSchedulesData = (data.schedules && data.schedules.schedules) || [];
+        renderScheduleTemplates();
+        // Dashboard summary
+        batchDashboardSummary = data.summary || null;
+        renderBatchPipeline();
+        addBatchAttentionItems(batchDashboardSummary);
+      })
+      .catch(function (err) {
+        showToast('Failed to load batch data: ' + err.message, 'error');
+      });
+  }
+
   function loadBatchesData(callback) {
-    adminApiGet('get_batches', { status: document.getElementById('batch-status-filter') ? document.getElementById('batch-status-filter').value : 'active' })
+    var statusFilter = document.getElementById('batch-status-filter') ? document.getElementById('batch-status-filter').value : 'active';
+    adminApiGet('get_batches', { status: statusFilter })
       .then(function (result) {
         batchesData = (result.data && result.data.batches) || [];
         renderBatchList();
@@ -7014,9 +7037,10 @@
     if (refreshBtn) refreshBtn.addEventListener('click', loadUpcomingTasks);
   }
 
-  // Lazy-load: only load batch data when Batches tab is first activated.
-  // Dashboard summary is loaded eagerly (small payload, needed for pipeline strip).
+  // Lazy-load: batch data loaded via combined endpoint on first visit.
+  // Dashboard summary also comes from combined endpoint (or standalone on page load).
   var _batchDataLoaded = false;
+  var _batchDataLoading = false;
   var _origFinishDataLoad = finishDataLoad;
   finishDataLoad = function () {
     _origFinishDataLoad();
@@ -7025,19 +7049,24 @@
     }
   };
 
+  function triggerBatchLoad() {
+    if (_batchDataLoaded || _batchDataLoading) return;
+    _batchDataLoading = true;
+    _batchDataLoaded = true;
+    loadBatchInit();
+  }
+
   // Hook into tab navigation to lazy-load batch data on first visit
   var _origInitTabNav = initTabNavigation;
   initTabNavigation = function () {
     _origInitTabNav();
     var tabBtns = document.querySelectorAll('.admin-tab-btn');
     tabBtns.forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        if (btn.getAttribute('data-tab') === 'batches' && !_batchDataLoaded) {
-          _batchDataLoaded = true;
-          loadBatchesData();
-          loadScheduleTemplates();
-        }
-      });
+      if (btn.getAttribute('data-tab') === 'batches') {
+        btn.addEventListener('click', triggerBatchLoad);
+        // Preload on hover — starts fetching before the click
+        btn.addEventListener('mouseenter', triggerBatchLoad);
+      }
     });
   };
 

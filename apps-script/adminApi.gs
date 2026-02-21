@@ -112,29 +112,41 @@ function doGet(e) {
 
       // Batch tracking endpoints
       case 'get_batches':
-        return _jsonResponse({ ok: true, data: _cachedGet('gbl', 30, function() {
+        return _jsonResponse({ ok: true, data: _cachedGet('gbl', 300, function() {
           return getBatches(limit, offset, status);
         })});
 
       case 'get_batch':
-        return _jsonResponse({ ok: true, data: _cachedGet('gb:' + (e.parameter.batch_id || ''), 30, function() {
+        return _jsonResponse({ ok: true, data: _cachedGet('gb:' + (e.parameter.batch_id || ''), 300, function() {
           return getBatchDetail(e.parameter.batch_id);
         })});
 
       case 'get_ferm_schedules':
-        return _jsonResponse({ ok: true, data: getFermSchedules() });
+        return _jsonResponse({ ok: true, data: _cachedGet('gfs', 300, function() {
+          return getFermSchedules();
+        })});
 
       case 'get_tasks_calendar':
         return _jsonResponse({ ok: true, data: getTasksCalendar(e.parameter.start_date, e.parameter.end_date) });
 
       case 'get_tasks_upcoming':
-        return _jsonResponse({ ok: true, data: _cachedGet('gtu', 30, function() {
+        return _jsonResponse({ ok: true, data: _cachedGet('gtu', 300, function() {
           return getTasksUpcoming(limit || 50);
         })});
 
       case 'get_batch_dashboard_summary':
-        return _jsonResponse({ ok: true, data: _cachedGet('gbds', 30, function() {
+        return _jsonResponse({ ok: true, data: _cachedGet('gbds', 300, function() {
           return getBatchDashboardSummary();
+        })});
+
+      // Combined endpoint: batches + schedules + summary in one request
+      case 'get_batch_init':
+        return _jsonResponse({ ok: true, data: _cachedGet('gbi', 300, function() {
+          return {
+            batches: getBatches(limit, offset, status),
+            schedules: getFermSchedules(),
+            summary: getBatchDashboardSummary()
+          };
         })});
 
       case 'get_vessels':
@@ -2485,7 +2497,7 @@ function _cachedGet(cacheKey, ttl, fetchFn) {
  */
 function _invalidateBatchCache(batchId) {
   var cache = CacheService.getScriptCache();
-  var keys = ['gbl', 'gtu', 'gbds'];
+  var keys = ['gbl', 'gtu', 'gbds', 'gbi', 'gfs'];
   if (batchId) {
     keys.push('gb:' + batchId);
     keys.push('gbp:' + batchId);
