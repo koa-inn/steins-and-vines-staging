@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-21T02:59:50.965Z';
+  var BUILD_TIMESTAMP = '2026-02-21T13:17:53.571Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -375,8 +375,40 @@
       callback: onTokenResponse
     });
 
+    document.getElementById('admin-signout').addEventListener('click', signOut);
+    document.getElementById('admin-signout-denied').addEventListener('click', signOut);
+
+    // Try restoring a saved session before showing the sign-in button
+    var saved = loadSession();
+    if (saved) {
+      accessToken = saved.token;
+      userEmail = saved.email;
+      adminApiGet('check_auth')
+        .then(function (result) {
+          if (result.authorized) {
+            showDashboard();
+          } else {
+            clearSession();
+            accessToken = null;
+            userEmail = null;
+            showSignInButton();
+          }
+        })
+        .catch(function () {
+          clearSession();
+          accessToken = null;
+          userEmail = null;
+          showSignInButton();
+        });
+      return;
+    }
+
+    showSignInButton();
+  }
+
+  function showSignInButton() {
     var signinBtn = document.getElementById('google-signin-btn');
-    if (signinBtn) {
+    if (signinBtn && !signinBtn.querySelector('button')) {
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'btn';
@@ -386,17 +418,15 @@
       });
       signinBtn.appendChild(btn);
     }
-
-    document.getElementById('admin-signout').addEventListener('click', signOut);
-    document.getElementById('admin-signout-denied').addEventListener('click', signOut);
   }
 
   function onTokenResponse(response) {
     if (response.error) {
-      localStorage.removeItem('sv-admin-email');
+      clearSession();
       return;
     }
     accessToken = response.access_token;
+    var expiresIn = response.expires_in || 3600;
 
     // Get user info
     fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -405,6 +435,7 @@
       .then(function (res) { return res.json(); })
       .then(function (info) {
         userEmail = info.email;
+        saveSession(accessToken, expiresIn, userEmail);
         checkAuthorization();
       })
       .catch(function () {
@@ -485,13 +516,41 @@
     document.getElementById('admin-dashboard').style.display = 'none';
   }
 
+  // ===== Persistent Session =====
+  var SESSION_KEY = 'sv-admin-session';
+
+  function saveSession(token, expiresIn, email) {
+    var data = {
+      token: token,
+      expires_at: Date.now() + (expiresIn * 1000),
+      email: email
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  }
+
+  function loadSession() {
+    try {
+      var raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      // Expired if within 5 minutes of expiry
+      if (data.expires_at < Date.now() + 5 * 60 * 1000) return null;
+      return data;
+    } catch (e) { return null; }
+  }
+
+  function clearSession() {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem('sv-admin-email');
+  }
+
   function signOut() {
     if (accessToken) {
       google.accounts.oauth2.revoke(accessToken);
     }
     accessToken = null;
     userEmail = null;
-    localStorage.removeItem('sv-admin-email');
+    clearSession();
     document.getElementById('admin-signin').style.display = '';
     document.getElementById('admin-denied').style.display = 'none';
     document.getElementById('admin-dashboard').style.display = 'none';
@@ -528,6 +587,24 @@
    * @param {string} action - The action name (e.g., 'get_reservations')
    * @param {object} params - Optional additional URL parameters
    */
+  function isUnauthorizedError(data) {
+    var msg = ((data.message || data.error || '') + '').toLowerCase();
+    return msg.indexOf('unauthorized') !== -1 || msg.indexOf('not authorized') !== -1;
+  }
+
+  function handleUnauthorized() {
+    clearSession();
+    accessToken = null;
+    userEmail = null;
+    document.getElementById('admin-signin').style.display = '';
+    document.getElementById('admin-dashboard').style.display = 'none';
+    document.getElementById('admin-denied').style.display = 'none';
+    var shellSignout = document.getElementById('admin-signout');
+    if (shellSignout) shellSignout.style.display = 'none';
+    document.getElementById('admin-user-email').textContent = '';
+    showSignInButton();
+  }
+
   function adminApiGet(action, params) {
     if (!SHEETS_CONFIG.ADMIN_API_URL) {
       return Promise.reject(new Error('Admin API not configured'));
@@ -544,6 +621,7 @@
       return res.json();
     }).then(function (data) {
       if (!data.ok) {
+        if (isUnauthorizedError(data)) handleUnauthorized();
         throw new Error(data.message || data.error || 'API error');
       }
       return data;
@@ -566,6 +644,7 @@
       return res.json();
     }).then(function (data) {
       if (!data.ok) {
+        if (isUnauthorizedError(data)) handleUnauthorized();
         throw new Error(data.message || data.error || 'API error');
       }
       return data;

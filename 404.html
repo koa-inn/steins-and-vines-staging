@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Steins & Vines">
   <link rel="apple-touch-icon" href="images/SV_Logo_PrimaryCircle_green.svg">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4a6f4b">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:">
   <meta name="robots" content="noindex">
   <title>Page Not Found | Steins &amp; Vines</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -91,5 +92,9 @@
 
   <script src="js/sheets-config.js"></script>
   <script src="js/main.js"></script>
+  <script>
+  if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js')})}
+  if(!navigator.onLine){var h=document.querySelector('.page-header h1 span');var h2=document.querySelector('.content h2');var p=document.querySelector('.content p');if(h)h.textContent="You're Offline";if(h2)h2.textContent="No internet connection";if(p)p.textContent="Please check your connection and try again.";}
+  </script>
 </body>
 </html>

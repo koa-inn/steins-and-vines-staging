@@ -6,7 +6,8 @@
     "minify:css": "cleancss -o css/styles.min.css css/styles.css && cleancss -o css/admin.min.css css/admin.css && cleancss -o css/batch.min.css css/batch.css",
     "minify:js": "terser js/main.js -o js/main.min.js -c -m && terser js/admin.js -o js/admin.min.js -c -m && terser js/batch.js -o js/batch.min.js -c -m",
     "stamp": "node -e \"const fs=require('fs');let f=fs.readFileSync('js/admin.js','utf8');f=f.replace(/BUILD_TIMESTAMP = '[^']+'/,'BUILD_TIMESTAMP = \\''+new Date().toISOString()+'\\'');fs.writeFileSync('js/admin.js',f);console.log('Timestamp updated');\"",
-    "build": "npm run stamp && npm run minify:css && npm run minify:js",
+    "stamp:sw": "node -e \"const fs=require('fs');let f=fs.readFileSync('sw.js','utf8');f=f.replace(/CACHE_VERSION = '[^']+'/,\\\"CACHE_VERSION = '\\\"+new Date().toISOString().replace(/[^0-9T]/g,'')+\\\"'\\\");fs.writeFileSync('sw.js',f);console.log('SW version stamped');\"",
+    "build": "npm run stamp && npm run stamp:sw && npm run minify:css && npm run minify:js",
     "optimize-images": "node scripts/optimize-images.js",
     "watch": "echo 'Run build after making changes'"
   },

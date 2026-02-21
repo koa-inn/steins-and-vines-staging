@@ -9,6 +9,7 @@ var cache = require('./lib/cache');
 var fs = require('fs');
 var path = require('path');
 var rateLimit = require('express-rate-limit');
+var helmet = require('helmet');
 var gp = require('globalpayments-api');
 
 var ServicesContainer = gp.ServicesContainer;
@@ -29,9 +30,15 @@ var PORT = process.env.PORT || 3001;
 // Middleware
 // ---------------------------------------------------------------------------
 
+app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
+var ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',').map(function(s) { return s.trim(); });
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: function(origin, cb) {
+    if (!origin || ALLOWED_ORIGINS.indexOf(origin) !== -1) return cb(null, true);
+    cb(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 
@@ -1676,53 +1683,62 @@ app.post('/api/taxes/apply', function (req, res) {
   var dryRun = !(req.body && req.body.apply === true);
 
   // Keyword sets for each tax category (matched case-insensitively)
+  // Tax rule/tax IDs are configurable via env vars (defaults = current Zoho org values)
+  var TAX_STANDARD_RULE   = process.env.ZOHO_TAX_STANDARD_RULE   || '109900000000033423';
+  var TAX_STANDARD_ID     = process.env.ZOHO_TAX_STANDARD_ID     || '109900000000029101';
+  var TAX_ZERO_RULE       = process.env.ZOHO_TAX_ZERO_RULE       || '109900000000033411';
+  var TAX_ZERO_ID         = process.env.ZOHO_TAX_ZERO_ID         || '109900000000014433';
+  var TAX_SERVICES_RULE   = process.env.ZOHO_TAX_SERVICES_RULE   || '109900000000033417';
+  var TAX_SERVICES_ID     = process.env.ZOHO_TAX_SERVICES_ID     || '109900000000014425';
+  var TAX_LIQUOR_RULE     = process.env.ZOHO_TAX_LIQUOR_RULE     || '109900000000033429';
+  var TAX_LIQUOR_ID       = process.env.ZOHO_TAX_LIQUOR_ID       || '109900000000033001';
+
   var CATEGORIES = {
-    // Tax rule IDs from Zoho Books UI (Settings → Taxes → Tax Rules)
     // tax_id = direct sales tax shown on item page
     // purchase_tax_id = direct purchase tax shown on item page
     // Capital equipment matched by name pattern (internal use, same tax as packaging/hardware)
     capital_equipment: {
       name_patterns: ['bucket', 'carboy', 'boil kettle', 'fermenter', 'pump', 'filter unit'],
-      rule_id: '109900000000033423', // GST + PST - Standard (12%)
-      tax_id: '109900000000029101',  // BC PST + GST [12%]
+      rule_id: TAX_STANDARD_RULE, // GST + PST - Standard (12%)
+      tax_id: TAX_STANDARD_ID,    // BC PST + GST [12%]
       rule_label: 'GST + PST - Standard (12%)'
     },
     ingredients: {
       keywords: ['juice', 'malt', 'yeast', 'hops', 'sugar', 'concentrate', 'grape',
                  'bentonite', 'oak', 'additive', 'nutrient', 'stabilizer', 'ingredient',
                  'kit', 'wine kit', 'beer kit', 'cider kit'],
-      rule_id: '109900000000033411', // Zero Rated - Ingredients (0%)
-      tax_id: '109900000000014433',  // Zero Rate [0%]
+      rule_id: TAX_ZERO_RULE,     // Zero Rated - Ingredients (0%)
+      tax_id: TAX_ZERO_ID,        // Zero Rate [0%]
       rule_label: 'Zero Rated - Ingredients (0%)'
     },
     services: {
       keywords: ['\\bservice\\b', '\\bracking\\b', '\\bfiltering\\b', '\\bfiltration\\b',
                  '\\bcarbonation\\b', '\\bguidance\\b', '\\bconsultation\\b',
                  '\\bfee\\b', '\\blabour\\b', '\\blabor\\b'],
-      rule_id: '109900000000033417', // GST Only - Services (5%)
-      tax_id: '109900000000014425',  // GST [5%]
+      rule_id: TAX_SERVICES_RULE, // GST Only - Services (5%)
+      tax_id: TAX_SERVICES_ID,    // GST [5%]
       rule_label: 'GST Only - Services (5%)'
     },
     packaging: {
       keywords: ['bottle', 'cork', 'label', 'capsule', 'shrink', '\\bcap\\b', 'closure',
                  'carton', '\\bcase\\b', '\\bbox\\b', 'packaging'],
-      rule_id: '109900000000033423', // GST + PST - Standard (12%)
-      tax_id: '109900000000029101',  // BC PST + GST [12%]
+      rule_id: TAX_STANDARD_RULE, // GST + PST - Standard (12%)
+      tax_id: TAX_STANDARD_ID,    // BC PST + GST [12%]
       rule_label: 'GST + PST - Standard (12%)'
     },
     hardware: {
       keywords: ['airlock', 'siphon', 'hydrometer', 'thermometer', 'tubing',
                  'spigot', 'bung', 'stopper', 'brush', 'sanitizer', 'cleaner',
                  'equipment', 'hardware', '\\btool\\b', 'accessory'],
-      rule_id: '109900000000033423', // GST + PST - Standard (12%)
-      tax_id: '109900000000029101',  // BC PST + GST [12%]
+      rule_id: TAX_STANDARD_RULE, // GST + PST - Standard (12%)
+      tax_id: TAX_STANDARD_ID,    // BC PST + GST [12%]
       rule_label: 'GST + PST - Standard (12%)'
     },
     liquor: {
       keywords: ['commercial wine', 'commercial beer', 'commercial liquor',
                  'finished wine', 'finished beer', 'ready to drink', 'rtd'],
-      rule_id: '109900000000033429', // GST + PST Liquor (15%)
-      tax_id: '109900000000033001',  // GST + BC PST Liquor [15%]
+      rule_id: TAX_LIQUOR_RULE,   // GST + PST Liquor (15%)
+      tax_id: TAX_LIQUOR_ID,      // GST + BC PST Liquor [15%]
       rule_label: 'GST + PST Liquor (15%)'
     }
   };

@@ -8,5 +8,21 @@
   "icons": [
     { "src": "images/SV_Logo_PrimaryCircle_green.svg", "sizes": "any", "type": "image/svg+xml" },
     { "src": "favicon.ico", "sizes": "48x48", "type": "image/x-icon" }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "Browse Products",
+      "short_name": "Products",
+      "url": "/products.html",
+      "icons": [{ "src": "images/Icon_green.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Contact Us",
+      "short_name": "Contact",
+      "url": "/contact.html",
+      "icons": [{ "src": "images/Icon_green.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ],
+  "categories": ["food", "shopping"],
+  "description": "Craft your own beer and wine at Steins & Vines in Squamish, BC."
 }

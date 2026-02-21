@@ -2011,6 +2011,7 @@ small, .text-small {
   background-color: var(--color-green);
   color: var(--color-cream);
   padding: 0.75rem 0;
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   z-index: 1000;
   box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
 }
@@ -3110,6 +3111,7 @@ small, .text-small {
     z-index: 999;
     background-color: var(--color-cream);
     padding: 0.75rem 1rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
     margin: 0;
     box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
     gap: 0.5rem;
@@ -4168,6 +4170,7 @@ small, .text-small {
   z-index: 300;
   background: var(--color-green);
   padding: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   justify-content: space-around;
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
 }
@@ -5121,6 +5124,7 @@ small, .text-small {
 
   .cart-drawer-footer {
     padding: 0.75rem 1rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
     border-top: 2px solid var(--color-brown);
     background: rgba(229,222,193,0.2);
     flex-shrink: 0;
