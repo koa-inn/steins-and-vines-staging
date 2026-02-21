@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-21T01:13:58.217Z';
+  var BUILD_TIMESTAMP = '2026-02-21T02:31:23.322Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -899,7 +899,7 @@
    */
   function renderDashboardFromLocalData() {
     var today = new Date();
-    var todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+    var todayStr = todayPacific(); // YYYY-MM-DD in Pacific time
 
     // Calculate week range (last 7 days)
     var weekAgo = new Date(today);
@@ -3934,7 +3934,7 @@
       ]);
     });
 
-    var today = new Date().toISOString().split('T')[0];
+    var today = todayPacific();
     downloadCSV(rows, 'sv-kits-export-' + today + '.csv');
   }
 
@@ -3945,7 +3945,7 @@
       rows.push(row);
     });
 
-    var today = new Date().toISOString().split('T')[0];
+    var today = todayPacific();
     downloadCSV(rows, 'sv-ingredients-export-' + today + '.csv');
   }
 
@@ -3975,7 +3975,7 @@
       ]);
     });
 
-    var today = new Date().toISOString().split('T')[0];
+    var today = todayPacific();
     downloadCSV(rows, 'sv-winescheduler-export-' + today + '.csv');
   }
 
@@ -4741,9 +4741,17 @@
     initKioskOrders();
   };
 
+  // Return a YYYY-MM-DD string for today (or today +/- N days) in Pacific time
+  function todayPacific(offsetDays) {
+    var d = offsetDays ? new Date(Date.now() + offsetDays * 86400000) : new Date();
+    return d.toLocaleDateString('en-CA', { timeZone: 'America/Vancouver' });
+  }
+
   // ===== BATCH TRACKING =====
 
   var batchesData = [];
+  var batchSortKey = 'start_date';
+  var batchSortDir = 'desc';
   var fermSchedulesData = [];
   var batchDashboardSummary = null;
   var calendarYear, calendarMonth;
@@ -4836,9 +4844,33 @@
     if (filtered.length === 0) {
       tbody.innerHTML = '';
       if (emptyMsg) emptyMsg.style.display = '';
+      updateBatchSortHeaders();
       return;
     }
     if (emptyMsg) emptyMsg.style.display = 'none';
+
+    // Sort
+    filtered = filtered.slice().sort(function (a, b) {
+      var va, vb;
+      if (batchSortKey === 'location') {
+        va = [a.shelf_id, a.bin_id, a.vessel_id].filter(Boolean).join(' ').toLowerCase();
+        vb = [b.shelf_id, b.bin_id, b.vessel_id].filter(Boolean).join(' ').toLowerCase();
+      } else if (batchSortKey === 'progress') {
+        va = (a.tasks_total > 0) ? (a.tasks_done / a.tasks_total) : 0;
+        vb = (b.tasks_total > 0) ? (b.tasks_done / b.tasks_total) : 0;
+      } else {
+        va = String(a[batchSortKey] || '').toLowerCase();
+        vb = String(b[batchSortKey] || '').toLowerCase();
+      }
+      var cmp;
+      if (typeof va === 'number' && typeof vb === 'number') {
+        cmp = va - vb;
+      } else {
+        cmp = va < vb ? -1 : va > vb ? 1 : 0;
+      }
+      return batchSortDir === 'desc' ? -cmp : cmp;
+    });
+    updateBatchSortHeaders();
 
     var html = '';
     filtered.forEach(function (b) {
@@ -4885,6 +4917,34 @@
           })
           .catch(function (err) { showToast('Failed: ' + err.message, 'error'); })
           .finally(function () { btn.disabled = false; btn.textContent = 'QR'; });
+      });
+    });
+  }
+
+  function updateBatchSortHeaders() {
+    var table = document.getElementById('batches-table');
+    if (!table) return;
+    table.querySelectorAll('th.sortable').forEach(function (th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.getAttribute('data-sort-key') === batchSortKey) {
+        th.classList.add(batchSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+    });
+  }
+
+  function initBatchSortHeaders() {
+    var table = document.getElementById('batches-table');
+    if (!table) return;
+    table.querySelectorAll('th.sortable').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var key = th.getAttribute('data-sort-key');
+        if (batchSortKey === key) {
+          batchSortDir = batchSortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          batchSortKey = key;
+          batchSortDir = 'asc';
+        }
+        renderBatchList();
       });
     });
   }
@@ -5256,7 +5316,7 @@
       var isPkg = String(t.is_packaging).toUpperCase() === 'TRUE';
       var isTransfer = String(t.is_transfer).toUpperCase() === 'TRUE';
       var dueLabel = t.due_date ? String(t.due_date).substring(0, 10) : (isPkg ? 'TBD' : '—');
-      var overdue = !done && t.due_date && String(t.due_date).substring(0, 10) < new Date().toISOString().substring(0, 10);
+      var overdue = !done && t.due_date && String(t.due_date).substring(0, 10) < todayPacific();
       var cls = 'batch-task-row';
       if (done) cls += ' batch-task-row--done';
       if (overdue) cls += ' batch-task-row--overdue';
@@ -5322,7 +5382,7 @@
           showToast(tasksArr.length + ' task' + (tasksArr.length !== 1 ? 's' : '') + ' updated', 'success');
           // Optimistic UI: checkboxes and row classes already reflect the user's intent.
           // Update "Done <date>" metadata on affected rows.
-          var todayStr = new Date().toISOString().substring(0, 10);
+          var todayStr = todayPacific();
           Object.keys(pendingTaskChanges).forEach(function (taskId) {
             var el = document.querySelector('.batch-task-check input[data-task-id="' + taskId + '"]');
             if (!el) return;
@@ -5437,7 +5497,7 @@
   function bindPlatoHandlers(batchId) {
     // Default date
     var platoDateInput = document.getElementById('plato-date');
-    if (platoDateInput) platoDateInput.value = new Date().toISOString().substring(0, 10);
+    if (platoDateInput) platoDateInput.value = todayPacific();
 
     // Add Row button
     var addRowBtn = document.getElementById('plato-add-row-btn');
@@ -5808,7 +5868,7 @@
     html += '<div id="batch-customer-info" class="batch-customer-info" style="display:none;"></div>';
 
     // Start date
-    html += '<div class="form-group"><label>Start Date</label><input type="date" id="batch-start-date" class="admin-input" value="' + new Date().toISOString().substring(0, 10) + '"></div>';
+    html += '<div class="form-group"><label>Start Date</label><input type="date" id="batch-start-date" class="admin-input" value="' + todayPacific() + '"></div>';
 
     // Schedule template
     html += '<div class="form-group"><label>Fermentation Schedule</label><select id="batch-schedule-select" class="admin-select"><option value="">Select a template...</option>';
@@ -6383,8 +6443,7 @@
     var grid = document.getElementById('batch-calendar-grid');
     if (!grid) return;
 
-    var today = new Date();
-    var todayStr = today.getFullYear() + '-' + (today.getMonth() < 9 ? '0' : '') + (today.getMonth() + 1) + '-' + (today.getDate() < 10 ? '0' : '') + today.getDate();
+    var todayStr = todayPacific();
 
     var html = '';
     var dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -6450,7 +6509,7 @@
       return;
     }
 
-    var todayStr = new Date().toISOString().substring(0, 10);
+    var todayStr = todayPacific();
     var html = '<h3>' + dateStr + ' — ' + tasks.length + ' task' + (tasks.length !== 1 ? 's' : '') + '</h3>';
     tasks.forEach(function (t) {
       var doneClass = t.completed ? ' batch-cal-detail--done' : '';
@@ -6533,9 +6592,9 @@
     }
     if (emptyMsg) emptyMsg.style.display = 'none';
 
-    var todayStr = new Date().toISOString().substring(0, 10);
-    var tomorrow = new Date(Date.now() + 86400000).toISOString().substring(0, 10);
-    var weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().substring(0, 10);
+    var todayStr = todayPacific();
+    var tomorrow = todayPacific(1);
+    var weekEnd = todayPacific(7);
 
     var groups = {
       overdue: { label: 'Overdue', tasks: [] },
@@ -6938,6 +6997,8 @@
 
     var createSchedBtn = document.getElementById('create-schedule-btn');
     if (createSchedBtn) createSchedBtn.addEventListener('click', openCreateScheduleModal);
+
+    initBatchSortHeaders();
 
     var batchFilter = document.getElementById('batch-status-filter');
     if (batchFilter) batchFilter.addEventListener('change', function () { loadBatchesData(); });

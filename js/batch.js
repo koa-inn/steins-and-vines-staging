@@ -6,6 +6,11 @@
   var batchData = null;
   var apiUrl = '';
 
+  // Return today's date as YYYY-MM-DD in Pacific time
+  function todayPacific() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Vancouver' });
+  }
+
   // Safely extract YYYY-MM-DD from any date value (ISO string, Date object, etc.)
   function toDateStr(val) {
     if (!val) return '';
@@ -99,7 +104,7 @@
     var container = document.getElementById('batch-tasks-list');
     if (!tasks.length) { container.innerHTML = '<p class="batch-empty">No tasks scheduled.</p>'; return; }
 
-    var todayStr = new Date().toISOString().substring(0, 10);
+    var todayStr = todayPacific();
     var html = '';
 
     tasks.forEach(function (t) {
@@ -315,7 +320,7 @@
   function bindPlatoSubmit() {
     // Default date input to today
     var dateInput = document.getElementById('plato-date');
-    if (dateInput) dateInput.value = new Date().toISOString().substring(0, 10);
+    if (dateInput) dateInput.value = todayPacific();
 
     var addRowBtn = document.getElementById('plato-add-row-btn');
     if (!addRowBtn) return;

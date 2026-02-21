@@ -695,6 +695,16 @@ function loadSocialLinks() {
 
 // ===== Homepage Promo Section =====
 
+// ===== Responsive Product Image Helper =====
+
+function setResponsiveImg(img, sku) {
+  img.src = 'images/products/' + sku + '.png';
+  img.width = 400;
+  img.height = 400;
+  img.srcset = 'images/products/' + sku + '-400w.webp 400w, images/products/' + sku + '-800w.webp 800w';
+  img.sizes = '(max-width: 768px) 45vw, 200px';
+}
+
 // ===== Label Card Shared Helpers =====
 
 function getTintClass(product) {
@@ -725,7 +735,7 @@ function buildLabelNotesToggle(product) {
     var imageCol = document.createElement('div');
     imageCol.className = 'notes-image';
     var img = document.createElement('img');
-    img.src = 'images/products/' + product.sku + '.png';
+    setResponsiveImg(img, product.sku);
     img.alt = product.name || 'Product image';
     img.loading = 'lazy';
     img.onerror = function() { this.parentElement.remove(); };
@@ -1573,7 +1583,7 @@ function loadFeaturedProducts() {
         var imageCol = document.createElement('div');
         imageCol.className = 'product-notes-image';
         var img = document.createElement('img');
-        img.src = 'images/products/' + product.sku + '.png';
+        setResponsiveImg(img, product.sku);
         img.alt = product.name || 'Product image';
         img.loading = 'lazy';
         img.onerror = function() { this.parentElement.remove(); };
@@ -2630,7 +2640,7 @@ function loadProducts() {
         var imageCol = document.createElement('div');
         imageCol.className = 'product-notes-image';
         var img = document.createElement('img');
-        img.src = 'images/products/' + product.sku + '.png';
+        setResponsiveImg(img, product.sku);
         img.alt = product.name || 'Product image';
         img.loading = 'lazy';
         img.onerror = function() { this.parentElement.remove(); };
@@ -2966,7 +2976,7 @@ function loadProducts() {
             var detailImg = document.createElement('div');
             detailImg.className = 'table-detail-image';
             var img = document.createElement('img');
-            img.src = 'images/products/' + product.sku + '.png';
+            setResponsiveImg(img, product.sku);
             img.alt = product.name || 'Product image';
             img.loading = 'lazy';
             img.onerror = function() { this.parentElement.remove(); };
@@ -3645,7 +3655,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
           var iImgWrap = document.createElement('div');
           iImgWrap.className = 'table-detail-image';
           var iImg = document.createElement('img');
-          iImg.src = 'images/products/' + item.sku + '.png';
+          setResponsiveImg(iImg, item.sku);
           iImg.alt = item.name || 'Product image';
           iImg.loading = 'lazy';
           iImg.onerror = function() { this.parentElement.remove(); };
@@ -4124,7 +4134,7 @@ function renderServices() {
           var svcImgWrap = document.createElement('div');
           svcImgWrap.className = 'table-detail-image';
           var svcImg = document.createElement('img');
-          svcImg.src = 'images/products/' + svc.sku + '.png';
+          setResponsiveImg(svcImg, svc.sku);
           svcImg.alt = svc.name || 'Product image';
           svcImg.loading = 'lazy';
           svcImg.onerror = function() { this.parentElement.remove(); };
@@ -4853,6 +4863,7 @@ function initReservationBar() {
 
   updateReservationBar();
   renderCartSidebar();
+  initCartDrawer();
 }
 
 function updateReservationBar() {
@@ -4893,6 +4904,7 @@ function updateReservationBar() {
     }
   }
   renderCartSidebar();
+  renderCartDrawer();
 }
 
 function renderCartSidebar() {
@@ -5091,6 +5103,244 @@ function renderCartSidebar() {
     note.textContent = 'You also have ' + otherItems2.length + ' item' + (otherItems2.length > 1 ? 's' : '') + ' in your ' + noun2 + ' cart \u2014 switch tabs to view.';
     container.appendChild(note);
   }
+}
+
+// ===== Mobile Cart Drawer =====
+
+function renderCartDrawer() {
+  var container = document.getElementById('cart-drawer-items');
+  var footer = document.getElementById('cart-drawer-footer');
+  var totalEl = document.getElementById('cart-drawer-total');
+  var titleEl = document.getElementById('cart-drawer-title');
+  var checkoutLink = document.getElementById('cart-drawer-checkout');
+  if (!container) return;
+
+  var isFerment = (_activeCartTab === 'kits');
+  var activeKey = getCartKeyForTab(_activeCartTab);
+  var items = getReservation(activeKey);
+  container.innerHTML = '';
+
+  if (titleEl) titleEl.textContent = isFerment ? 'Your Reservations' : 'Your Order';
+  if (checkoutLink) {
+    checkoutLink.setAttribute('href', 'reservation.html?cart=' + (isFerment ? 'ferment' : 'ingredient'));
+    checkoutLink.textContent = isFerment ? 'Reserve' : 'Checkout';
+  }
+
+  if (items.length === 0) {
+    var emptyMsg = document.createElement('p');
+    emptyMsg.className = 'cart-sidebar-empty';
+    emptyMsg.textContent = isFerment ? 'No reservations yet.' : 'Your order is empty.';
+    container.appendChild(emptyMsg);
+
+    var otherKey = isFerment ? INGREDIENT_CART_KEY : FERMENT_CART_KEY;
+    var otherItems = getReservation(otherKey);
+    if (otherItems.length > 0) {
+      var otherNote = document.createElement('p');
+      otherNote.className = 'cart-sidebar-note';
+      var otherNoun = isFerment ? 'order' : 'reservation';
+      otherNote.textContent = 'You have ' + otherItems.length + ' item' + (otherItems.length > 1 ? 's' : '') + ' in your ' + otherNoun + ' cart \u2014 switch tabs to view.';
+      container.appendChild(otherNote);
+    }
+    if (footer) footer.classList.add('hidden');
+    return;
+  }
+
+  if (footer) footer.classList.remove('hidden');
+
+  var subtotal = 0;
+  items.forEach(function (item) {
+    var price = parseFloat((item.price || '0').replace(/[^0-9.]/g, '')) || 0;
+    var disc = parseFloat(item.discount) || 0;
+    if (disc > 0) price = price * (1 - disc / 100);
+    var lineTotal = price * (item.qty || 1);
+    subtotal += lineTotal;
+
+    var row = document.createElement('div');
+    row.className = 'cart-sidebar-item';
+
+    var info = document.createElement('div');
+    info.className = 'cart-sidebar-item-info';
+
+    var nameEl = document.createElement('div');
+    nameEl.className = 'cart-sidebar-item-name';
+    nameEl.textContent = item.name;
+    info.appendChild(nameEl);
+
+    if (item.brand) {
+      var brandEl = document.createElement('div');
+      brandEl.className = 'cart-sidebar-item-brand';
+      brandEl.textContent = item.brand;
+      info.appendChild(brandEl);
+    }
+
+    var priceEl = document.createElement('div');
+    priceEl.className = 'cart-sidebar-item-price';
+    if (disc > 0) {
+      priceEl.innerHTML = '<span class="cart-price-original">' + formatCurrency(item.price) + '</span> ' + formatCurrency(price);
+    } else if (price > 0) {
+      priceEl.textContent = formatCurrency(price);
+    }
+    info.appendChild(priceEl);
+    row.appendChild(info);
+
+    var controls = document.createElement('div');
+    controls.className = 'cart-sidebar-item-controls';
+
+    var itemIsWeighted = isWeightUnit(item.unit);
+    if (itemIsWeighted) {
+      var weightDisplay = document.createElement('div');
+      weightDisplay.className = 'cart-sidebar-item-weight';
+      weightDisplay.textContent = (item.qty || 0) + ' ' + item.unit;
+      controls.appendChild(weightDisplay);
+    } else {
+      var itemMax = getEffectiveMax(item);
+      var qtyControls = document.createElement('div');
+      qtyControls.className = 'product-qty-controls';
+
+      var minusBtn = document.createElement('button');
+      minusBtn.type = 'button';
+      minusBtn.className = 'qty-btn';
+      minusBtn.textContent = '\u2212';
+      minusBtn.addEventListener('click', (function (itm) {
+        return function () {
+          var current = getReservation();
+          for (var i = 0; i < current.length; i++) {
+            if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
+              current[i].qty = (current[i].qty || 1) - 1;
+              if (current[i].qty <= 0) current.splice(i, 1);
+              break;
+            }
+          }
+          saveReservation(current);
+          updateReservationBar();
+          renderCartDrawer();
+        };
+      })(item));
+
+      var qtySpan = document.createElement('span');
+      qtySpan.className = 'qty-value';
+      qtySpan.textContent = item.qty || 1;
+
+      var plusBtn = document.createElement('button');
+      plusBtn.type = 'button';
+      plusBtn.textContent = '+';
+      if ((item.qty || 1) >= itemMax) {
+        plusBtn.className = 'qty-btn qty-btn--disabled';
+        plusBtn.disabled = true;
+      } else {
+        plusBtn.className = 'qty-btn';
+        plusBtn.addEventListener('click', (function (itm, max) {
+          return function () {
+            var current = getReservation();
+            for (var i = 0; i < current.length; i++) {
+              if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
+                var newQty = (current[i].qty || 1) + 1;
+                if (newQty > max) newQty = max;
+                current[i].qty = newQty;
+                break;
+              }
+            }
+            saveReservation(current);
+            updateReservationBar();
+            renderCartDrawer();
+          };
+        })(item, itemMax));
+      }
+
+      qtyControls.appendChild(minusBtn);
+      qtyControls.appendChild(qtySpan);
+      qtyControls.appendChild(plusBtn);
+      controls.appendChild(qtyControls);
+    }
+
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'cart-sidebar-remove';
+    removeBtn.textContent = '\u00D7';
+    removeBtn.title = 'Remove';
+    removeBtn.addEventListener('click', (function (itm) {
+      return function () {
+        var current = getReservation();
+        var filtered = current.filter(function (r) {
+          return (r.name + '|' + (r.brand || '')) !== (itm.name + '|' + (itm.brand || ''));
+        });
+        saveReservation(filtered);
+        updateReservationBar();
+        renderCartDrawer();
+      };
+    })(item));
+    controls.appendChild(removeBtn);
+
+    var lineTotalEl = document.createElement('div');
+    lineTotalEl.className = 'cart-sidebar-line-total';
+    lineTotalEl.textContent = '$' + lineTotal.toFixed(2);
+    controls.appendChild(lineTotalEl);
+
+    row.appendChild(controls);
+    container.appendChild(row);
+  });
+
+  if (totalEl) totalEl.textContent = '$' + subtotal.toFixed(2);
+
+  var otherKey2 = isFerment ? INGREDIENT_CART_KEY : FERMENT_CART_KEY;
+  var otherItems2 = getReservation(otherKey2);
+  if (otherItems2.length > 0) {
+    var note = document.createElement('p');
+    note.className = 'cart-sidebar-note';
+    var noun2 = isFerment ? 'order' : 'reservation';
+    note.textContent = 'You also have ' + otherItems2.length + ' item' + (otherItems2.length > 1 ? 's' : '') + ' in your ' + noun2 + ' cart \u2014 switch tabs to view.';
+    container.appendChild(note);
+  }
+}
+
+function openCartDrawer() {
+  var drawer = document.getElementById('cart-drawer');
+  var backdrop = document.getElementById('cart-drawer-backdrop');
+  if (!drawer) return;
+  renderCartDrawer();
+  drawer.classList.add('open');
+  if (backdrop) backdrop.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeCartDrawer() {
+  var drawer = document.getElementById('cart-drawer');
+  var backdrop = document.getElementById('cart-drawer-backdrop');
+  if (!drawer) return;
+  drawer.classList.remove('open');
+  if (backdrop) backdrop.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function initCartDrawer() {
+  var backdrop = document.getElementById('cart-drawer-backdrop');
+  var closeBtn = document.getElementById('cart-drawer-close');
+  var clearBtn = document.getElementById('cart-drawer-clear');
+  var checkoutLink = document.getElementById('cart-drawer-checkout');
+
+  if (backdrop) backdrop.addEventListener('click', closeCartDrawer);
+  if (closeBtn) closeBtn.addEventListener('click', closeCartDrawer);
+  if (checkoutLink) checkoutLink.addEventListener('click', closeCartDrawer);
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function () {
+      saveReservation([]);
+      updateReservationBar();
+      renderCartDrawer();
+      refreshAllReserveControls();
+    });
+  }
+
+  // Tap on reservation bar (not its buttons) to open drawer
+  document.querySelectorAll('.reservation-bar').forEach(function (bar) {
+    bar.addEventListener('click', function (e) {
+      // Don't open if clicking the checkout link, clear button, or inline bar
+      if (e.target.closest('.reservation-bar-link') || e.target.closest('.reservation-bar-clear')) return;
+      if (bar.classList.contains('reservation-bar-inline')) return;
+      // Only open on mobile
+      if (window.innerWidth >= 1024) return;
+      openCartDrawer();
+    });
+  });
 }
 
 // ===== Reservation Page =====
@@ -5436,7 +5686,16 @@ function renderReservationItems() {
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
-  container.appendChild(table);
+
+  // Wrap table for mobile horizontal scroll
+  var tableWrap = document.createElement('div');
+  tableWrap.className = 'reservation-table-wrap';
+  tableWrap.appendChild(table);
+  tableWrap.addEventListener('scroll', function () {
+    var atEnd = tableWrap.scrollLeft + tableWrap.clientWidth >= tableWrap.scrollWidth - 2;
+    tableWrap.classList.toggle('scrolled-end', atEnd);
+  });
+  container.appendChild(tableWrap);
 
   // Subtotal (accounts for discount if stored)
   var subtotal = 0;
