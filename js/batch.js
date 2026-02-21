@@ -230,7 +230,7 @@
     history.forEach(function (h) {
       html += '<div class="batch-vh-entry">';
       html += '<strong>' + toDateStr(h.transferred_at) + '</strong> ';
-      html += 'V:' + esc(h.vessel_id || '?') + ' S:' + esc(h.shelf_id || '?') + ' B:' + esc(h.bin_id || '?');
+      html += 'S:' + esc(h.shelf_id || '?') + ' B:' + esc(h.bin_id || '?') + ' V:' + esc(h.vessel_id || '?');
       if (h.notes) html += ' — ' + esc(h.notes);
       html += '</div>';
     });

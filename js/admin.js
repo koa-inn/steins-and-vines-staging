@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-02-21T00:29:53.106Z';
+  var BUILD_TIMESTAMP = '2026-02-21T01:13:58.217Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4843,7 +4843,7 @@
     var html = '';
     filtered.forEach(function (b) {
       var statusInfo = BATCH_STATUSES[String(b.status).toLowerCase()] || { label: b.status, color: 'gray' };
-      var location = [b.vessel_id, b.shelf_id, b.bin_id].filter(Boolean).join(' / ') || '—';
+      var location = [b.shelf_id, b.bin_id, b.vessel_id].filter(Boolean).join(' - ') || '—';
       var total = b.tasks_total || 0;
       var done = b.tasks_done || 0;
       var pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -4922,7 +4922,7 @@
     html += '<div class="batch-detail-col"><strong>Product:</strong> ' + escapeHTML(b.product_name || b.product_sku) + '</div>';
     html += '<div class="batch-detail-col"><strong>Customer:</strong> ' + escapeHTML(b.customer_name || '—') + '</div>';
     html += '<div class="batch-detail-col"><strong>Start Date:</strong> ' + (b.start_date ? String(b.start_date).substring(0, 10) : '—') + '</div>';
-    html += '<div class="batch-detail-col"><strong>Vessel:</strong> ' + escapeHTML(b.vessel_id || '—') + ' &nbsp;<strong>Shelf:</strong> ' + escapeHTML(b.shelf_id || '—') + ' &nbsp;<strong>Bin:</strong> ' + escapeHTML(b.bin_id || '—') + '</div>';
+    html += '<div class="batch-detail-col"><strong>Shelf:</strong> ' + escapeHTML(b.shelf_id || '—') + ' &nbsp;<strong>Bin:</strong> ' + escapeHTML(b.bin_id || '—') + ' &nbsp;<strong>Vessel:</strong> ' + escapeHTML(b.vessel_id || '—') + '</div>';
     html += '</div>';
 
     // Location edit
@@ -4964,7 +4964,7 @@
       history.forEach(function (h) {
         html += '<div class="batch-vh-entry">';
         html += '<strong>' + String(h.transferred_at || '').substring(0, 10) + '</strong> ';
-        html += 'V:' + escapeHTML(h.vessel_id || '?') + ' S:' + escapeHTML(h.shelf_id || '?') + ' B:' + escapeHTML(h.bin_id || '?');
+        html += 'S:' + escapeHTML(h.shelf_id || '?') + ' B:' + escapeHTML(h.bin_id || '?') + ' V:' + escapeHTML(h.vessel_id || '?');
         if (h.notes) html += ' — ' + escapeHTML(h.notes);
         html += '</div>';
       });
@@ -6566,7 +6566,7 @@
         html += '<label><input type="checkbox" data-task-id="' + t.task_id + '" data-batch-id="' + t.batch_id + '"> ';
         html += '<strong>' + escapeHTML(t.title) + '</strong></label>';
         html += '<a href="#" class="upcoming-task-meta upcoming-batch-link" data-batch-id="' + escapeHTML(t.batch_id) + '">' + escapeHTML(t.batch_id) + ' — ' + escapeHTML(t.product_name || '') + '</a>';
-        html += '<span class="upcoming-task-loc">' + [t.vessel_id, t.shelf_id, t.bin_id].filter(Boolean).join('/') + '</span>';
+        html += '<span class="upcoming-task-loc">' + [t.shelf_id, t.bin_id, t.vessel_id].filter(Boolean).join(' - ') + '</span>';
         if (t.due_date) html += '<span class="upcoming-task-date">' + String(t.due_date).substring(0, 10) + '</span>';
         html += '</div>';
       });
@@ -6678,7 +6678,7 @@
       '<div class="info"><strong>' + escapeHTML(batchData.product_name || '') + '</strong></div>' +
       '<div class="info">' + escapeHTML(batchData.customer_name || '') + '</div>' +
       '<div class="info">Started: ' + escapeHTML(batchData.start_date || '') + '</div>' +
-      '<div class="info">Vessel: ' + escapeHTML(batchData.vessel_id || '?') + ' | Shelf: ' + escapeHTML(batchData.shelf_id || '?') + ' | Bin: ' + escapeHTML(batchData.bin_id || '?') + '</div>' +
+      '<div class="info">Shelf: ' + escapeHTML(batchData.shelf_id || '?') + ' | Bin: ' + escapeHTML(batchData.bin_id || '?') + ' | Vessel: ' + escapeHTML(batchData.vessel_id || '?') + '</div>' +
       '</div></body></html>'
     );
     pw.document.close();
@@ -6759,7 +6759,7 @@
     h += '<span class="lbl">Email:</span><span class="val">' + (isBlank ? '<span class="write-line"></span>' : escapeHTML(b.customer_email || '')) + '</span>';
     h += '<span class="lbl">Phone:</span><span class="val">' + (isBlank ? '<span class="write-line"></span>' : escapeHTML(b.customer_phone || '')) + '</span>';
     h += '<span class="lbl">Start Date:</span><span class="val">' + (isBlank ? '<span class="write-line"></span>' : escapeHTML(String(b.start_date || '').substring(0, 10))) + '</span>';
-    var loc = isBlank ? '<span class="write-line"></span>' : escapeHTML([b.vessel_id, b.shelf_id, b.bin_id].filter(Boolean).join(' / ') || '—');
+    var loc = isBlank ? '<span class="write-line"></span>' : escapeHTML([b.shelf_id, b.bin_id, b.vessel_id].filter(Boolean).join(' - ') || '—');
     h += '<span class="lbl">Primary Location:</span><span class="val">' + loc + '</span>';
     h += '<span class="lbl">Secondary Vessel:</span><span class="val"><span class="write-line"></span></span>';
     h += '</div>';
