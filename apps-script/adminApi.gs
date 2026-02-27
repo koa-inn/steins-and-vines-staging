@@ -1985,27 +1985,35 @@ function updateBatchTask(payload, completedBy) {
         handlePackagingCompletion(current.batch_id, now);
       }
 
-      // If transfer task with location data, update batch location
-      if (String(current.is_transfer).toUpperCase() === 'TRUE' && payload.transfer_location) {
-        var loc = payload.transfer_location;
-        updateBatch({
-          batch_id: current.batch_id,
-          updates: {
-            vessel_id: loc.vessel_id || '',
-            shelf_id: loc.shelf_id || '',
-            bin_id: loc.bin_id || ''
-          }
-        }, completedBy || '');
-      }
-
-      // Auto-advance primary → secondary on transfer completion
+      // Transfer task: update location and always release old vessel
       if (String(current.is_transfer).toUpperCase() === 'TRUE') {
         var batchCheck = findRowById(BATCHES_SHEET_NAME, current.batch_id);
-        if (batchCheck.row !== -1 && String(batchCheck.data.status).toLowerCase() === 'primary') {
-          var sCol = batchCheck.headers.indexOf('status');
-          var luCol2 = batchCheck.headers.indexOf('last_updated');
-          if (sCol !== -1) batchCheck.sheet.getRange(batchCheck.row, sCol + 1).setValue('secondary');
-          if (luCol2 !== -1) batchCheck.sheet.getRange(batchCheck.row, luCol2 + 1).setValue(now);
+        if (batchCheck.row !== -1) {
+          var oldVesselId = String(batchCheck.data.vessel_id || '');
+
+          if (payload.transfer_location) {
+            // New location provided — updateBatch handles vessel status (old→Empty, new→In-Use)
+            var loc = payload.transfer_location;
+            updateBatch({
+              batch_id: current.batch_id,
+              updates: {
+                vessel_id: loc.vessel_id || '',
+                shelf_id: loc.shelf_id || '',
+                bin_id: loc.bin_id || ''
+              }
+            }, completedBy || '');
+          } else if (oldVesselId) {
+            // No new location (skip or public page) — still free the old vessel
+            setVesselStatus(oldVesselId, 'Empty');
+          }
+
+          // Auto-advance primary → secondary
+          if (String(batchCheck.data.status).toLowerCase() === 'primary') {
+            var sCol = batchCheck.headers.indexOf('status');
+            var luCol2 = batchCheck.headers.indexOf('last_updated');
+            if (sCol !== -1) batchCheck.sheet.getRange(batchCheck.row, sCol + 1).setValue('secondary');
+            if (luCol2 !== -1) batchCheck.sheet.getRange(batchCheck.row, luCol2 + 1).setValue(now);
+          }
         }
       }
     } else {
