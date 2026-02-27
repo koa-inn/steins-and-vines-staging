@@ -2,33 +2,247 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="robots" content="noindex">
-  <title>Steins &amp; Vines | Coming Soon</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Steins & Vines">
+  <link rel="apple-touch-icon" href="images/SV_Logo_PrimaryCircle_green.svg">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4a6f4b">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://js.globalpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://docs.google.com https://*.googleusercontent.com https://script.google.com https://sheets.googleapis.com https://www.googleapis.com https://svmiddleware-production.up.railway.app https://js.globalpay.com; frame-src 'self' https://js.globalpay.com">
+  <meta name="description" content="Steins and Vines - Craft your own beer and wine with expert guidance at our ferment-on-premises facility in BC.">
+  <title>Steins &amp; Vines | U-Brew &amp; U-Vin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="preconnect" href="https://docs.google.com" crossorigin>
+  <!-- Preload hero image when available: <link rel="preload" as="image" href="images/hero-desktop.webp" imagesrcset="images/hero-mobile.webp 600w, images/hero-desktop.webp 1920w" imagesizes="100vw"> -->
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Oswald:wght@400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="images/Icon_wine.svg" type="image/svg+xml">
+  <!-- Critical CSS for above-the-fold content (header + hero) -->
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: #f7f4ef;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      color: #333;
-      text-align: center;
-      padding: 2rem;
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--color-cream:#e5dec1;--color-green:#4a6f4b;--color-burgundy:#370e13;--color-text:#2c2c2c;--font-display:'Playfair Display',Georgia,serif;--font-body:'Lato','Helvetica Neue',Arial,sans-serif;--max-width:1100px}
+    html{font-size:16px}
+    body{font-family:var(--font-body);color:var(--color-text);background-color:var(--color-cream);line-height:1.6;min-height:100vh;display:flex;flex-direction:column}
+    img{max-width:100%;height:auto;display:block}
+    a{color:var(--color-burgundy);text-decoration:none}
+    .container{width:90%;max-width:var(--max-width);margin:0 auto}
+    h1{font-family:var(--font-display);font-size:clamp(1.625rem,4vw + 1rem,3rem);font-weight:700;line-height:1.2}
+    .site-header{background-color:var(--color-cream);padding:1rem 0;border-bottom:2px solid var(--color-green);position:sticky;top:0;z-index:200}
+    .site-header .container{display:flex;justify-content:space-between;align-items:center}
+    .logo{display:block;line-height:0}
+    .logo img{height:70px;width:auto}
+    .nav-toggle{display:none;background:none;border:none;color:var(--color-green);font-size:1.5rem;cursor:pointer}
+    .nav-list{list-style:none;display:flex;gap:1.5rem}
+    .nav-list a{font-family:var(--font-body);font-weight:700;font-size:14px;color:var(--color-green);padding-bottom:4px;border-bottom:2px solid transparent}
+    .nav-list a.active{color:var(--color-burgundy);border-bottom-color:var(--color-burgundy)}
+    .hero{position:relative;background-color:var(--color-green);color:var(--color-cream);text-align:center;padding:6rem 0;overflow:hidden}
+    .hero-bg{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:center;z-index:0}
+    .hero .container{position:relative;z-index:1}
+    .hero h1{color:var(--color-cream);margin-bottom:.75rem;display:flex;align-items:center;justify-content:center;gap:2rem}
+    .hero p{font-size:1.15rem;margin-bottom:1.5rem;margin-left:auto;margin-right:auto;opacity:.9}
+    .title-icon{height:48px;width:48px;opacity:.55}
+    .btn{display:inline-block;background-color:var(--color-burgundy);color:var(--color-cream);padding:12px 24px;border:2px solid var(--color-burgundy);border-radius:4px;font-family:var(--font-body);font-size:14px;font-weight:700;cursor:pointer}
+    @media(max-width:768px){
+      h1{font-size:clamp(1.625rem,4vw + 1rem,3rem)}
+      .nav-toggle{display:block}
+      .nav-list{display:none;flex-direction:column;position:fixed;top:80px;left:0;right:0;background-color:var(--color-cream);padding:1rem 0;text-align:center;border-bottom:1px solid #77462d;z-index:199}
+      .nav-list.open{display:flex}
+      .hero{padding:4rem 0}
+      .title-icon{height:40px;width:40px}
     }
-    img { width: 120px; height: 120px; margin-bottom: 1.5rem; }
-    h1 { font-size: 2rem; color: #4a6f4b; margin-bottom: 0.5rem; letter-spacing: 0.02em; }
-    p { font-size: 1rem; color: #666; margin-top: 0.5rem; line-height: 1.6; }
-    .contact { margin-top: 1.5rem; font-size: 0.95rem; color: #888; }
+    @media(max-width:480px){.title-icon{display:none}}
   </style>
+  <link rel="stylesheet" href="css/styles.min.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    "name": "Steins & Vines",
+    "description": "Craft your own beer and wine with expert guidance at our ferment-on-premises facility in Squamish, BC.",
+    "url": "https://steinsandvines.ca",
+    "telephone": "+1-604-567-4565",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "11-38918 Progress Way",
+      "addressLocality": "Squamish",
+      "addressRegion": "BC",
+      "postalCode": "V8B 0K7",
+      "addressCountry": "CA"
+    },
+    "geo": {
+      "@type": "GeoCoordinates",
+      "latitude": 49.7016,
+      "longitude": -123.1558
+    },
+    "openingHoursSpecification": [
+      { "@type": "OpeningHoursSpecification", "dayOfWeek": "Tuesday", "opens": "10:00", "closes": "16:00" },
+      { "@type": "OpeningHoursSpecification", "dayOfWeek": "Wednesday", "opens": "10:00", "closes": "16:00" },
+      { "@type": "OpeningHoursSpecification", "dayOfWeek": "Thursday", "opens": "12:00", "closes": "19:00" },
+      { "@type": "OpeningHoursSpecification", "dayOfWeek": "Friday", "opens": "10:00", "closes": "16:00" },
+      { "@type": "OpeningHoursSpecification", "dayOfWeek": "Saturday", "opens": "10:00", "closes": "16:00" }
+    ],
+    "image": "https://steinsandvines.ca/images/SV_Logo_PrimaryCircle_green.svg",
+    "sameAs": [
+      "https://instagram.com/steinsandvines",
+      "https://facebook.com/steinsandvines"
+    ]
+  }
+  </script>
 </head>
-<body>
-  <img src="images/SV_Logo_PrimaryCircle_green.svg" alt="Steins &amp; Vines logo">
-  <h1>Coming Soon</h1>
-  <p>Craft your own beer and wine with expert guidance<br>at our ferment-on-premises facility in BC.</p>
-  <p class="contact">(604) 567-4565 &nbsp;&middot;&nbsp; hello@steinsandvines.ca</p>
+<body data-page="home">
+  <a href="#main" class="skip-to-content">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container">
+      <a href="index.html" class="logo"><img src="images/SV_Logo_Wordmark_green.svg" alt="Steins &amp; Vines Home"></a>
+      <nav class="main-nav">
+        <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+        <ul class="nav-list">
+          <li class="nav-phone"><a href="tel:+16045674565">(604) 567-4565</a></li>
+          <li><a href="index.html" class="active">Home</a></li>
+          <li><a href="products.html">Products</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <img
+        class="hero-bg"
+        src="images/hero-desktop.webp"
+        srcset="images/hero-mobile.webp 600w, images/hero-desktop.webp 1920w"
+        sizes="100vw"
+        alt=""
+        aria-hidden="true"
+        loading="eager"
+        onerror="this.style.display='none'"
+      >
+      <div class="container">
+        <h1>
+          <img src="images/Icon_offwhite.svg" alt="" aria-hidden="true" class="title-icon">
+          <span data-content="hero-title">Craft Your Own Beer &amp; Wine</span>
+          <img src="images/Icon_offwhite.svg" alt="" aria-hidden="true" class="title-icon">
+        </h1>
+        <p data-content="hero-subtitle">Your brew. Your vintage. Your story.</p>
+        <div class="hero-ctas">
+          <a href="products.html" class="btn" data-content="hero-cta">Reserve Your Kit</a>
+          <a href="products.html?tab=ingredients" class="btn btn--hero-outline">Shop Ingredients &amp; Supplies</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="promo-section" id="promo-section">
+      <div class="container">
+        <div class="promo-grid">
+          <div class="promo-news">
+            <h2>News &amp; Announcements</h2>
+            <div class="promo-news-content" id="promo-news-content"></div>
+          </div>
+          <div class="promo-featured">
+            <h2>Featured Items</h2>
+            <div class="promo-featured-carousel" id="promo-featured-carousel">
+              <div class="promo-featured-products" id="promo-featured-products"></div>
+              <div class="promo-featured-descriptions" id="promo-featured-descriptions"></div>
+              <div class="promo-carousel-nav" id="promo-carousel-nav" style="display:none;">
+                <button type="button" class="promo-carousel-btn promo-carousel-prev" aria-label="Previous product">&lsaquo;</button>
+                <div class="promo-carousel-dots" id="promo-carousel-dots"></div>
+                <button type="button" class="promo-carousel-btn promo-carousel-next" aria-label="Next product">&rsaquo;</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="intro">
+      <div class="container">
+        <h2 data-content="intro-title">Welcome to Steins &amp; Vines</h2>
+        <p data-content="intro-text">Squamish's ferment-on-premises destination for handcrafted wine. Choose from a wide selection of premium wine kits, and we'll guide you through every step&mdash;from grape to glass. You start the batch, we handle the heavy lifting, and you walk away with bottles you're proud to pour.</p>
+      </div>
+    </section>
+
+    <div class="section-icon">
+      <img src="images/Icon_wine.svg" alt="" aria-hidden="true" loading="lazy">
+    </div>
+
+    <section class="beer-banner beer-banner--green">
+      <div class="container">
+        <div class="beer-banner-content">
+          <span class="beer-banner-badge">Coming Soon</span>
+          <h2 data-content="beer-title">Beer Is Coming</h2>
+          <p data-content="beer-text">We're expanding into craft beer. Soon you'll be able to brew your own pilsners, IPAs, stouts, and more&mdash;right here in our shop. Same hands-on experience, same expert guidance, a whole new world of flavour.</p>
+          <form class="beer-waitlist-form" id="beer-waitlist-form">
+            <input type="email" id="beer-waitlist-email" name="email" placeholder="Enter your email" required>
+            <button type="submit" class="btn beer-waitlist-btn">Join the Waitlist</button>
+          </form>
+          <p class="beer-waitlist-confirm hidden" id="beer-waitlist-confirm">Thanks! We'll notify you when beer brewing is available.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-icon">
+      <img src="images/Icon_wine.svg" alt="" aria-hidden="true" loading="lazy">
+    </div>
+
+    <section class="intro">
+      <div class="container">
+        <h2 data-content="uferment-title">What is U-Ferment?</h2>
+        <p data-content="uferment-text">U-Ferment (also called U-Vin or U-Brew) lets you make wine on our premises using professional equipment and our expertise. It's legal, it's affordable, and the results rival what you'd find on any store shelf. You pick a kit, start fermentation with us, and return in a few weeks to bottle your finished wine&mdash;approximately <strong>29&ndash;30 bottles</strong> (23 litres) per batch, no experience needed. Because you make it yourself on our premises, your batch is <strong>not subject to liquor taxes</strong>.</p>
+      </div>
+    </section>
+
+    <div class="section-icon">
+      <img src="images/Icon_wine.svg" alt="" aria-hidden="true" loading="lazy">
+    </div>
+
+    <section class="intro">
+      <div class="container">
+        <h2 data-content="howitworks-title">How It Works</h2>
+        <p data-content="howitworks-text">It's simple. Browse our selection and reserve a kit online or in store. Book a time that works for you, then come in to start your batch&mdash;we'll walk you through the process in about 20 minutes. Your wine ferments and clears in our facility over 4&ndash;8 weeks. When it's ready, you come back to bottle, cork, and label your creation&mdash;about 45 minutes. That's it&mdash;great wine, made by you.</p>
+      </div>
+    </section>
+
+    <div class="section-icon">
+      <img src="images/Icon_wine.svg" alt="" aria-hidden="true" loading="lazy">
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-social">
+          <a href="https://instagram.com/steinsandvines" aria-label="Follow us on Instagram" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+          </a>
+          <a href="https://facebook.com/steinsandvines" aria-label="Follow us on Facebook" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+          </a>
+        </div>
+        <img src="images/SV_Logo_PrimaryCircle_offwhite.svg" alt="Steins &amp; Vines" class="footer-logo" loading="lazy">
+        <div class="footer-address">
+          <a href="https://maps.app.goo.gl/ZXnczQAtsWeiYTqW7" target="_blank" rel="noopener">
+            11-38918 Progress Way<br>
+            Squamish, BC V8B 0K7
+          </a>
+        </div>
+      </div>
+      <div class="footer-hours" id="footer-hours"><span class="footer-hours-day closed"><span class="footer-hours-abbr">Sun</span> Closed</span><span class="footer-hours-day closed"><span class="footer-hours-abbr">Mon</span> Closed</span><span class="footer-hours-day"><span class="footer-hours-abbr">Tue</span> 10AM–4PM</span><span class="footer-hours-day"><span class="footer-hours-abbr">Wed</span> 10AM–4PM</span><span class="footer-hours-day"><span class="footer-hours-abbr">Thu</span> 12PM–7PM</span><span class="footer-hours-day"><span class="footer-hours-abbr">Fri</span> 10AM–4PM</span><span class="footer-hours-day"><span class="footer-hours-abbr">Sat</span> 10AM–4PM</span></div>
+      <p class="land-acknowledgement-footer" data-content="land-acknowledgement">Steins &amp; Vines is located on the unceded traditional territory of the S&#x1E35;wx&#x331;w&uacute;7mesh (Squamish) Nation. We are grateful to live, work, and craft on these lands, and we honour the enduring relationship the Squamish people hold with this territory&mdash;its waters, forests, and mountains.</p>
+      <p data-content="footer-copy">&copy; 2026 Steins &amp; Vines. All rights reserved.</p>
+      <a href="admin.html" class="footer-admin-link" data-content="footer-admin-link">Staff Login</a>
+    </div>
+  </footer>
+
+  <!-- Hidden iframe for beer waitlist form submission -->
+  <iframe name="beer-waitlist-iframe" id="beer-waitlist-iframe" style="display:none;"></iframe>
+
+  <script src="js/sheets-config.js" defer></script>
+  <script src="js/main.min.js" defer></script>
+  <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js')})}</script>
 </body>
 </html>
