@@ -1,0 +1,5 @@
+[build]
+buildCommand = "cd zoho-middleware && npm install --production"
+
+[deploy]
+startCommand = "cd zoho-middleware && node server.js"
