@@ -727,12 +727,14 @@ body[data-page="admin"] .content {
   bottom: 0;
   z-index: 2000;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  overflow-y: auto;
+  padding: 5vh 0 2rem;
 }
 
 .admin-modal-overlay {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
@@ -747,10 +749,17 @@ body[data-page="admin"] .content {
   border-radius: var(--r-lg);
   width: 90%;
   max-width: 560px;
-  max-height: 90vh;
-  overflow-y: auto;
   box-shadow: 0 8px 32px rgba(44, 34, 24, 0.18);
   animation: adminScaleIn 0.15s var(--ease-out);
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+}
+
+.admin-modal-body {
+  padding: var(--sp-6);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 @keyframes adminFadeIn {
@@ -794,10 +803,6 @@ body[data-page="admin"] .content {
 .admin-modal-close:hover {
   background-color: var(--cellar-surface);
   color: var(--ink-primary);
-}
-
-.admin-modal-body {
-  padding: var(--sp-6);
 }
 
 .admin-modal-form .form-group {
@@ -1746,8 +1751,13 @@ body[data-page="admin"] .content {
     align-items: flex-start;
   }
 
+  .admin-modal {
+    padding: 3vh 0 2rem;
+  }
+
   .admin-modal-content {
     width: 95%;
+    max-height: 92vh;
   }
 
   .admin-toast-container {
