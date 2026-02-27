@@ -11,6 +11,7 @@ var log = require('./lib/logger');
 var gpLib = require('./lib/gp');
 
 var app = express();
+app.set('trust proxy', 1); // Railway sits behind a load balancer
 var PORT = process.env.PORT || 3001;
 
 // ---------------------------------------------------------------------------
