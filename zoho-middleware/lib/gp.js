@@ -5,10 +5,10 @@ var ServicesContainer = gp.ServicesContainer;
 var GpApiConfig = gp.GpApiConfig;
 var Channel = gp.Channel;
 var Environment = gp.Environment;
-var ConnectionConfig = gp.ConnectionConfig;
-var DeviceService = gp.DeviceService;
+var ConnectionConfig = require('globalpayments-api/lib/src/Terminals/ConnectionConfig').ConnectionConfig;
+var DeviceService = require('globalpayments-api/lib/src/Services/DeviceService').DeviceService;
 var DeviceType = gp.DeviceType;
-var ConnectionModes = gp.ConnectionModes;
+var ConnectionModes = require('globalpayments-api/lib/src/Terminals/Enums').ConnectionModes;
 
 // ---------------------------------------------------------------------------
 // Module-level state
