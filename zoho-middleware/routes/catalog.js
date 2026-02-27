@@ -438,80 +438,31 @@ router.get('/api/kiosk/products', function (req, res) {
 
       return fetchAllItems({ status: 'active' })
         .then(function (allItems) {
-          // Include all non-service items (kits + ingredients/supplies)
-          var items = allItems.filter(function (item) {
-            return item.product_type !== 'service';
+          // Use list endpoint data directly — tax_percentage, image_name, stock_on_hand
+          // are all included in the Zoho items list response, so no per-item detail
+          // calls are needed (which caused rate limiting with large catalogs).
+          var sellable = allItems.filter(function (item) {
+            return item.product_type !== 'service' && item.rate > 0;
+          }).map(function (item) {
+            return {
+              item_id:       item.item_id,
+              name:          item.name,
+              sku:           item.sku || '',
+              rate:          item.rate,
+              stock_on_hand: item.stock_on_hand != null ? item.stock_on_hand : 0,
+              category_name: item.category_name || '',
+              product_type:  item.product_type || '',
+              image_name:    item.image_name || '',
+              tax_id:        item.tax_id || '',
+              tax_name:      item.tax_name || '',
+              tax_percentage: item.tax_percentage != null ? item.tax_percentage : 0,
+              custom_fields: item.custom_fields || []
+            };
           });
 
-          log.info('[api/kiosk/products] Enriching ' + items.length + ' items for tax + stock info');
-
-          var BATCH_SIZE = 5;
-          var BATCH_PAUSE = 3500;
-          var MAX_RETRIES = 2;
-          var enriched = [];
-
-          function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-
-          function fetchDetail(item, retries) {
-            return inventoryGet('/items/' + item.item_id)
-              .then(function (data) {
-                var detail = data.item || {};
-                item.custom_fields = detail.custom_fields || [];
-                item.brand = detail.brand || '';
-                item.image_name = detail.image_name || '';
-                item.tax_id = detail.tax_id || '';
-                item.tax_name = detail.tax_name || '';
-                item.tax_percentage = (detail.tax_percentage !== undefined && detail.tax_percentage !== null)
-                  ? detail.tax_percentage : 0;
-                // stock_on_hand comes from list endpoint but confirm from detail
-                item.stock_on_hand = (detail.stock_on_hand !== undefined && detail.stock_on_hand !== null)
-                  ? detail.stock_on_hand : (item.stock_on_hand || 0);
-                return item;
-              })
-              .catch(function (err) {
-                if (err.response && err.response.status === 429 && retries < MAX_RETRIES) {
-                  var backoff = Math.pow(2, retries + 1) * 1000;
-                  log.warn('[api/kiosk/products] Rate limited on ' + item.name + ', retrying in ' + backoff + 'ms');
-                  return delay(backoff).then(function () { return fetchDetail(item, retries + 1); });
-                }
-                log.error('[api/kiosk/products] Detail fetch failed for ' + item.name + ': ' + err.message);
-                item.custom_fields = [];
-                item.tax_id = item.tax_id || '';
-                item.tax_name = item.tax_name || '';
-                item.tax_percentage = (item.tax_percentage !== undefined && item.tax_percentage !== null)
-                  ? item.tax_percentage : 0;
-                item.stock_on_hand = item.stock_on_hand || 0;
-                return item;
-              });
-          }
-
-          var batches = [];
-          for (var i = 0; i < items.length; i += BATCH_SIZE) {
-            batches.push(items.slice(i, i + BATCH_SIZE));
-          }
-
-          var chain = Promise.resolve();
-          batches.forEach(function (batch, idx) {
-            chain = chain.then(function () {
-              return Promise.all(batch.map(function (item) {
-                return fetchDetail(item, 0);
-              })).then(function (results) {
-                results.forEach(function (r) { enriched.push(r); });
-                if (idx < batches.length - 1) return delay(BATCH_PAUSE);
-              });
-            });
-          });
-
-          return chain.then(function () {
-            // Strip items with no rate (unbuyable)
-            var sellable = enriched.filter(function (item) {
-              return item.rate > 0;
-            });
-
-            cache.set(KIOSK_PRODUCTS_CACHE_KEY, sellable, KIOSK_PRODUCTS_CACHE_TTL);
-            log.info('[api/kiosk/products] Cached ' + sellable.length + ' sellable items');
-            res.json({ source: 'zoho', items: sellable });
-          });
+          cache.set(KIOSK_PRODUCTS_CACHE_KEY, sellable, KIOSK_PRODUCTS_CACHE_TTL);
+          log.info('[api/kiosk/products] Cached ' + sellable.length + ' sellable items');
+          res.json({ source: 'zoho', items: sellable });
         });
     })
     .catch(function (err) {
