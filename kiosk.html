@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="robots" content="noindex">
+  <title>In-Store POS | Steins &amp; Vines</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="favicon.ico">
+  <link rel="stylesheet" href="css/kiosk.min.css?v=mm6y9ip8">
+  <script src="js/sheets-config.js"></script>
+  <script src="js/vendor/qrcode.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script src="js/kiosk.min.js?v=mm6y9ip8"></script>
+</head>
+<body>
+
+  <!-- Toast overlay (always present) -->
+  <div id="kiosk-toast-container" class="admin-toast-container"></div>
+
+  <!-- Sign-in screen (shown when not authenticated) -->
+  <div id="kiosk-signin">
+    <div class="kiosk-signin-card">
+      <img src="images/SV_Logo_Wordmark_green.svg" alt="Steins &amp; Vines" class="kiosk-signin-logo">
+      <h1>Steins &amp; Vines</h1>
+      <p>Staff sign-in required</p>
+      <div id="kiosk-google-signin-btn"></div>
+      <p id="kiosk-denied-msg" class="kiosk-denied-msg" style="display:none;">Access denied. Your account is not authorised to use this POS.</p>
+    </div>
+  </div>
+
+  <!-- Kiosk app (hidden until auth passes) -->
+  <div id="kiosk-app" style="display:none;">
+
+    <!-- Shell bar: logo left, user + sign-out right -->
+    <div class="kiosk-shell-bar">
+      <div class="kiosk-shell-brand">
+        <img src="images/SV_Logo_Wordmark_green.svg" alt="Steins &amp; Vines">
+        <span>In-Store POS</span>
+      </div>
+      <div class="kiosk-shell-user">
+        <span id="kiosk-user-email"></span>
+        <button type="button" class="btn-secondary admin-btn-sm" id="kiosk-signout" style="display:none;">Sign Out</button>
+      </div>
+    </div>
+
+    <!-- Kiosk: Browse Products View -->
+    <div id="kiosk-view-browse" class="kiosk-view">
+      <div class="kiosk-browse-layout">
+
+        <!-- Left: Product browser -->
+        <div class="kiosk-product-pane">
+          <div class="kiosk-search-bar">
+            <input type="text" id="kiosk-search" class="kiosk-search-input" placeholder="Search products..." autocomplete="off" inputmode="search" />
+            <select id="kiosk-category-filter" class="kiosk-category-select">
+              <option value="">All Categories</option>
+            </select>
+            <button type="button" class="btn-secondary kiosk-refresh-btn" id="kiosk-products-refresh" title="Refresh products">&#8635;</button>
+          </div>
+          <div id="kiosk-product-grid" class="kiosk-product-grid">
+            <p class="kiosk-loading">Loading products...</p>
+          </div>
+        </div>
+
+        <!-- Right: Cart -->
+        <div class="kiosk-cart-pane">
+          <div class="kiosk-cart-header">
+            <h2 class="kiosk-cart-title">Cart</h2>
+            <button type="button" class="btn-secondary kiosk-cart-clear" id="kiosk-cart-clear">Clear</button>
+          </div>
+          <div id="kiosk-cart-items" class="kiosk-cart-items">
+            <p class="kiosk-cart-empty">No items in cart</p>
+          </div>
+          <div class="kiosk-cart-totals" id="kiosk-cart-totals" style="display:none;">
+            <div class="kiosk-total-row">
+              <span>Subtotal</span>
+              <span id="kiosk-subtotal">$0.00</span>
+            </div>
+            <div class="kiosk-total-row">
+              <span>Tax</span>
+              <span id="kiosk-tax">$0.00</span>
+            </div>
+            <div class="kiosk-total-row kiosk-total-grand">
+              <span>Total</span>
+              <span id="kiosk-total">$0.00</span>
+            </div>
+          </div>
+          <div class="kiosk-cart-actions">
+            <button type="button" class="btn kiosk-checkout-btn" id="kiosk-checkout-btn" disabled>
+              Charge &mdash; <span id="kiosk-checkout-total">$0.00</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kiosk: Customer Selection View -->
+    <div id="kiosk-view-customer" class="kiosk-view kiosk-view--customer-scroll" style="display:none;">
+      <div class="kiosk-customer-wrap">
+        <div class="kiosk-customer-header">
+          <button type="button" class="btn-secondary" id="kiosk-customer-back">&#8592; Back</button>
+          <h2>Customer</h2>
+        </div>
+        <div id="kiosk-customer-selected" class="kiosk-selected-customer" style="display:none;"></div>
+        <input type="text" id="kiosk-customer-search" class="admin-input" placeholder="Search by name or email&hellip;" autocomplete="off" inputmode="search">
+        <div id="kiosk-customer-results" class="kiosk-customer-results"></div>
+        <button type="button" class="btn-secondary" id="kiosk-new-customer-toggle">+ New Customer</button>
+        <div id="kiosk-new-customer-form" style="display:none;">
+          <div class="form-group">
+            <label>Name <span style="color:#c62828">*</span></label>
+            <input type="text" id="kiosk-new-name" class="admin-input" placeholder="Full name" autocomplete="name" inputmode="text">
+          </div>
+          <div class="form-group">
+            <label>Email <span style="color:#c62828">*</span></label>
+            <input type="email" id="kiosk-new-email" class="admin-input" placeholder="email@example.com" autocomplete="email" inputmode="email">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" id="kiosk-new-phone" class="admin-input" placeholder="Optional" autocomplete="tel" inputmode="tel">
+          </div>
+          <button type="button" class="btn" id="kiosk-new-customer-save">Add Customer</button>
+        </div>
+        <div class="kiosk-customer-footer">
+          <button type="button" class="btn" id="kiosk-customer-proceed" disabled>Proceed to Payment</button>
+          <button type="button" class="btn-secondary" id="kiosk-customer-skip" style="display:none;">Skip (Walk-in)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kiosk: Payment Processing View -->
+    <div id="kiosk-view-payment" class="kiosk-view" style="display:none;">
+      <div class="kiosk-payment-screen">
+        <div class="kiosk-payment-card">
+          <div id="kiosk-terminal-status" class="kiosk-terminal-status">
+            <div class="kiosk-terminal-icon">&#128179;</div>
+            <h2 class="kiosk-payment-amount" id="kiosk-payment-amount">$0.00</h2>
+            <p class="kiosk-terminal-msg" id="kiosk-terminal-msg">Waiting for terminal...</p>
+            <div class="kiosk-spinner" id="kiosk-spinner"></div>
+          </div>
+          <div class="kiosk-payment-items" id="kiosk-payment-items"></div>
+          <div class="kiosk-payment-footer">
+            <button type="button" class="btn-secondary kiosk-cancel-payment" id="kiosk-cancel-payment">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kiosk: Batch Review View (NEW) -->
+    <div id="kiosk-view-review-batches" class="kiosk-view" style="display:none;">
+      <div class="kiosk-batches-wrap">
+        <h2>New Batches</h2>
+        <p class="kiosk-batches-subtitle">Review details before saving.</p>
+        <div id="kiosk-batch-form-list"></div>
+        <div class="kiosk-batches-footer">
+          <button type="button" class="btn" id="kiosk-save-batches-btn">Save Batches</button>
+          <button type="button" class="btn-secondary" id="kiosk-skip-batches-btn">Skip</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kiosk: Receipt / Confirmation View -->
+    <div id="kiosk-view-receipt" class="kiosk-view" style="display:none;">
+      <div class="kiosk-receipt-screen">
+        <div class="kiosk-receipt-card">
+          <div class="kiosk-receipt-icon kiosk-receipt-icon--success">&#10003;</div>
+          <h2 class="kiosk-receipt-title">Payment Approved</h2>
+          <div class="kiosk-receipt-body" id="kiosk-receipt-body"></div>
+          <div class="kiosk-receipt-actions">
+            <button type="button" class="btn kiosk-new-sale-btn" id="kiosk-new-sale-btn">New Sale</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kiosk: Error / Declined View -->
+    <div id="kiosk-view-error" class="kiosk-view" style="display:none;">
+      <div class="kiosk-receipt-screen">
+        <div class="kiosk-receipt-card">
+          <div class="kiosk-receipt-icon kiosk-receipt-icon--error">&#10007;</div>
+          <h2 class="kiosk-receipt-title" id="kiosk-error-title">Payment Declined</h2>
+          <p class="kiosk-error-msg" id="kiosk-error-msg"></p>
+          <div class="kiosk-receipt-actions">
+            <button type="button" class="btn kiosk-retry-btn" id="kiosk-retry-btn">Try Again</button>
+            <button type="button" class="btn-secondary kiosk-back-btn" id="kiosk-back-btn">Back to Cart</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Terminal status bar (always visible in standalone kiosk) -->
+    <div class="kiosk-terminal-bar" id="kiosk-terminal-bar">
+      <span class="kiosk-terminal-dot" id="kiosk-terminal-dot"></span>
+      <span id="kiosk-terminal-label">Checking terminal...</span>
+    </div>
+
+  </div><!-- /#kiosk-app -->
+
+</body>
+</html>
