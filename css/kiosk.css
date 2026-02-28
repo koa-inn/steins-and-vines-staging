@@ -383,8 +383,8 @@ img {
   display: grid;
   grid-template-columns: 1fr 340px;
   gap: 1rem;
-  /* Accounts for shell bar (~52px) and terminal status bar (~36px) */
-  height: calc(100vh - 100px);
+  /* Shell bar ~52px + terminal bar ~36px + 4px gap = 92px */
+  height: calc(100vh - 92px);
   min-height: 480px;
   padding: 1rem;
 }
@@ -449,6 +449,20 @@ img {
   flex-shrink: 0;
 }
 
+.kiosk-oos-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--ink-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-height: 44px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* Product grid */
 .kiosk-product-grid {
   display: grid;
@@ -458,7 +472,7 @@ img {
   -webkit-overflow-scrolling: touch;
   flex: 1;
   min-height: 0;
-  padding-bottom: 0.5rem;
+  padding-bottom: 2rem;
 }
 
 .kiosk-loading {
@@ -538,6 +552,12 @@ img {
   font-size: 1rem;
   font-weight: 700;
   color: var(--barrel);
+}
+
+.kiosk-product-makers-fee {
+  font-size: 0.7rem;
+  color: var(--ink-tertiary);
+  margin-top: -0.1rem;
 }
 
 .kiosk-product-stock {

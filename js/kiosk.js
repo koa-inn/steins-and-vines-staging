@@ -489,6 +489,9 @@
   var _kioskSearchTimer = null;
   var _kioskTerminalReady = false;
   var _kioskCustomer = null; // { contact_id, name, email } or null (walk-in)
+  var _kioskHideOutOfStock = false;
+
+  var MAKERS_FEE = 50; // Added to kit rates for in-store pricing
 
   // ===== Kiosk Helpers =====
 
@@ -501,8 +504,19 @@
     return '$' + (parseFloat(amount) || 0).toFixed(2);
   }
 
+  // Returns item rate including $50 maker's fee for kits
+  function kioskEffectiveRate(product) {
+    var base = parseFloat(product.rate) || 0;
+    return ((product.product_type || '').toLowerCase() === 'kit') ? base + MAKERS_FEE : base;
+  }
+
+  // Returns category label for a product, falling back to product_type
+  function kioskItemCategory(p) {
+    return p.category_name || p.product_type || '';
+  }
+
   function kioskItemTax(item, qty) {
-    var rate = parseFloat(item.rate) || 0;
+    var rate = kioskEffectiveRate(item);
     var pct = parseFloat(item.tax_percentage) || 0;
     return parseFloat((rate * qty * pct / 100).toFixed(2));
   }
@@ -525,7 +539,7 @@
     Object.keys(_kioskCart).forEach(function (id) {
       var entry = _kioskCart[id];
       var qty = entry.qty;
-      var rate = parseFloat(entry.item.rate) || 0;
+      var rate = kioskEffectiveRate(entry.item);
       subtotal += rate * qty;
       taxTotal += kioskItemTax(entry.item, qty);
     });
@@ -628,7 +642,7 @@
 
     var cats = {};
     _kioskProducts.forEach(function (p) {
-      var cat = p.category_name || '';
+      var cat = kioskItemCategory(p);
       if (cat) cats[cat] = true;
     });
 
@@ -654,9 +668,11 @@
     var catFilter = (document.getElementById('kiosk-category-filter') || {}).value || '';
 
     var filtered = _kioskProducts.filter(function (p) {
-      if (catFilter && (p.category_name || '').toLowerCase() !== catFilter.toLowerCase()) return false;
+      if (_kioskHideOutOfStock && (parseFloat(p.stock_on_hand) || 0) <= 0) return false;
+      var cat = kioskItemCategory(p);
+      if (catFilter && cat.toLowerCase() !== catFilter.toLowerCase()) return false;
       if (searchTerm) {
-        var haystack = ((p.name || '') + ' ' + (p.sku || '') + ' ' + (p.category_name || '')).toLowerCase();
+        var haystack = ((p.name || '') + ' ' + (p.sku || '') + ' ' + cat).toLowerCase();
         if (haystack.indexOf(searchTerm) === -1) return false;
       }
       return true;
@@ -696,10 +712,13 @@
         html += '<div class="kiosk-card-in-cart">' + inCart + '</div>';
       }
       html += imgHtml;
+      var effectiveRate = kioskEffectiveRate(p);
+      var isKit = (p.product_type || '').toLowerCase() === 'kit';
       html += '<div class="kiosk-product-body">';
       html += '<div class="kiosk-product-name">' + (p.name || '') + '</div>';
       if (p.sku) html += '<div class="kiosk-product-sku">' + p.sku + '</div>';
-      html += '<div class="kiosk-product-price">' + kioskFmt(p.rate) + '</div>';
+      html += '<div class="kiosk-product-price">' + kioskFmt(effectiveRate) + '</div>';
+      if (isKit) html += '<div class="kiosk-product-makers-fee">incl. $' + MAKERS_FEE + ' maker\'s fee</div>';
       html += '<div class="kiosk-product-stock ' + stockClass + '">' + stockLabel + '</div>';
       html += '</div>';
       html += '</div>';
@@ -771,7 +790,7 @@
       var entry = _kioskCart[id];
       var item = entry.item;
       var qty = entry.qty;
-      var lineTotal = (parseFloat(item.rate) || 0) * qty;
+      var lineTotal = kioskEffectiveRate(item) * qty;
 
       html += '<div class="kiosk-cart-line">';
       html += '<div class="kiosk-cart-line-name" title="' + (item.name || '') + '">' + (item.name || '') + '</div>';
@@ -1008,7 +1027,7 @@
         item_id: entry.item.item_id,
         name: entry.item.name || '',
         quantity: entry.qty,
-        rate: parseFloat(entry.item.rate) || 0,
+        rate: kioskEffectiveRate(entry.item),
         product_type: entry.item.product_type || ''
       };
     });
@@ -1336,6 +1355,14 @@
       clearBtn.addEventListener('click', function () {
         if (kioskCartIsEmpty()) return;
         kioskClearCart();
+      });
+    }
+
+    var oosToggle = document.getElementById('kiosk-hide-oos');
+    if (oosToggle) {
+      oosToggle.addEventListener('change', function () {
+        _kioskHideOutOfStock = oosToggle.checked;
+        kioskRenderProducts();
       });
     }
 
