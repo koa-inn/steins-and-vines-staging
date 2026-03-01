@@ -597,12 +597,9 @@ small, .text-small {
   text-align: left;
 }
 
-.promo-instagram-feed-iframe {
-  width: 100%;
-  min-height: 520px;
-  border: none;
-  border-radius: var(--radius-sm);
+behold-widget {
   display: block;
+  width: 100%;
 }
 
 /* Featured column */

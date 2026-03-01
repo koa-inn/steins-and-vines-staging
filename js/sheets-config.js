@@ -32,8 +32,8 @@ var SHEETS_CONFIG = {
   // Published CSV URL for the Homepage tab (public, no auth required)
   PUBLISHED_HOMEPAGE_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTRpDadhsKBYPuE3pFCYnmeRiUJO_Z972ISX509taCzL8jmYaWPue5DfR9OfEiJD-OlhsxoC_rDerUW/pub?gid=909487903&single=true&output=csv',
 
-  // Instagram feed embed URL (LightWidget) — update this when the widget changes
-  INSTAGRAM_FEED_URL: 'https://lightwidget.com/widgets/a038cc644fc4591ca7c45af4ac252605.html',
+  // Behold Instagram feed ID — update this when the widget changes
+  INSTAGRAM_FEED_ID: '0Zd67EUJqg7knUfOBqKn',
 
   // OAuth scope for read/write access to spreadsheets
   SCOPES: 'https://www.googleapis.com/auth/spreadsheets',

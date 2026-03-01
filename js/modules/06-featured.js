@@ -177,7 +177,7 @@ function loadFeaturedProducts() {
     .then(function (results) {
       var result = results[0];
       var products = results[1];
-      var config = { 'promo-featured-skus': [], 'instafeed-url': (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.INSTAGRAM_FEED_URL) || '' };
+      var config = { 'promo-featured-skus': [], 'instafeed-id': (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.INSTAGRAM_FEED_ID) || '' };
 
       if (result && result.isJson) {
         // Fallback JSON format
@@ -190,8 +190,8 @@ function loadFeaturedProducts() {
             var values = parseHomepageCSVLine(lines[i]);
             var type = (values[0] || '').toLowerCase().trim();
             if (type === 'instafeed') {
-              // Only use CSV value if SHEETS_CONFIG doesn't already provide the URL
-              if (!config['instafeed-url']) config['instafeed-url'] = (values[3] || '').trim();
+              // Legacy CSV fallback — feed ID now stored in SHEETS_CONFIG.INSTAGRAM_FEED_ID
+              if (!config['instafeed-id']) config['instafeed-id'] = (values[3] || '').trim();
             } else if (type === 'featured') {
               var sku = (values[4] || '').trim();
               var desc = (values[3] || '').trim();
@@ -201,9 +201,13 @@ function loadFeaturedProducts() {
         }
       }
 
-      // Render Instagram feed widget
-      if (newsContainer && config['instafeed-url']) {
-        newsContainer.innerHTML = '<iframe src="' + escapeHTMLPromo(config['instafeed-url']) + '" frameborder="0" scrolling="no" allowtransparency="true" loading="lazy" class="promo-instagram-feed-iframe"></iframe>';
+      // Render Behold Instagram feed widget
+      if (newsContainer && config['instafeed-id']) {
+        newsContainer.innerHTML = '<behold-widget feed-id="' + escapeHTMLPromo(config['instafeed-id']) + '"></behold-widget>';
+        var beholdScript = document.createElement('script');
+        beholdScript.type = 'module';
+        beholdScript.src = 'https://w.behold.so/widget.js';
+        document.head.appendChild(beholdScript);
       }
 
       // Parse and render products
