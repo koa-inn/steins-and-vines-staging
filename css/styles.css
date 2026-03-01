@@ -619,7 +619,8 @@ behold-widget {
   border-radius: var(--radius-sm);
   padding: 0.85rem 1rem;
   margin-top: 0.75rem;
-  font-style: italic;
+  font-style: normal;
+  text-align: center;
   color: var(--color-brown);
   border-left: 3px solid var(--color-burgundy);
   box-shadow:
