@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-03-01T23:07:59.114Z';
+  var BUILD_TIMESTAMP = '2026-03-01T23:12:32.726Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4774,7 +4774,7 @@
           }
           var alreadyAdded = homepageConfig['promo-featured-skus'].some(function (e) { return e.sku === homepageSelectedProduct.sku; });
           if (!alreadyAdded) {
-            homepageConfig['promo-featured-skus'].push({ sku: homepageSelectedProduct.sku, description: '' });
+            homepageConfig['promo-featured-skus'].push({ sku: homepageSelectedProduct.sku, name: homepageSelectedProduct.name || '', brand: homepageSelectedProduct.brand || '', description: '' });
             renderHomepageFeaturedList();
           }
           homepageSelectedProduct = null;
@@ -5009,7 +5009,12 @@
     container.innerHTML = '';
     homepageConfig['promo-featured-skus'].forEach(function (entry, idx) {
       var kit = kitsData.find(function (k) { return k.sku === entry.sku; });
-      var name = kit ? ((kit.brand || '') + ' ' + (kit.name || '')).trim() : 'Unknown';
+      var zohoKit = _kioskProducts.find(function (k) { return k.sku === entry.sku; });
+      var rawName = (kit && kit.name) ? ((kit.brand || '') + ' ' + kit.name).trim()
+        : (zohoKit && zohoKit.name) ? ((zohoKit.brand || '') + ' ' + zohoKit.name).trim()
+        : (entry.name) ? ((entry.brand || '') + ' ' + entry.name).trim()
+        : '';
+      var name = rawName || entry.sku || 'Unknown';
 
       var item = document.createElement('div');
       item.className = 'homepage-featured-item';
