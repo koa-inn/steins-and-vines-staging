@@ -1150,3 +1150,443 @@ img {
     flex-direction: column;
   }
 }
+
+/* ===== Customer Browse Mode ===== */
+
+.kiosk-cb-view {
+  min-height: calc(100vh - 52px);
+  padding-bottom: 100px;
+}
+
+.kiosk-cb-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--ledger-line);
+  background: var(--cellar-raised);
+  position: sticky;
+  top: 52px;
+  z-index: 100;
+}
+
+.kiosk-cb-tabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--ledger-emphasis);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.kiosk-cb-tab {
+  padding: 0.5rem 1.25rem;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 700;
+  border: none;
+  background: var(--cellar-surface);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  min-height: 40px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.kiosk-cb-tab.active {
+  background: var(--stain);
+  color: var(--cellar-surface);
+}
+
+.kiosk-cb-note {
+  background: var(--cellar-surface);
+  border-bottom: 1px solid var(--ledger-soft);
+  padding: 0.6rem 1.25rem;
+  font-size: 0.875rem;
+  color: var(--ink-secondary);
+}
+
+.kiosk-cb-search-bar {
+  padding: 0.75rem 1.25rem;
+  background: var(--cellar-canvas);
+}
+
+.kiosk-cb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.5rem;
+  padding: 1.25rem;
+  align-items: start;
+}
+
+/* ---- Wine Label Card ---- */
+.kiosk-label-wine {
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(119,70,45,0.02) 2px, rgba(119,70,45,0.02) 4px), var(--cellar-raised);
+  border: 3px double var(--barrel);
+  border-radius: var(--r-sm);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 1px 1px 1px rgba(0,0,0,0.2), inset 0 2px 0 rgba(255,255,255,0.7);
+  cursor: pointer;
+}
+
+.kiosk-label-wine::before {
+  content: '';
+  display: block;
+  height: 6px;
+  background: var(--cellar-green);
+  border-bottom: 2px solid var(--barrel);
+}
+
+.kiosk-label-wine .cb-label-body {
+  padding: 1.5rem 1.25rem 1rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.kiosk-label-wine .cb-ornament {
+  width: 60%;
+  height: 1px;
+  background: var(--barrel);
+  position: relative;
+  margin: 0.25rem auto 0.6rem;
+  opacity: 0.4;
+}
+
+.kiosk-label-wine .cb-ornament::before {
+  content: '\2767';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--cellar-raised);
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--barrel);
+}
+
+.kiosk-label-wine .cb-product-name {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--stain);
+  line-height: 1.2;
+  margin-bottom: 0.25rem;
+}
+
+.kiosk-label-wine .cb-product-category {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  color: var(--barrel);
+  margin-bottom: 0.5rem;
+}
+
+.kiosk-label-wine .cb-spacer { margin-bottom: auto; padding-bottom: 0.5rem; }
+
+.kiosk-label-wine .cb-price-footer {
+  width: 100%;
+  border-top: 2px solid var(--barrel);
+  border-bottom: 2px solid var(--barrel);
+  display: flex;
+  background: var(--cellar-surface);
+}
+
+.kiosk-label-wine .cb-price-col {
+  flex: 1;
+  padding: 0.5rem 0.4rem;
+  text-align: center;
+}
+
+.kiosk-label-wine .cb-price-col + .cb-price-col { border-left: 1px solid var(--barrel); }
+
+.kiosk-label-wine .cb-price-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--barrel);
+  font-weight: 700;
+}
+
+.kiosk-label-wine .cb-price-value {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--stain);
+}
+
+.kiosk-label-wine .cb-add-btn {
+  display: block;
+  width: 100%;
+  padding: 0.85rem;
+  background: var(--stain);
+  color: var(--cellar-surface);
+  border: none;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 52px;
+  transition: background-color 0.15s;
+}
+
+.kiosk-label-wine .cb-add-btn:hover { background: var(--cellar-green); }
+.kiosk-label-wine .cb-add-btn.in-cart { background: var(--cellar-green); }
+.kiosk-label-wine.oos { opacity: 0.5; }
+.kiosk-label-wine.oos .cb-add-btn { background: var(--ink-muted); cursor: not-allowed; }
+
+/* ---- Beer Label Card ---- */
+.kiosk-label-beer {
+  background: var(--cellar-raised);
+  border: 2px solid var(--batch-warning);
+  border-radius: var(--r-sm);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 1px 1px 1px rgba(0,0,0,0.2), inset 0 2px 0 rgba(255,255,255,0.7);
+  cursor: pointer;
+}
+
+.kiosk-label-beer .cb-label-body {
+  padding: 1.5rem 1.25rem 1rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.kiosk-label-beer .cb-product-name {
+  font-family: var(--font-body);
+  font-size: 1.3rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--stain);
+  line-height: 1.1;
+  margin-bottom: 0.25rem;
+  letter-spacing: 0.02em;
+}
+
+.kiosk-label-beer .cb-product-category {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--batch-warning);
+  margin-bottom: 0.5rem;
+}
+
+.kiosk-label-beer .cb-gold-rule {
+  width: 50%;
+  height: 0;
+  border-top: 1px solid var(--batch-warning);
+  opacity: 0.4;
+  margin: 0.1rem auto 0.4rem;
+}
+
+.kiosk-label-beer .cb-spacer { margin-bottom: auto; padding-bottom: 0.5rem; }
+
+.kiosk-label-beer .cb-price-footer {
+  width: 100%;
+  display: flex;
+  border-top: 1px solid var(--batch-warning);
+  background: rgba(184, 122, 26, 0.06);
+}
+
+.kiosk-label-beer .cb-price-col {
+  flex: 1;
+  padding: 0.5rem 0.4rem;
+  text-align: center;
+}
+
+.kiosk-label-beer .cb-price-col + .cb-price-col { border-left: 1px solid rgba(184,122,26,0.3); }
+
+.kiosk-label-beer .cb-price-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--batch-warning);
+  font-weight: 700;
+}
+
+.kiosk-label-beer .cb-price-value {
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--stain);
+}
+
+.kiosk-label-beer .cb-add-btn {
+  display: block;
+  width: 100%;
+  padding: 0.85rem;
+  background: var(--stain);
+  color: var(--cellar-surface);
+  border: none;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 52px;
+  transition: background-color 0.15s;
+}
+
+.kiosk-label-beer .cb-add-btn:hover { background: var(--cellar-green); }
+.kiosk-label-beer .cb-add-btn.in-cart { background: var(--cellar-green); }
+.kiosk-label-beer.oos { opacity: 0.5; }
+.kiosk-label-beer.oos .cb-add-btn { background: var(--ink-muted); cursor: not-allowed; }
+
+/* ---- Generic Ingredient / Other Kit Card ---- */
+.kiosk-cb-card {
+  background: var(--cellar-raised);
+  border: 1px solid var(--ledger-emphasis);
+  border-top: 3px solid var(--stain);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 1px 1px 1px rgba(0,0,0,0.1);
+  cursor: pointer;
+  position: relative;
+}
+
+.kiosk-cb-card .cb-card-img {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  background: var(--cellar-canvas);
+  display: block;
+}
+
+.kiosk-cb-card .cb-card-img-placeholder {
+  width: 100%;
+  height: 140px;
+  background: var(--cellar-canvas);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  color: var(--ink-muted);
+}
+
+.kiosk-cb-card .cb-card-body {
+  padding: 1rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.kiosk-cb-card .cb-card-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--stain);
+  margin-bottom: 0.25rem;
+  line-height: 1.3;
+}
+
+.kiosk-cb-card .cb-card-category {
+  font-size: 0.75rem;
+  color: var(--ink-tertiary);
+  margin-bottom: 0.5rem;
+}
+
+.kiosk-cb-card .cb-card-price {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--barrel);
+  margin-top: auto;
+}
+
+.kiosk-cb-card .cb-card-stock {
+  font-size: 0.75rem;
+  color: var(--ink-tertiary);
+  margin-top: 0.15rem;
+}
+
+.kiosk-cb-card .cb-card-stock.out { color: var(--batch-danger); font-weight: 600; }
+.kiosk-cb-card .cb-card-stock.low { color: var(--batch-warning); font-weight: 600; }
+
+.kiosk-cb-card .cb-add-btn {
+  display: block;
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--stain);
+  color: var(--cellar-surface);
+  border: none;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 48px;
+  transition: background-color 0.15s;
+  margin-top: 0.75rem;
+}
+
+.kiosk-cb-card .cb-add-btn:hover { background: var(--cellar-green); }
+.kiosk-cb-card .cb-add-btn.in-cart { background: var(--cellar-green); }
+.kiosk-cb-card.oos { opacity: 0.55; }
+.kiosk-cb-card.oos .cb-add-btn { background: var(--ink-muted); cursor: not-allowed; }
+
+/* ---- In-cart badge (shared) ---- */
+.kiosk-cb-in-cart-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--cellar-green);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 12px;
+  padding: 2px 8px;
+  min-width: 24px;
+  text-align: center;
+  z-index: 2;
+}
+
+/* ---- Floating cart bar ---- */
+.kiosk-cb-cart-bar {
+  position: fixed;
+  bottom: 44px;
+  left: 0;
+  right: 0;
+  background: var(--stain);
+  color: var(--cellar-surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  z-index: 200;
+  gap: 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
+}
+
+.kiosk-cb-cart-bar .btn {
+  background: var(--cellar-green);
+  border-color: var(--cellar-green);
+  flex-shrink: 0;
+  padding: 0.6rem 1.5rem;
+  min-height: 44px;
+}
+
+.kiosk-cb-cart-bar .btn:hover {
+  background: var(--cellar-canvas);
+  border-color: var(--cellar-canvas);
+  color: var(--stain);
+}
+
+/* ---- Customer browse responsive ---- */
+@media (max-width: 700px) {
+  .kiosk-cb-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1rem;
+    padding: 0.75rem;
+  }
+  .kiosk-label-wine .cb-product-name,
+  .kiosk-label-beer .cb-product-name { font-size: 1.1rem; }
+}

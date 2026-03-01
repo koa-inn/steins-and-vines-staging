@@ -491,6 +491,11 @@
   var _kioskCustomer = null; // { contact_id, name, email } or null (walk-in)
   var _kioskHideOutOfStock = false;
 
+  // Customer browse mode state
+  var _kioskCbTab = 'kits';
+  var _kioskCbSearch = '';
+  var _kioskCbSearchTimer = null;
+
   var MAKERS_FEE = 50; // Added to kit rates for in-store pricing
 
   // ===== Kiosk Helpers =====
@@ -553,7 +558,7 @@
   // ===== View Switching =====
 
   function kioskShowView(name) {
-    var views = ['browse', 'customer', 'payment', 'review-batches', 'receipt', 'error'];
+    var views = ['browse', 'browse-customer', 'customer', 'payment', 'review-batches', 'receipt', 'error'];
     views.forEach(function (v) {
       var el = document.getElementById('kiosk-view-' + v);
       if (el) el.style.display = (v === name) ? '' : 'none';
@@ -748,6 +753,195 @@
     }
     kioskRenderCart();
     kioskRenderProducts();
+  }
+
+  // ===== Customer Browse Mode =====
+
+  function kioskCbIsWine(p) {
+    var haystack = ((p.name || '') + ' ' + kioskItemCategory(p)).toLowerCase();
+    var keywords = ['wine', 'red', 'white', 'ros', 'cider', 'seltzer', 'chardonnay', 'merlot', 'cab', 'pinot', 'sauvignon', 'malbec', 'shiraz', 'gewurz'];
+    for (var i = 0; i < keywords.length; i++) {
+      if (haystack.indexOf(keywords[i]) !== -1) return true;
+    }
+    return false;
+  }
+
+  function kioskCbIsBeer(p) {
+    var haystack = ((p.name || '') + ' ' + kioskItemCategory(p)).toLowerCase();
+    var keywords = ['beer', 'ale', 'lager', 'ipa', 'stout', 'porter', 'hefe', 'wheat', 'pilsner', 'pale', 'amber'];
+    for (var i = 0; i < keywords.length; i++) {
+      if (haystack.indexOf(keywords[i]) !== -1) return true;
+    }
+    return false;
+  }
+
+  function kioskCbRenderWineCard(p) {
+    var inCart = _kioskCart[p.item_id] ? _kioskCart[p.item_id].qty : 0;
+    var oos = (parseFloat(p.stock_on_hand) || 0) <= 0;
+    var cat = kioskItemCategory(p);
+    var price = kioskEffectiveRate(p);
+    var html = '<div class="kiosk-label-wine' + (oos ? ' oos' : '') + '" data-item-id="' + p.item_id + '">';
+    if (inCart > 0) html += '<div class="kiosk-cb-in-cart-badge">' + inCart + '</div>';
+    html += '<div class="cb-label-body">';
+    html += '<div class="cb-ornament"></div>';
+    html += '<div class="cb-product-name">' + escapeHTML(p.name) + '</div>';
+    if (cat) html += '<div class="cb-product-category">' + escapeHTML(cat) + '</div>';
+    html += '<div class="cb-spacer"></div>';
+    html += '</div>';
+    html += '<div class="cb-price-footer">';
+    html += '<div class="cb-price-col"><div class="cb-price-label">In Store</div><div class="cb-price-value">' + kioskFmt(price) + '</div></div>';
+    html += '</div>';
+    html += '<button type="button" class="cb-add-btn' + (inCart > 0 ? ' in-cart' : '') + '" ' + (oos ? 'disabled' : '') + '>';
+    html += oos ? 'Out of Stock' : (inCart > 0 ? '\u2713 In Cart (' + inCart + ')' : 'Add to Cart');
+    html += '</button>';
+    html += '</div>';
+    return html;
+  }
+
+  function kioskCbRenderBeerCard(p) {
+    var inCart = _kioskCart[p.item_id] ? _kioskCart[p.item_id].qty : 0;
+    var oos = (parseFloat(p.stock_on_hand) || 0) <= 0;
+    var cat = kioskItemCategory(p);
+    var price = kioskEffectiveRate(p);
+    var html = '<div class="kiosk-label-beer' + (oos ? ' oos' : '') + '" data-item-id="' + p.item_id + '">';
+    if (inCart > 0) html += '<div class="kiosk-cb-in-cart-badge">' + inCart + '</div>';
+    html += '<div class="cb-label-body">';
+    html += '<div class="cb-product-category">' + escapeHTML(cat || 'Beer') + '</div>';
+    html += '<div class="cb-product-name">' + escapeHTML(p.name) + '</div>';
+    html += '<div class="cb-gold-rule"></div>';
+    html += '<div class="cb-spacer"></div>';
+    html += '</div>';
+    html += '<div class="cb-price-footer">';
+    html += '<div class="cb-price-col"><div class="cb-price-label">In Store</div><div class="cb-price-value">' + kioskFmt(price) + '</div></div>';
+    html += '</div>';
+    html += '<button type="button" class="cb-add-btn' + (inCart > 0 ? ' in-cart' : '') + '" ' + (oos ? 'disabled' : '') + '>';
+    html += oos ? 'Out of Stock' : (inCart > 0 ? '\u2713 In Cart (' + inCart + ')' : 'Add to Cart');
+    html += '</button>';
+    html += '</div>';
+    return html;
+  }
+
+  function kioskCbRenderCard(p) {
+    var inCart = _kioskCart[p.item_id] ? _kioskCart[p.item_id].qty : 0;
+    var oos = (parseFloat(p.stock_on_hand) || 0) <= 0;
+    var cat = kioskItemCategory(p);
+    var price = kioskEffectiveRate(p);
+    var stock = parseFloat(p.stock_on_hand) || 0;
+    var stockClass = oos ? 'out' : (stock <= 5 ? 'low' : '');
+    var stockLabel = oos ? 'Out of stock' : (stock <= 5 ? 'Low stock (' + Math.round(stock) + ')' : '');
+    var html = '<div class="kiosk-cb-card' + (oos ? ' oos' : '') + '" data-item-id="' + p.item_id + '">';
+    if (inCart > 0) html += '<div class="kiosk-cb-in-cart-badge">' + inCart + '</div>';
+    if (p.image_name && p.sku) {
+      html += '<img class="cb-card-img" src="images/products/' + encodeURIComponent(p.sku) + '.png" alt="" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">';
+      html += '<div class="cb-card-img-placeholder" style="display:none;">\uD83D\uDCE6</div>';
+    } else {
+      html += '<div class="cb-card-img-placeholder">\uD83D\uDCE6</div>';
+    }
+    html += '<div class="cb-card-body">';
+    html += '<div class="cb-card-name">' + escapeHTML(p.name) + '</div>';
+    if (cat) html += '<div class="cb-card-category">' + escapeHTML(cat) + '</div>';
+    html += '<div class="cb-card-price">' + kioskFmt(price) + '</div>';
+    if (stockLabel) html += '<div class="cb-card-stock ' + stockClass + '">' + stockLabel + '</div>';
+    html += '<button type="button" class="cb-add-btn' + (inCart > 0 ? ' in-cart' : '') + '" ' + (oos ? 'disabled' : '') + '>';
+    html += oos ? 'Out of Stock' : (inCart > 0 ? '\u2713 In Cart (' + inCart + ')' : 'Add to Cart');
+    html += '</button>';
+    html += '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  function kioskRenderCbGrid() {
+    var grid = document.getElementById('kiosk-cb-grid');
+    if (!grid) return;
+
+    var search = _kioskCbSearch.toLowerCase().trim();
+
+    var filtered = _kioskProducts.filter(function (p) {
+      var ptype = (p.product_type || '').toLowerCase();
+      if (_kioskCbTab === 'kits') {
+        if (ptype !== 'kit') return false;
+      } else {
+        if (ptype !== 'ingredient' && ptype !== 'service') return false;
+        if ((parseFloat(p.rate) || 0) === 0) return false;
+      }
+      if (search) {
+        var haystack = ((p.name || '') + ' ' + kioskItemCategory(p)).toLowerCase();
+        if (haystack.indexOf(search) === -1) return false;
+      }
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '<p class="kiosk-loading">No products found.</p>';
+      return;
+    }
+
+    var html = '';
+    filtered.forEach(function (p) {
+      var ptype = (p.product_type || '').toLowerCase();
+      if (ptype === 'kit') {
+        if (kioskCbIsWine(p)) {
+          html += kioskCbRenderWineCard(p);
+        } else if (kioskCbIsBeer(p)) {
+          html += kioskCbRenderBeerCard(p);
+        } else {
+          html += kioskCbRenderCard(p);
+        }
+      } else {
+        html += kioskCbRenderCard(p);
+      }
+    });
+
+    grid.innerHTML = html;
+
+    Array.prototype.forEach.call(grid.querySelectorAll('.cb-add-btn:not([disabled])'), function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var card = btn.closest('[data-item-id]');
+        if (!card) return;
+        var itemId = card.getAttribute('data-item-id');
+        var product = null;
+        for (var i = 0; i < _kioskProducts.length; i++) {
+          if (_kioskProducts[i].item_id === itemId) { product = _kioskProducts[i]; break; }
+        }
+        if (!product) return;
+        kioskAddToCart(product);
+        kioskRenderCbGrid();
+        kioskUpdateCbCartBar();
+      });
+    });
+  }
+
+  function kioskUpdateCbCartBar() {
+    var bar = document.getElementById('kiosk-cb-cart-bar');
+    var summary = document.getElementById('kiosk-cb-cart-summary');
+    if (!bar || !summary) return;
+    var count = 0;
+    var ids = Object.keys(_kioskCart);
+    for (var i = 0; i < ids.length; i++) {
+      count += _kioskCart[ids[i]].qty;
+    }
+    if (count === 0) {
+      bar.style.display = 'none';
+    } else {
+      bar.style.display = '';
+      var totals = kioskCalcTotals();
+      summary.textContent = count + ' item' + (count !== 1 ? 's' : '') + ' \u2014 ' + kioskFmt(totals.total);
+    }
+  }
+
+  function kioskShowCustomerBrowse() {
+    kioskShowView('browse-customer');
+    var btn = document.getElementById('kiosk-browse-mode-btn');
+    if (btn) btn.style.display = 'none';
+    kioskRenderCbGrid();
+    kioskUpdateCbCartBar();
+  }
+
+  function kioskExitCustomerBrowse() {
+    kioskShowView('browse');
+    var btn = document.getElementById('kiosk-browse-mode-btn');
+    if (btn) btn.style.display = '';
   }
 
   function kioskSetQty(itemId, qty) {
@@ -1369,6 +1563,44 @@
     var checkoutBtn = document.getElementById('kiosk-checkout-btn');
     if (checkoutBtn) {
       checkoutBtn.addEventListener('click', kioskStartCheckout);
+    }
+
+    // Customer browse mode wiring
+    var browseModeBtn = document.getElementById('kiosk-browse-mode-btn');
+    if (browseModeBtn) {
+      browseModeBtn.addEventListener('click', kioskShowCustomerBrowse);
+    }
+
+    var cbBackBtn = document.getElementById('kiosk-cb-back-btn');
+    if (cbBackBtn) {
+      cbBackBtn.addEventListener('click', kioskExitCustomerBrowse);
+    }
+
+    var cbSearch = document.getElementById('kiosk-cb-search');
+    if (cbSearch) {
+      cbSearch.addEventListener('input', function () {
+        clearTimeout(_kioskCbSearchTimer);
+        _kioskCbSearch = cbSearch.value;
+        _kioskCbSearchTimer = setTimeout(kioskRenderCbGrid, 200);
+      });
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.kiosk-cb-tab'), function (tab) {
+      tab.addEventListener('click', function () {
+        _kioskCbTab = tab.getAttribute('data-cb-tab');
+        Array.prototype.forEach.call(document.querySelectorAll('.kiosk-cb-tab'), function (t) {
+          t.classList.remove('active');
+        });
+        tab.classList.add('active');
+        var note = document.getElementById('kiosk-cb-kits-note');
+        if (note) note.style.display = _kioskCbTab === 'kits' ? '' : 'none';
+        kioskRenderCbGrid();
+      });
+    });
+
+    var startPurchaseBtn = document.getElementById('kiosk-cb-start-purchase-btn');
+    if (startPurchaseBtn) {
+      startPurchaseBtn.addEventListener('click', kioskExitCustomerBrowse);
     }
   }
 

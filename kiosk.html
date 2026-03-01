@@ -11,11 +11,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
   <link rel="icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/kiosk.min.css?v=mm6z7zaz">
+  <link rel="stylesheet" href="css/kiosk.min.css?v=mm87acpa">
   <script src="js/sheets-config.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async></script>
-  <script src="js/kiosk.min.js?v=mm6z7zaz"></script>
+  <script src="js/kiosk.min.js?v=mm87acpa"></script>
 </head>
 <body>
 
@@ -44,6 +44,7 @@
       </div>
       <div class="kiosk-shell-user">
         <span id="kiosk-user-email"></span>
+        <button type="button" class="btn-secondary admin-btn-sm" id="kiosk-browse-mode-btn">Customer View</button>
         <button type="button" class="btn-secondary admin-btn-sm" id="kiosk-signout" style="display:none;">Sign Out</button>
       </div>
     </div>
@@ -96,6 +97,40 @@
             </button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Customer Browse Mode View -->
+    <div id="kiosk-view-browse-customer" class="kiosk-view kiosk-cb-view" style="display:none;">
+      <!-- Header row: back button + tabs -->
+      <div class="kiosk-cb-header">
+        <button type="button" class="btn-secondary admin-btn-sm" id="kiosk-cb-back-btn">&#8592; POS</button>
+        <div class="kiosk-cb-tabs">
+          <button type="button" class="kiosk-cb-tab active" data-cb-tab="kits">Ferment in Store</button>
+          <button type="button" class="kiosk-cb-tab" data-cb-tab="ingredients">Ingredients &amp; Supplies</button>
+        </div>
+      </div>
+
+      <!-- Kits tab info note -->
+      <div id="kiosk-cb-kits-note" class="kiosk-cb-note">
+        Each batch makes approximately <strong>23 litres</strong> (~29&ndash;30 bottles).
+        Prices include a <strong>$50 maker's fee</strong> &mdash; &#10003;&nbsp;<strong>100% satisfaction guarantee</strong>
+      </div>
+
+      <!-- Search bar -->
+      <div class="kiosk-cb-search-bar">
+        <input type="text" id="kiosk-cb-search" class="kiosk-search-input" placeholder="Search products..." autocomplete="off" inputmode="search">
+      </div>
+
+      <!-- Product grid -->
+      <div id="kiosk-cb-grid" class="kiosk-cb-grid">
+        <p class="kiosk-loading">Loading...</p>
+      </div>
+
+      <!-- Floating start-purchase bar (shown when cart has items) -->
+      <div id="kiosk-cb-cart-bar" class="kiosk-cb-cart-bar" style="display:none;">
+        <span id="kiosk-cb-cart-summary"></span>
+        <button type="button" class="btn" id="kiosk-cb-start-purchase-btn">Start Purchase &rarr;</button>
       </div>
     </div>
 
