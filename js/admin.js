@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-03-01T23:12:32.726Z';
+  var BUILD_TIMESTAMP = '2026-03-01T23:18:42.501Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4825,48 +4825,36 @@
       rows.push(['faq', '', faq.question || '', faq.answer || '', '']);
     });
 
-    // Clear the sheet first, then write new data
-    // If Admin API is configured, verify authorization server-side before write
-    var authPromise;
+    // Save via Admin API — this writes to the sheet AND syncs featured SKUs
+    // to PropertiesService so the public FEATURED_API_URL endpoint stays current.
     if (SHEETS_CONFIG.ADMIN_API_URL) {
-      authPromise = adminApiGet('check_auth').then(function (result) {
-        if (!result.authorized) {
-          throw new Error('Not authorized to make changes');
-        }
-      });
-    } else {
-      authPromise = Promise.resolve();
-    }
-
-    var clearUrl = 'https://sheets.googleapis.com/v4/spreadsheets/' +
-      SHEETS_CONFIG.SPREADSHEET_ID + '/values/' +
-      encodeURIComponent(SHEETS_CONFIG.SHEET_NAMES.HOMEPAGE + '!A:E') + ':clear';
-
-    authPromise.then(function () {
-      return fetch(clearUrl, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + accessToken }
-      });
-    })
-    .then(function (res) {
-      if (!res.ok) {
-        return res.json().then(function (err) {
-          throw new Error(err.error ? err.error.message : 'Failed to clear sheet');
+      adminApiPost('update_homepage', { values: rows })
+        .then(function (result) {
+          if (!result.ok) throw new Error(result.message || 'Save failed');
+          // Clear local cache so homepage re-fetches fresh featured data
+          try {
+            localStorage.removeItem('sv-homepage-featured');
+            localStorage.removeItem('sv-homepage-featured-ts');
+          } catch (e) {}
+          showToast('Homepage settings saved!', 'success');
+        })
+        .catch(function (err) {
+          console.error('[Homepage] Error saving via Admin API:', err);
+          showToast('Error saving homepage settings: ' + err.message, 'error');
         });
-      }
-      return res.json();
-    })
-    .then(function () {
-      // Write new data starting at A1
-      return sheetsUpdate(SHEETS_CONFIG.SHEET_NAMES.HOMEPAGE + '!A1', rows);
-    })
-    .then(function () {
-      showToast('Homepage settings saved to Google Sheets!', 'success');
-    })
-    .catch(function (err) {
-      console.error('[Homepage] Error saving:', err);
-      showToast('Error saving homepage settings: ' + err.message, 'error');
-    });
+    } else {
+      // Fallback: direct Sheets API (does not update the public featured endpoint)
+      var clearUrl = 'https://sheets.googleapis.com/v4/spreadsheets/' +
+        SHEETS_CONFIG.SPREADSHEET_ID + '/values/' +
+        encodeURIComponent(SHEETS_CONFIG.SHEET_NAMES.HOMEPAGE + '!A:E') + ':clear';
+      fetch(clearUrl, { method: 'POST', headers: { 'Authorization': 'Bearer ' + accessToken } })
+        .then(function () { return sheetsUpdate(SHEETS_CONFIG.SHEET_NAMES.HOMEPAGE + '!A1', rows); })
+        .then(function () { showToast('Homepage settings saved to Google Sheets!', 'success'); })
+        .catch(function (err) {
+          console.error('[Homepage] Error saving:', err);
+          showToast('Error saving homepage settings: ' + err.message, 'error');
+        });
+    }
   }
 
   function collectHomepageData() {
