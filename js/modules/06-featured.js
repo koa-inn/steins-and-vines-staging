@@ -177,7 +177,7 @@ function loadFeaturedProducts() {
     .then(function (results) {
       var result = results[0];
       var products = results[1];
-      var config = { 'promo-news': [], 'promo-featured-skus': [], 'instafeed-url': '' };
+      var config = { 'promo-featured-skus': [], 'instafeed-url': '' };
 
       if (result && result.isJson) {
         // Fallback JSON format
@@ -189,14 +189,7 @@ function loadFeaturedProducts() {
           for (var i = 1; i < lines.length; i++) {
             var values = parseHomepageCSVLine(lines[i]);
             var type = (values[0] || '').toLowerCase().trim();
-            if (type === 'news') {
-              config['promo-news'].push({
-                type: 'news',
-                date: (values[1] || '').trim(),
-                title: (values[2] || '').trim(),
-                text: (values[3] || '').trim()
-              });
-            } else if (type === 'instafeed') {
+            if (type === 'instafeed') {
               config['instafeed-url'] = (values[3] || '').trim();
             } else if (type === 'featured') {
               var sku = (values[4] || '').trim();
@@ -207,23 +200,9 @@ function loadFeaturedProducts() {
         }
       }
 
-      // Sort news items by date descending
-      config['promo-news'].sort(function (a, b) {
-        return new Date(b.date) - new Date(a.date);
-      });
-
-      // Render news items
-      if (newsContainer && config['promo-news'] && config['promo-news'].length > 0) {
-        renderNews(config['promo-news']);
-      }
-
       // Render Instagram feed widget
       if (newsContainer && config['instafeed-url']) {
-        var feedHtml = '<div class="promo-instagram-feed">';
-        feedHtml += '<h3>Follow Us on Instagram</h3>';
-        feedHtml += '<iframe src="' + escapeHTMLPromo(config['instafeed-url']) + '" frameborder="0" scrolling="no" allowtransparency="true" loading="lazy" class="promo-instagram-feed-iframe"></iframe>';
-        feedHtml += '</div>';
-        newsContainer.innerHTML += feedHtml;
+        newsContainer.innerHTML = '<iframe src="' + escapeHTMLPromo(config['instafeed-url']) + '" frameborder="0" scrolling="no" allowtransparency="true" loading="lazy" class="promo-instagram-feed-iframe"></iframe>';
       }
 
       // Parse and render products
