@@ -1,5 +1,5 @@
 /* Service Worker — Steins & Vines */
-var CACHE_VERSION = '20260302T023326988';
+var CACHE_VERSION = '20260302T023939691';
 var STATIC_CACHE = 'sv-static-' + CACHE_VERSION;
 var IMAGES_CACHE = 'sv-images-' + CACHE_VERSION;
 var FONTS_CACHE  = 'sv-fonts-' + CACHE_VERSION;
@@ -13,11 +13,6 @@ var PRECACHE_URLS = [
   '/about.html',
   '/contact.html',
   '/404.html',
-  '/css/styles.min.css',
-  '/js/main.min.js',
-  '/js/sheets-config.js',
-  '/manifest.json',
-  '/favicon.ico',
   '/images/SV_Logo_Wordmark_green.svg',
   '/images/SV_Logo_PrimaryCircle_offwhite.svg',
   '/images/Icon_green.svg',
@@ -70,7 +65,11 @@ self.addEventListener('fetch', function(event) {
 
   if (event.request.method !== 'GET') return;
 
-  // Never cache admin or batch ASSETS (CSS/JS have ?v= cache-bust tokens; let HTTP cache handle them)
+  // Never intercept versioned assets (?v= cache-bust token) — let HTTP cache handle them
+  if (url.search && url.search.indexOf('v=') !== -1 &&
+      (url.pathname.endsWith('.css') || url.pathname.endsWith('.js'))) return;
+
+  // Never cache admin or batch ASSETS
   if ((url.pathname.indexOf('admin') !== -1 || url.pathname.indexOf('batch') !== -1) &&
       (url.pathname.endsWith('.css') || url.pathname.endsWith('.js'))) return;
 
