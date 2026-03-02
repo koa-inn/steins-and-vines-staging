@@ -600,6 +600,7 @@ small, .text-small {
 behold-widget {
   display: block;
   width: 100%;
+  min-height: 400px;
 }
 
 /* Featured column */
@@ -607,6 +608,8 @@ behold-widget {
   padding-left: 1rem;
   display: flex;
   flex-direction: column;
+  /* Clip horizontal overflow from card slide transitions (translateX) only */
+  overflow-x: hidden;
 }
 
 .promo-featured-descriptions {
@@ -655,17 +658,8 @@ behold-widget {
 
 .promo-featured-carousel {
   position: relative;
-}
-
-.promo-featured-products {
-  display: flex;
-  gap: 1.5rem;
-  overflow: hidden;
-}
-
-.promo-featured-carousel {
-  position: relative;
-  overflow: hidden;
+  /* overflow: visible so card box-shadows are not clipped by the negative-margin padding trick */
+  overflow: visible;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -673,9 +667,11 @@ behold-widget {
 
 .promo-featured-products {
   display: flex;
+  /* Negative-margin trick: card box-shadows need room to bleed outside the flex container */
   padding: 1rem 1rem 2rem;
   margin: -1rem -1rem -2rem;
   flex: 1;
+  /* Do NOT add overflow: hidden here — it cancels the negative-margin shadow bleed */
 }
 
 .promo-featured-products .product-card,
@@ -684,7 +680,8 @@ behold-widget {
   flex: 0 0 100%;
   max-width: 340px;
   min-height: 0;
-  height: 100%;
+  /* height: auto so the active card drives the container height naturally */
+  height: auto;
   margin: 0 auto;
   box-shadow:
     0 2px 4px rgba(0,0,0,0.1),
@@ -705,6 +702,7 @@ behold-widget {
   opacity: 1;
   transform: translateX(0);
   position: relative;
+  height: auto;
   pointer-events: auto;
 }
 
