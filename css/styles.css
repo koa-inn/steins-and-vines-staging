@@ -5080,6 +5080,54 @@ behold-widget {
   white-space: nowrap;
 }
 
+/* Milling checkboxes section */
+.milling-section {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--color-brown);
+  background: rgba(229,222,193,0.3);
+  border-radius: var(--radius-xs);
+  font-size: 0.875rem;
+}
+.milling-title {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--color-green);
+}
+.milling-item-row {
+  display: flex;
+  align-items: center;
+  padding: 0.2rem 0;
+}
+.milling-item-row--all {
+  border-bottom: 1px solid rgba(0,0,0,0.1);
+  margin-bottom: 0.35rem;
+  padding-bottom: 0.35rem;
+  font-weight: 700;
+}
+.milling-item-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+.milling-checkbox {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: var(--color-green);
+}
+.milling-fee-row {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(0,0,0,0.1);
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+.milling-fee-row.hidden { display: none; }
+
 /* Cart sidebar weight display */
 .cart-sidebar-item-weight {
   font-size: 0.72rem;

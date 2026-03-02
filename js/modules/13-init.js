@@ -161,8 +161,8 @@ document.addEventListener('DOMContentLoaded', function () {
     } catch(e) {}
   }
 
-  // Product catalog loader
-  if (page === 'products') {
+  // Product catalog loader — shared by products.html and ingredients.html
+  if (page === 'products' || page === 'ingredients') {
     loadProducts();
     initReservationBar();
     initProductTabs();
@@ -170,11 +170,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // Preload ingredients immediately so the first tab switch is instant
     if (_allIngredients.length === 0) loadIngredients(function () {});
 
-    // Auto-switch tab if ?tab= param is set (e.g. from homepage "Shop Ingredients" link)
+    // Auto-switch tab: ?tab= param overrides default; ingredients page defaults to ingredients tab
     var tabParam = new URLSearchParams(window.location.search).get('tab');
     if (tabParam) {
       var tabBtn = document.querySelector('.product-tab-btn[data-product-tab="' + tabParam + '"]');
       if (tabBtn) tabBtn.click();
+    } else if (page === 'ingredients') {
+      var ingTabBtn = document.querySelector('.product-tab-btn[data-product-tab="ingredients"]');
+      if (ingTabBtn) ingTabBtn.click();
     }
   }
 
