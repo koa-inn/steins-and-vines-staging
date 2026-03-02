@@ -720,6 +720,50 @@ router.get('/api/snapshot', function (req, res) {
     });
 });
 
+/**
+ * POST /api/admin/upload-catalog
+ *
+ * Accepts a pre-shaped catalog JSON (products / ingredients / services arrays,
+ * identical in structure to what /api/snapshot returns) and stores them in
+ * Redis, overriding any Zoho-fetched data for 24 hours.
+ *
+ * Use this from the admin dashboard Export/Sync tab when the Zoho API is
+ * down or quota-exhausted — upload a Zoho Inventory item export CSV and the
+ * admin panel parses + posts it here without any Zoho API call.
+ *
+ * Auth: X-API-Key header required (enforced by server.js /api middleware).
+ */
+router.post('/api/admin/upload-catalog', function (req, res) {
+  var products    = req.body.products    || [];
+  var ingredients = req.body.ingredients || [];
+  var services    = req.body.services    || [];
+
+  if (!Array.isArray(products) || !Array.isArray(ingredients) || !Array.isArray(services)) {
+    return res.status(400).json({ ok: false, error: 'Invalid payload: expected arrays for products, ingredients, services' });
+  }
+
+  if (products.length === 0 && ingredients.length === 0 && services.length === 0) {
+    return res.status(400).json({ ok: false, error: 'Refusing empty catalog upload' });
+  }
+
+  var UPLOAD_TTL = 86400; // 24 hours — long enough to survive until Zoho recovers
+
+  Promise.all([
+    cache.set(PRODUCTS_CACHE_KEY, products, UPLOAD_TTL),
+    cache.set(INGREDIENTS_CACHE_KEY, ingredients, UPLOAD_TTL),
+    cache.set(SERVICES_CACHE_KEY, services, UPLOAD_TTL)
+  ]).then(function () {
+    log.info('[upload-catalog] Catalog overridden from admin CSV upload — ' +
+      products.length + ' products, ' +
+      ingredients.length + ' ingredients, ' +
+      services.length + ' services (TTL=' + UPLOAD_TTL + 's)');
+    res.json({ ok: true, products: products.length, ingredients: ingredients.length, services: services.length });
+  }).catch(function (err) {
+    log.error('[upload-catalog] Redis write failed: ' + err.message);
+    res.status(500).json({ ok: false, error: 'Cache write failed: ' + err.message });
+  });
+});
+
 // Expose refresh functions so server.js can call them for pre-warming
 router.refreshProducts = refreshProducts;
 router.refreshIngredients = doRefreshIngredients;

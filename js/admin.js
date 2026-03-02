@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-03-02T20:02:47.254Z';
+  var BUILD_TIMESTAMP = '2026-03-02T23:41:37.064Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -4346,6 +4346,15 @@
 
       var exportWsBtn = document.getElementById('export-ws-btn');
       if (exportWsBtn) exportWsBtn.addEventListener('click', exportWineSchedulerCSV);
+
+      var catalogCsvInput = document.getElementById('catalog-csv-input');
+      if (catalogCsvInput) catalogCsvInput.addEventListener('change', handleCatalogCSV);
+
+      var catalogApplyBtn = document.getElementById('catalog-csv-apply-btn');
+      if (catalogApplyBtn) catalogApplyBtn.addEventListener('click', applyCatalogCSV);
+
+      var catalogCancelBtn = document.getElementById('catalog-csv-cancel-btn');
+      if (catalogCancelBtn) catalogCancelBtn.addEventListener('click', cancelCatalogCSV);
     });
   }
 
@@ -4576,6 +4585,200 @@
     importPreviewData = null;
     document.getElementById('import-preview').style.display = 'none';
     document.getElementById('import-csv-input').value = '';
+  }
+
+  // ===== Zoho Inventory CSV Upload =====
+  // Parses a full Zoho item export CSV and POSTs the shaped catalog to the
+  // middleware /api/admin/upload-catalog endpoint, overriding Redis caches
+  // for 24 hours. Use when Zoho API is down or quota-exhausted.
+
+  var _catalogCsvParsed = null;
+  var _CATALOG_KIT_CATS = ['wine', 'beer', 'cider', 'seltzer'];
+
+  // Full CSV document parser — handles quoted fields containing commas and newlines.
+  // The existing parseCSVLine() only handles single lines, but Zoho descriptions
+  // can span multiple lines inside double-quoted fields.
+  function parseCatalogCSVDoc(text) {
+    var norm = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    var rows = [], row = [], field = '', inQ = false;
+    for (var i = 0; i < norm.length; i++) {
+      var ch = norm[i];
+      if (inQ) {
+        if (ch === '"') {
+          if (norm[i + 1] === '"') { field += '"'; i++; }
+          else { inQ = false; }
+        } else { field += ch; }
+      } else {
+        if (ch === '"') { inQ = true; }
+        else if (ch === ',') { row.push(field); field = ''; }
+        else if (ch === '\n') {
+          row.push(field); field = '';
+          if (row.some(function (f) { return f !== ''; })) rows.push(row);
+          row = [];
+        } else { field += ch; }
+      }
+    }
+    row.push(field);
+    if (row.some(function (f) { return f !== ''; })) rows.push(row);
+    return rows;
+  }
+
+  function handleCatalogCSV(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+
+    var filenameEl = document.getElementById('catalog-csv-filename');
+    if (filenameEl) filenameEl.textContent = file.name;
+
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      try {
+        var rows = parseCatalogCSVDoc(ev.target.result);
+        if (rows.length < 2) { showToast('CSV has no data rows.', 'error'); return; }
+
+        var headers = rows[0];
+
+        function col(row, name) {
+          var idx = headers.indexOf(name);
+          return idx !== -1 && row[idx] !== undefined ? row[idx].trim() : '';
+        }
+
+        function parsePrice(str) {
+          var m = (str || '').match(/[\d.]+/);
+          return m ? parseFloat(m[0]) : 0;
+        }
+
+        function flattenCF(row) {
+          var obj = {};
+          headers.forEach(function (h, i) {
+            if (h.indexOf('CF.') !== 0) return;
+            var key = h.slice(3).toLowerCase().replace(/\s+/g, '_');
+            var val = (row[i] || '').trim();
+            if (val !== '') obj[key] = val;
+          });
+          return obj;
+        }
+
+        var products = [], ingredients = [], services = [], skipped = 0;
+
+        rows.slice(1).forEach(function (row) {
+          if (row.length < 5) { skipped++; return; }
+          if (col(row, 'Status').toLowerCase() !== 'active') { skipped++; return; }
+
+          var prodType = col(row, 'Product Type').toLowerCase();
+          var cfType   = col(row, 'CF.Type').toLowerCase();
+          var price    = parsePrice(col(row, 'Selling Price'));
+          var cf       = flattenCF(row);
+
+          if (prodType === 'service') {
+            services.push({
+              name:        col(row, 'Item Name'),
+              price:       String(price),
+              description: col(row, 'Sales Description'),
+              sku:         col(row, 'SKU'),
+              stock:       col(row, 'Stock On Hand') || '0',
+              discount:    col(row, 'CF.Discount') || '0'
+            });
+            return;
+          }
+
+          var isKit = _CATALOG_KIT_CATS.indexOf(cfType) !== -1;
+          if (isKit) {
+            var obj = {
+              name:           col(row, 'Item Name'),
+              sku:            col(row, 'SKU'),
+              item_id:        col(row, 'Item ID'),
+              brand:          col(row, 'Brand'),
+              stock:          col(row, 'Stock On Hand') || '0',
+              description:    col(row, 'Sales Description'),
+              discount:       col(row, 'CF.Discount') || '0',
+              _zoho_category: col(row, 'CF.Type'),
+              retail_kit:     '$' + price.toFixed(2),
+              retail_instore: '$' + (price + 50).toFixed(2)
+            };
+            Object.keys(cf).forEach(function (k) { obj[k] = cf[k]; });
+            products.push(obj);
+          } else {
+            if (price <= 0) { skipped++; return; }
+            var ing = {
+              name:           col(row, 'Item Name'),
+              unit:           col(row, 'Unit'),
+              price_per_unit: String(price),
+              stock:          col(row, 'Stock On Hand') || '0',
+              description:    col(row, 'Sales Description'),
+              sku:            col(row, 'SKU'),
+              category:       col(row, 'CF.Subcategory') || '',
+              low_amount:     '',
+              high_amount:    '',
+              step:           ''
+            };
+            Object.keys(cf).forEach(function (k) { ing[k] = cf[k]; });
+            ingredients.push(ing);
+          }
+        });
+
+        if (products.length === 0 && ingredients.length === 0 && services.length === 0) {
+          showToast('No valid items found. Check this is a Zoho Inventory item export.', 'error');
+          return;
+        }
+
+        _catalogCsvParsed = { products: products, ingredients: ingredients, services: services };
+
+        var summaryEl = document.getElementById('catalog-csv-summary');
+        if (summaryEl) {
+          summaryEl.textContent = 'Ready: ' + products.length + ' kits, ' +
+            ingredients.length + ' ingredients, ' + services.length + ' services' +
+            (skipped > 0 ? ' (' + skipped + ' inactive/zero-price skipped)' : '') + '.';
+        }
+        var preview = document.getElementById('catalog-csv-preview');
+        if (preview) preview.style.display = '';
+
+      } catch (err) {
+        showToast('Failed to parse CSV: ' + err.message, 'error');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function applyCatalogCSV() {
+    if (!_catalogCsvParsed) return;
+    var mwUrl = getMwUrl();
+    if (!mwUrl) { showToast('Middleware URL not configured.', 'error'); return; }
+
+    var applyBtn = document.getElementById('catalog-csv-apply-btn');
+    if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Applying\u2026'; }
+
+    fetch(mwUrl + '/api/admin/upload-catalog', {
+      method: 'POST',
+      headers: getMwHeaders(true),
+      body: JSON.stringify(_catalogCsvParsed)
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) throw new Error(data.error || 'Upload failed');
+      showToast(
+        'Catalog updated: ' + data.products + ' kits, ' +
+        data.ingredients + ' ingredients, ' + data.services + ' services.',
+        'success'
+      );
+      cancelCatalogCSV();
+    })
+    .catch(function (err) {
+      showToast('Upload failed: ' + err.message, 'error');
+      if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = 'Apply to Site'; }
+    });
+  }
+
+  function cancelCatalogCSV() {
+    _catalogCsvParsed = null;
+    var input = document.getElementById('catalog-csv-input');
+    if (input) input.value = '';
+    var filenameEl = document.getElementById('catalog-csv-filename');
+    if (filenameEl) filenameEl.textContent = '';
+    var preview = document.getElementById('catalog-csv-preview');
+    if (preview) preview.style.display = 'none';
+    var applyBtn = document.getElementById('catalog-csv-apply-btn');
+    if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = 'Apply to Site'; }
   }
 
   // ===== CSV Parser (same as main.js) =====

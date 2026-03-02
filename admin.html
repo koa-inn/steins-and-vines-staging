@@ -16,8 +16,8 @@
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap">
   <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <link rel="icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/styles.min.css?v=mm9lvos5">
-  <link rel="stylesheet" href="css/admin.min.css?v=mm9lvos5">
+  <link rel="stylesheet" href="css/styles.min.css?v=mm9tp3tr">
+  <link rel="stylesheet" href="css/admin.min.css?v=mm9tp3tr">
 </head>
 <body data-page="admin">
 
@@ -675,6 +675,24 @@
             </div>
 
             <div class="admin-export-section">
+              <h3>Upload Zoho Inventory CSV</h3>
+              <p>When the Zoho API is down or quota-exhausted, upload an item export CSV to restore product data immediately &mdash; no API call required.</p>
+              <p class="admin-note">In Zoho Inventory: Items &rarr; &hellip; &rarr; Export Items &rarr; CSV &rarr; Download</p>
+              <div style="margin-top: 0.75rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <label class="btn" for="catalog-csv-input" style="cursor: pointer; margin: 0;">Choose CSV File</label>
+                <input type="file" id="catalog-csv-input" accept=".csv" style="display:none;">
+                <span id="catalog-csv-filename" class="admin-note"></span>
+              </div>
+              <div id="catalog-csv-preview" style="display:none; margin-top: 1rem;">
+                <p id="catalog-csv-summary" class="admin-note" style="margin-bottom: 0.75rem;"></p>
+                <div class="admin-import-actions">
+                  <button type="button" class="btn" id="catalog-csv-apply-btn">Apply to Site</button>
+                  <button type="button" class="btn-secondary" id="catalog-csv-cancel-btn">Cancel</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-export-section">
               <h3>Wine Scheduler Export</h3>
               <p>Download a CSV of all kits and ingredients formatted for Wine Scheduler import.</p>
               <button type="button" class="btn" id="export-ws-btn">Export for Wine Scheduler</button>
@@ -731,6 +749,6 @@
   <script src="js/sheets-config.js" defer></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="js/vendor/qrcode.min.js" defer></script>
-  <script src="js/admin.min.js?v=mm9lvos5" defer></script>
+  <script src="js/admin.min.js?v=mm9tp3tr" defer></script>
 </body>
 </html>
