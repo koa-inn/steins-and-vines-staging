@@ -124,7 +124,17 @@ function loadIngredients(callback) {
       });
       buildIngredientFilters();
       wireIngredientEvents();
-      renderIngredients();
+      // Default to Grains category on first load
+      var grainsBtn = document.querySelector('#filter-category .catalog-filter-btn:not([data-value="All"])');
+      var allCatBtns = document.querySelectorAll('#filter-category .catalog-filter-btn');
+      allCatBtns.forEach(function (b) {
+        if ((b.getAttribute('data-value') || '').toLowerCase() === 'grains') grainsBtn = b;
+      });
+      if (grainsBtn && (grainsBtn.getAttribute('data-value') || '').toLowerCase() === 'grains') {
+        grainsBtn.click();
+      } else {
+        renderIngredients();
+      }
       if (callback) callback();
     })
     .catch(function () {});
@@ -361,9 +371,10 @@ function renderIngredientSection(catalog, title, items, extraClass) {
   if (title) {
     var sectionHeader = document.createElement('div');
     sectionHeader.className = 'catalog-section-header';
+    var TYPE_DISPLAY = { 'Ingredient': 'Ingredients' };
     var heading = document.createElement('h2');
     heading.className = 'catalog-section-title';
-    heading.textContent = title;
+    heading.textContent = TYPE_DISPLAY[title] || title;
     sectionHeader.appendChild(heading);
     wrapper.appendChild(sectionHeader);
   }

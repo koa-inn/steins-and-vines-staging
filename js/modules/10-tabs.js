@@ -7,6 +7,21 @@ function initProductTabs() {
     if (!btn) return;
 
     var tab = btn.getAttribute('data-product-tab');
+
+    // On dedicated tab pages, clicking a tab navigates to that tab's URL
+    var currentPage = document.body.getAttribute('data-page');
+    var DEDICATED_TAB_PAGES = ['ferment-in-store', 'ingredients-supplies'];
+    if (DEDICATED_TAB_PAGES.indexOf(currentPage) !== -1) {
+      var TAB_URLS = {
+        'kits': '/products/ferment-in-store.html',
+        'ingredients': '/products/ingredients-supplies.html'
+      };
+      if (TAB_URLS[tab] && location.pathname !== TAB_URLS[tab]) {
+        location.href = TAB_URLS[tab];
+        return;
+      }
+    }
+
     _activeCartTab = tab;
 
     // Swap active button
