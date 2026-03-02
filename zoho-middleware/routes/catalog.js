@@ -57,6 +57,7 @@ var REFRESH_LOCK_KEY = 'products:refresh';
 var REFRESH_LOCK_TTL = 120; // 2-min auto-expire if process crashes mid-refresh
 // __dirname is routes/ subdirectory, so go up one level to middleware root
 var PRODUCTS_FILE_CACHE = path.join(__dirname, '..', 'products-cache.json');
+var INGREDIENTS_FILE_CACHE = path.join(__dirname, '..', 'ingredients-cache.json');
 
 var SERVICES_CACHE_KEY = 'zoho:services';
 var SERVICES_CACHE_TTL = 300; // 5 minutes
@@ -75,6 +76,7 @@ var KIT_CATEGORIES = ['wine', 'beer', 'cider', 'seltzer'];
 // Used by /api/ingredients to exclude kits even when Redis is down.
 var _kitItemIds = {};
 var _productsRefreshing = false; // in-process guard (Redis-down fallback)
+var _ingredientsRefreshPromise = null; // coalesces concurrent cold-cache requests
 
 // ---------------------------------------------------------------------------
 // Product refresh logic
@@ -350,6 +352,109 @@ router.get('/api/services', function (req, res) {
 });
 
 /**
+ * Fetch, enrich, and cache ingredients from Zoho Inventory.
+ * Extracted from the route handler so server.js can call it for pre-warming.
+ * Uses promise coalescing (_ingredientsRefreshPromise) so concurrent requests
+ * (e.g. startup pre-warm + first user request) share a single Zoho round-trip.
+ */
+function doRefreshIngredients() {
+  if (_ingredientsRefreshPromise) return _ingredientsRefreshPromise;
+
+  _ingredientsRefreshPromise = fetchAllItemsCached()
+    .then(function (allItems) {
+      // Use cf_type (available from list endpoint, no enrichment needed) to
+      // exclude kit items. This avoids a race condition where _kitItemIds is
+      // empty during startup while the products pre-warm is still running.
+      var items = allItems.filter(function (item) {
+        if (item.product_type === 'service') return false;
+        if (item.rate <= 0) return false;
+        var cfType = (item.cf_type || '').toLowerCase();
+        if (cfType && KIT_CATEGORIES.indexOf(cfType) !== -1) return false;
+        if (_kitItemIds[item.item_id]) return false; // belt-and-suspenders
+        return true;
+      });
+
+      log.info('[api/ingredients] Enriching ' + items.length + ' priced items (batches of 10)');
+
+      var BATCH_SIZE = 10;
+      var BATCH_PAUSE = 500; // ms between batches
+      var MAX_RETRIES = 2;
+      var enriched = [];
+
+      function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+      function fetchDetail(item, retries) {
+        return inventoryGet('/items/' + item.item_id)
+          .then(function (data) {
+            var detail = data.item || {};
+            item.custom_fields = detail.custom_fields || [];
+            item.brand = detail.brand || '';
+            item.tax_id = detail.tax_id || '';
+            item.tax_name = detail.tax_name || '';
+            item.tax_percentage = (detail.tax_percentage !== undefined && detail.tax_percentage !== null)
+              ? detail.tax_percentage : 0;
+            return item;
+          })
+          .catch(function (err) {
+            if (err.response && err.response.status === 429 && retries < MAX_RETRIES) {
+              var backoff = Math.pow(2, retries + 1) * 1000;
+              log.warn('[api/ingredients] Rate limited on ' + item.name + ', retrying in ' + backoff + 'ms');
+              return delay(backoff).then(function () { return fetchDetail(item, retries + 1); });
+            }
+            log.error('[api/ingredients] Detail fetch failed for ' + item.name + ': ' + err.message);
+            item.custom_fields = [];
+            item.tax_percentage = (item.tax_percentage !== undefined && item.tax_percentage !== null)
+              ? item.tax_percentage : 0;
+            item.tax_name = item.tax_name || '';
+            item.tax_id = item.tax_id || '';
+            return item;
+          });
+      }
+
+      var batches = [];
+      for (var i = 0; i < items.length; i += BATCH_SIZE) {
+        batches.push(items.slice(i, i + BATCH_SIZE));
+      }
+
+      var chain = Promise.resolve();
+      batches.forEach(function (batch, idx) {
+        chain = chain.then(function () {
+          return Promise.all(batch.map(function (item) {
+            return fetchDetail(item, 0);
+          })).then(function (results) {
+            results.forEach(function (r) { enriched.push(r); });
+            if (idx < batches.length - 1) return delay(BATCH_PAUSE);
+          });
+        });
+      });
+
+      return chain.then(function () {
+        _ingredientsRefreshPromise = null;
+        if (enriched.length > 0) {
+          cache.set(INGREDIENTS_CACHE_KEY, enriched, INGREDIENTS_CACHE_TTL);
+          // Write file fallback (async, fire-and-forget)
+          fs.writeFile(INGREDIENTS_FILE_CACHE, JSON.stringify(enriched), function (fileErr) {
+            if (fileErr) {
+              log.error('[api/ingredients] File fallback write failed: ' + fileErr.message);
+            } else {
+              log.info('[api/ingredients] Wrote file fallback (' + enriched.length + ' items)');
+            }
+          });
+        } else {
+          log.warn('[api/ingredients] Enrichment returned 0 items — skipping cache to allow retry');
+        }
+        return enriched;
+      });
+    })
+    .catch(function (err) {
+      _ingredientsRefreshPromise = null;
+      throw err;
+    });
+
+  return _ingredientsRefreshPromise;
+}
+
+/**
  * GET /api/ingredients
  * Returns active goods items that are NOT kits (no Type custom field)
  * and NOT services. These are ingredients, supplies, and equipment.
@@ -363,83 +468,27 @@ router.get('/api/ingredients', function (req, res) {
         return res.json({ source: 'cache', items: cached });
       }
 
+      // Try file fallback before slow enrichment
+      var fileData = null;
+      try {
+        fileData = JSON.parse(fs.readFileSync(INGREDIENTS_FILE_CACHE, 'utf8'));
+      } catch (e) {}
+
+      if (fileData && fileData.length > 0) {
+        log.info('[api/ingredients] File fallback hit (' + fileData.length + ' items)');
+        cache.set(INGREDIENTS_CACHE_KEY, fileData, INGREDIENTS_CACHE_TTL);
+        res.json({ source: 'file-cache', items: fileData });
+        // Trigger background refresh
+        doRefreshIngredients().catch(function (err) {
+          log.error('[api/ingredients] Background refresh failed: ' + err.message);
+        });
+        return;
+      }
+
       log.info('[api/ingredients] Cache miss — fetching from Zoho Inventory');
-      return fetchAllItemsCached()
-        .then(function (allItems) {
-          // Use cf_type (available from list endpoint, no enrichment needed) to
-          // exclude kit items. This avoids a race condition where _kitItemIds is
-          // empty during startup while the products pre-warm is still running.
-          var items = allItems.filter(function (item) {
-            if (item.product_type === 'service') return false;
-            if (item.rate <= 0) return false;
-            var cfType = (item.cf_type || '').toLowerCase();
-            if (cfType && KIT_CATEGORIES.indexOf(cfType) !== -1) return false;
-            if (_kitItemIds[item.item_id]) return false; // belt-and-suspenders
-            return true;
-          });
-
-          log.info('[api/ingredients] Enriching ' + items.length + ' priced items for custom fields');
-
-          var BATCH_SIZE = 5;
-          var BATCH_PAUSE = 2000;
-          var MAX_RETRIES = 2;
-          var enriched = [];
-
-          function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-
-          function fetchDetail(item, retries) {
-            return inventoryGet('/items/' + item.item_id)
-              .then(function (data) {
-                var detail = data.item || {};
-                item.custom_fields = detail.custom_fields || [];
-                item.brand = detail.brand || '';
-                item.tax_id = detail.tax_id || '';
-                item.tax_name = detail.tax_name || '';
-                item.tax_percentage = (detail.tax_percentage !== undefined && detail.tax_percentage !== null)
-                  ? detail.tax_percentage : 0;
-                return item;
-              })
-              .catch(function (err) {
-                if (err.response && err.response.status === 429 && retries < MAX_RETRIES) {
-                  var backoff = Math.pow(2, retries + 1) * 1000;
-                  log.warn('[api/ingredients] Rate limited on ' + item.name + ', retrying in ' + backoff + 'ms');
-                  return delay(backoff).then(function () { return fetchDetail(item, retries + 1); });
-                }
-                log.error('[api/ingredients] Detail fetch failed for ' + item.name + ': ' + err.message);
-                item.custom_fields = [];
-                item.tax_percentage = (item.tax_percentage !== undefined && item.tax_percentage !== null)
-                  ? item.tax_percentage : 0;
-                item.tax_name = item.tax_name || '';
-                item.tax_id = item.tax_id || '';
-                return item;
-              });
-          }
-
-          var batches = [];
-          for (var i = 0; i < items.length; i += BATCH_SIZE) {
-            batches.push(items.slice(i, i + BATCH_SIZE));
-          }
-
-          var chain = Promise.resolve();
-          batches.forEach(function (batch, idx) {
-            chain = chain.then(function () {
-              return Promise.all(batch.map(function (item) {
-                return fetchDetail(item, 0);
-              })).then(function (results) {
-                results.forEach(function (r) { enriched.push(r); });
-                if (idx < batches.length - 1) return delay(BATCH_PAUSE);
-              });
-            });
-          });
-
-          return chain.then(function () {
-            if (enriched.length > 0) {
-              cache.set(INGREDIENTS_CACHE_KEY, enriched, INGREDIENTS_CACHE_TTL);
-            } else {
-              log.warn('[api/ingredients] Enrichment returned 0 items — skipping cache to allow retry');
-            }
-            res.json({ source: 'zoho', items: enriched });
-          });
+      return doRefreshIngredients()
+        .then(function (enriched) {
+          res.json({ source: 'zoho', items: enriched });
         });
     })
     .catch(function (err) {
@@ -656,7 +705,8 @@ router.get('/api/snapshot', function (req, res) {
     });
 });
 
-// Expose refreshProducts so server.js can call it for pre-warming
+// Expose refresh functions so server.js can call them for pre-warming
 router.refreshProducts = refreshProducts;
+router.refreshIngredients = doRefreshIngredients;
 
 module.exports = router;

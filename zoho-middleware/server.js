@@ -227,10 +227,15 @@ cache.init().then(function () {
       log.info('Connect Zoho: http://localhost:' + PORT + '/auth/zoho');
     } else {
       log.info('Zoho: Connected');
-      // Pre-warm product cache on startup
+      // Pre-warm product and ingredients caches on startup
       log.info('Pre-warming product cache...');
       catalogRouter.refreshProducts().then(function () {
         log.info('Product cache pre-warmed');
+        // Pre-warm ingredients after products (sequential to avoid rate-limiting)
+        log.info('Pre-warming ingredients cache...');
+        return catalogRouter.refreshIngredients();
+      }).then(function () {
+        log.info('Ingredients cache pre-warmed');
       }).catch(function (err) {
         log.error('Pre-warm failed: ' + err.message);
       });

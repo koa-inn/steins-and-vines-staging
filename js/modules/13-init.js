@@ -167,10 +167,8 @@ document.addEventListener('DOMContentLoaded', function () {
     initReservationBar();
     initProductTabs();
     initCatalogViewToggle();
-    // Preload ingredients in the background so the first tab switch is instant
-    setTimeout(function () {
-      if (_allIngredients.length === 0) loadIngredients(function () {});
-    }, 1500);
+    // Preload ingredients immediately so the first tab switch is instant
+    if (_allIngredients.length === 0) loadIngredients(function () {});
 
     // Auto-switch tab if ?tab= param is set (e.g. from homepage "Shop Ingredients" link)
     var tabParam = new URLSearchParams(window.location.search).get('tab');
