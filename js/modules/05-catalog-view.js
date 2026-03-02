@@ -2,7 +2,7 @@
 var applyKitsFilters = null;
 
 // ===== Catalog View Toggle =====
-var catalogViewDefaults = { kits: 'cards', ingredients: 'table', services: 'table' };
+var catalogViewDefaults = { kits: 'cards', ingredients: 'table', services: 'cards' };
 var catalogViewMode = 'cards'; // active tab's current mode
 
 function getCatalogViewMode(tab) {
