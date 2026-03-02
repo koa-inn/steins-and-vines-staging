@@ -3850,7 +3850,8 @@ function setReservationQty(product, qty) {
       unit: product.unit || '',
       tax_percentage: parseFloat(product.tax_percentage) || 0,
       max_order_qty: product.max_order_qty || '',
-      zoho_item_id: product.item_id || '',
+      zoho_item_id: product.zoho_item_id || product.item_id || '',
+      millable: product.millable || '',
       cartAddedAt: Date.now()
     });
     if (navigator.vibrate) navigator.vibrate(10);
