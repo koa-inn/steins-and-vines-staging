@@ -5868,8 +5868,13 @@ function setupReservationForm() {
         paymentConfig = cfg;
         if (!cfg.enabled || !cfg.accessToken) return;
 
-        // Show the payment section
+        // Show the payment section and pre-fill cardholder name from customer name field
         paymentSection.classList.remove('hidden');
+        var holderInput = document.getElementById('credit-card-holder-input');
+        var nameInputEl = document.getElementById('res-name');
+        if (holderInput && nameInputEl && nameInputEl.value.trim()) {
+          holderInput.value = nameInputEl.value.trim();
+        }
         var headingEl = document.getElementById('payment-heading');
         var noteEl = document.getElementById('payment-note');
         var cfgItems = getReservation();
@@ -5891,10 +5896,6 @@ function setupReservationForm() {
 
           gpCardForm = GlobalPayments.ui.form({
             fields: {
-              'card-holder-name': {
-                placeholder: 'Jane Smith',
-                target: '#credit-card-holder'
-              },
               'card-number': {
                 placeholder: '•••• •••• •••• ••••',
                 target: '#credit-card-number'
@@ -6054,13 +6055,27 @@ function setupReservationForm() {
     markValid(this);
   });
 
-  if (phoneInput) phoneInput.addEventListener('blur', function () {
-    var val = this.value.trim();
-    if (!val) { clearValid(this); showFieldError(this, 'Phone number is required.'); return; }
-    var digits = val.replace(/\D/g, '');
-    if (digits.length < 10 || digits.length > 15) { clearValid(this); showFieldError(this, 'Please enter 10\u201315 digits.'); return; } // #33
-    markValid(this);
-  });
+  if (phoneInput) {
+    phoneInput.addEventListener('input', function () {
+      var digits = this.value.replace(/\D/g, '').slice(0, 10);
+      var formatted = digits;
+      if (digits.length > 6) {
+        formatted = '(' + digits.slice(0, 3) + ') ' + digits.slice(3, 6) + '-' + digits.slice(6);
+      } else if (digits.length > 3) {
+        formatted = '(' + digits.slice(0, 3) + ') ' + digits.slice(3);
+      } else if (digits.length > 0) {
+        formatted = '(' + digits;
+      }
+      this.value = formatted;
+    });
+    phoneInput.addEventListener('blur', function () {
+      var val = this.value.trim();
+      if (!val) { clearValid(this); showFieldError(this, 'Phone number is required.'); return; }
+      var digits = val.replace(/\D/g, '');
+      if (digits.length < 10 || digits.length > 15) { clearValid(this); showFieldError(this, 'Please enter 10\u201315 digits.'); return; }
+      markValid(this);
+    });
+  }
 
   // Clear errors on focus
   [nameInput, emailInput, phoneInput].forEach(function (el) {

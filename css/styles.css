@@ -2845,6 +2845,24 @@ behold-widget {
   flex: 1;
 }
 
+.payment-holder-input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid var(--color-brown);
+  border-radius: var(--radius-sm);
+  padding: 0 0.75rem;
+  font-size: 1rem;
+  font-family: inherit;
+  color: inherit;
+  background: #fff;
+  outline: none;
+  box-sizing: border-box;
+}
+.payment-holder-input:focus {
+  border-color: var(--color-green);
+  box-shadow: 0 0 0 2px rgba(74, 103, 65, 0.15);
+}
+
 #credit-card-number,
 #credit-card-expiry,
 #credit-card-cvv {
