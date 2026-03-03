@@ -2399,12 +2399,6 @@ behold-widget {
   padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   z-index: 1000;
   box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
-  /* Force GPU compositing layer — fixes position:fixed rendering on iOS Safari */
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
-  /* Ensure the bar is never accidentally clipped */
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
 }
 
 .reservation-bar .container {
@@ -2463,27 +2457,10 @@ behold-widget {
 /* reservation-bar.hidden — uses generic .hidden utility */
 
 .reservation-bar.reservation-bar-inline {
-  position: static;
-  border-radius: 8px;
-  margin: 0;
-  max-width: var(--max-width, 1200px);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  display: none;
-  width: 100%;
-  flex-basis: 100%;
-  order: -1;
-  /* Inline bar doesn't need GPU compositing — reset the fixed-bar transform */
-  -webkit-transform: none;
-  transform: none;
-  -webkit-backface-visibility: visible;
-  backface-visibility: visible;
+  display: none; /* Inline bar not used — sidebar handles desktop, fixed bar handles mobile */
 }
 
 @media (min-height: 750px) {
-  .reservation-bar.reservation-bar-inline:not(.hidden) {
-    display: block;
-  }
-
   .catalog-controls {
     position: sticky;
     top: calc(var(--header-height, 0px) + var(--tabs-height, 48px));
@@ -5753,25 +5730,32 @@ body {
     padding: 4rem 0;
   }
 
-  /* Sticky-top: guaranteed reliable on iOS at any DOM nesting depth.
-     position:fixed on nested elements is unreliable on iOS Safari. */
+  /* Controls are relocated to #mobile-catalog-bar (body-level) by JS.
+     Reset positioning here so the body wrapper handles fixed placement. */
   .catalog-controls {
-    position: sticky;
-    top: var(--header-height, 60px);
-    z-index: 150;
-    background-color: var(--color-cream);
-    padding: 0.75rem 0;
-    margin-bottom: 0.75rem;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    position: static;
+    z-index: auto;
+    background-color: transparent;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0;
+    box-shadow: none;
     gap: 0.5rem;
   }
 
-  #product-catalog {
-    padding-bottom: 5rem;
+  /* Fixed bottom controls bar — populated by initMobileBottomControls() */
+  #mobile-catalog-bar {
+    position: fixed;
+    bottom: var(--reservation-bar-height, 3rem);
+    left: 0;
+    right: 0;
+    z-index: 999;
+    background-color: var(--color-cream);
+    box-shadow: 0 -2px 6px rgba(0,0,0,0.1);
   }
 
-  body.has-reservation-bar #product-catalog {
-    padding-bottom: calc(var(--reservation-bar-height, 3.5rem) + 5rem);
+  #product-catalog {
+    /* Leave room for both fixed bottom bars */
+    padding-bottom: calc(var(--reservation-bar-height, 3rem) + var(--catalog-bar-height, 6rem) + 1rem);
   }
 
   .product-tabs {

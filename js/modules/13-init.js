@@ -165,6 +165,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (page === 'products' || page === 'ingredients' || page === 'ferment-in-store' || page === 'ingredients-supplies') {
     loadProducts();
     initReservationBar();
+    initMobileBottomControls();
     initProductTabs();
     initCatalogViewToggle();
     // Preload ingredients immediately so the first tab switch is instant
@@ -213,6 +214,30 @@ document.addEventListener('DOMContentLoaded', function () {
   // Social links on all pages
   loadSocialLinks();
 });
+
+// ===== Mobile Bottom Controls =====
+// Moves .catalog-controls elements to a direct body child so position:fixed
+// works reliably on iOS Safari regardless of DOM nesting depth.
+function initMobileBottomControls() {
+  if (window.innerWidth >= 1024) return;
+  var controls = Array.prototype.slice.call(document.querySelectorAll('.catalog-controls'));
+  if (controls.length === 0) return;
+
+  var wrap = document.createElement('div');
+  wrap.id = 'mobile-catalog-bar';
+  document.body.appendChild(wrap);
+  controls.forEach(function(ctrl) { wrap.appendChild(ctrl); });
+
+  // Measure heights after first paint so CSS vars reflect actual layout
+  requestAnimationFrame(function() {
+    var catH = wrap.offsetHeight || 56;
+    document.documentElement.style.setProperty('--catalog-bar-height', catH + 'px');
+    var fixedBar = document.getElementById('reservation-bar');
+    if (fixedBar && !fixedBar.classList.contains('hidden')) {
+      document.documentElement.style.setProperty('--reservation-bar-height', fixedBar.offsetHeight + 'px');
+    }
+  });
+}
 
 // ===== Kiosk Mode =====
 

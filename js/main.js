@@ -4536,9 +4536,8 @@ function updateReservationBar() {
 
   var checkoutHref = 'reservation.html?cart=' + (isFerment ? 'ferment' : 'ingredient');
 
-  // On mobile, the fixed bar is always shown as a persistent bottom drawer handle.
-  // iOS Safari position:fixed can fail if the element is toggled display:none;
-  // keeping it always present in the DOM and visible avoids that rendering bug.
+  // Fixed bar: mobile only — on desktop the sidebar handles the cart.
+  // Always visible on mobile as a persistent bottom drawer handle (even when empty).
   var isMobile = window.innerWidth < 1024;
 
   for (var i = 0; i < bars.length; i++) {
@@ -4547,12 +4546,22 @@ function updateReservationBar() {
     var linkEl = bar.querySelector('.reservation-bar-link');
     var isInline = bar.classList.contains('reservation-bar-inline');
     if (linkEl) linkEl.setAttribute('href', checkoutHref);
-    if (total > 0 && !isServices) {
+    // Inline bar is retired — sidebar and fixed bar handle cart display
+    if (isInline) {
+      bar.classList.add('hidden');
+      bar.classList.remove('reservation-bar-empty');
+      continue;
+    }
+    // Fixed bar: only on mobile
+    if (!isMobile) {
+      bar.classList.add('hidden');
+      bar.classList.remove('reservation-bar-empty');
+    } else if (total > 0 && !isServices) {
       bar.classList.remove('hidden');
       bar.classList.remove('reservation-bar-empty');
       if (countEl) countEl.textContent = label;
-    } else if (isMobile && !isInline && !isServices) {
-      // Always show the fixed bar on mobile as a tappable drawer handle
+    } else if (!isServices) {
+      // Empty cart — always show as a tappable drawer handle on mobile
       bar.classList.remove('hidden');
       bar.classList.add('reservation-bar-empty');
       if (countEl) countEl.textContent = isFerment ? 'Your Reservations' : 'Your Cart';
@@ -7067,6 +7076,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (page === 'products' || page === 'ingredients' || page === 'ferment-in-store' || page === 'ingredients-supplies') {
     loadProducts();
     initReservationBar();
+    initMobileBottomControls();
     initProductTabs();
     initCatalogViewToggle();
     // Preload ingredients immediately so the first tab switch is instant
@@ -7115,6 +7125,30 @@ document.addEventListener('DOMContentLoaded', function () {
   // Social links on all pages
   loadSocialLinks();
 });
+
+// ===== Mobile Bottom Controls =====
+// Moves .catalog-controls elements to a direct body child so position:fixed
+// works reliably on iOS Safari regardless of DOM nesting depth.
+function initMobileBottomControls() {
+  if (window.innerWidth >= 1024) return;
+  var controls = Array.prototype.slice.call(document.querySelectorAll('.catalog-controls'));
+  if (controls.length === 0) return;
+
+  var wrap = document.createElement('div');
+  wrap.id = 'mobile-catalog-bar';
+  document.body.appendChild(wrap);
+  controls.forEach(function(ctrl) { wrap.appendChild(ctrl); });
+
+  // Measure heights after first paint so CSS vars reflect actual layout
+  requestAnimationFrame(function() {
+    var catH = wrap.offsetHeight || 56;
+    document.documentElement.style.setProperty('--catalog-bar-height', catH + 'px');
+    var fixedBar = document.getElementById('reservation-bar');
+    if (fixedBar && !fixedBar.classList.contains('hidden')) {
+      document.documentElement.style.setProperty('--reservation-bar-height', fixedBar.offsetHeight + 'px');
+    }
+  });
+}
 
 // ===== Kiosk Mode =====
 
