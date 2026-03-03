@@ -65,7 +65,8 @@
 /* ===== Base Body ===== */
 html {
   font-size: 16px;
-  scroll-behavior: smooth;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -74,7 +75,8 @@ body {
   color: var(--ink-primary);
   background-color: var(--cellar-canvas);
   line-height: 1.6;
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
 }
 
 img {
@@ -286,8 +288,7 @@ img {
   padding: 12px 24px;
   background: var(--cellar-raised);
   border-bottom: 1px solid var(--ledger-line);
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   z-index: 200;
 }
 
@@ -370,23 +371,34 @@ img {
 
 /* ===== Kiosk App Wrapper ===== */
 #kiosk-app {
-  padding-bottom: 3rem; /* room for terminal bar */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  /* terminal bar is position:fixed so no padding needed */
 }
 
 /* ===== Kiosk Sale (In-Store POS) — copied from admin.css ===== */
 
-/* View switcher — only one view visible at a time */
-.kiosk-view { display: block; }
+/* View switcher — fills remaining app height, scrollable */
+.kiosk-view {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  /* account for fixed terminal bar */
+  padding-bottom: 36px;
+}
 
 /* ---- Browse Layout ---- */
 .kiosk-browse-layout {
   display: grid;
   grid-template-columns: 1fr 340px;
   gap: 1rem;
-  /* Shell bar ~52px + terminal bar ~36px + 4px gap = 92px */
-  height: calc(100vh - 92px);
-  min-height: 480px;
+  height: 100%;
+  min-height: 0;
   padding: 1rem;
+  padding-bottom: 0; /* view already pads for terminal bar */
 }
 
 /* Product pane: fills its grid cell and scrolls internally */
@@ -604,9 +616,8 @@ img {
   border-radius: 10px;
   padding: 1rem;
   gap: 0.5rem;
-  position: sticky;
-  top: 1rem;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -762,8 +773,10 @@ img {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 500px;
+  height: 100%;
   padding: 2rem 1rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .kiosk-payment-card,
@@ -925,7 +938,6 @@ img {
 .kiosk-view--customer-scroll {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  max-height: calc(100vh - 100px);
   padding-bottom: env(safe-area-inset-bottom, 1rem);
 }
 .kiosk-customer-wrap {
@@ -1102,16 +1114,19 @@ img {
 
 /* ===== Responsive ===== */
 
-/* iPad portrait (≤900px): stack product grid and cart vertically */
+/* iPad portrait (≤900px): stack product grid and cart vertically, scroll inside view */
 @media (max-width: 900px) {
   .kiosk-browse-layout {
     grid-template-columns: 1fr;
     height: auto;
-    min-height: unset;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .kiosk-product-pane {
     overflow: visible;
+    min-height: 0;
   }
 
   .kiosk-product-grid {
@@ -1122,9 +1137,9 @@ img {
   }
 
   .kiosk-cart-pane {
-    position: static;
     height: auto;
     max-height: none;
+    min-height: unset;
   }
 }
 
@@ -1154,8 +1169,10 @@ img {
 /* ===== Customer Browse Mode ===== */
 
 .kiosk-cb-view {
-  min-height: calc(100vh - 52px);
-  padding-bottom: 100px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  height: 100%;
+  padding-bottom: 100px; /* room for floating cart bar + terminal bar */
 }
 
 .kiosk-cb-header {
