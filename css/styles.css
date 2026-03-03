@@ -2399,6 +2399,12 @@ behold-widget {
   padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   z-index: 1000;
   box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
+  /* Force GPU compositing layer — fixes position:fixed rendering on iOS Safari */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  /* Ensure the bar is never accidentally clipped */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 .reservation-bar .container {
@@ -2466,6 +2472,11 @@ behold-widget {
   width: 100%;
   flex-basis: 100%;
   order: -1;
+  /* Inline bar doesn't need GPU compositing — reset the fixed-bar transform */
+  -webkit-transform: none;
+  transform: none;
+  -webkit-backface-visibility: visible;
+  backface-visibility: visible;
 }
 
 @media (min-height: 750px) {
@@ -5730,6 +5741,14 @@ body {
     overflow: hidden;
   }
 
+  /* Cart drawer scroll lock — uses CSS class so body.style.overflow is never
+     set directly, which would break position:fixed on iOS Safari */
+  body.cart-drawer-open {
+    overflow: hidden;
+    /* iOS Safari: touch-action prevents the document from scrolling behind the drawer */
+    touch-action: none;
+  }
+
   .hero {
     padding: 4rem 0;
   }
@@ -5822,6 +5841,16 @@ body {
     gap: 0.75rem;
   }
 
+  /* Empty-cart state — fixed bar is always visible on mobile as a drawer handle */
+  .reservation-bar.reservation-bar-empty .reservation-bar-count {
+    color: rgba(229, 222, 193, 0.5);
+    font-weight: 400;
+  }
+  .reservation-bar.reservation-bar-empty .reservation-bar-link,
+  .reservation-bar.reservation-bar-empty .reservation-bar-clear {
+    display: none;
+  }
+
   .footer-top {
     flex-direction: column;
     gap: 0.75rem;
@@ -5871,7 +5900,6 @@ body {
     padding: 4px 12px;
     font-size: 0.8125rem;
   }
-
 
   /* Tighter hero */
   .hero {

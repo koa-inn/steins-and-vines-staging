@@ -223,7 +223,10 @@ function renderWeightControl(wrap, product, productKey) {
   var unitLower = unit.toLowerCase();
   var isKg = unitLower === 'kg' || unitLower.indexOf('kg') !== -1;
   var minVal = parseFloat(product.low_amount) || (isKg ? 0.01 : 10);
-  var maxVal = parseFloat(product.high_amount) || (isKg ? 15 : 5000);
+  var stockAmt = parseFloat(product.stock) || 0;
+  var maxVal = isKg
+    ? (stockAmt > 0 ? Math.min(15, stockAmt) : 15)
+    : (parseFloat(product.high_amount) || 5000);
   var stepVal = isKg ? (parseFloat(product.step) || 0.01) : 10;
   var decimals = isKg ? 2 : 0;
   var pricePerUnit = parseFloat((product.price_per_unit || '0').replace(/[^0-9.]/g, '')) || 0;
@@ -440,7 +443,10 @@ function renderWeightControlCompact(wrap, product, productKey) {
   var unitLower = unit.toLowerCase();
   var isKg = unitLower === 'kg' || unitLower.indexOf('kg') !== -1;
   var minVal = parseFloat(product.low_amount) || (isKg ? 0.01 : 10);
-  var maxVal = parseFloat(product.high_amount) || (isKg ? 15 : 5000);
+  var stockAmt = parseFloat(product.stock) || 0;
+  var maxVal = isKg
+    ? (stockAmt > 0 ? Math.min(15, stockAmt) : 15)
+    : (parseFloat(product.high_amount) || 5000);
   var stepVal = isKg ? (parseFloat(product.step) || 0.01) : 10;
   var decimals = isKg ? 2 : 0;
   var pricePerUnit = parseFloat((product.price_per_unit || '0').replace(/[^0-9.]/g, '')) || 0;
@@ -671,15 +677,29 @@ function updateReservationBar() {
 
   var checkoutHref = 'reservation.html?cart=' + (isFerment ? 'ferment' : 'ingredient');
 
+  // On mobile, the fixed bar is always shown as a persistent bottom drawer handle.
+  // iOS Safari position:fixed can fail if the element is toggled display:none;
+  // keeping it always present in the DOM and visible avoids that rendering bug.
+  var isMobile = window.innerWidth < 1024;
+
   for (var i = 0; i < bars.length; i++) {
-    var countEl = bars[i].querySelector('.reservation-bar-count');
-    var linkEl = bars[i].querySelector('.reservation-bar-link');
+    var bar = bars[i];
+    var countEl = bar.querySelector('.reservation-bar-count');
+    var linkEl = bar.querySelector('.reservation-bar-link');
+    var isInline = bar.classList.contains('reservation-bar-inline');
     if (linkEl) linkEl.setAttribute('href', checkoutHref);
     if (total > 0 && !isServices) {
-      bars[i].classList.remove('hidden');
+      bar.classList.remove('hidden');
+      bar.classList.remove('reservation-bar-empty');
       if (countEl) countEl.textContent = label;
+    } else if (isMobile && !isInline && !isServices) {
+      // Always show the fixed bar on mobile as a tappable drawer handle
+      bar.classList.remove('hidden');
+      bar.classList.add('reservation-bar-empty');
+      if (countEl) countEl.textContent = isFerment ? 'Your Reservations' : 'Your Cart';
     } else {
-      bars[i].classList.add('hidden');
+      bar.classList.add('hidden');
+      bar.classList.remove('reservation-bar-empty');
     }
   }
   // Keep catalog-controls above reservation bar on mobile — no :has() needed
@@ -1090,7 +1110,9 @@ function openCartDrawer() {
   renderCartDrawer();
   drawer.classList.add('open');
   if (backdrop) backdrop.classList.add('open');
-  document.body.style.overflow = 'hidden';
+  // Use a CSS class to lock body scroll instead of setting style directly —
+  // body.style.overflow='hidden' can break position:fixed on iOS Safari.
+  document.body.classList.add('cart-drawer-open');
 }
 
 function closeCartDrawer() {
@@ -1099,7 +1121,7 @@ function closeCartDrawer() {
   if (!drawer) return;
   drawer.classList.remove('open');
   if (backdrop) backdrop.classList.remove('open');
-  document.body.style.overflow = '';
+  document.body.classList.remove('cart-drawer-open');
 }
 
 function initCartDrawer() {
