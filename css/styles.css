@@ -5128,8 +5128,9 @@ behold-widget {
 
 /* ── Service Bubbles ───────────────────────────────────────── */
 .service-bubbles-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 1.25rem;
   padding: 1rem 0 2rem;
   align-items: start;
@@ -5143,6 +5144,13 @@ behold-widget {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  width: 260px;
+  flex-grow: 1;
+  max-width: 380px;
+  box-shadow:
+    1px 1px 1px rgba(0,0,0,0.35),
+    inset 0 2px 0 rgba(255,255,255,0.9),
+    inset 2px 0 0 rgba(255,255,255,0.6);
 }
 
 .service-bubble-name {
