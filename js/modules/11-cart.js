@@ -674,12 +674,15 @@ function updateReservationBar() {
       bars[i].classList.add('hidden');
     }
   }
-  // Update CSS variable so catalog-controls can clear the bar on mobile
-  requestAnimationFrame(function () {
-    var fixedBar = document.getElementById('reservation-bar');
-    var h = (fixedBar && !fixedBar.classList.contains('hidden')) ? fixedBar.offsetHeight : 0;
-    document.documentElement.style.setProperty('--reservation-bar-height', h + 'px');
-  });
+  // Keep catalog-controls above reservation bar on mobile — no :has() needed
+  var fixedBar = document.getElementById('reservation-bar');
+  var barVisible = !!(fixedBar && !fixedBar.classList.contains('hidden'));
+  document.body.classList.toggle('has-reservation-bar', barVisible);
+  if (barVisible) {
+    // Measure height synchronously (offsetHeight forces layout) so CSS var is
+    // ready before the browser paints the next frame
+    document.documentElement.style.setProperty('--reservation-bar-height', fixedBar.offsetHeight + 'px');
+  }
   renderCartSidebar();
   renderCartDrawer();
 }

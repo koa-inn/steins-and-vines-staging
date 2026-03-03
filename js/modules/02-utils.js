@@ -118,17 +118,21 @@ function createSkeletonCard() {
   card.className = 'skeleton-card';
   card.innerHTML =
     '<div class="skeleton-element skeleton-brand"></div>' +
+    '<div class="skeleton-element skeleton-ornament"></div>' +
     '<div class="skeleton-element skeleton-title"></div>' +
+    '<div class="skeleton-element skeleton-vintage"></div>' +
     '<div class="skeleton-element skeleton-detail"></div>' +
     '<div class="skeleton-badges">' +
       '<div class="skeleton-element skeleton-badge"></div>' +
       '<div class="skeleton-element skeleton-badge"></div>' +
+      '<div class="skeleton-element skeleton-badge"></div>' +
     '</div>' +
+    '<div class="skeleton-element skeleton-notes"></div>' +
     '<div class="skeleton-prices">' +
       '<div class="skeleton-element skeleton-price-box"></div>' +
       '<div class="skeleton-element skeleton-price-box"></div>' +
     '</div>' +
-    '<div class="skeleton-element skeleton-notes"></div>';
+    '<div class="skeleton-element skeleton-btn"></div>';
   return card;
 }
 

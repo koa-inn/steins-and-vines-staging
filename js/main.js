@@ -121,17 +121,21 @@ function createSkeletonCard() {
   card.className = 'skeleton-card';
   card.innerHTML =
     '<div class="skeleton-element skeleton-brand"></div>' +
+    '<div class="skeleton-element skeleton-ornament"></div>' +
     '<div class="skeleton-element skeleton-title"></div>' +
+    '<div class="skeleton-element skeleton-vintage"></div>' +
     '<div class="skeleton-element skeleton-detail"></div>' +
     '<div class="skeleton-badges">' +
       '<div class="skeleton-element skeleton-badge"></div>' +
       '<div class="skeleton-element skeleton-badge"></div>' +
+      '<div class="skeleton-element skeleton-badge"></div>' +
     '</div>' +
+    '<div class="skeleton-element skeleton-notes"></div>' +
     '<div class="skeleton-prices">' +
       '<div class="skeleton-element skeleton-price-box"></div>' +
       '<div class="skeleton-element skeleton-price-box"></div>' +
     '</div>' +
-    '<div class="skeleton-element skeleton-notes"></div>';
+    '<div class="skeleton-element skeleton-btn"></div>';
   return card;
 }
 
@@ -4529,12 +4533,15 @@ function updateReservationBar() {
       bars[i].classList.add('hidden');
     }
   }
-  // Update CSS variable so catalog-controls can clear the bar on mobile
-  requestAnimationFrame(function () {
-    var fixedBar = document.getElementById('reservation-bar');
-    var h = (fixedBar && !fixedBar.classList.contains('hidden')) ? fixedBar.offsetHeight : 0;
-    document.documentElement.style.setProperty('--reservation-bar-height', h + 'px');
-  });
+  // Keep catalog-controls above reservation bar on mobile — no :has() needed
+  var fixedBar = document.getElementById('reservation-bar');
+  var barVisible = !!(fixedBar && !fixedBar.classList.contains('hidden'));
+  document.body.classList.toggle('has-reservation-bar', barVisible);
+  if (barVisible) {
+    // Measure height synchronously (offsetHeight forces layout) so CSS var is
+    // ready before the browser paints the next frame
+    document.documentElement.style.setProperty('--reservation-bar-height', fixedBar.offsetHeight + 'px');
+  }
   renderCartSidebar();
   renderCartDrawer();
 }
