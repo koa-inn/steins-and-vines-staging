@@ -2478,8 +2478,7 @@ behold-widget {
     top: calc(var(--header-height, 0px) + var(--tabs-height, 48px));
     z-index: 100;
     background-color: var(--color-cream);
-    padding: 1rem 0;
-    margin-top: -1rem;
+    padding: 0.75rem 0;
   }
 }
 
@@ -5737,6 +5736,7 @@ body {
 
   .catalog-controls {
     position: fixed;
+    top: auto;
     bottom: 0;
     left: 0;
     right: 0;
@@ -5878,14 +5878,6 @@ body {
     font-size: 0.8125rem;
   }
 
-  /* Empty cart bar state — always visible on mobile as drawer handle */
-  .reservation-bar.reservation-bar-empty .reservation-bar-count {
-    color: rgba(229, 222, 193, 0.65);
-  }
-  .reservation-bar.reservation-bar-empty .reservation-bar-link,
-  .reservation-bar.reservation-bar-empty .reservation-bar-clear {
-    display: none;
-  }
 
   /* Tighter hero */
   .hero {

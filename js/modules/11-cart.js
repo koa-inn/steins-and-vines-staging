@@ -662,26 +662,16 @@ function updateReservationBar() {
   }
 
   var checkoutHref = 'reservation.html?cart=' + (isFerment ? 'ferment' : 'ingredient');
-  var isMobile = window.innerWidth < 768;
 
   for (var i = 0; i < bars.length; i++) {
-    var bar = bars[i];
-    var countEl = bar.querySelector('.reservation-bar-count');
-    var linkEl = bar.querySelector('.reservation-bar-link');
-    var isInline = bar.classList.contains('reservation-bar-inline');
+    var countEl = bars[i].querySelector('.reservation-bar-count');
+    var linkEl = bars[i].querySelector('.reservation-bar-link');
     if (linkEl) linkEl.setAttribute('href', checkoutHref);
     if (total > 0 && !isServices) {
-      bar.classList.remove('hidden');
-      bar.classList.remove('reservation-bar-empty');
+      bars[i].classList.remove('hidden');
       if (countEl) countEl.textContent = label;
-    } else if (isMobile && !isInline && !isServices) {
-      // On mobile: always show the fixed cart bar as a persistent drawer handle
-      bar.classList.remove('hidden');
-      bar.classList.add('reservation-bar-empty');
-      if (countEl) countEl.textContent = 'Your Cart';
     } else {
-      bar.classList.add('hidden');
-      bar.classList.remove('reservation-bar-empty');
+      bars[i].classList.add('hidden');
     }
   }
   // Keep catalog-controls above reservation bar on mobile — no :has() needed
