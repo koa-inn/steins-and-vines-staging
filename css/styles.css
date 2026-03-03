@@ -5734,24 +5734,17 @@ body {
     padding: 4rem 0;
   }
 
+  /* Sticky-top: guaranteed reliable on iOS at any DOM nesting depth.
+     position:fixed on nested elements is unreliable on iOS Safari. */
   .catalog-controls {
-    position: fixed;
-    top: auto;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 999;
+    position: sticky;
+    top: var(--header-height, 60px);
+    z-index: 150;
     background-color: var(--color-cream);
-    padding: 0.75rem 1rem;
-    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-    margin: 0;
-    box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
+    padding: 0.75rem 0;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
     gap: 0.5rem;
-    overscroll-behavior-y: contain;
-  }
-
-  body.has-reservation-bar .catalog-controls {
-    bottom: var(--reservation-bar-height, 3.5rem);
   }
 
   #product-catalog {
