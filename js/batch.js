@@ -172,8 +172,9 @@
       return;
     }
 
-    // Chart
-    if (readings.length >= 2) {
+    // Chart — only when there are 2+ readings with a gravity value
+    var platoReadings = readings.filter(function (r) { return r.degrees_plato !== undefined && r.degrees_plato !== '' && !isNaN(Number(r.degrees_plato)); });
+    if (platoReadings.length >= 2) {
       chartEl.innerHTML = renderPlatoChart(readings, startDate);
     } else {
       chartEl.innerHTML = '';
@@ -192,7 +193,9 @@
     var W = 400, H = 150, PAD = 30;
     var start = startDate ? new Date(startDate) : new Date(readings[0].timestamp);
 
-    var points = readings.map(function (r) {
+    var points = readings.filter(function (r) {
+      return r.degrees_plato !== undefined && r.degrees_plato !== '' && !isNaN(Number(r.degrees_plato));
+    }).map(function (r) {
       var d = new Date(r.timestamp);
       var day = Math.round((d - start) / (1000 * 60 * 60 * 24));
       return { day: day, plato: Number(r.degrees_plato) };
@@ -325,16 +328,17 @@
     var addRowBtn = document.getElementById('plato-add-row-btn');
     if (!addRowBtn) return;
     addRowBtn.addEventListener('click', function () {
-      var val = parseFloat(document.getElementById('plato-value').value);
-      if (isNaN(val) || val < 0 || val > 40) { showToast('Enter a valid Plato value (0-40)', 'error'); return; }
-      var dateVal = document.getElementById('plato-date').value;
-      if (!dateVal) { showToast('Enter a date', 'error'); return; }
+      var gravRaw = document.getElementById('plato-value').value;
       var tempRaw = document.getElementById('plato-temp').value;
       var phRaw = document.getElementById('plato-ph').value;
-      if (phRaw !== '' && (isNaN(parseFloat(phRaw)) || parseFloat(phRaw) < 0 || parseFloat(phRaw) > 14)) {
-        showToast('pH must be between 0 and 14', 'error'); return;
-      }
-      var row = { degrees_plato: val, timestamp: dateVal, notes: document.getElementById('plato-notes').value };
+      var gravVal = gravRaw !== '' ? parseFloat(gravRaw) : null;
+      if (gravRaw !== '' && (isNaN(gravVal) || gravVal < 0 || gravVal > 40)) { showToast('Gravity must be between 0 and 40 \u00b0P', 'error'); return; }
+      if (phRaw !== '' && (isNaN(parseFloat(phRaw)) || parseFloat(phRaw) < 0 || parseFloat(phRaw) > 14)) { showToast('pH must be between 0 and 14', 'error'); return; }
+      if (gravRaw === '' && tempRaw === '' && phRaw === '') { showToast('Enter at least one measurement (gravity, temp, or pH)', 'error'); return; }
+      var dateVal = document.getElementById('plato-date').value;
+      if (!dateVal) { showToast('Enter a date', 'error'); return; }
+      var row = { timestamp: dateVal, notes: document.getElementById('plato-notes').value };
+      if (gravRaw !== '') row.degrees_plato = gravVal;
       if (tempRaw !== '') row.temperature = parseFloat(tempRaw);
       if (phRaw !== '') row.ph = parseFloat(phRaw);
       _platoStagingRows.push(row);

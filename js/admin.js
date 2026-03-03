@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-03-03T16:32:23.372Z';
+  var BUILD_TIMESTAMP = '2026-03-03T19:12:13.405Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -6162,16 +6162,17 @@
     // Add Row button
     var addRowBtn = document.getElementById('plato-add-row-btn');
     if (addRowBtn) addRowBtn.addEventListener('click', function () {
-      var val = parseFloat(document.getElementById('plato-value').value);
-      if (isNaN(val) || val < 0 || val > 40) { showToast('Enter a valid Plato value (0-40)', 'error'); return; }
-      var dateVal = document.getElementById('plato-date').value;
-      if (!dateVal) { showToast('Enter a date', 'error'); return; }
+      var gravRaw = document.getElementById('plato-value').value;
       var tempRaw = document.getElementById('plato-temp').value;
       var phRaw = document.getElementById('plato-ph').value;
-      if (phRaw !== '' && (isNaN(parseFloat(phRaw)) || parseFloat(phRaw) < 0 || parseFloat(phRaw) > 14)) {
-        showToast('pH must be between 0 and 14', 'error'); return;
-      }
-      var row = { degrees_plato: val, timestamp: dateVal, notes: document.getElementById('plato-notes').value };
+      var gravVal = gravRaw !== '' ? parseFloat(gravRaw) : null;
+      if (gravRaw !== '' && (isNaN(gravVal) || gravVal < 0 || gravVal > 40)) { showToast('Gravity must be between 0 and 40 \u00b0P', 'error'); return; }
+      if (phRaw !== '' && (isNaN(parseFloat(phRaw)) || parseFloat(phRaw) < 0 || parseFloat(phRaw) > 14)) { showToast('pH must be between 0 and 14', 'error'); return; }
+      if (gravRaw === '' && tempRaw === '' && phRaw === '') { showToast('Enter at least one measurement (gravity, temp, or pH)', 'error'); return; }
+      var dateVal = document.getElementById('plato-date').value;
+      if (!dateVal) { showToast('Enter a date', 'error'); return; }
+      var row = { timestamp: dateVal, notes: document.getElementById('plato-notes').value };
+      if (gravRaw !== '') row.degrees_plato = gravVal;
       if (tempRaw !== '') row.temperature = parseFloat(tempRaw);
       if (phRaw !== '') row.ph = parseFloat(phRaw);
       _platoStagingRows.push(row);

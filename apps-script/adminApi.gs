@@ -2219,9 +2219,15 @@ function addPlatoReading(payload, recordedBy) {
   if (!payload.batch_id) {
     return { ok: false, error: 'missing_id', message: 'batch_id is required' };
   }
-  var plato = parseFloat(payload.degrees_plato);
-  if (isNaN(plato) || plato < 0 || plato > 40) {
+  var plato = (payload.degrees_plato !== undefined && payload.degrees_plato !== '') ? parseFloat(payload.degrees_plato) : '';
+  if (plato !== '' && (isNaN(plato) || plato < 0 || plato > 40)) {
     return { ok: false, error: 'invalid_value', message: 'degrees_plato must be between 0 and 40' };
+  }
+  // At least one measurement must be provided
+  var tempRaw = (payload.temperature !== undefined && payload.temperature !== '') ? parseFloat(payload.temperature) : '';
+  var phRaw = (payload.ph !== undefined && payload.ph !== '') ? parseFloat(payload.ph) : '';
+  if (plato === '' && tempRaw === '' && phRaw === '') {
+    return { ok: false, error: 'invalid_input', message: 'At least one of degrees_plato, temperature, or ph is required' };
   }
   if (payload.timestamp && !/^\d{4}-\d{2}-\d{2}$/.test(payload.timestamp)) {
     return { ok: false, error: 'invalid_value', message: 'timestamp must be YYYY-MM-DD format' };
