@@ -5727,9 +5727,13 @@ footer {
     overflow: hidden;
   }
 
-  /* Cart drawer scroll lock — uses CSS class so body.style.overflow is never
-     set directly, which would break position:fixed on iOS Safari */
+  /* Cart drawer scroll lock — iOS Safari ignores overflow:hidden on body and
+     still scrolls, which makes position:fixed elements scroll with the page.
+     position:fixed on the body is the only reliable fix; JS sets
+     body.style.top = -scrollY so the page position doesn't jump. */
   body.cart-drawer-open {
+    position: fixed;
+    width: 100%;
     overflow: hidden;
   }
 

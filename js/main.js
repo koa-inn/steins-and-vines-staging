@@ -5014,6 +5014,8 @@ function renderCartDrawer() {
   }
 }
 
+var _cartDrawerScrollY = 0;
+
 function openCartDrawer() {
   var drawer = document.getElementById('cart-drawer');
   var backdrop = document.getElementById('cart-drawer-backdrop');
@@ -5021,9 +5023,11 @@ function openCartDrawer() {
   renderCartDrawer();
   drawer.classList.add('open');
   if (backdrop) backdrop.classList.add('open');
-  // Use a CSS class to lock body scroll instead of setting style directly —
-  // body.style.overflow='hidden' can break position:fixed on iOS Safari.
+  // iOS Safari fix: body position:fixed stops the page scrolling behind the
+  // drawer, but causes a jump to top — offset with body.style.top to compensate.
+  _cartDrawerScrollY = window.scrollY || window.pageYOffset || 0;
   document.body.classList.add('cart-drawer-open');
+  document.body.style.top = '-' + _cartDrawerScrollY + 'px';
 }
 
 function closeCartDrawer() {
@@ -5033,6 +5037,8 @@ function closeCartDrawer() {
   drawer.classList.remove('open');
   if (backdrop) backdrop.classList.remove('open');
   document.body.classList.remove('cart-drawer-open');
+  document.body.style.top = '';
+  window.scrollTo(0, _cartDrawerScrollY);
 }
 
 function initCartDrawer() {
