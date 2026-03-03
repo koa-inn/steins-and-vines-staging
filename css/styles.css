@@ -1628,6 +1628,7 @@ behold-widget {
   border-radius: var(--radius-sm);
   font-family: var(--font-body);
   font-size: 1rem;
+  line-height: 1.4;
   background: var(--color-white);
 }
 
@@ -5875,6 +5876,15 @@ body {
   .reservation-bar .reservation-bar-link {
     padding: 4px 12px;
     font-size: 0.8125rem;
+  }
+
+  /* Empty cart bar state — always visible on mobile as drawer handle */
+  .reservation-bar.reservation-bar-empty .reservation-bar-count {
+    color: rgba(229, 222, 193, 0.65);
+  }
+  .reservation-bar.reservation-bar-empty .reservation-bar-link,
+  .reservation-bar.reservation-bar-empty .reservation-bar-clear {
+    display: none;
   }
 
   /* Tighter hero */
