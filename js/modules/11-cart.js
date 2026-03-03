@@ -298,6 +298,7 @@ function renderWeightControl(wrap, product, productKey) {
   var numInput = document.createElement('input');
   numInput.type = 'number';
   numInput.className = 'weight-control-input';
+  numInput.setAttribute('inputmode', 'decimal');
   numInput.min = String(minVal);
   numInput.max = String(maxVal);
   numInput.step = String(stepVal);
@@ -484,6 +485,7 @@ function renderWeightControlCompact(wrap, product, productKey) {
   var numInput = document.createElement('input');
   numInput.type = 'number';
   numInput.className = 'weight-control-input';
+  numInput.setAttribute('inputmode', 'decimal');
   numInput.min = String(minVal);
   numInput.max = String(maxVal);
   numInput.step = String(stepVal);
@@ -672,6 +674,12 @@ function updateReservationBar() {
       bars[i].classList.add('hidden');
     }
   }
+  // Update CSS variable so catalog-controls can clear the bar on mobile
+  requestAnimationFrame(function () {
+    var fixedBar = document.getElementById('reservation-bar');
+    var h = (fixedBar && !fixedBar.classList.contains('hidden')) ? fixedBar.offsetHeight : 0;
+    document.documentElement.style.setProperty('--reservation-bar-height', h + 'px');
+  });
   renderCartSidebar();
   renderCartDrawer();
 }

@@ -463,7 +463,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
       tdCat.setAttribute('data-label', 'Category');
       var catParts = [];
       if (item.category) catParts.push(item.category);
-      if (item.subcategory) catParts.push(item.subcategory);
+      if (item.subcategory && item.subcategory !== item.category) catParts.push(item.subcategory);
       tdCat.textContent = catParts.join(' / ');
       tr.appendChild(tdCat);
 
@@ -596,7 +596,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
 
       var catParts = [];
       if (item.category) catParts.push(item.category);
-      if (item.subcategory) catParts.push(item.subcategory);
+      if (item.subcategory && item.subcategory !== item.category) catParts.push(item.subcategory);
       if (catParts.length) {
         var catLabel = document.createElement('span');
         catLabel.className = 'product-card-category';

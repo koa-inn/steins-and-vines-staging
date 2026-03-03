@@ -2994,7 +2994,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
       tdCat.setAttribute('data-label', 'Category');
       var catParts = [];
       if (item.category) catParts.push(item.category);
-      if (item.subcategory) catParts.push(item.subcategory);
+      if (item.subcategory && item.subcategory !== item.category) catParts.push(item.subcategory);
       tdCat.textContent = catParts.join(' / ');
       tr.appendChild(tdCat);
 
@@ -3127,7 +3127,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
 
       var catParts = [];
       if (item.category) catParts.push(item.category);
-      if (item.subcategory) catParts.push(item.subcategory);
+      if (item.subcategory && item.subcategory !== item.category) catParts.push(item.subcategory);
       if (catParts.length) {
         var catLabel = document.createElement('span');
         catLabel.className = 'product-card-category';
@@ -3764,6 +3764,8 @@ function initProductTabs() {
     // Show/hide tab-specific notes
     var millNote = document.getElementById('ingredients-mill-note');
     if (millNote) millNote.classList.toggle('hidden', tab !== 'ingredients');
+    var pickupNote = document.getElementById('ingredients-pickup-note');
+    if (pickupNote) pickupNote.classList.toggle('hidden', tab !== 'ingredients');
 
     var batchNote = document.getElementById('kits-batch-note');
     if (batchNote) batchNote.classList.toggle('hidden', tab !== 'kits');
@@ -4151,6 +4153,7 @@ function renderWeightControl(wrap, product, productKey) {
   var numInput = document.createElement('input');
   numInput.type = 'number';
   numInput.className = 'weight-control-input';
+  numInput.setAttribute('inputmode', 'decimal');
   numInput.min = String(minVal);
   numInput.max = String(maxVal);
   numInput.step = String(stepVal);
@@ -4337,6 +4340,7 @@ function renderWeightControlCompact(wrap, product, productKey) {
   var numInput = document.createElement('input');
   numInput.type = 'number';
   numInput.className = 'weight-control-input';
+  numInput.setAttribute('inputmode', 'decimal');
   numInput.min = String(minVal);
   numInput.max = String(maxVal);
   numInput.step = String(stepVal);
@@ -4525,6 +4529,12 @@ function updateReservationBar() {
       bars[i].classList.add('hidden');
     }
   }
+  // Update CSS variable so catalog-controls can clear the bar on mobile
+  requestAnimationFrame(function () {
+    var fixedBar = document.getElementById('reservation-bar');
+    var h = (fixedBar && !fixedBar.classList.contains('hidden')) ? fixedBar.offsetHeight : 0;
+    document.documentElement.style.setProperty('--reservation-bar-height', h + 'px');
+  });
   renderCartSidebar();
   renderCartDrawer();
 }
@@ -5825,8 +5835,21 @@ function loadTimeslots() {
 
     cal.appendChild(grid);
 
+    // Skeleton cells while availability loads (skipped when data is already cached)
+    if (!availabilityCache[ym]) {
+      for (var sk = 0; sk < 35; sk++) {
+        var skCell = document.createElement('div');
+        skCell.className = 'cal-day cal-day--skeleton';
+        grid.appendChild(skCell);
+      }
+    }
+
     // Fetch availability then render days
     fetchAvailability(ym, function (availableDates) {
+      // Remove skeleton cells before rendering real days
+      var skels = grid.querySelectorAll('.cal-day--skeleton');
+      Array.prototype.forEach.call(skels, function (sk) { sk.parentNode.removeChild(sk); });
+
       // Calendar days
       var firstOfMonth = new Date(year, month, 1);
       var startDow = firstOfMonth.getDay(); // 0=Sun

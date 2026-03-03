@@ -302,6 +302,62 @@ small, .text-small {
   text-decoration: none;
 }
 
+/* ===== Promo Banner ===== */
+.promo-banner {
+  background: var(--color-burgundy);
+  color: var(--color-cream);
+  padding: 0.7rem 0;
+  text-align: center;
+}
+
+.promo-banner .container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.promo-banner-tag {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.promo-banner-text {
+  font-size: 0.95rem;
+  opacity: 0.95;
+}
+
+.promo-banner-cta {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  color: var(--color-cream);
+  border-radius: 4px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.promo-banner-cta:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: var(--color-cream);
+  text-decoration: none;
+}
+
+@media (max-width: 480px) {
+  .promo-banner-cta { display: none; }
+}
+
 /* ===== Hero ===== */
 .hero {
   position: relative;
@@ -2790,6 +2846,21 @@ behold-widget {
   letter-spacing: 0.05em;
   opacity: 0.6;
   line-height: 1;
+}
+
+/* Skeleton loading cells */
+@keyframes cal-skeleton-pulse {
+  0%   { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.cal-day--skeleton {
+  background: linear-gradient(90deg, #ede8de 25%, #ddd7c9 50%, #ede8de 75%);
+  background-size: 400px 100%;
+  animation: cal-skeleton-pulse 1.4s ease-in-out infinite;
+  pointer-events: none;
+  border-color: transparent !important;
+  color: transparent;
 }
 
 /* Day slots below calendar */
@@ -5650,11 +5721,11 @@ body {
   }
 
   body:has(.reservation-bar:not(.hidden)) .catalog-controls {
-    bottom: 3rem;
+    bottom: var(--reservation-bar-height, 3.5rem);
   }
 
   #product-catalog {
-    padding-bottom: 5rem;
+    padding-bottom: calc(var(--reservation-bar-height, 3.5rem) + 5rem);
   }
 
   .product-tabs {

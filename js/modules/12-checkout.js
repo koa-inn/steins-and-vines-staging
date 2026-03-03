@@ -828,8 +828,21 @@ function loadTimeslots() {
 
     cal.appendChild(grid);
 
+    // Skeleton cells while availability loads (skipped when data is already cached)
+    if (!availabilityCache[ym]) {
+      for (var sk = 0; sk < 35; sk++) {
+        var skCell = document.createElement('div');
+        skCell.className = 'cal-day cal-day--skeleton';
+        grid.appendChild(skCell);
+      }
+    }
+
     // Fetch availability then render days
     fetchAvailability(ym, function (availableDates) {
+      // Remove skeleton cells before rendering real days
+      var skels = grid.querySelectorAll('.cal-day--skeleton');
+      Array.prototype.forEach.call(skels, function (sk) { sk.parentNode.removeChild(sk); });
+
       // Calendar days
       var firstOfMonth = new Date(year, month, 1);
       var startDow = firstOfMonth.getDay(); // 0=Sun

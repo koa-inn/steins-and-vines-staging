@@ -45,6 +45,8 @@ function initProductTabs() {
     // Show/hide tab-specific notes
     var millNote = document.getElementById('ingredients-mill-note');
     if (millNote) millNote.classList.toggle('hidden', tab !== 'ingredients');
+    var pickupNote = document.getElementById('ingredients-pickup-note');
+    if (pickupNote) pickupNote.classList.toggle('hidden', tab !== 'ingredients');
 
     var batchNote = document.getElementById('kits-batch-note');
     if (batchNote) batchNote.classList.toggle('hidden', tab !== 'kits');
