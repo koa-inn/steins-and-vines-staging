@@ -3862,6 +3862,9 @@ var FERMENT_CART_KEY = 'sv-cart-ferment';
 var INGREDIENT_CART_KEY = 'sv-cart-ingredients';
 var _activeCartTab = 'kits';                  // tracks which product tab is active
 
+// In-memory fallback for environments where localStorage is unavailable (e.g. iOS Safari private browsing)
+var _memoryStore = {};
+
 function migrateReservationData() {
   try {
     var legacy = JSON.parse(localStorage.getItem(RESERVATION_KEY));
@@ -3894,17 +3897,22 @@ function getCartKey(product) {
 }
 
 function getReservation(cartKey) {
+  var key = cartKey || getCartKeyForTab(_activeCartTab);
   try {
-    var key = cartKey || getCartKeyForTab(_activeCartTab);
-    return JSON.parse(localStorage.getItem(key)) || [];
-  } catch (e) {
-    return [];
-  }
+    var stored = localStorage.getItem(key);
+    if (stored !== null) return JSON.parse(stored) || [];
+  } catch (e) { /* fall through to memory store */ }
+  return _memoryStore[key] || [];
 }
 
 function saveReservation(items, cartKey) {
   var key = cartKey || getCartKeyForTab(_activeCartTab);
-  localStorage.setItem(key, JSON.stringify(items));
+  try {
+    localStorage.setItem(key, JSON.stringify(items));
+  } catch (e) {
+    // localStorage unavailable (e.g. iOS private browsing quota exceeded) — use memory fallback
+    _memoryStore[key] = items;
+  }
 }
 
 function getReservedQty(productKey) {

@@ -5855,6 +5855,7 @@ body {
   /* Slimmer reservation bar */
   .reservation-bar {
     padding: 0.4rem 0;
+    padding-bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px));
   }
 
   .reservation-bar .reservation-bar-count {
