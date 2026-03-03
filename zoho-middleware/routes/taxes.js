@@ -332,7 +332,8 @@ router.post('/api/taxes/apply', function (req, res) {
             rule_label: capEquip.rule_label,
             rule_id: capEquip.rule_id,
             tax_id: capEquip.tax_id,
-            current_purchase_rule: item.purchase_tax_rule_id || '(none)'
+            current_purchase_rule: item.purchase_tax_rule_id || '(none)',
+            current_tax_id: item.tax_id || '(none)'
           });
           matched = true;
         }
@@ -355,7 +356,8 @@ router.post('/api/taxes/apply', function (req, res) {
                 rule_label: cat.rule_label,
                 rule_id: cat.rule_id,
                 tax_id: cat.tax_id,
-                current_purchase_rule: item.purchase_tax_rule_id || '(none)'
+                current_purchase_rule: item.purchase_tax_rule_id || '(none)',
+                current_tax_id: item.tax_id || '(none)'
               });
               matched = true;
               break;
@@ -373,7 +375,8 @@ router.post('/api/taxes/apply', function (req, res) {
             rule_label: ingredientsCat.rule_label,
             rule_id: ingredientsCat.rule_id,
             tax_id: ingredientsCat.tax_id,
-            current_purchase_rule: item.purchase_tax_rule_id || '(none)'
+            current_purchase_rule: item.purchase_tax_rule_id || '(none)',
+            current_tax_id: item.tax_id || '(none)'
           });
         }
       });
@@ -401,10 +404,12 @@ router.post('/api/taxes/apply', function (req, res) {
 
       function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
-      // Filter to only items that need updating
+      // Filter to only items that need updating (check both purchase rule and sales tax_id)
       var toUpdate = [];
       assignments.forEach(function (a) {
-        if (a.current_purchase_rule === a.rule_id) {
+        var purchaseOk = a.current_purchase_rule === a.rule_id;
+        var salesOk = a.current_tax_id === a.tax_id;
+        if (purchaseOk && salesOk) {
           skipped.push(a.item_name);
         } else {
           toUpdate.push(a);
@@ -421,7 +426,8 @@ router.post('/api/taxes/apply', function (req, res) {
           }).then(function () {
             log.info('[taxes/apply] Updating: ' + a.item_name);
             return inventoryPut('/items/' + a.item_id, {
-              purchase_tax_rule_id: a.rule_id
+              purchase_tax_rule_id: a.rule_id,
+              tax_id: a.tax_id   // sales tax — what the frontend reads
             });
           }).then(function () {
             applied.push(a.item_name + ' -> ' + a.rule_label);
