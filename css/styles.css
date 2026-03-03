@@ -5577,13 +5577,22 @@ behold-widget {
   }
 }
 
-/* ===== MO-12: Page transition animation ===== */
+/* ===== MO-12: Page transition animation =====
+   IMPORTANT: The animation must NOT be applied to body.
+   Animating body with transform (even `transform: none` in the `to` keyframe)
+   creates a stacking context on body — on iOS Safari and some WebKit builds
+   this breaks position:fixed for all descendants (#reservation-bar,
+   #mobile-catalog-bar). The animation is applied to main + footer instead,
+   which achieves the same visual effect without corrupting the fixed-position
+   containing block.
+   ===== */
 @keyframes sv-slide-in {
   from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: none; }
 }
 
-body {
+main,
+footer {
   animation: sv-slide-in 220ms ease both;
 }
 
