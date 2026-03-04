@@ -187,6 +187,19 @@ function doPost(e) {
       return _jsonResponse(tokenResult);
     }
 
+    // Server-to-server writes from Railway middleware (no Google OAuth required)
+    if (payload.server_token) {
+      var scriptProps = PropertiesService.getScriptProperties();
+      var storedToken = scriptProps.getProperty('SERVER_WRITE_TOKEN') || '';
+      if (!storedToken || payload.server_token !== storedToken) {
+        return _jsonResponse({ ok: false, error: 'unauthorized', message: 'Invalid server token' });
+      }
+      if (action === 'add_reservation') {
+        return _jsonResponse(addReservation(payload));
+      }
+      return _jsonResponse({ ok: false, error: 'invalid_action', message: 'Unknown server action: ' + action });
+    }
+
     // All other actions require staff authorization
     var authResult = checkAuthorization(e);
     if (!authResult.authorized) {
@@ -693,6 +706,57 @@ function getDashboardSummary() {
 }
 
 // ===== WRITE OPERATIONS =====
+
+/**
+ * Add a new reservation row written by the Railway middleware after a successful checkout.
+ * Called via server_token auth (no Google OAuth required).
+ *
+ * payload: {
+ *   customer_name, customer_email, customer_phone,
+ *   order_number, timeslot, notes,
+ *   items: [{ name, quantity }]
+ * }
+ */
+function addReservation(payload) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(RESERVATIONS_SHEET_NAME);
+  if (!sheet) return { ok: false, error: 'sheet_not_found' };
+
+  // Generate reservation ID: R-YYYYMMDD-NNN
+  var now = new Date();
+  var dateStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyyMMdd');
+  var lastRow = sheet.getLastRow();
+  var resNum = String(lastRow).padStart(3, '0');
+  var reservationId = 'R-' + dateStr + '-' + resNum;
+
+  // Build comma-separated products string matching onFormSubmit format
+  var items = payload.items || [];
+  var productsStr = items.map(function (it) {
+    var qty = Number(it.quantity) || 1;
+    return qty > 1 ? (it.name + ' x' + qty) : it.name;
+  }).join(', ');
+
+  // Append order number to notes so it's visible in the admin panel
+  var baseNotes = sanitizeInput(payload.notes || '');
+  var orderNumber = sanitizeInput(payload.order_number || '');
+  var notesWithOrder = orderNumber
+    ? (baseNotes ? baseNotes + ' [Zoho: ' + orderNumber + ']' : 'Zoho: ' + orderNumber)
+    : baseNotes;
+
+  sheet.appendRow([
+    reservationId,
+    sanitizeInput(payload.customer_name || ''),
+    sanitizeInput(payload.customer_email || ''),
+    sanitizeInput(payload.customer_phone || ''),
+    sanitizeInput(productsStr),
+    sanitizeInput(payload.timeslot || ''),
+    'pending',
+    now.toISOString(),
+    notesWithOrder
+  ]);
+
+  return { ok: true, reservation_id: reservationId };
+}
 
 /**
  * Update a reservation row with optimistic locking

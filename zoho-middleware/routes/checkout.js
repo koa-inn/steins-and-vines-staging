@@ -45,6 +45,47 @@ var Transaction = gp.Transaction;
 var zohoPost = zohoApi.zohoPost;
 var zohoGet = zohoApi.zohoGet;
 var mailer = require('../lib/mailer');
+var axios = require('axios');
+
+/**
+ * Fire-and-forget: write the new reservation to Google Sheets via Apps Script
+ * so it appears immediately in the admin panel.
+ * Requires env vars: APPS_SCRIPT_URL, APPS_SCRIPT_SERVER_TOKEN
+ */
+function notifyAdminPanel(soNumber, customerName, customerEmail, customerPhone, lineItems, timeslot, notes) {
+  var url = process.env.APPS_SCRIPT_URL;
+  var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
+  if (!url || !token) return; // not configured — skip silently
+
+  var payload = {
+    action: 'add_reservation',
+    server_token: token,
+    customer_name: customerName || '',
+    customer_email: customerEmail || '',
+    customer_phone: customerPhone || '',
+    order_number: soNumber || '',
+    timeslot: timeslot || '',
+    notes: notes || '',
+    items: (lineItems || []).map(function (li) {
+      return { name: li.name || '', quantity: li.quantity || 1 };
+    })
+  };
+
+  axios.post(url, JSON.stringify(payload), {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 12000,
+    maxRedirects: 5
+  }).then(function (resp) {
+    var data = resp.data || {};
+    if (data.ok) {
+      log.info('[checkout] Admin panel updated — reservation_id=' + (data.reservation_id || '?') + ' order=' + soNumber);
+    } else {
+      log.warn('[checkout] Admin panel returned error: ' + (data.message || data.error || JSON.stringify(data)));
+    }
+  }).catch(function (err) {
+    log.warn('[checkout] Admin panel notification failed (non-fatal): ' + err.message);
+  });
+}
 
 var PRODUCTS_CACHE_KEY = 'zoho:products';
 var KIOSK_PRODUCTS_CACHE_KEY = 'zoho:kiosk-products';
@@ -335,6 +376,20 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
 
             var soId = data.salesorder ? data.salesorder.salesorder_id : null;
             var soNumber = data.salesorder ? data.salesorder.salesorder_number : null;
+
+            // Fire-and-forget: internal staff notification email
+            mailer.sendReservationNotification({
+              orderNumber: soNumber || '',
+              customer: { name: customerName, email: customerEmail, phone: customerPhone },
+              items: lineItems,
+              timeslot: body.timeslot || '',
+              notes: body.notes || ''
+            }).catch(function (mailErr) {
+              log.warn('[checkout] Staff notification email failed (non-fatal): ' + mailErr.message);
+            });
+
+            // Fire-and-forget: write to admin panel Google Sheets
+            notifyAdminPanel(soNumber, customerName, customerEmail, customerPhone, lineItems, body.timeslot || '', body.notes || '');
 
             // Item #41 — Fire-and-forget confirmation email via Zoho (non-blocking)
             if (soId) {
