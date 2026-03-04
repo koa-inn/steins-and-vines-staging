@@ -52,11 +52,14 @@ var allowedReferers = [
 function requireAllowedReferer(req, res, next) {
   // Skip for server-to-server calls (no Referer) and OPTIONS preflight
   if (req.method === 'OPTIONS' || !req.headers.referer) return next();
+  // Checkout is protected by reCAPTCHA + rate limit instead of Referer check
+  if (req.path === '/checkout') return next();
   var referer = req.headers.referer;
   var allowed = allowedReferers.some(function(origin) {
     return referer.startsWith(origin);
   });
   if (!allowed) {
+    log.warn('[referer-guard] Blocked: referer=' + referer + ' path=' + req.path);
     return res.status(403).json({ error: 'Forbidden' });
   }
   next();
