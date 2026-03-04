@@ -1148,7 +1148,8 @@ function setupReservationForm() {
     ? SHEETS_CONFIG.MIDDLEWARE_URL : '';
 
   // Fetch payment config from middleware and initialize hosted fields
-  if (!isKioskMode && paymentSection) {
+  // PAYMENT_DISABLED bypasses this entirely until GP card entry is fixed.
+  if (!isKioskMode && paymentSection && (typeof PAYMENT_DISABLED === 'undefined' || !PAYMENT_DISABLED)) {
     fetch(mwUrl + '/api/payment/config')
       .then(function (r) { return r.json(); })
       .then(function (cfg) {

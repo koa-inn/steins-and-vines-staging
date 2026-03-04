@@ -3,6 +3,10 @@
 // Semi-public key — protected by CORS origin whitelist on the middleware.
 // Rotate via: openssl rand -base64 32, then update Railway MW_API_KEY env var.
 var MW_API_KEY = 'a9QKtDV3DtYSFIdWtfAMg9Ry70bHG55QGhyJa9GD3fM=';
+
+// ===== Payment flag =====
+// TODO: Set to false once Global Payments card entry is working again.
+var PAYMENT_DISABLED = true;
 // ===== Deep-link (?item=SKU) =====
 
 var _deepLinkHandled = false;
@@ -6250,7 +6254,8 @@ function setupReservationForm() {
     ? SHEETS_CONFIG.MIDDLEWARE_URL : '';
 
   // Fetch payment config from middleware and initialize hosted fields
-  if (!isKioskMode && paymentSection) {
+  // PAYMENT_DISABLED bypasses this entirely until GP card entry is fixed.
+  if (!isKioskMode && paymentSection && (typeof PAYMENT_DISABLED === 'undefined' || !PAYMENT_DISABLED)) {
     fetch(mwUrl + '/api/payment/config')
       .then(function (r) { return r.json(); })
       .then(function (cfg) {
