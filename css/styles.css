@@ -3323,6 +3323,18 @@ behold-widget {
 }
 .payment-offline-notice p { margin: 0; }
 
+/* No-payment notice on confirmation screen */
+.confirm-no-payment-notice {
+  display: inline-block;
+  background: #fdf8f0;
+  border: 1px solid var(--color-gold);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 1rem;
+  margin: 0.5rem 0 1.25rem;
+  font-size: 0.875rem;
+  color: var(--color-brown);
+}
+
 /* ===== Confirmation Screen ===== */
 .reservation-confirm {
   text-align: center;
