@@ -1412,19 +1412,6 @@ function loadProducts() {
       // ?tab=ingredients URL param switching away before this async chain resolves)
       if (_activeCartTab === 'kits') applyFilters();
 
-      // Show non-blocking banner if we fell back to the local snapshot
-      if (_usedSnapshotFallback) {
-        var catalogEl = document.getElementById('product-catalog');
-        if (catalogEl && catalogEl.parentNode) {
-          var existingBanner = catalogEl.querySelector('.catalog-banner');
-          if (!existingBanner) {
-            var banner = document.createElement('div');
-            banner.className = 'catalog-banner';
-            banner.textContent = 'Showing cached product list \u2014 some information may be outdated.';
-            catalogEl.insertBefore(banner, catalogEl.firstChild);
-          }
-        }
-      }
 
       // Refresh button — clears middleware cache and reloads products (only once)
       if (!document.querySelector('#catalog-controls-kits .catalog-refresh-btn')) {
