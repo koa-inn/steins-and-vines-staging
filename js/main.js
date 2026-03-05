@@ -1292,6 +1292,7 @@ function loadProducts() {
   }
 
   function setCachedMW(items) {
+    if (!items || !items.length) return; // don't cache empty results — fallback to snapshot instead
     try {
       localStorage.setItem(MW_CACHE_KEY, JSON.stringify(items));
       localStorage.setItem(MW_CACHE_TS_KEY, String(Date.now()));
@@ -1353,7 +1354,7 @@ function loadProducts() {
   function loadFromMiddleware() {
     var cached = getCachedMW();
 
-    if (cached) {
+    if (cached && cached.data && cached.data.length > 0) {
       var promise = Promise.resolve(cached.data);
       if (!cached.fresh) {
         fetchFromMiddleware().then(setCachedMW).catch(function () {});
