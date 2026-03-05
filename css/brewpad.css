@@ -942,6 +942,109 @@ img { max-width: 100%; height: auto; display: block; }
 /* ===== Measurements Tab ===== */
 .bp-meas-wrap { display: flex; flex-direction: column; gap: 12px; }
 
+/* ===== Measurements Tab — Redesign ===== */
+.bp-meas-search-wrap {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.bp-meas-selected {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--batch-info-bg);
+  border: 1px solid var(--batch-info);
+  color: var(--batch-info);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  margin-top: 8px;
+}
+
+.bp-meas-selected-clear {
+  background: none;
+  border: none;
+  color: var(--batch-info);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.bp-meas-entry-section {
+  margin-bottom: 24px;
+}
+
+.bp-meas-entry-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--ledger-line);
+  border-radius: var(--r-md);
+  background: var(--cellar-raised);
+}
+
+.bp-meas-entry-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 480px;
+}
+
+.bp-meas-entry-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-tertiary);
+  font-weight: 600;
+  padding: 8px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--ledger-line);
+  background: var(--cellar-surface);
+}
+
+.bp-meas-entry-table td {
+  padding: 4px 4px;
+  border-bottom: 1px solid var(--ledger-soft);
+  vertical-align: middle;
+}
+
+.bp-meas-entry-table tr:last-child td {
+  border-bottom: none;
+}
+
+.bp-meas-entry-table .bp-inline-input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 0.9rem;
+}
+
+/* Date column wider, notes flexible */
+.bp-meas-entry-table th:first-child,
+.bp-meas-entry-table td:first-child { width: 120px; }
+.bp-meas-entry-table th:nth-child(2),
+.bp-meas-entry-table td:nth-child(2),
+.bp-meas-entry-table th:nth-child(3),
+.bp-meas-entry-table td:nth-child(3),
+.bp-meas-entry-table th:nth-child(4),
+.bp-meas-entry-table td:nth-child(4) { width: 72px; }
+.bp-meas-entry-table th:last-child,
+.bp-meas-entry-table td:last-child { width: 32px; text-align: center; }
+
+.bp-meas-entry-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--ledger-line);
+  background: var(--cellar-surface);
+  border-radius: 0 0 var(--r-md) var(--r-md);
+}
+
+.bp-meas-history-section {
+  margin-top: 8px;
+}
+
 /* ===== Create Batch Bottom Sheet ===== */
 .bp-create-sheet {
   position: absolute;

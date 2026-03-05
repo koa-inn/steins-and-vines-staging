@@ -16,6 +16,9 @@
 
   // Batches
   var _batchesData = [];
+  var _allBatchesData = [];  // full unfiltered batch list (all statuses) — source of truth for filter/search
+  var _eagerLoadDone = false;
+  var _eagerLoadTime = 0;
   var _batchesLoaded = false;
   var _batchesLoading = false;
   var _batchesLoadTime = 0;
@@ -46,9 +49,11 @@
   var _measBatches = [];
   var _measSelectedBatchId = '';
   var _measReadings = [];
-  var _measStagingRows = [];
+  var _measEntryRows = [];   // array of {id, timestamp, degrees_plato, temperature, ph, notes}
+  var _measRowCounter = 0;   // unique ID for each row (for DOM keying)
   var _measStartDate = null;
   var _measRequestId = 0;   // increments on each batch select; stale responses are discarded
+  var _measSearchTimer = null;
 
   // Dashboard
   var _dashSummary = null;
@@ -234,8 +239,7 @@
       }
     });
 
-    loadDashboard();
-    startDashAutoRefresh();
+    eagerLoad();
   }
 
   function showDenied() {
@@ -387,8 +391,14 @@
     if (tab === 'dashboard') {
       if (now - _dashLoadTime > CACHE_TTL) loadDashboard();
     } else if (tab === 'batches') {
-      if (!_batchesLoaded || now - _batchesLoadTime > CACHE_TTL) loadBatches();
-      else renderBatchList();
+      if (_allBatchesData.length > 0) {
+        // Derive filtered list from cache — instant
+        _batchesData = filterBatchesByStatus(_allBatchesData, _batchStatusFilter);
+        _batchesLoaded = true;
+        renderBatchList();
+      } else {
+        loadBatches();
+      }
     } else if (tab === 'tasks') {
       if (!_upcomingLoaded || now - _upcomingLoadTime > CACHE_TTL) loadTasks();
     } else if (tab === 'measurements') {
@@ -397,6 +407,50 @@
   }
 
   // ===== Dashboard =====
+
+  function eagerLoad() {
+    // Show loading in dashboard (the first visible panel)
+    var dashInner = document.getElementById('bp-dashboard-inner');
+    if (dashInner) dashInner.innerHTML = '<div class="bp-skeleton-block"></div><div class="bp-skeleton-block" style="height:120px;margin-top:12px;"></div>';
+
+    Promise.all([
+      adminApiGet('get_batch_dashboard_summary'),
+      adminApiGet('get_batches', { status: 'all' }),   // fetch ALL statuses at once
+      adminApiGet('get_vessels'),
+      adminApiGet('get_ferm_schedules'),
+      adminApiGet('get_tasks_upcoming', { limit: 200 })
+    ]).then(function (results) {
+      _dashSummary    = results[0].data || null;
+      _dashLoadTime   = Date.now();
+
+      _allBatchesData = (results[1].data && results[1].data.batches) || [];
+      _batchesLoaded  = true;
+      _batchesLoadTime = Date.now();
+
+      _vesselsData    = (results[2].data && results[2].data.vessels) || [];
+      _vesselsCacheTime = Date.now();
+      _vesselsMap     = {};
+      _vesselsData.forEach(function (v) { _vesselsMap[String(v.vessel_id)] = v; });
+
+      _fermSchedules  = (results[3].data && results[3].data.schedules) || [];
+      _fermSchedulesCacheTime = Date.now();
+
+      _upcomingTasks  = (results[4].data && results[4].data.tasks) || [];
+      _upcomingLoaded = true;
+      _upcomingLoadTime = Date.now();
+
+      _eagerLoadDone  = true;
+      _eagerLoadTime  = Date.now();
+
+      renderDashboard();
+      startDashAutoRefresh();
+    }).catch(function (err) {
+      // Graceful fallback: load dashboard + batches separately
+      _eagerLoadDone = false;
+      loadDashboard();
+      startDashAutoRefresh();
+    });
+  }
 
   function startDashAutoRefresh() {
     if (_dashAutoRefreshTimer) clearInterval(_dashAutoRefreshTimer);
@@ -416,6 +470,9 @@
       _dashSummary = results[0].data || null;
       _upcomingTasks = (results[1].data && results[1].data.tasks) || _upcomingTasks;
       if (results[1].data) { _upcomingLoaded = true; _upcomingLoadTime = Date.now(); }
+      // Reset all-batches cache so the next visit to the Batches tab fetches fresh data
+      _allBatchesData = [];
+      _batchesLoadTime = 0;
       renderDashboard();
     }).catch(function (err) {
       // Degrade gracefully: try summary-only
@@ -533,41 +590,41 @@
 
   // ===== Batches =====
 
+  function filterBatchesByStatus(batches, filter) {
+    if (!filter || filter === 'all') return batches.slice();
+    if (filter === 'active') {
+      return batches.filter(function (b) {
+        var s = String(b.status || '').toLowerCase();
+        return s === 'primary' || s === 'secondary';
+      });
+    }
+    return batches.filter(function (b) {
+      return String(b.status || '').toLowerCase() === filter;
+    });
+  }
+
   function loadBatches() {
+    // If eager-loaded cache is fresh, derive filtered list client-side (instant)
+    var now = Date.now();
+    if (_allBatchesData.length > 0 && now - _batchesLoadTime < CACHE_TTL * 4) {
+      _batchesData = filterBatchesByStatus(_allBatchesData, _batchStatusFilter);
+      _batchesLoaded = true;
+      renderBatchList();
+      return;
+    }
+
+    // Cache stale — re-fetch all
     if (_batchesLoading) return;
     _batchesLoading = true;
     _batchesLoadTime = Date.now();
 
     var listPane = document.getElementById('bp-batch-list-pane');
-    if (listPane) {
-      listPane.innerHTML = '<div class="bp-panel-inner"><div class="bp-skeleton-block"></div>' +
-        '<div class="bp-skeleton-block" style="margin-top:8px;"></div>' +
-        '<div class="bp-skeleton-block" style="margin-top:8px;height:80px;"></div></div>';
-    }
+    if (listPane) listPane.innerHTML = '<div class="bp-panel-inner"><div class="bp-skeleton-block"></div></div>';
 
-    var vesselProm = (_vesselsData && Date.now() - _vesselsCacheTime < CACHE_TTL)
-      ? Promise.resolve()
-      : adminApiGet('get_vessels').then(function (r) {
-          _vesselsData = (r.data && r.data.vessels) || [];
-          _vesselsCacheTime = Date.now();
-          _vesselsMap = {};
-          _vesselsData.forEach(function (v) { _vesselsMap[String(v.vessel_id)] = v; });
-        }).catch(function () { _vesselsData = []; _vesselsCacheTime = Date.now(); _vesselsMap = {}; });
-
-    var schedProm = (_fermSchedules.length > 0 && Date.now() - _fermSchedulesCacheTime < KIT_CACHE_TTL)
-      ? Promise.resolve()
-      : adminApiGet('get_ferm_schedules').then(function (r) {
-          _fermSchedules = (r.data && r.data.schedules) || [];
-          _fermSchedulesCacheTime = Date.now();
-        }).catch(function () { _fermSchedules = []; _fermSchedulesCacheTime = Date.now(); });
-
-    Promise.all([
-      adminApiGet('get_batches', { status: _batchStatusFilter }),
-      vesselProm,
-      schedProm
-    ])
-      .then(function (results) {
-        _batchesData = (results[0].data && results[0].data.batches) || [];
+    adminApiGet('get_batches', { status: 'all' })
+      .then(function (r) {
+        _allBatchesData = (r.data && r.data.batches) || [];
+        _batchesData = filterBatchesByStatus(_allBatchesData, _batchStatusFilter);
         _batchesLoaded = true;
         _batchesLoading = false;
         renderBatchList();
@@ -647,12 +704,12 @@
     html += '</div>';
     pane.innerHTML = html;
 
-    // Filter buttons
+    // Filter buttons — instant client-side filter from _allBatchesData
     Array.prototype.forEach.call(pane.querySelectorAll('.bp-filter-btn'), function (btn) {
       btn.addEventListener('click', function () {
         _batchStatusFilter = btn.getAttribute('data-status');
-        _batchesLoaded = false;
-        loadBatches();
+        _batchesData = filterBatchesByStatus(_allBatchesData, _batchStatusFilter);
+        renderBatchList();
       });
     });
 
@@ -843,6 +900,8 @@
             b.vessel_id = vessel; b.shelf_id = shelf; b.bin_id = bin;
             saveLocBtn.disabled = false;
             _batchesLoaded = false;
+            _allBatchesData = [];
+            _eagerLoadTime = 0;
           })
           .catch(function (err) {
             showToast('Failed: ' + err.message, 'error');
@@ -876,6 +935,9 @@
             // Update the cached batch and refresh list immediately
             for (var bi = 0; bi < _batchesData.length; bi++) {
               if (_batchesData[bi].batch_id === b.batch_id) { _batchesData[bi].status = next; break; }
+            }
+            for (var bi2 = 0; bi2 < _allBatchesData.length; bi2++) {
+              if (_allBatchesData[bi2].batch_id === b.batch_id) { _allBatchesData[bi2].status = next; break; }
             }
             _batchesLoaded = false;
             _dashLoadTime = 0;
@@ -972,6 +1034,8 @@
             showToast('Batch deleted', 'success');
             closeBatchDetail();
             _batchesLoaded = false;
+            _allBatchesData = [];
+            _eagerLoadTime = 0;
             _dashLoadTime = 0;
             loadBatches();
           })
@@ -1543,6 +1607,8 @@
             showToast('Batch ' + (result.batch_id || '') + ' created', 'success');
             closeCreateSheet();
             _batchesLoaded = false;
+            _allBatchesData = [];
+            _eagerLoadTime = 0;
             _upcomingLoaded = false;
             _measBatches = [];
             _dashLoadTime = 0;
@@ -1722,6 +1788,11 @@
   // ===== Tasks Tab =====
 
   function loadTasks() {
+    // If tasks are already cached from eager load or recent fetch, render immediately
+    if (_upcomingLoaded && _upcomingTasks.length > 0 && Date.now() - _upcomingLoadTime < CACHE_TTL * 4) {
+      renderTasks();
+      return;
+    }
     _upcomingLoadTime = Date.now();
     var inner = document.getElementById('bp-tasks-inner');
     if (inner) inner.innerHTML = '<div class="bp-skeleton-block"></div>';
@@ -1757,7 +1828,24 @@
     _upcomingTasks.forEach(function (t) {
       var done = t.completed === true || t.completed === 'TRUE' || t.completed === '1';
       if (done) return;
+
+      var isPkg = t.is_packaging === true || t.is_packaging === 'TRUE';
       var due = t.due_date ? String(t.due_date).substring(0, 10) : '';
+
+      // Packaging/bottling tasks with no due date are "TBD" — hide until all
+      // other non-packaging tasks for the same batch are complete.
+      if (isPkg && !due) {
+        var otherPending = _upcomingTasks.some(function (other) {
+          if (other.task_id === t.task_id) return false;
+          if (other.batch_id !== t.batch_id) return false;
+          var otherDone = other.completed === true || other.completed === 'TRUE' || other.completed === '1';
+          if (otherDone) return false;
+          var otherIsPkg = other.is_packaging === true || other.is_packaging === 'TRUE';
+          return !otherIsPkg;
+        });
+        if (otherPending) return; // not ready yet
+      }
+
       if (!due || due < today) { groups[0].tasks.push(t); }
       else if (due === today)  { groups[1].tasks.push(t); }
       else if (due <= weekEndStr) { groups[2].tasks.push(t); }
@@ -1849,6 +1937,16 @@
   function loadMeasurementBatches() {
     var inner = document.getElementById('bp-measurements-inner');
     if (!inner) return;
+    // Use cached all-batches data filtered to active — no network call
+    if (_allBatchesData.length > 0) {
+      _measBatches = _allBatchesData.filter(function (b) {
+        var s = String(b.status || '').toLowerCase();
+        return s === 'primary' || s === 'secondary' || s === 'active';
+      });
+      renderMeasurementsUI();
+      return;
+    }
+    // Fallback: fetch if not cached
     inner.innerHTML = '<div class="bp-skeleton-block"></div>';
     adminApiGet('get_batches', { status: 'active' })
       .then(function (result) {
@@ -1863,40 +1961,39 @@
   function renderMeasurementsUI() {
     var inner = document.getElementById('bp-measurements-inner');
     if (!inner) return;
-    _measStagingRows = [];
+    _measEntryRows = [];
+    _measRowCounter = 0;
     _measReadings = [];
 
-    var options = '<option value="">\u2014 Select batch \u2014</option>';
-    _measBatches.forEach(function (b) {
-      options += '<option value="' + escapeHTML(b.batch_id) + '"' +
-        (b.batch_id === _measSelectedBatchId ? ' selected' : '') + '>' +
-        escapeHTML(b.batch_id + ' \u2014 ' + (b.product_name || b.product_sku || '')) + '</option>';
-    });
-
     var html = '<div class="bp-panel-inner bp-meas-wrap">';
-    html += '<div class="bp-form-group"><label>Batch</label>';
-    html += '<select id="bp-meas-batch-sel" class="bp-inline-input">' + options + '</select></div>';
+    html += '<div class="bp-meas-search-wrap">';
+    html += '<input type="search" id="bp-meas-batch-search" class="bp-inline-input"';
+    html += ' placeholder="Search batches by name, ID, vessel, location\u2026" autocomplete="off">';
+    html += '<div id="bp-meas-batch-dropdown" class="bp-vessel-dropdown" style="display:none;"></div>';
+    html += '<div id="bp-meas-selected-badge" class="bp-meas-selected" style="display:none;"></div>';
+    html += '</div>';
     html += '<div id="bp-meas-content">';
-    html += _measSelectedBatchId
-      ? '<div class="bp-skeleton-block"></div>'
-      : '<p class="bp-empty">Select a batch to record measurements.</p>';
-    html += '</div></div>';
+    html += '<p class="bp-empty">Search for a batch above to record measurements.</p>';
+    html += '</div>';
+    html += '</div>';
 
     inner.innerHTML = html;
 
-    var sel = document.getElementById('bp-meas-batch-sel');
-    if (sel) {
-      sel.addEventListener('change', function () {
-        _measSelectedBatchId = sel.value;
-        if (!_measSelectedBatchId) {
-          var c = document.getElementById('bp-meas-content');
-          if (c) c.innerHTML = '<p class="bp-empty">Select a batch to record measurements.</p>';
-          return;
-        }
+    // If a batch was already selected (tab revisit), restore it
+    if (_measSelectedBatchId) {
+      var matching = null;
+      for (var bi = 0; bi < _measBatches.length; bi++) {
+        if (_measBatches[bi].batch_id === _measSelectedBatchId) { matching = _measBatches[bi]; break; }
+      }
+      if (matching) {
+        showMeasSelectedBadge(matching);
         loadMeasurementsForBatch(_measSelectedBatchId);
-      });
-      if (_measSelectedBatchId) loadMeasurementsForBatch(_measSelectedBatchId);
+      } else {
+        _measSelectedBatchId = '';
+      }
     }
+
+    bindMeasBatchSearch();
   }
 
   function loadMeasurementsForBatch(batchId) {
@@ -1909,7 +2006,8 @@
         var data = result.data || {};
         _measReadings = (data.plato_readings || []).slice();
         _measStartDate = (data.batch && data.batch.start_date) || null;
-        _measStagingRows = [];
+        _measRowCounter = 0;
+        _measEntryRows = [{ id: ++_measRowCounter, timestamp: todayStr() }];
         renderMeasurementsContent(batchId);
       })
       .catch(function (err) {
@@ -1922,12 +2020,29 @@
   function renderMeasurementsContent(batchId) {
     var content = document.getElementById('bp-meas-content');
     if (!content) return;
-    var html = renderDataGapWarning(_measReadings);
 
+    var html = '<div class="bp-meas-entry-section">';
+    html += '<div class="bp-section-header">Record Readings</div>';
+    html += '<div class="bp-meas-entry-table-wrap">';
+    html += '<table class="bp-meas-entry-table">';
+    html += '<thead><tr>';
+    html += '<th>Date</th><th>&deg;P</th><th>Temp &deg;C</th><th>pH</th><th>Notes</th><th></th>';
+    html += '</tr></thead>';
+    html += '<tbody id="bp-meas-entry-tbody"></tbody>';
+    html += '</table>';
+    html += '<div class="bp-meas-entry-footer">';
+    html += '<button type="button" class="btn-secondary bp-btn-sm" id="bp-meas-add-row">+ Row</button>';
+    html += '<button type="button" class="btn bp-btn-sm" id="bp-meas-submit">Submit</button>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div class="bp-meas-history-section">';
+    html += '<div class="bp-section-header">History</div>';
+    html += renderDataGapWarning(_measReadings);
     if (_measReadings.length >= 2) {
       html += renderPlatoChart(_measReadings, _measStartDate);
     }
-
     if (_measReadings.length > 0) {
       html += '<table class="bp-readings-table" aria-label="Plato readings"><thead><tr><th>Date</th><th>&deg;P</th><th>Temp</th><th>pH</th><th>Notes</th></tr></thead><tbody>';
       _measReadings.slice().reverse().slice(0, 10).forEach(function (r) {
@@ -1941,115 +2056,217 @@
     } else {
       html += '<p class="bp-empty">No readings yet.</p>';
     }
-
-    html += '<div class="bp-reading-add-row">';
-    html += '<input type="date" id="bp-meas-date" class="bp-inline-input" style="width:120px;">';
-    html += '<input type="number" id="bp-meas-plato" step="0.1" max="40" placeholder="&deg;P" class="bp-inline-input" style="width:64px;">';
-    html += '<input type="number" id="bp-meas-temp" step="0.1" placeholder="Temp" class="bp-inline-input" style="width:64px;">';
-    html += '<input type="number" id="bp-meas-ph" step="0.01" min="0" max="14" placeholder="pH" class="bp-inline-input" style="width:60px;">';
-    html += '<input type="text" id="bp-meas-notes" placeholder="Notes" class="bp-inline-input" style="flex:1;">';
-    html += '<button type="button" class="btn bp-btn-sm" id="bp-meas-add-row">Stage</button>';
     html += '</div>';
-    html += '<div id="bp-meas-staging-wrap">' + renderMeasStagingTable() + '</div>';
 
     content.innerHTML = html;
 
-    var dateInput = document.getElementById('bp-meas-date');
-    if (dateInput) dateInput.value = todayStr();
+    renderMeasEntryRows();
 
     var addRowBtn = document.getElementById('bp-meas-add-row');
-    if (addRowBtn) {
-      addRowBtn.addEventListener('click', function () {
-        var dateVal  = (document.getElementById('bp-meas-date')  || {}).value || '';
-        var gravRaw  = (document.getElementById('bp-meas-plato') || {}).value || '';
-        var tempRaw  = (document.getElementById('bp-meas-temp')  || {}).value || '';
-        var phRaw    = (document.getElementById('bp-meas-ph')    || {}).value || '';
-        var notesVal = (document.getElementById('bp-meas-notes') || {}).value || '';
-        if (!dateVal) { showToast('Date required', 'error'); return; }
-        if (gravRaw === '' && tempRaw === '' && phRaw === '') { showToast('Enter at least one value', 'error'); return; }
-        var row = { timestamp: dateVal };
-        if (gravRaw !== '') row.degrees_plato = parseFloat(gravRaw);
-        if (tempRaw !== '') row.temperature   = parseFloat(tempRaw);
-        if (phRaw   !== '') row.ph            = parseFloat(phRaw);
-        if (notesVal) row.notes = notesVal;
-        _measStagingRows.push(row);
-        var wrap = document.getElementById('bp-meas-staging-wrap');
-        if (wrap) wrap.innerHTML = renderMeasStagingTable();
-        bindMeasStagingHandlers(batchId);
-        ['bp-meas-plato', 'bp-meas-temp', 'bp-meas-ph', 'bp-meas-notes'].forEach(function (id) {
-          var el = document.getElementById(id); if (el) el.value = '';
-        });
-      });
-    }
-    bindMeasStagingHandlers(batchId);
+    if (addRowBtn) addRowBtn.addEventListener('click', addMeasRow);
+
+    var submitBtn = document.getElementById('bp-meas-submit');
+    if (submitBtn) submitBtn.addEventListener('click', function () { submitMeasRows(batchId); });
   }
 
-  function renderMeasStagingTable() {
-    if (_measStagingRows.length === 0) return '';
-    var html = '<table class="bp-readings-table bp-staging-table"><thead><tr><th>Date</th><th>&deg;P</th><th>Temp</th><th>pH</th><th>Notes</th><th></th></tr></thead><tbody>';
-    _measStagingRows.forEach(function (r, i) {
-      html += '<tr><td>' + escapeHTML(r.timestamp) + '</td>' +
-        '<td>' + escapeHTML(r.degrees_plato != null ? r.degrees_plato : '') + '</td>' +
-        '<td>' + escapeHTML(r.temperature   != null ? r.temperature   : '') + '</td>' +
-        '<td>' + escapeHTML(r.ph            != null ? r.ph            : '') + '</td>' +
-        '<td>' + escapeHTML(r.notes || '') + '</td>' +
-        '<td><button type="button" class="bp-staging-remove" data-idx="' + i + '">&times;</button></td></tr>';
+  function renderMeasEntryRows() {
+    var tbody = document.getElementById('bp-meas-entry-tbody');
+    if (!tbody) return;
+    var html = '';
+    _measEntryRows.forEach(function (row) {
+      var id = row.id;
+      html += '<tr data-row-id="' + id + '">';
+      html += '<td><input type="date" class="bp-meas-row-date bp-inline-input" value="' + escapeHTML(row.timestamp || todayStr()) + '"></td>';
+      html += '<td><input type="number" class="bp-meas-row-plato bp-inline-input" step="0.1" max="40" placeholder="\u2014"></td>';
+      html += '<td><input type="number" class="bp-meas-row-temp bp-inline-input" step="0.1" placeholder="\u2014"></td>';
+      html += '<td><input type="number" class="bp-meas-row-ph bp-inline-input" step="0.01" min="0" max="14" placeholder="\u2014"></td>';
+      html += '<td><input type="text" class="bp-meas-row-notes bp-inline-input" placeholder="optional"></td>';
+      html += '<td><button type="button" class="bp-staging-remove" data-row-id="' + id + '">&times;</button></td>';
+      html += '</tr>';
     });
-    html += '</tbody></table>';
-    html += '<button type="button" class="btn bp-btn-sm" id="bp-meas-submit-all">Submit All (' + _measStagingRows.length + ')</button>';
-    return html;
+    tbody.innerHTML = html;
+
+    // Bind remove buttons
+    Array.prototype.forEach.call(tbody.querySelectorAll('.bp-staging-remove[data-row-id]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var rowId = parseInt(btn.getAttribute('data-row-id'), 10);
+        if (_measEntryRows.length <= 1) {
+          // Last row — just clear fields instead of removing
+          var tr = tbody.querySelector('tr[data-row-id="' + rowId + '"]');
+          if (tr) {
+            var inputs = tr.querySelectorAll('input');
+            Array.prototype.forEach.call(inputs, function (inp) {
+              if (inp.type === 'date') { inp.value = todayStr(); }
+              else { inp.value = ''; }
+            });
+          }
+          _measEntryRows[0].timestamp = todayStr();
+          return;
+        }
+        _measEntryRows = _measEntryRows.filter(function (r) { return r.id !== rowId; });
+        renderMeasEntryRows();
+      });
+    });
   }
 
-  function bindMeasStagingHandlers(batchId) {
+  function addMeasRow() {
+    _measEntryRows.push({ id: ++_measRowCounter, timestamp: todayStr() });
+    renderMeasEntryRows();
+    var tbody = document.getElementById('bp-meas-entry-tbody');
+    if (tbody) {
+      var lastRow = tbody.querySelector('tr:last-child');
+      if (lastRow) {
+        var dateInput = lastRow.querySelector('.bp-meas-row-date');
+        if (dateInput) dateInput.focus();
+      }
+    }
+  }
+
+  function submitMeasRows(batchId) {
+    var rows = [];
     Array.prototype.forEach.call(
-      document.querySelectorAll('#bp-meas-staging-wrap .bp-staging-remove'),
-      function (btn) {
-        btn.addEventListener('click', function () {
-          var idx = parseInt(btn.getAttribute('data-idx'), 10);
-          _measStagingRows.splice(idx, 1);
-          var wrap = document.getElementById('bp-meas-staging-wrap');
-          if (wrap) wrap.innerHTML = renderMeasStagingTable();
-          bindMeasStagingHandlers(batchId);
-        });
+      document.querySelectorAll('#bp-meas-entry-tbody tr[data-row-id]'),
+      function (tr) {
+        var date  = tr.querySelector('.bp-meas-row-date').value;
+        var plato = tr.querySelector('.bp-meas-row-plato').value;
+        var temp  = tr.querySelector('.bp-meas-row-temp').value;
+        var ph    = tr.querySelector('.bp-meas-row-ph').value;
+        var notes = tr.querySelector('.bp-meas-row-notes').value;
+        if (!date || (plato === '' && temp === '' && ph === '')) return;
+        var row = { timestamp: date };
+        if (plato !== '') row.degrees_plato = parseFloat(plato);
+        if (temp  !== '') row.temperature   = parseFloat(temp);
+        if (ph    !== '') row.ph            = parseFloat(ph);
+        if (notes) row.notes = notes;
+        rows.push(row);
       }
     );
+    if (!rows.length) { showToast('No measurements to submit', 'error'); return; }
 
-    var submitBtn = document.getElementById('bp-meas-submit-all');
-    if (submitBtn) {
-      submitBtn.addEventListener('click', function () {
-        if (!_measStagingRows.length) return;
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Submitting\u2026';
-        var rows = _measStagingRows.slice();
-        var stagingBackup = _measStagingRows.slice();
-        var measTimeout = setTimeout(function () {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Submit All (' + _measStagingRows.length + ')';
-          showToast('Request timed out — readings preserved', 'error');
-        }, 60000);
-        adminApiPost('bulk_add_plato_readings', { batch_id: batchId, readings: rows })
-          .then(function (result) {
-            clearTimeout(measTimeout);
-            showToast(rows.length + ' reading' + (rows.length !== 1 ? 's' : '') + ' recorded', 'success');
-            var results = (result && result.results) || [];
-            rows.forEach(function (r, i) {
-              r.reading_id = (results[i] && results[i].reading_id) || ('confirmed-' + Date.now() + i);
-              _measReadings.push(r);
-            });
-            _measStagingRows = [];
-            renderMeasurementsContent(batchId);
-          })
-          .catch(function (err) {
-            clearTimeout(measTimeout);
-            showToast('Failed: ' + err.message + ' — readings preserved', 'error');
-            _measStagingRows = stagingBackup;
-            submitBtn.disabled = false;
-            var wrap = document.getElementById('bp-meas-staging-wrap');
-            if (wrap) wrap.innerHTML = renderMeasStagingTable();
-            bindMeasStagingHandlers(batchId);
-          });
+    var submitBtn = document.getElementById('bp-meas-submit');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting\u2026'; }
+
+    var measTimeout = setTimeout(function () {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit'; }
+      showToast('Request timed out \u2014 readings preserved', 'error');
+    }, 60000);
+
+    adminApiPost('bulk_add_plato_readings', { batch_id: batchId, readings: rows })
+      .then(function (result) {
+        clearTimeout(measTimeout);
+        showToast(rows.length + ' reading' + (rows.length !== 1 ? 's' : '') + ' recorded', 'success');
+        if (navigator.vibrate) navigator.vibrate([50, 30, 80]);
+        var results = (result && result.results) || [];
+        rows.forEach(function (r, i) {
+          r.reading_id = (results[i] && results[i].reading_id) || ('confirmed-' + Date.now() + i);
+          _measReadings.push(r);
+        });
+        _measRowCounter = 0;
+        _measEntryRows = [{ id: ++_measRowCounter, timestamp: todayStr() }];
+        renderMeasurementsContent(batchId);
+      })
+      .catch(function (err) {
+        clearTimeout(measTimeout);
+        showToast('Failed: ' + err.message + ' \u2014 readings preserved', 'error');
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit'; }
+      });
+  }
+
+  function showMeasSelectedBadge(batch) {
+    var badge = document.getElementById('bp-meas-selected-badge');
+    if (!badge) return;
+    var loc = [batch.vessel_id, batch.shelf_id, batch.bin_id].filter(Boolean).join(' \u00b7 ');
+    var label = escapeHTML(batch.batch_id) + ' \u2014 ' + escapeHTML(batch.product_name || batch.product_sku || '');
+    if (loc) label += ' \u00b7 ' + escapeHTML(loc);
+    badge.innerHTML = '<span>' + label + '</span>' +
+      '<button type="button" class="bp-meas-selected-clear" aria-label="Clear selection">&times;</button>';
+    badge.style.display = '';
+    var clearBtn = badge.querySelector('.bp-meas-selected-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () {
+        _measSelectedBatchId = '';
+        _measReadings = [];
+        _measEntryRows = [];
+        _measRowCounter = 0;
+        badge.style.display = 'none';
+        var searchInput = document.getElementById('bp-meas-batch-search');
+        if (searchInput) { searchInput.value = ''; searchInput.focus(); }
+        var dropdown = document.getElementById('bp-meas-batch-dropdown');
+        if (dropdown) dropdown.style.display = 'none';
+        var content = document.getElementById('bp-meas-content');
+        if (content) content.innerHTML = '<p class="bp-empty">Search for a batch above to record measurements.</p>';
       });
     }
+  }
+
+  function bindMeasBatchSearch() {
+    var searchInput = document.getElementById('bp-meas-batch-search');
+    var dropdown = document.getElementById('bp-meas-batch-dropdown');
+    if (!searchInput || !dropdown) return;
+
+    function showMeasDropdown(term) {
+      var lower = term.toLowerCase().trim();
+      var matches = _measBatches.filter(function (b) {
+        if (!lower) return true;
+        var hay = (String(b.batch_id || '') + ' ' +
+          String(b.product_name || '') + ' ' +
+          String(b.product_sku  || '') + ' ' +
+          String(b.customer_name || '') + ' ' +
+          String(b.vessel_id || '') + ' ' +
+          String(b.shelf_id || '') + ' ' +
+          String(b.bin_id || '')).toLowerCase();
+        return hay.indexOf(lower) !== -1;
+      }).slice(0, 10);
+
+      if (matches.length === 0) {
+        dropdown.innerHTML = '<div class="bp-vessel-option bp-vessel-option--empty">No batches found</div>';
+      } else {
+        dropdown.innerHTML = matches.map(function (b) {
+          var loc = [b.vessel_id, b.shelf_id && b.bin_id ? b.shelf_id + '-' + b.bin_id : (b.shelf_id || b.bin_id)].filter(Boolean).join(' \u00b7 ');
+          var label = escapeHTML(b.batch_id) + ' \u2014 ' + escapeHTML(b.product_name || b.product_sku || '');
+          if (b.vessel_id) label += ' \u2014 Vessel ' + escapeHTML(String(b.vessel_id));
+          if (loc) label += ' \u00b7 ' + escapeHTML(loc);
+          var status = String(b.status || '');
+          if (status) label += ' [' + escapeHTML(status) + ']';
+          return '<div class="bp-vessel-option" data-batch-id="' + escapeHTML(b.batch_id) + '">' + label + '</div>';
+        }).join('');
+      }
+      dropdown.style.display = '';
+
+      Array.prototype.forEach.call(dropdown.querySelectorAll('.bp-vessel-option[data-batch-id]'), function (opt) {
+        opt.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          var batchId = opt.getAttribute('data-batch-id');
+          var selectedBatch = null;
+          for (var bi = 0; bi < _measBatches.length; bi++) {
+            if (_measBatches[bi].batch_id === batchId) { selectedBatch = _measBatches[bi]; break; }
+          }
+          _measSelectedBatchId = batchId;
+          searchInput.value = '';
+          dropdown.style.display = 'none';
+          if (selectedBatch) showMeasSelectedBadge(selectedBatch);
+          _measRowCounter = 0;
+          _measEntryRows = [{ id: ++_measRowCounter, timestamp: todayStr() }];
+          loadMeasurementsForBatch(batchId);
+        });
+      });
+    }
+
+    searchInput.addEventListener('focus', function () {
+      if (!searchInput.value.trim()) showMeasDropdown('');
+    });
+
+    searchInput.addEventListener('input', function () {
+      clearTimeout(_measSearchTimer);
+      _measSearchTimer = setTimeout(function () {
+        _measSearchTimer = null;
+        showMeasDropdown(searchInput.value);
+      }, 150);
+    });
+
+    searchInput.addEventListener('blur', function () {
+      setTimeout(function () { dropdown.style.display = 'none'; }, 200);
+    });
   }
 
   // ===== Bootstrap =====
