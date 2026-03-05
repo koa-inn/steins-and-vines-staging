@@ -812,13 +812,17 @@ img { max-width: 100%; height: auto; display: block; }
   display: inline-block;
   background: var(--batch-info-bg);
   color: var(--batch-info);
+  border: none;
   border-radius: 3px;
   padding: 1px 5px;
   font-size: 0.72rem;
   font-weight: 700;
   font-family: monospace;
   flex-shrink: 0;
+  cursor: pointer;
+  line-height: inherit;
 }
+.bp-batch-chip:hover { background: rgba(74, 111, 138, 0.18); }
 
 /* ===== Task Groups (Tasks Tab) ===== */
 .bp-tasks-toolbar {
@@ -940,109 +944,128 @@ img { max-width: 100%; height: auto; display: block; }
 .bp-staging-remove:hover { background: var(--batch-danger-bg); }
 
 /* ===== Measurements Tab ===== */
-.bp-meas-wrap { display: flex; flex-direction: column; gap: 12px; }
+.bp-meas-wrap { display: flex; flex-direction: column; height: 100%; }
 
-/* ===== Measurements Tab — Redesign ===== */
-.bp-meas-search-wrap {
-  position: relative;
-  margin-bottom: 16px;
+.bp-meas-header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ledger-line);
+  flex-shrink: 0;
 }
 
-.bp-meas-selected {
-  display: inline-flex;
+.bp-meas-date-group {
+  display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--batch-info-bg);
-  border: 1px solid var(--batch-info);
-  color: var(--batch-info);
-  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.bp-meas-date-label {
+  font-size: 0.82rem;
   font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 20px;
-  margin-top: 8px;
+  color: var(--ink-secondary);
+  white-space: nowrap;
 }
 
-.bp-meas-selected-clear {
-  background: none;
-  border: none;
-  color: var(--batch-info);
-  cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
-  padding: 0;
+.bp-meas-filter-input {
+  flex: 1;
+  min-width: 0;
 }
 
-.bp-meas-entry-section {
-  margin-bottom: 24px;
-}
-
-.bp-meas-entry-table-wrap {
-  overflow-x: auto;
+/* Grid wrap — scrollable, fills available space */
+.bp-meas-grid-wrap {
+  flex: 1;
+  overflow: auto;
   -webkit-overflow-scrolling: touch;
+  margin-top: 12px;
   border: 1px solid var(--ledger-line);
   border-radius: var(--r-md);
   background: var(--cellar-raised);
 }
 
-.bp-meas-entry-table {
+/* Multi-batch entry table */
+.bp-meas-multi-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 480px;
+  min-width: 560px;
 }
 
-.bp-meas-entry-table th {
+.bp-meas-multi-table thead th {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ink-tertiary);
   font-weight: 600;
-  padding: 8px 6px;
+  padding: 8px 8px;
   text-align: left;
   border-bottom: 1px solid var(--ledger-line);
   background: var(--cellar-surface);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
-.bp-meas-entry-table td {
-  padding: 4px 4px;
+.bp-meas-multi-table tbody tr {
   border-bottom: 1px solid var(--ledger-soft);
-  vertical-align: middle;
 }
 
-.bp-meas-entry-table tr:last-child td {
+.bp-meas-multi-table tbody tr:last-child {
   border-bottom: none;
 }
 
-.bp-meas-entry-table .bp-inline-input {
+.bp-meas-multi-table td {
+  padding: 5px 6px;
+  vertical-align: middle;
+}
+
+/* Column widths */
+.bp-meas-col-id    { width: 108px; white-space: nowrap; }
+.bp-meas-col-product { min-width: 100px; }
+.bp-meas-col-loc   { width: 80px; font-size: 0.82rem; color: var(--ink-secondary); white-space: nowrap; }
+.bp-meas-col-num   { width: 74px; }
+.bp-meas-col-notes { min-width: 100px; }
+
+/* Compact number inputs in the grid */
+.bp-meas-cell {
   width: 100%;
   min-width: 0;
-  padding: 6px 8px;
-  font-size: 0.9rem;
+  padding: 5px 6px;
+  font-size: 0.88rem;
+  border: 1px solid var(--ctrl-border);
+  border-radius: var(--r-sm);
+  background: var(--cellar-surface);
+  color: var(--ink-primary);
+  font-family: var(--font-body);
 }
 
-/* Date column wider, notes flexible */
-.bp-meas-entry-table th:first-child,
-.bp-meas-entry-table td:first-child { width: 120px; }
-.bp-meas-entry-table th:nth-child(2),
-.bp-meas-entry-table td:nth-child(2),
-.bp-meas-entry-table th:nth-child(3),
-.bp-meas-entry-table td:nth-child(3),
-.bp-meas-entry-table th:nth-child(4),
-.bp-meas-entry-table td:nth-child(4) { width: 72px; }
-.bp-meas-entry-table th:last-child,
-.bp-meas-entry-table td:last-child { width: 32px; text-align: center; }
+.bp-meas-cell:focus {
+  outline: 2px solid var(--stain);
+  outline-offset: 1px;
+  border-color: var(--stain);
+}
 
-.bp-meas-entry-footer {
+/* Highlight rows that have at least one value entered */
+.bp-meas-multi-row:has(.bp-meas-cell:not(:placeholder-shown)) {
+  background: rgba(74, 111, 75, 0.04);
+}
+
+/* Submit footer — sticky at bottom */
+.bp-meas-footer {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--ledger-line);
-  background: var(--cellar-surface);
-  border-radius: 0 0 var(--r-md) var(--r-md);
+  flex-shrink: 0;
+  margin-top: 12px;
 }
 
-.bp-meas-history-section {
-  margin-top: 8px;
+.bp-meas-footer-count {
+  font-size: 0.85rem;
+  color: var(--ink-secondary);
+  font-style: italic;
 }
 
 /* ===== Create Batch Bottom Sheet ===== */
