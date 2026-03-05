@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-03-04T15:33:02.062Z';
+  var BUILD_TIMESTAMP = '2026-03-05T00:45:48.288Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -1421,7 +1421,12 @@
       var expandBtn = document.createElement('button');
       expandBtn.type = 'button';
       expandBtn.className = 'admin-expand-btn';
-      expandBtn.textContent = resHolds.length > 0 ? '+' : '';
+      if (resHolds.length > 0) {
+        expandBtn.textContent = '+';
+      } else {
+        expandBtn.style.visibility = 'hidden';
+        expandBtn.setAttribute('tabindex', '-1');
+      }
       expandBtn.setAttribute('aria-expanded', 'false');
       expandTd.appendChild(expandBtn);
       tr.appendChild(expandTd);
@@ -1465,18 +1470,31 @@
       // Timeslot cell — date on one line, time below
       var tsTd = document.createElement('td');
       var tsStr = (res.timeslot || '').trim();
-      var tsSpaceIdx = tsStr.indexOf(' ');
-      if (tsSpaceIdx > 0) {
-        var tsDate = document.createElement('span');
-        tsDate.className = 'res-cell-primary';
-        tsDate.textContent = tsStr.substring(0, tsSpaceIdx);
-        tsTd.appendChild(tsDate);
-        var tsTime = document.createElement('span');
-        tsTime.className = 'res-cell-secondary';
-        tsTime.textContent = tsStr.substring(tsSpaceIdx + 1);
-        tsTd.appendChild(tsTime);
+      var tsParsed = tsStr ? new Date(tsStr) : null;
+      if (tsParsed && !isNaN(tsParsed.getTime())) {
+        // ISO date — format as readable local time
+        var tsDateSpan = document.createElement('span');
+        tsDateSpan.className = 'res-cell-primary';
+        tsDateSpan.textContent = tsParsed.toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric' });
+        tsTd.appendChild(tsDateSpan);
+        var tsTimeSpan = document.createElement('span');
+        tsTimeSpan.className = 'res-cell-secondary';
+        tsTimeSpan.textContent = tsParsed.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: true });
+        tsTd.appendChild(tsTimeSpan);
       } else {
-        tsTd.textContent = tsStr;
+        var tsSpaceIdx = tsStr.indexOf(' ');
+        if (tsSpaceIdx > 0) {
+          var tsDateFallback = document.createElement('span');
+          tsDateFallback.className = 'res-cell-primary';
+          tsDateFallback.textContent = tsStr.substring(0, tsSpaceIdx);
+          tsTd.appendChild(tsDateFallback);
+          var tsTimeFallback = document.createElement('span');
+          tsTimeFallback.className = 'res-cell-secondary';
+          tsTimeFallback.textContent = tsStr.substring(tsSpaceIdx + 1);
+          tsTd.appendChild(tsTimeFallback);
+        } else {
+          tsTd.textContent = tsStr;
+        }
       }
       tr.appendChild(tsTd);
 
@@ -1493,7 +1511,21 @@
       statusTd.appendChild(badge);
       tr.appendChild(statusTd);
 
-      appendTd(tr, res.submitted_at || '');
+      var submittedTd = document.createElement('td');
+      var submittedParsed = res.submitted_at ? new Date(res.submitted_at) : null;
+      if (submittedParsed && !isNaN(submittedParsed.getTime())) {
+        var submittedDateSpan = document.createElement('span');
+        submittedDateSpan.className = 'res-cell-primary';
+        submittedDateSpan.textContent = submittedParsed.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+        submittedTd.appendChild(submittedDateSpan);
+        var submittedTimeSpan = document.createElement('span');
+        submittedTimeSpan.className = 'res-cell-secondary';
+        submittedTimeSpan.textContent = submittedParsed.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit', hour12: true });
+        submittedTd.appendChild(submittedTimeSpan);
+      } else {
+        submittedTd.textContent = res.submitted_at || '';
+      }
+      tr.appendChild(submittedTd);
 
       var actionsTd = document.createElement('td');
       actionsTd.className = 'res-actions';
