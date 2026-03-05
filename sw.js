@@ -1,5 +1,5 @@
 /* Service Worker — Steins & Vines */
-var CACHE_VERSION = '20260305T035551484';
+var CACHE_VERSION = '20260305T150005839';
 var STATIC_CACHE = 'sv-static-' + CACHE_VERSION;
 var IMAGES_CACHE = 'sv-images-' + CACHE_VERSION;
 var FONTS_CACHE  = 'sv-fonts-' + CACHE_VERSION;
@@ -70,7 +70,7 @@ self.addEventListener('fetch', function(event) {
   if (event.request.method !== 'GET') return;
 
   // Never cache admin or batch ASSETS
-  if ((url.pathname.indexOf('admin') !== -1 || url.pathname.indexOf('batch') !== -1) &&
+  if ((url.pathname.indexOf('admin') !== -1 || url.pathname.indexOf('batch') !== -1 || url.pathname.indexOf('brewpad') !== -1) &&
       (url.pathname.endsWith('.css') || url.pathname.endsWith('.js'))) return;
 
   // Network only for API calls

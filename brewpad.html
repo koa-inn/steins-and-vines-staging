@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="BrewPad">
+  <meta name="robots" content="noindex">
+  <title>BrewPad | Steins &amp; Vines</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/brewpad.min.css?v=mmdldzfr">
+  <script src="js/sheets-config.js"></script>
+  <script src="js/vendor/qrcode.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script src="js/brewpad.min.js?v=mmdldzfr"></script>
+</head>
+<body>
+
+  <!-- Toast overlay -->
+  <div id="bp-toast-container" class="bp-toast-container"></div>
+
+  <!-- Sign-in screen -->
+  <div id="bp-signin">
+    <div class="bp-signin-card">
+      <img src="images/SV_Logo_Wordmark_green.svg" alt="Steins &amp; Vines" class="bp-signin-logo">
+      <h1>BrewPad</h1>
+      <p>Staff sign-in required</p>
+      <div id="bp-google-signin-btn"></div>
+      <p id="bp-denied-msg" class="bp-denied-msg" style="display:none;">Access denied. Your account is not authorised to use BrewPad.</p>
+    </div>
+  </div>
+
+  <!-- App shell -->
+  <div id="bp-app" style="display:none;">
+
+    <!-- Shell bar -->
+    <div class="bp-shell-bar">
+      <div class="bp-shell-brand">
+        <img src="images/SV_Logo_Wordmark_green.svg" alt="Steins &amp; Vines">
+        <span>BrewPad</span>
+      </div>
+      <div class="bp-shell-user">
+        <span id="bp-user-email"></span>
+        <button type="button" class="btn-secondary bp-btn-sm" id="bp-signout">Sign Out</button>
+      </div>
+    </div>
+
+    <!-- Panel host (fills between shell bar and tab bar) -->
+    <div class="bp-panels">
+
+      <!-- Dashboard panel -->
+      <div id="bp-panel-dashboard" class="bp-panel">
+        <div class="bp-panel-inner" id="bp-dashboard-inner" aria-live="polite" aria-atomic="false">
+          <div class="bp-skeleton-block"></div>
+          <div class="bp-skeleton-block" style="height:120px;margin-top:12px;"></div>
+        </div>
+      </div>
+
+      <!-- Batches panel -->
+      <div id="bp-panel-batches" class="bp-panel bp-batches-panel" style="display:none;">
+        <div class="bp-batches-layout">
+          <!-- List pane -->
+          <div class="bp-batch-list-pane" id="bp-batch-list-pane" aria-live="polite" aria-atomic="false">
+            <div class="bp-panel-inner">
+              <div class="bp-skeleton-block"></div>
+              <div class="bp-skeleton-block" style="margin-top:8px;"></div>
+            </div>
+          </div>
+          <!-- Detail pane (landscape: right column; portrait: overlay) -->
+          <div class="bp-batch-detail-pane" id="bp-batch-detail-pane" style="display:none;"></div>
+        </div>
+        <!-- Create batch bottom sheet -->
+        <div class="bp-create-sheet" id="bp-create-sheet" role="dialog" aria-modal="true" aria-label="Create Batch" style="display:none;">
+          <div class="bp-create-sheet-inner" id="bp-create-sheet-inner"></div>
+        </div>
+      </div>
+
+      <!-- Tasks panel -->
+      <div id="bp-panel-tasks" class="bp-panel" style="display:none;">
+        <div class="bp-panel-inner" id="bp-tasks-inner" aria-live="polite" aria-atomic="false">
+          <div class="bp-skeleton-block"></div>
+        </div>
+      </div>
+
+      <!-- Measurements panel -->
+      <div id="bp-panel-measurements" class="bp-panel" style="display:none;">
+        <div class="bp-panel-inner" id="bp-measurements-inner" aria-live="polite" aria-atomic="false">
+          <div class="bp-skeleton-block"></div>
+        </div>
+      </div>
+
+    </div><!-- /.bp-panels -->
+
+    <!-- Bottom tab bar -->
+    <nav class="bp-tab-bar" aria-label="Main navigation">
+      <button type="button" class="bp-tab active" data-tab="dashboard" aria-label="Dashboard" aria-pressed="true">
+        <span class="bp-tab-icon" aria-hidden="true">&#127968;</span>
+        <span class="bp-tab-label">Dashboard</span>
+      </button>
+      <button type="button" class="bp-tab" data-tab="batches" aria-label="Batches" aria-pressed="false">
+        <span class="bp-tab-icon" aria-hidden="true">&#127863;</span>
+        <span class="bp-tab-label">Batches</span>
+      </button>
+      <button type="button" class="bp-tab" data-tab="tasks" aria-label="Tasks" aria-pressed="false">
+        <span class="bp-tab-icon" aria-hidden="true">&#9989;</span>
+        <span class="bp-tab-label">Tasks</span>
+      </button>
+      <button type="button" class="bp-tab" data-tab="measurements" aria-label="Measurements" aria-pressed="false">
+        <span class="bp-tab-icon" aria-hidden="true">&#128202;</span>
+        <span class="bp-tab-label">Meas.</span>
+      </button>
+    </nav>
+
+  </div><!-- /#bp-app -->
+
+</body>
+</html>
