@@ -494,14 +494,15 @@
     var html = '';
 
     // Pipeline strip
+    // API returns flat counts: primaryCount, secondaryCount, completeCount
     html += '<div class="bp-pipeline-strip">';
     var stages = [
-      { key: 'primary',   label: 'Primary',   icon: '&#127863;' },
-      { key: 'secondary', label: 'Secondary', icon: '&#127870;' },
-      { key: 'complete',  label: 'Complete',  icon: '&#10003;'  }
+      { key: 'primary',   label: 'Primary',   icon: '&#127863;', countField: 'primaryCount'   },
+      { key: 'secondary', label: 'Secondary', icon: '&#127870;', countField: 'secondaryCount' },
+      { key: 'complete',  label: 'Complete',  icon: '&#10003;',  countField: 'completeCount'  }
     ];
     stages.forEach(function (s) {
-      var count = (d.status_counts && d.status_counts[s.key]) || 0;
+      var count = d[s.countField] || 0;
       html += '<button type="button" class="bp-pipeline-tile" data-status="' + s.key + '">';
       html += '<span class="bp-pipeline-icon">' + s.icon + '</span>';
       html += '<span class="bp-pipeline-count">' + count + '</span>';
@@ -510,17 +511,28 @@
     });
     html += '</div>';
 
-    // Attention items
-    var attention = d.attention_items || [];
+    // Attention items — built client-side from scalar counts returned by the API
+    // (overdueTasks, tasksDueToday, readyForPackaging)
+    var attention = [];
+    if (d.overdueTasks > 0) {
+      attention.push({ cls: 'bp-attention--danger',
+        text: d.overdueTasks + ' overdue task' + (d.overdueTasks !== 1 ? 's' : '') });
+    }
+    if (d.tasksDueToday > 0) {
+      attention.push({ cls: 'bp-attention--warning',
+        text: d.tasksDueToday + ' task' + (d.tasksDueToday !== 1 ? 's' : '') + ' due today' });
+    }
+    if (d.readyForPackaging > 0) {
+      attention.push({ cls: 'bp-attention--success',
+        text: d.readyForPackaging + ' batch' + (d.readyForPackaging !== 1 ? 'es' : '') + ' ready for packaging' });
+    }
     html += '<div class="bp-section-header">Needs Attention</div>';
     if (attention.length > 0) {
       html += '<div class="bp-attention-list">';
       attention.forEach(function (item) {
-        var cls = item.type === 'overdue' ? 'bp-attention--danger'
-          : (item.type === 'due_today' ? 'bp-attention--warning' : 'bp-attention--success');
-        html += '<div class="bp-attention-item ' + cls + '">';
+        html += '<div class="bp-attention-item ' + item.cls + '">';
         html += '<span class="bp-attention-dot"></span>';
-        html += '<span class="bp-attention-text">' + escapeHTML(item.message || item.batch_id || '') + '</span>';
+        html += '<span class="bp-attention-text">' + escapeHTML(item.text) + '</span>';
         html += '</div>';
       });
       html += '</div>';
