@@ -1367,4 +1367,52 @@ img { max-width: 100%; height: auto; display: block; }
   border: none;
   border-radius: var(--r-md);
 }
+
+/* ===== Reading edit/delete buttons (Item 3) ===== */
+.bp-reading-th-actions, .bp-reading-actions { width: 72px; white-space: nowrap; }
+.bp-reading-edit, .bp-reading-del {
+  background: none; border: none; cursor: pointer; padding: 2px 5px; font-size: 1rem;
+  color: var(--ink-secondary); border-radius: 4px; line-height: 1;
+}
+.bp-reading-edit:hover { color: var(--cellar-green); background: rgba(74,111,75,0.1); }
+.bp-reading-del:hover { color: var(--batch-danger); background: rgba(168,50,50,0.1); }
+.bp-reading-edit-row input { font-size: 0.88rem; }
+
+/* ===== Sort headers (Item 4) ===== */
+.bp-sort-th { cursor: pointer; user-select: none; }
+.bp-sort-th:hover { background: rgba(0,0,0,0.04); }
+.bp-sort-active { color: var(--stain); }
+.bp-sort-icon { font-size: 0.7rem; margin-left: 2px; opacity: 0.55; vertical-align: middle; }
+.bp-sort-active .bp-sort-icon { opacity: 1; }
+
+/* ===== Dashboard stat cards (Item 5a) ===== */
+.bp-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.bp-stat-card { background: var(--cellar-raised); border-radius: 8px; padding: 10px 14px; }
+.bp-stat-num { font-size: 1.7rem; font-weight: 700; color: var(--stain); line-height: 1.1; }
+.bp-stat-label { font-size: 0.75rem; color: var(--ink-secondary); margin-top: 2px; }
+
+/* ===== Active batches table (Item 5a) ===== */
+.bp-active-batches-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 16px; }
+.bp-active-batches-table th {
+  text-align: left; font-size: 0.72rem; color: var(--ink-secondary); padding: 4px 6px;
+  border-bottom: 1px solid var(--ledger-line); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.bp-active-batches-table td { padding: 8px 6px; border-bottom: 1px solid var(--ledger-line); }
+.bp-active-batches-table tr:last-child td { border-bottom: none; }
+.bp-active-batches-table tr[data-batch-id] { cursor: pointer; }
+.bp-active-batches-table tr[data-batch-id]:active { background: var(--cellar-canvas); }
+
+/* ===== Dashboard today's tasks / workload expand (Item 5b, 5c) ===== */
+.bp-dash-task-list { margin-bottom: 16px; }
+.bp-wl-day--expanded .bp-wl-bar-wrap { outline: 2px solid var(--stain); border-radius: 3px; outline-offset: 1px; }
+.bp-wl-expanded-card {
+  background: var(--cellar-raised); border-radius: 8px; padding: 10px 12px;
+  margin-bottom: 14px; border-left: 3px solid var(--stain);
+}
+.bp-wl-expanded-date { font-size: 0.78rem; font-weight: 600; color: var(--ink-secondary); margin-bottom: 6px; }
+.bp-wl-expanded-item { font-size: 0.88rem; padding: 3px 0; color: var(--ink-primary); }
+.bp-batch-chip-inline {
+  font-size: 0.75rem; background: rgba(74,111,75,0.12); color: var(--cellar-green);
+  border-radius: 4px; padding: 1px 5px; font-weight: 600;
+}
 .bp-confirm-btn--primary:hover { filter: brightness(1.1); }

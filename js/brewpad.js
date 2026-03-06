@@ -51,12 +51,15 @@
   var _measMultiData = {};       // batchId -> {plato, temp, ph, notes} for current session
   var _measFilterText = '';      // grid search filter
   var _measFilterTimer = null;   // debounce timer for grid filter
+  var _measSortCol = 'batch_id';
+  var _measSortDir = 1;   // 1=asc, -1=desc
 
   // Dashboard
   var _dashSummary = null;
   var _dashLoadTime = 0;
   var _dashAutoRefreshTimer = null;
   var _notesAutoSaveTimer = null;
+  var _dashExpandedDay = null;
 
   // Product catalog
   var _kitCatalog = null;
@@ -401,6 +404,7 @@
     if (tab === 'dashboard') {
       if (now - _dashLoadTime > CACHE_TTL_LONG) loadDashboard();
     } else if (tab === 'batches') {
+      if (_selectedBatchId) closeBatchDetail();   // close any open detail pane
       if (_allBatchesData.length > 0) {
         // Derive filtered list from cache — instant
         _batchesData = filterBatchesByStatus(_allBatchesData, _batchStatusFilter);
@@ -410,7 +414,11 @@
         loadBatches();
       }
     } else if (tab === 'tasks') {
-      if (!_upcomingLoaded || now - _upcomingLoadTime > CACHE_TTL) loadTasks();
+      if (!_upcomingLoaded || now - _upcomingLoadTime > CACHE_TTL) {
+        loadTasks();
+      } else {
+        renderTasks();
+      }
     } else if (tab === 'measurements') {
       loadMeasurementBatches();
     }
@@ -524,6 +532,53 @@
     });
     html += '</div>';
 
+    // Stat cards + Active batches (computed from _allBatchesData)
+    if (_allBatchesData.length > 0) {
+      var thisYear = new Date().getFullYear();
+      var ytdStarted = 0, ytdComplete = 0, activeNow = 0;
+      var totalDays = 0, completedWithDays = [];
+      _allBatchesData.forEach(function (b) {
+        var yr = b.start_date ? parseInt(String(b.start_date).slice(0, 4), 10) : 0;
+        if (yr === thisYear) ytdStarted++;
+        var st = String(b.status || '').toLowerCase();
+        if (yr === thisYear && st === 'complete') {
+          ytdComplete++;
+          if (b.start_date) {
+            var daysDone = Math.floor((Date.now() - new Date(b.start_date)) / 86400000);
+            if (daysDone > 0) { completedWithDays.push(daysDone); totalDays += daysDone; }
+          }
+        }
+        if (st === 'primary' || st === 'secondary') activeNow++;
+      });
+      var avgDays = completedWithDays.length ? Math.round(totalDays / completedWithDays.length) : null;
+      html += '<div class="bp-stat-grid">';
+      html += '<div class="bp-stat-card"><div class="bp-stat-num">' + activeNow + '</div><div class="bp-stat-label">Fermenting now</div></div>';
+      html += '<div class="bp-stat-card"><div class="bp-stat-num">' + ytdStarted + '</div><div class="bp-stat-label">Started this year</div></div>';
+      html += '<div class="bp-stat-card"><div class="bp-stat-num">' + ytdComplete + '</div><div class="bp-stat-label">Completed this year</div></div>';
+      html += '<div class="bp-stat-card"><div class="bp-stat-num">' + (avgDays !== null ? avgDays : '\u2014') + '</div><div class="bp-stat-label">Avg days to complete</div></div>';
+      html += '</div>';
+      var activeBatches = _allBatchesData.filter(function (b) {
+        var s = String(b.status || '').toLowerCase();
+        return s === 'primary' || s === 'secondary';
+      }).sort(function (a, b) { return (a.start_date || '') < (b.start_date || '') ? 1 : -1; });
+      if (activeBatches.length) {
+        html += '<div class="bp-section-header">Active Batches</div>';
+        html += '<table class="bp-active-batches-table"><thead><tr><th>Batch</th><th>Product</th><th>Vessel</th><th>Stage</th><th>Days</th></tr></thead><tbody>';
+        activeBatches.forEach(function (b) {
+          var days = b.start_date ? Math.floor((Date.now() - new Date(b.start_date)) / 86400000) : '\u2014';
+          var stage = String(b.status || '').toLowerCase() === 'primary' ? 'Primary' : 'Secondary';
+          html += '<tr data-batch-id="' + escapeHTML(b.batch_id) + '">';
+          html += '<td>' + escapeHTML(b.batch_id) + '</td>';
+          html += '<td>' + escapeHTML(b.product_name || b.product_sku || '\u2014') + '</td>';
+          html += '<td>' + escapeHTML(b.vessel_id || '\u2014') + '</td>';
+          html += '<td><span class="bp-status-badge bp-status-badge--' + (stage === 'Primary' ? 'info' : 'warning') + '" style="font-size:0.72rem;padding:1px 6px;">' + stage + '</span></td>';
+          html += '<td>' + days + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+    }
+
     // Attention items — built client-side from scalar counts returned by the API
     // (overdueTasks, tasksDueToday, readyForPackaging)
     var attention = [];
@@ -553,6 +608,25 @@
       html += '<p class="bp-empty">All batches on track.</p>';
     }
 
+    // Today's tasks checklist
+    var todayTasks = _upcomingTasks.filter(function (t) {
+      var done = t.completed === true || t.completed === 'TRUE' || t.completed === '1';
+      return !done && t.due_date && String(t.due_date).slice(0, 10) === todayStr();
+    });
+    if (todayTasks.length) {
+      html += '<div class="bp-section-header">Today\u2019s Tasks</div>';
+      html += '<div class="bp-dash-task-list">';
+      todayTasks.forEach(function (t) {
+        html += '<div class="bp-task-row" data-task-id="' + escapeHTML(t.task_id) + '">';
+        html += '<label class="bp-task-check"><input type="checkbox" data-task-id="' + escapeHTML(t.task_id) + '"></label>';
+        html += '<div class="bp-task-body">';
+        html += '<button type="button" class="bp-batch-chip" data-batch-id="' + escapeHTML(t.batch_id || '') + '">' + escapeHTML(t.batch_id || '') + '</button>';
+        html += '<span class="bp-task-title">' + escapeHTML(t.title || ('Step ' + t.step_number)) + '</span>';
+        html += '</div></div>';
+      });
+      html += '</div>';
+    }
+
     // 7-day workload bar chart
     if (_upcomingTasks && _upcomingTasks.length > 0) {
       html += '<div class="bp-section-header">Next 7 Days</div>';
@@ -578,13 +652,32 @@
       days.forEach(function (d) {
         var pct = Math.round((d.count / maxCount) * 100);
         var barCls = d.date < today7 ? 'bp-wl-bar--overdue' : (d.date === today7 ? 'bp-wl-bar--today' : 'bp-wl-bar--future');
-        html += '<div class="bp-wl-day" data-date="' + d.date + '">';
+        var expandedCls = _dashExpandedDay === d.date ? ' bp-wl-day--expanded' : '';
+        html += '<div class="bp-wl-day' + expandedCls + '" data-date="' + d.date + '">';
         html += '<div class="bp-wl-bar-wrap"><div class="bp-wl-bar ' + barCls + '" style="transform:scaleY(' + (d.count > 0 ? Math.max(pct, 12) / 100 : 0) + ')"></div></div>';
         html += '<div class="bp-wl-count">' + (d.count || '') + '</div>';
         html += '<div class="bp-wl-label">' + escapeHTML(d.label) + '</div>';
         html += '</div>';
       });
       html += '</div>';
+      // Expanded task card for tapped workload day
+      if (_dashExpandedDay) {
+        var expandTasks = _upcomingTasks.filter(function (t) {
+          var done = t.completed === true || t.completed === 'TRUE' || t.completed === '1';
+          return !done && t.due_date && String(t.due_date).slice(0, 10) === _dashExpandedDay;
+        });
+        if (expandTasks.length) {
+          html += '<div class="bp-wl-expanded-card">';
+          html += '<div class="bp-wl-expanded-date">' + fmtDate(_dashExpandedDay) + '</div>';
+          expandTasks.forEach(function (t) {
+            html += '<div class="bp-wl-expanded-item">';
+            html += '<span class="bp-batch-chip-inline">' + escapeHTML(t.batch_id || '') + '</span> ';
+            html += escapeHTML(t.title || ('Step ' + t.step_number));
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+      }
     }
 
     html += '<button type="button" class="bp-fab" id="bp-dash-new-batch">+ New Batch</button>';
@@ -1120,14 +1213,20 @@
       html += _chartCache[cacheKey];
     }
     if (readings && readings.length > 0) {
-      html += '<table class="bp-readings-table" aria-label="Plato readings"><thead><tr><th>Date</th><th>&deg;P</th><th>Temp</th><th>pH</th><th>Notes</th></tr></thead><tbody>';
-      readings.slice().reverse().slice(0, 10).forEach(function (r) {
+      html += '<table class="bp-readings-table" aria-label="Plato readings"><thead><tr><th>Date</th><th>&deg;P</th><th>Temp</th><th>pH</th><th>Notes</th><th class="bp-reading-th-actions"></th></tr></thead><tbody>';
+      var rdLen = readings.length;
+      readings.slice().reverse().slice(0, 10).forEach(function (r, i) {
+        var actualIdx = rdLen - 1 - i;
         html += '<tr>';
         html += '<td>' + fmtDate(r.timestamp) + '</td>';
         html += '<td>' + escapeHTML(r.degrees_plato != null ? r.degrees_plato : '') + '</td>';
         html += '<td>' + escapeHTML(r.temperature != null ? r.temperature : '') + '</td>';
         html += '<td>' + escapeHTML(r.ph != null ? r.ph : '') + '</td>';
         html += '<td>' + escapeHTML(r.notes || '') + '</td>';
+        html += '<td class="bp-reading-actions">';
+        html += '<button class="bp-reading-edit" data-idx="' + actualIdx + '" title="Edit">\u270E</button>';
+        html += '<button class="bp-reading-del" data-idx="' + actualIdx + '" title="Delete">&times;</button>';
+        html += '</td>';
         html += '</tr>';
       });
       html += '</tbody></table>';
@@ -1255,6 +1354,30 @@
     Array.prototype.forEach.call(document.querySelectorAll('.bp-batch-card'), function (c) {
       c.classList.remove('bp-batch-card--selected');
     });
+  }
+
+  function openReadingEditRow(idx) {
+    var r = _detailPlatoReadings[idx];
+    if (!r) return;
+    var tbody = document.querySelector('#bp-detail-readings tbody');
+    if (!tbody) return;
+    // rows are rendered reversed; idx is actual position in _detailPlatoReadings
+    // rendered row position = len - 1 - idx
+    var rowPos = _detailPlatoReadings.length - 1 - idx;
+    var rows = tbody.querySelectorAll('tr');
+    var rowEl = rows[rowPos];
+    if (!rowEl) return;
+    rowEl.className = 'bp-reading-edit-row';
+    rowEl.innerHTML =
+      '<td><input class="bp-inline-input" id="re-date" type="date" value="' + escapeHTML(r.timestamp ? String(r.timestamp).slice(0, 10) : '') + '" style="width:110px;"></td>' +
+      '<td><input class="bp-inline-input" id="re-plato" type="number" inputmode="decimal" step="0.1" max="40" value="' + escapeHTML(r.degrees_plato != null ? r.degrees_plato : '') + '" style="width:56px;"></td>' +
+      '<td><input class="bp-inline-input" id="re-temp" type="number" inputmode="decimal" step="0.1" value="' + escapeHTML(r.temperature != null ? r.temperature : '') + '" style="width:56px;"></td>' +
+      '<td><input class="bp-inline-input" id="re-ph" type="number" inputmode="decimal" step="0.01" min="0" max="14" value="' + escapeHTML(r.ph != null ? r.ph : '') + '" style="width:52px;"></td>' +
+      '<td><input class="bp-inline-input" id="re-notes" type="text" value="' + escapeHTML(r.notes || '') + '" style="width:100%;"></td>' +
+      '<td class="bp-reading-actions">' +
+      '<button class="btn bp-btn-sm bp-reading-save-edit" data-idx="' + idx + '">Save</button>' +
+      '<button class="bp-reading-cancel-edit btn-secondary bp-btn-sm" data-idx="' + idx + '">\u00d7</button>' +
+      '</td>';
   }
 
   // ===== Vessel Search (adapted from admin.js) =====
@@ -1958,18 +2081,26 @@
   }
 
   function renderMeasGrid() {
-    // Always render all active batch rows — filtering is done via CSS display toggle
-    // (avoids destroying + recreating DOM on every filter keystroke)
-    var batches = _measBatches;
+    // Sorted copy — filtering is done via CSS display toggle later
+    var batches = _measBatches.slice().sort(function (a, b) {
+      var av = String(a[_measSortCol] || '').toLowerCase();
+      var bv = String(b[_measSortCol] || '').toLowerCase();
+      return av < bv ? -_measSortDir : av > bv ? _measSortDir : 0;
+    });
 
     if (batches.length === 0) {
       return '<p class="bp-empty">No active batches.</p>';
     }
 
+    function measSortIcon(col) {
+      if (_measSortCol !== col) return '<span class="bp-sort-icon">&#8645;</span>';
+      return '<span class="bp-sort-icon">' + (_measSortDir === 1 ? '&#8593;' : '&#8595;') + '</span>';
+    }
+
     var html = '<table class="bp-meas-multi-table"><thead><tr>';
-    html += '<th class="bp-meas-col-id">Batch</th>';
-    html += '<th class="bp-meas-col-product">Product</th>';
-    html += '<th class="bp-meas-col-loc">Vessel</th>';
+    html += '<th class="bp-meas-col-id bp-sort-th' + (_measSortCol === 'batch_id' ? ' bp-sort-active' : '') + '" data-sort="batch_id">Batch ' + measSortIcon('batch_id') + '</th>';
+    html += '<th class="bp-meas-col-product bp-sort-th' + (_measSortCol === 'product_name' ? ' bp-sort-active' : '') + '" data-sort="product_name">Product ' + measSortIcon('product_name') + '</th>';
+    html += '<th class="bp-meas-col-loc bp-sort-th' + (_measSortCol === 'vessel_id' ? ' bp-sort-active' : '') + '" data-sort="vessel_id">Vessel ' + measSortIcon('vessel_id') + '</th>';
     html += '<th class="bp-meas-col-num">&deg;P</th>';
     html += '<th class="bp-meas-col-num">Temp&deg;C</th>';
     html += '<th class="bp-meas-col-num">pH</th>';
@@ -2172,6 +2303,58 @@
           switchTab('batches');
           return;
         }
+        var batchRow = e.target.closest('tr[data-batch-id]');
+        if (batchRow) {
+          switchTab('batches');
+          selectBatch(batchRow.getAttribute('data-batch-id'));
+          return;
+        }
+        var chip = e.target.closest('.bp-batch-chip[data-batch-id]');
+        if (chip) {
+          switchTab('batches');
+          selectBatch(chip.getAttribute('data-batch-id'));
+          return;
+        }
+        var day = e.target.closest('.bp-wl-day');
+        if (day) {
+          var date = day.getAttribute('data-date');
+          _dashExpandedDay = (_dashExpandedDay === date) ? null : date;
+          renderDashboard();
+          return;
+        }
+      });
+      dashInner.addEventListener('change', function (e) {
+        var cb = e.target;
+        if (!cb || cb.type !== 'checkbox' || !cb.hasAttribute('data-task-id')) return;
+        var taskId = cb.getAttribute('data-task-id');
+        var checked = cb.checked;
+        if (navigator.vibrate) navigator.vibrate(checked ? [40, 20, 60] : 20);
+        var row = cb.closest('.bp-task-row');
+        if (row) row.classList.toggle('bp-task-row--done', checked);
+        if (row) row.setAttribute('data-save-state', 'saving');
+        clearTimeout(_taskSaveTimers[taskId]);
+        _taskSaveTimers[taskId] = setTimeout(function () {
+          delete _taskSaveTimers[taskId];
+          adminApiPost('bulk_update_batch_tasks', { tasks: [{ task_id: taskId, updates: { completed: checked } }] })
+            .then(function () {
+              for (var i = 0; i < _upcomingTasks.length; i++) {
+                if (_upcomingTasks[i].task_id === taskId) {
+                  _upcomingTasks[i].completed = checked ? 'TRUE' : 'FALSE';
+                  break;
+                }
+              }
+              if (row) {
+                row.setAttribute('data-save-state', 'saved');
+                setTimeout(function () { if (row) row.removeAttribute('data-save-state'); }, 1500);
+              }
+            })
+            .catch(function () {
+              cb.checked = !checked;
+              if (row) row.classList.toggle('bp-task-row--done', !checked);
+              if (row) row.setAttribute('data-save-state', 'error');
+              showToast('Save failed \u2014 try again', 'error');
+            });
+        }, 1500);
       });
     }
 
@@ -2236,7 +2419,7 @@
       });
     }
 
-    // Measurements: meas cell input + batch chip navigation
+    // Measurements: meas cell input + batch chip navigation + sort headers
     // Delegate on #bp-measurements-inner (stable) since #bp-meas-grid-wrap is dynamically created
     var measInner = document.getElementById('bp-measurements-inner');
     if (measInner) {
@@ -2244,6 +2427,17 @@
         if (e.target.classList.contains('bp-meas-cell')) updateMeasSubmitCount();
       });
       measInner.addEventListener('click', function (e) {
+        var th = e.target.closest('th[data-sort]');
+        if (th) {
+          var col = th.getAttribute('data-sort');
+          _measSortDir = (_measSortCol === col) ? -_measSortDir : 1;
+          _measSortCol = col;
+          saveMeasGridValues();
+          var gridWrap = document.getElementById('bp-meas-grid-wrap');
+          if (gridWrap) gridWrap.innerHTML = renderMeasGrid();
+          updateMeasSubmitCount();
+          return;
+        }
         var chip = e.target.closest('.bp-batch-chip[data-batch-id]');
         if (!chip) return;
         e.stopPropagation();
@@ -2291,13 +2485,79 @@
       });
       detailPane.addEventListener('click', function (e) {
         var removeBtn = e.target.closest('.bp-staging-remove');
-        if (!removeBtn) return;
-        var idx = parseInt(removeBtn.getAttribute('data-idx'), 10);
-        _detailPlatoStaging.splice(idx, 1);
-        var wrap = document.getElementById('bp-detail-staging-wrap');
-        if (wrap) {
-          wrap.innerHTML = renderDetailStagingTable();
-          bindDetailStagingHandlers(_detailBatchId);
+        if (removeBtn) {
+          var idx = parseInt(removeBtn.getAttribute('data-idx'), 10);
+          _detailPlatoStaging.splice(idx, 1);
+          var wrap = document.getElementById('bp-detail-staging-wrap');
+          if (wrap) {
+            wrap.innerHTML = renderDetailStagingTable();
+            bindDetailStagingHandlers(_detailBatchId);
+          }
+          return;
+        }
+
+        var delBtn = e.target.closest('.bp-reading-del');
+        if (delBtn) {
+          var idx = parseInt(delBtn.getAttribute('data-idx'), 10);
+          var r = _detailPlatoReadings[idx];
+          if (!r) return;
+          showConfirmSheet('Delete reading from ' + fmtDate(r.timestamp) + '?', 'Delete', 'bp-confirm-btn--danger', function () {
+            adminApiPost('delete_plato_reading', { reading_id: r.reading_id })
+              .then(function () {
+                _detailPlatoReadings.splice(idx, 1);
+                _chartCache = {};
+                var el = document.getElementById('bp-detail-readings');
+                if (el) el.innerHTML = renderDetailReadings(_detailPlatoReadings, _detailStartDate);
+                bindDetailReadingHandlers(_detailBatchId);
+                showToast('Reading deleted', 'success');
+              })
+              .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+          });
+          return;
+        }
+
+        var editBtn = e.target.closest('.bp-reading-edit');
+        if (editBtn) {
+          var idx = parseInt(editBtn.getAttribute('data-idx'), 10);
+          openReadingEditRow(idx);
+          return;
+        }
+
+        var saveEditBtn = e.target.closest('.bp-reading-save-edit');
+        if (saveEditBtn) {
+          var idx = parseInt(saveEditBtn.getAttribute('data-idx'), 10);
+          var r = _detailPlatoReadings[idx];
+          if (!r) return;
+          var updates = {};
+          var dateVal = (document.getElementById('re-date') || {}).value;
+          var platoVal = (document.getElementById('re-plato') || {}).value;
+          var tempVal = (document.getElementById('re-temp') || {}).value;
+          var phVal = (document.getElementById('re-ph') || {}).value;
+          var notesVal = (document.getElementById('re-notes') || {}).value;
+          if (dateVal) updates.timestamp = dateVal;
+          if (platoVal !== '') updates.degrees_plato = parseFloat(platoVal);
+          if (tempVal !== '') updates.temperature = parseFloat(tempVal);
+          if (phVal !== '') updates.ph = parseFloat(phVal);
+          updates.notes = notesVal;
+          adminApiPost('update_plato_reading', { reading_id: r.reading_id, updates: updates })
+            .then(function () {
+              for (var k in updates) { if (Object.prototype.hasOwnProperty.call(updates, k)) r[k] = updates[k]; }
+              _chartCache = {};
+              var el = document.getElementById('bp-detail-readings');
+              if (el) el.innerHTML = renderDetailReadings(_detailPlatoReadings, _detailStartDate);
+              bindDetailReadingHandlers(_detailBatchId);
+              showToast('Reading updated', 'success');
+            })
+            .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+          return;
+        }
+
+        var cancelEditBtn = e.target.closest('.bp-reading-cancel-edit');
+        if (cancelEditBtn) {
+          var el = document.getElementById('bp-detail-readings');
+          if (el) el.innerHTML = renderDetailReadings(_detailPlatoReadings, _detailStartDate);
+          bindDetailReadingHandlers(_detailBatchId);
+          return;
         }
       });
     }
