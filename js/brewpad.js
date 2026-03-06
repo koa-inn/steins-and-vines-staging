@@ -870,7 +870,7 @@
     html += '<span class="bp-detail-batch-id">' + escapeHTML(b.batch_id) + '</span>';
     html += '<span class="bp-status-badge bp-status-badge--' + statusColor + ' bp-status-clickable" id="bp-detail-status">' + escapeHTML(statusLabel) + '</span>';
     html += '</div>';
-    html += '<button type="button" class="btn bp-btn-sm" id="bp-detail-qr-btn">QR</button>';
+    html += '<button type="button" class="btn bp-btn-sm" id="bp-detail-qr-btn" title="Generate printable QR code for public batch page">Print QR</button>';
     html += '</div>';
 
     // Info grid
@@ -909,8 +909,7 @@
     // Notes
     html += '<div class="bp-detail-section">';
     html += '<div class="bp-detail-section-title">Notes</div>';
-    html += '<textarea id="bp-detail-notes" class="bp-inline-input bp-notes-input" rows="3">' + escapeHTML(b.notes || '') + '</textarea>';
-    html += '<button type="button" class="btn bp-btn-sm" id="bp-save-notes-btn" style="margin-top:6px;">Save Notes</button>';
+    html += '<textarea id="bp-detail-notes" class="bp-inline-input bp-notes-input" rows="3" placeholder="Auto-saved\u2026">' + escapeHTML(b.notes || '') + '</textarea>';
     html += '</div>';
 
     // Footer actions
@@ -983,7 +982,10 @@
         var cur = String(b.status || '').toLowerCase();
         var idx = order.indexOf(cur);
         var next = order[(idx + 1) % order.length];
-        if (!confirm('Change status to "' + (STATUS_LABELS[next] || next) + '"?')) return;
+        showConfirmSheet(
+          'Move ' + b.batch_id + ' to \u201c' + (STATUS_LABELS[next] || next) + '\u201d?',
+          'Confirm', 'bp-confirm-btn--primary',
+          function () {
         adminApiPost('update_batch', { batch_id: b.batch_id, updates: { status: next } })
           .then(function () {
             b.status = next;
@@ -1003,28 +1005,28 @@
             renderBatchList();
           })
           .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+          }
+        );
       });
     }
 
     // Readings handlers
     bindDetailReadingHandlers(b.batch_id);
 
-    // Save notes
-    var saveNotesBtn = document.getElementById('bp-save-notes-btn');
-    if (saveNotesBtn) {
-      saveNotesBtn.addEventListener('click', function () {
-        var notes = (document.getElementById('bp-detail-notes') || {}).value || '';
-        saveNotesBtn.disabled = true;
-        adminApiPost('update_batch', { batch_id: b.batch_id, updates: { notes: notes } })
-          .then(function () {
-            showToast('Notes saved', 'success');
-            b.notes = notes;
-            saveNotesBtn.disabled = false;
-          })
-          .catch(function (err) {
-            showToast('Failed: ' + err.message, 'error');
-            saveNotesBtn.disabled = false;
-          });
+    // Notes auto-save (2 s debounce)
+    var notesTextarea = document.getElementById('bp-detail-notes');
+    if (notesTextarea) {
+      notesTextarea.addEventListener('input', function () {
+        clearTimeout(_notesAutoSaveTimer);
+        _notesAutoSaveTimer = setTimeout(function () {
+          var notes = notesTextarea.value || '';
+          adminApiPost('update_batch', { batch_id: b.batch_id, updates: { notes: notes } })
+            .then(function () {
+              b.notes = notes;
+              showToast('Notes saved', 'success');
+            })
+            .catch(function (err) { showToast('Notes save failed: ' + err.message, 'error'); });
+        }, 2000);
       });
     }
 
@@ -1049,18 +1051,23 @@
     var deleteBtn = document.getElementById('bp-delete-batch-btn');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', function () {
-        if (!confirm('Delete batch ' + b.batch_id + '? This cannot be undone.')) return;
-        adminApiPost('delete_batch', { batch_id: b.batch_id })
-          .then(function () {
-            showToast('Batch deleted', 'success');
-            closeBatchDetail();
-            _batchesLoaded = false;
-            _allBatchesData = [];
-            _eagerLoadTime = 0;
-            _dashLoadTime = 0;
-            loadBatches();
-          })
-          .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+        showConfirmSheet(
+          'Delete ' + b.batch_id + '? This cannot be undone.',
+          'Delete', 'bp-confirm-btn--danger',
+          function () {
+            adminApiPost('delete_batch', { batch_id: b.batch_id })
+              .then(function () {
+                showToast('Batch deleted', 'success');
+                closeBatchDetail();
+                _batchesLoaded = false;
+                _allBatchesData = [];
+                _eagerLoadTime = 0;
+                _dashLoadTime = 0;
+                loadBatches();
+              })
+              .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+          }
+        );
       });
     }
   }
@@ -1077,6 +1084,7 @@
         escapeHTML(batchId) + '</title></head><body style="text-align:center;padding:2rem;font-family:sans-serif;">' +
         qr.createImgTag(5) + '<br><code style="font-size:1.1rem;">' + escapeHTML(batchId) + '</code></body></html>');
       win.document.close();
+      setTimeout(function () { win.print(); }, 400);
     }
   }
 
@@ -1977,9 +1985,9 @@
         escapeHTML(b.batch_id) + '" title="Open in Batches tab">' + escapeHTML(b.batch_id) + '</button></td>';
       html += '<td class="bp-meas-col-product">' + escapeHTML(b.product_name || b.product_sku || '\u2014') + '</td>';
       html += '<td class="bp-meas-col-loc">' + escapeHTML(loc) + '</td>';
-      html += '<td class="bp-meas-col-num"><input type="number" class="bp-meas-cell bp-meas-cell-plato" step="0.1" max="40" placeholder="\u2014" value="' + escapeHTML(saved.plato || '') + '"></td>';
-      html += '<td class="bp-meas-col-num"><input type="number" class="bp-meas-cell bp-meas-cell-temp" step="0.1" placeholder="\u2014" value="' + escapeHTML(saved.temp || '') + '"></td>';
-      html += '<td class="bp-meas-col-num"><input type="number" class="bp-meas-cell bp-meas-cell-ph" step="0.01" min="0" max="14" placeholder="\u2014" value="' + escapeHTML(saved.ph || '') + '"></td>';
+      html += '<td class="bp-meas-col-num"><input type="number" inputmode="decimal" class="bp-meas-cell bp-meas-cell-plato" step="0.1" max="40" placeholder="\u2014" value="' + escapeHTML(saved.plato || '') + '"></td>';
+      html += '<td class="bp-meas-col-num"><input type="number" inputmode="decimal" class="bp-meas-cell bp-meas-cell-temp" step="0.1" placeholder="\u2014" value="' + escapeHTML(saved.temp || '') + '"></td>';
+      html += '<td class="bp-meas-col-num"><input type="number" inputmode="decimal" class="bp-meas-cell bp-meas-cell-ph" step="0.01" min="0" max="14" placeholder="\u2014" value="' + escapeHTML(saved.ph || '') + '"></td>';
       html += '<td class="bp-meas-col-notes"><input type="text" class="bp-meas-cell bp-meas-cell-notes" placeholder="optional" value="' + escapeHTML(saved.notes || '') + '"></td>';
       html += '</tr>';
     });
@@ -2104,25 +2112,48 @@
       });
     });
 
-    Promise.all(promises)
-      .then(function () {
+    Promise.allSettled(promises)
+      .then(function (results) {
         clearTimeout(measTimeout);
-        var n = entries.length;
-        showToast(n + ' batch' + (n !== 1 ? 'es' : '') + ' recorded', 'success');
-        if (navigator.vibrate) navigator.vibrate([50, 30, 80]);
+        var succeeded = [];
+        var failed = [];
+        results.forEach(function (r, i) {
+          if (r.status === 'fulfilled') {
+            succeeded.push(entries[i]);
+          } else {
+            failed.push(entries[i]);
+          }
+        });
+
+        // Clear cells only for batches that succeeded
+        succeeded.forEach(function (entry) {
+          var row = document.querySelector('.bp-meas-multi-row[data-batch-id="' + entry.batchId + '"]');
+          if (row) {
+            Array.prototype.forEach.call(row.querySelectorAll('.bp-meas-cell'), function (inp) { inp.value = ''; });
+            row.classList.remove('bp-meas-row--error');
+          }
+        });
+
+        // Highlight rows that failed
+        failed.forEach(function (entry) {
+          var row = document.querySelector('.bp-meas-multi-row[data-batch-id="' + entry.batchId + '"]');
+          if (row) row.classList.add('bp-meas-row--error');
+        });
+
+        if (failed.length === 0) {
+          if (navigator.vibrate) navigator.vibrate([50, 30, 80]);
+          showToast(succeeded.length + ' batch' + (succeeded.length !== 1 ? 'es' : '') + ' recorded', 'success');
+          if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submit Readings'; }
+          var countEl = document.getElementById('bp-meas-submit-count');
+          if (countEl) countEl.textContent = '';
+        } else if (succeeded.length === 0) {
+          showToast('All submissions failed \u2014 check connection', 'error');
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Readings'; }
+        } else {
+          showToast(succeeded.length + ' of ' + entries.length + ' recorded. ' + failed.length + ' failed \u2014 highlighted in red.', 'warn');
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Retry Failed'; }
+        }
         _measMultiData = {};
-        Array.prototype.forEach.call(
-          document.querySelectorAll('.bp-meas-multi-row .bp-meas-cell'),
-          function (inp) { inp.value = ''; }
-        );
-        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submit Readings'; }
-        var countEl = document.getElementById('bp-meas-submit-count');
-        if (countEl) countEl.textContent = '';
-      })
-      .catch(function (err) {
-        clearTimeout(measTimeout);
-        showToast('Failed: ' + err.message, 'error');
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Readings'; }
       });
   }
 
@@ -2141,8 +2172,6 @@
           switchTab('batches');
           return;
         }
-        var col = e.target.closest('.bp-wl-day[data-date]');
-        if (col) switchTab('tasks');
       });
     }
 
@@ -2173,6 +2202,7 @@
         if (navigator.vibrate) navigator.vibrate(checked ? [40, 20, 60] : 20);
         var row = cb.closest('.bp-task-row');
         if (row) row.classList.toggle('bp-task-row--done', checked);
+        if (row) row.setAttribute('data-save-state', 'saving');
         clearTimeout(_taskSaveTimers[taskId]);
         _taskSaveTimers[taskId] = setTimeout(function () {
           delete _taskSaveTimers[taskId];
@@ -2184,10 +2214,15 @@
                   break;
                 }
               }
+              if (row) {
+                row.setAttribute('data-save-state', 'saved');
+                setTimeout(function () { if (row) row.removeAttribute('data-save-state'); }, 1500);
+              }
             })
             .catch(function () {
               cb.checked = !checked;
               if (row) row.classList.toggle('bp-task-row--done', !checked);
+              if (row) row.setAttribute('data-save-state', 'error');
               showToast('Save failed \u2014 try again', 'error');
             });
         }, 1500);
@@ -2229,6 +2264,7 @@
         if (navigator.vibrate) navigator.vibrate(checked ? [40, 20, 60] : 20);
         var row = cb.closest('.bp-task-row');
         if (row) row.classList.toggle('bp-task-row--done', checked);
+        if (row) row.setAttribute('data-save-state', 'saving');
         clearTimeout(_taskSaveTimers[taskId]);
         _taskSaveTimers[taskId] = setTimeout(function () {
           delete _taskSaveTimers[taskId];
@@ -2240,10 +2276,15 @@
                   break;
                 }
               }
+              if (row) {
+                row.setAttribute('data-save-state', 'saved');
+                setTimeout(function () { if (row) row.removeAttribute('data-save-state'); }, 1500);
+              }
             })
             .catch(function () {
               cb.checked = !checked;
               if (row) row.classList.toggle('bp-task-row--done', !checked);
+              if (row) row.setAttribute('data-save-state', 'error');
               showToast('Save failed \u2014 try again', 'error');
             });
         }, 1500);

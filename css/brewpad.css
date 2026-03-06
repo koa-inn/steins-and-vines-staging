@@ -1073,6 +1073,10 @@ img { max-width: 100%; height: auto; display: block; }
 .bp-meas-multi-row:has(.bp-meas-cell:not(:placeholder-shown)) {
   background: rgba(74, 111, 75, 0.04);
 }
+.bp-meas-row--error .bp-meas-cell {
+  background: rgba(180, 50, 40, 0.08);
+  border-color: var(--batch-danger);
+}
 
 /* Submit footer — sticky at bottom */
 .bp-meas-footer {
