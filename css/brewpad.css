@@ -1438,3 +1438,19 @@ img { max-width: 100%; height: auto; display: block; }
 .bp-batch-tr--urgent .bp-batch-tr-id { color: var(--batch-danger); }
 .bp-urgent-dot { color: var(--batch-danger); font-size: 0.55rem; vertical-align: super; }
 .bp-batch-tr-id { font-weight: 600; font-size: 0.82rem; white-space: nowrap; }
+
+/* ===== Task meta (product · location) ===== */
+.bp-task-meta {
+  width: 100%; font-size: 0.75rem; color: var(--ink-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ===== ABV strip (batch detail readings) ===== */
+.bp-abv-strip {
+  display: flex; align-items: baseline; gap: 8px;
+  background: var(--cellar-raised); border-radius: 6px;
+  padding: 7px 12px; margin-bottom: 12px;
+}
+.bp-abv-label { font-size: 0.75rem; color: var(--ink-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.bp-abv-val { font-size: 1.4rem; font-weight: 700; color: var(--stain); line-height: 1; }
+.bp-abv-detail { font-size: 0.78rem; color: var(--ink-secondary); margin-left: auto; }

@@ -404,6 +404,24 @@
     return String(dateStr).substring(0, 10) === todayStr();
   }
 
+  function getBatchMeta(batchId) {
+    if (!batchId || !_allBatchesData.length) return '';
+    for (var i = 0; i < _allBatchesData.length; i++) {
+      var b = _allBatchesData[i];
+      if (b.batch_id === batchId) {
+        var parts = [];
+        if (b.product_name || b.product_sku) parts.push(b.product_name || b.product_sku);
+        var loc = '';
+        if (b.vessel_id) loc += b.vessel_id;
+        if (b.shelf_id) loc += (loc ? ' ' : '') + b.shelf_id;
+        if (b.bin_id) loc += '-' + b.bin_id;
+        if (loc) parts.push(loc);
+        return parts.join(' \u00b7 ');
+      }
+    }
+    return '';
+  }
+
   // ===== Tab Switching =====
 
   function switchTab(tab) {
@@ -626,6 +644,8 @@
         html += '<div class="bp-task-body">';
         html += '<button type="button" class="bp-batch-chip" data-batch-id="' + escapeHTML(t.batch_id || '') + '">' + escapeHTML(t.batch_id || '') + '</button>';
         html += '<span class="bp-task-title">' + escapeHTML(t.title || ('Step ' + t.step_number)) + '</span>';
+        var meta = getBatchMeta(t.batch_id);
+        if (meta) html += '<span class="bp-task-meta">' + escapeHTML(meta) + '</span>';
         html += '</div></div>';
       });
       html += '</div>';
@@ -1270,6 +1290,23 @@
         _chartCache[cacheKey] = renderPlatoChart(readings, startDate);
       }
       html += _chartCache[cacheKey];
+    }
+    if (readings && readings.length >= 2) {
+      var ogReading = null, fgReading = null;
+      for (var ri = 0; ri < readings.length; ri++) {
+        if (readings[ri].degrees_plato != null && !ogReading) ogReading = readings[ri];
+        if (readings[ri].degrees_plato != null) fgReading = readings[ri];
+      }
+      if (ogReading && fgReading && ogReading !== fgReading) {
+        var og = parseFloat(ogReading.degrees_plato);
+        var fg = parseFloat(fgReading.degrees_plato);
+        var abv = (og - fg) / (2.0665 - 0.010665 * og);
+        html += '<div class="bp-abv-strip">';
+        html += '<span class="bp-abv-label">Est. ABV</span>';
+        html += '<span class="bp-abv-val">' + abv.toFixed(1) + '%</span>';
+        html += '<span class="bp-abv-detail">' + og.toFixed(1) + '°P → ' + fg.toFixed(1) + '°P</span>';
+        html += '</div>';
+      }
     }
     if (readings && readings.length > 0) {
       html += '<table class="bp-readings-table" aria-label="Plato readings"><thead><tr><th>Date</th><th>&deg;P</th><th>Temp</th><th>pH</th><th>Notes</th><th class="bp-reading-th-actions"></th></tr></thead><tbody>';
@@ -2059,6 +2096,8 @@
           html += '<button type="button" class="bp-batch-chip" data-batch-id="' + escapeHTML(t.batch_id || '') + '" title="Open batch">' + escapeHTML(t.batch_id || '') + '</button>';
           html += '<span class="bp-task-title">' + escapeHTML(t.title || ('Step ' + t.step_number)) + '</span>';
           if (t.due_date) html += '<span class="bp-task-due">' + fmtDate(t.due_date) + '</span>';
+          var meta = getBatchMeta(t.batch_id);
+          if (meta) html += '<span class="bp-task-meta">' + escapeHTML(meta) + '</span>';
           html += '</div></div>';
         });
         html += '</div>';
