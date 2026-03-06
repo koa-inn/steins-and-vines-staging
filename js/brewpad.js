@@ -557,26 +557,6 @@
       html += '<div class="bp-stat-card"><div class="bp-stat-num">' + ytdComplete + '</div><div class="bp-stat-label">Completed this year</div></div>';
       html += '<div class="bp-stat-card"><div class="bp-stat-num">' + (avgDays !== null ? avgDays : '\u2014') + '</div><div class="bp-stat-label">Avg days to complete</div></div>';
       html += '</div>';
-      var activeBatches = _allBatchesData.filter(function (b) {
-        var s = String(b.status || '').toLowerCase();
-        return s === 'primary' || s === 'secondary';
-      }).sort(function (a, b) { return (a.start_date || '') < (b.start_date || '') ? 1 : -1; });
-      if (activeBatches.length) {
-        html += '<div class="bp-section-header">Active Batches</div>';
-        html += '<table class="bp-active-batches-table"><thead><tr><th>Batch</th><th>Product</th><th>Vessel</th><th>Stage</th><th>Days</th></tr></thead><tbody>';
-        activeBatches.forEach(function (b) {
-          var days = b.start_date ? Math.floor((Date.now() - new Date(b.start_date)) / 86400000) : '\u2014';
-          var stage = String(b.status || '').toLowerCase() === 'primary' ? 'Primary' : 'Secondary';
-          html += '<tr data-batch-id="' + escapeHTML(b.batch_id) + '">';
-          html += '<td>' + escapeHTML(b.batch_id) + '</td>';
-          html += '<td>' + escapeHTML(b.product_name || b.product_sku || '\u2014') + '</td>';
-          html += '<td>' + escapeHTML(b.vessel_id || '\u2014') + '</td>';
-          html += '<td><span class="bp-status-badge bp-status-badge--' + (stage === 'Primary' ? 'info' : 'warning') + '" style="font-size:0.72rem;padding:1px 6px;">' + stage + '</span></td>';
-          html += '<td>' + days + '</td>';
-          html += '</tr>';
-        });
-        html += '</tbody></table>';
-      }
     }
 
     // Attention items — built client-side from scalar counts returned by the API
