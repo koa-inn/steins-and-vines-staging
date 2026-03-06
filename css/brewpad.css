@@ -1405,7 +1405,8 @@ img { max-width: 100%; height: auto; display: block; }
 
 /* ===== Dashboard today's tasks / workload expand (Item 5b, 5c) ===== */
 .bp-dash-task-list { margin-bottom: 16px; }
-.bp-wl-day--expanded .bp-wl-bar-wrap { outline: 2px solid var(--stain); border-radius: 3px; outline-offset: 1px; }
+.bp-wl-day--expanded { background: rgba(55,14,19,0.06); border-radius: 4px; }
+.bp-wl-day--expanded .bp-wl-label { color: var(--stain); font-weight: 700; }
 .bp-wl-expanded-card {
   background: var(--cellar-raised); border-radius: 8px; padding: 10px 12px;
   margin-bottom: 14px; border-left: 3px solid var(--stain);
@@ -1420,6 +1421,7 @@ img { max-width: 100%; height: auto; display: block; }
 
 /* ===== Batch list view toggle + compact table ===== */
 .bp-view-toggle { font-size: 1rem; padding: 0 10px; min-height: 36px; line-height: 1; }
+#bp-clear-cache { font-size: 1rem; padding: 0 8px; min-width: 0; }
 .bp-batch-table {
   width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 8px;
 }

@@ -26,6 +26,8 @@
   var _batchSearch = '';
   var _batchSearchTimer = null;   // module-scope so switchTab() can cancel a pending re-render
   var _batchViewMode = 'cards';   // 'cards' or 'table'
+  var _batchTableSortCol = 'batch_id';
+  var _batchTableSortDir = 1;
   var _selectedBatchId = null;
   var _vesselsData = null;
   var _vesselsCacheTime = 0;       // TTL: reload vessel list if >30s stale
@@ -239,6 +241,27 @@
     if (emailEl) emailEl.textContent = userEmail;
     var deniedMsg = document.getElementById('bp-denied-msg');
     if (deniedMsg) deniedMsg.style.display = 'none';
+
+    var clearCacheBtn = document.getElementById('bp-clear-cache');
+    if (clearCacheBtn) {
+      clearCacheBtn.addEventListener('click', function () {
+        showConfirmSheet('Clear app cache and reload?', 'Clear & Reload', '', function () {
+          var done = function () { location.reload(true); };
+          if (window.caches) {
+            caches.keys().then(function (keys) {
+              return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+            }).then(function () {
+              if (navigator.serviceWorker) {
+                navigator.serviceWorker.getRegistrations().then(function (regs) {
+                  regs.forEach(function (r) { r.unregister(); });
+                  done();
+                }).catch(done);
+              } else { done(); }
+            }).catch(done);
+          } else { done(); }
+        });
+      });
+    }
 
     if (_tokenRefreshTimer) clearInterval(_tokenRefreshTimer);
     _tokenRefreshTimer = setInterval(function () {
@@ -641,23 +664,25 @@
         html += '</div>';
       });
       html += '</div>';
-      // Expanded task card for tapped workload day
+      // Expanded task card for tapped workload day — always render when a day is selected
       if (_dashExpandedDay) {
         var expandTasks = _upcomingTasks.filter(function (t) {
           var done = t.completed === true || t.completed === 'TRUE' || t.completed === '1';
           return !done && t.due_date && String(t.due_date).slice(0, 10) === _dashExpandedDay;
         });
+        html += '<div class="bp-wl-expanded-card">';
+        html += '<div class="bp-wl-expanded-date">' + fmtDate(_dashExpandedDay) + '</div>';
         if (expandTasks.length) {
-          html += '<div class="bp-wl-expanded-card">';
-          html += '<div class="bp-wl-expanded-date">' + fmtDate(_dashExpandedDay) + '</div>';
           expandTasks.forEach(function (t) {
             html += '<div class="bp-wl-expanded-item">';
             html += '<span class="bp-batch-chip-inline">' + escapeHTML(t.batch_id || '') + '</span> ';
             html += escapeHTML(t.title || ('Step ' + t.step_number));
             html += '</div>';
           });
-          html += '</div>';
+        } else {
+          html += '<p class="bp-empty" style="margin:0;font-size:0.85rem;">No tasks this day.</p>';
         }
+        html += '</div>';
       }
     }
 
@@ -765,10 +790,30 @@
     } else if (_batchViewMode === 'table') {
       // Compact table view
       var today = todayStr();
+      var sortedFiltered = filtered.slice().sort(function (a, b) {
+        var av, bv;
+        if (_batchTableSortCol === 'days') {
+          av = a.start_date ? Date.now() - new Date(a.start_date) : 0;
+          bv = b.start_date ? Date.now() - new Date(b.start_date) : 0;
+          return (av - bv) * _batchTableSortDir;
+        }
+        av = String(a[_batchTableSortCol] || '').toLowerCase();
+        bv = String(b[_batchTableSortCol] || '').toLowerCase();
+        return av < bv ? -_batchTableSortDir : av > bv ? _batchTableSortDir : 0;
+      });
+      function batchSortIcon(col) {
+        if (_batchTableSortCol !== col) return '<span class="bp-sort-icon">&#8645;</span>';
+        return '<span class="bp-sort-icon">' + (_batchTableSortDir === 1 ? '&#8593;' : '&#8595;') + '</span>';
+      }
       html += '<table class="bp-batch-table"><thead><tr>';
-      html += '<th>Batch</th><th>Product</th><th>Customer</th><th>Vessel / Loc</th><th>Stage</th><th>Days</th>';
+      html += '<th class="bp-sort-th' + (_batchTableSortCol === 'batch_id' ? ' bp-sort-active' : '') + '" data-sort="batch_id">Batch ' + batchSortIcon('batch_id') + '</th>';
+      html += '<th class="bp-sort-th' + (_batchTableSortCol === 'product_name' ? ' bp-sort-active' : '') + '" data-sort="product_name">Product ' + batchSortIcon('product_name') + '</th>';
+      html += '<th class="bp-sort-th' + (_batchTableSortCol === 'customer_name' ? ' bp-sort-active' : '') + '" data-sort="customer_name">Customer ' + batchSortIcon('customer_name') + '</th>';
+      html += '<th>Vessel / Loc</th>';
+      html += '<th class="bp-sort-th' + (_batchTableSortCol === 'status' ? ' bp-sort-active' : '') + '" data-sort="status">Stage ' + batchSortIcon('status') + '</th>';
+      html += '<th class="bp-sort-th' + (_batchTableSortCol === 'days' ? ' bp-sort-active' : '') + '" data-sort="days">Days ' + batchSortIcon('days') + '</th>';
       html += '</tr></thead><tbody>';
-      filtered.forEach(function (b) {
+      sortedFiltered.forEach(function (b) {
         var statusKey = String(b.status || '').toLowerCase();
         var statusLabel = STATUS_LABELS[statusKey] || b.status || '';
         var statusColor = STATUS_COLORS[statusKey] || 'info';
@@ -2394,6 +2439,14 @@
         }
         if (e.target.closest('#bp-batch-view-toggle')) {
           _batchViewMode = (_batchViewMode === 'cards') ? 'table' : 'cards';
+          renderBatchList();
+          return;
+        }
+        var sortTh = e.target.closest('th[data-sort]');
+        if (sortTh) {
+          var col = sortTh.getAttribute('data-sort');
+          _batchTableSortDir = (_batchTableSortCol === col) ? -_batchTableSortDir : 1;
+          _batchTableSortCol = col;
           renderBatchList();
           return;
         }
