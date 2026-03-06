@@ -29,6 +29,7 @@
   var _batchTableSortCol = 'batch_id';
   var _batchTableSortDir = 1;
   var _selectedBatchId = null;
+  var _batchDetailReturnTab = null;  // tab to return to when closing batch detail
   var _vesselsData = null;
   var _vesselsCacheTime = 0;       // TTL: reload vessel list if >30s stale
   var _vesselsMap = {};            // keyed by vessel_id for O(1) lookup
@@ -1005,6 +1006,85 @@
     sheet.classList.add('bp-confirm-sheet--visible');
   }
 
+  function showTransferLocationSheet(task) {
+    var batchId = task.batch_id || '';
+    var batch = null;
+    for (var i = 0; i < _allBatchesData.length; i++) {
+      if (_allBatchesData[i].batch_id === batchId) { batch = _allBatchesData[i]; break; }
+    }
+    var currentVessel = batch ? (batch.vessel_id || '') : '';
+    var currentShelf  = batch ? (batch.shelf_id  || '') : '';
+    var currentBin    = batch ? (batch.bin_id    || '') : '';
+
+    var sheet = document.getElementById('bp-transfer-sheet');
+    if (!sheet) {
+      sheet = document.createElement('div');
+      sheet.id = 'bp-transfer-sheet';
+      sheet.className = 'bp-confirm-sheet';
+      sheet.setAttribute('role', 'dialog');
+      sheet.setAttribute('aria-modal', 'true');
+      document.body.appendChild(sheet);
+    }
+
+    sheet.innerHTML =
+      '<div class="bp-confirm-sheet-inner">' +
+      '<p class="bp-confirm-sheet-msg">Update location for <strong>' + escapeHTML(batchId) + '</strong> after transfer?</p>' +
+      '<div class="bp-vessel-wrap" style="margin-bottom:8px;">' +
+      '<input type="text" id="bp-trf-vessel-text" class="bp-inline-input" placeholder="Vessel\u2026" autocomplete="off">' +
+      '<div class="bp-vessel-dropdown" id="bp-trf-vessel-dropdown" style="display:none;"></div>' +
+      '<input type="hidden" id="bp-trf-vessel-id">' +
+      '</div>' +
+      '<div class="bp-form-row" style="gap:8px;margin-bottom:12px;">' +
+      '<input type="text" id="bp-trf-shelf" class="bp-inline-input bp-shelf-input" placeholder="Shelf" style="width:64px;" value="' + escapeHTML(currentShelf) + '">' +
+      '<input type="text" id="bp-trf-bin"   class="bp-inline-input bp-bin-input"   placeholder="Bin"   style="width:64px;" value="' + escapeHTML(currentBin) + '">' +
+      '</div>' +
+      '<div class="bp-confirm-sheet-actions">' +
+      '<button type="button" class="btn" id="bp-trf-ok">Update Location</button>' +
+      '<button type="button" class="btn-secondary" id="bp-trf-skip">Skip</button>' +
+      '</div></div>';
+
+    function hide() { sheet.classList.remove('bp-confirm-sheet--visible'); }
+
+    var vesselInput    = document.getElementById('bp-trf-vessel-text');
+    var vesselDropdown = document.getElementById('bp-trf-vessel-dropdown');
+    var vesselHidden   = document.getElementById('bp-trf-vessel-id');
+    vesselHidden.value = currentVessel;
+    if (currentVessel && _vesselsData) {
+      for (var vi = 0; vi < _vesselsData.length; vi++) {
+        if (String(_vesselsData[vi].vessel_id) === String(currentVessel)) {
+          vesselInput.value = buildVesselLabel(_vesselsData[vi]);
+          break;
+        }
+      }
+    }
+    bindVesselSearch(vesselInput, vesselDropdown, vesselHidden, currentVessel);
+    bindShelfInput(document.getElementById('bp-trf-shelf'));
+    bindBinInput(document.getElementById('bp-trf-bin'));
+
+    document.getElementById('bp-trf-skip').addEventListener('click', hide);
+    sheet.addEventListener('click', function (e) { if (e.target === sheet) hide(); });
+
+    document.getElementById('bp-trf-ok').addEventListener('click', function () {
+      var vessel = vesselHidden.value.trim();
+      var shelf  = document.getElementById('bp-trf-shelf').value.trim();
+      var bin    = document.getElementById('bp-trf-bin').value.trim();
+      var okBtn  = document.getElementById('bp-trf-ok');
+      okBtn.disabled = true;
+      adminApiPost('update_batch', { batch_id: batchId, updates: { vessel_id: vessel, shelf_id: shelf, bin_id: bin } })
+        .then(function () {
+          if (batch) { batch.vessel_id = vessel; batch.shelf_id = shelf; batch.bin_id = bin; }
+          hide();
+          showToast('Location updated', 'success');
+        })
+        .catch(function (err) {
+          okBtn.disabled = false;
+          showToast('Failed: ' + err.message, 'error');
+        });
+    });
+
+    sheet.classList.add('bp-confirm-sheet--visible');
+  }
+
   function renderBatchDetail(data) {
     var b = data.batch || {};
     var tasks = data.tasks || [];
@@ -1428,6 +1508,8 @@
   }
 
   function closeBatchDetail() {
+    var returnTab = _batchDetailReturnTab;
+    _batchDetailReturnTab = null;
     _selectedBatchId = null;
     // Restore list pane interactivity (was inert when detail overlaid it in portrait)
     var listPane = document.getElementById('bp-batch-list-pane');
@@ -1437,7 +1519,10 @@
       detailPane.classList.remove('bp-detail-slide-in');
       setTimeout(function () {
         detailPane.style.display = 'none';
+        if (returnTab) switchTab(returnTab);
       }, 180);
+    } else if (returnTab) {
+      switchTab(returnTab);
     }
     Array.prototype.forEach.call(document.querySelectorAll('.bp-batch-card'), function (c) {
       c.classList.remove('bp-batch-card--selected');
@@ -2425,6 +2510,10 @@
         if (!cb || cb.type !== 'checkbox' || !cb.hasAttribute('data-task-id')) return;
         var taskId = cb.getAttribute('data-task-id');
         var checked = cb.checked;
+        var task = null;
+        for (var ti = 0; ti < _upcomingTasks.length; ti++) {
+          if (_upcomingTasks[ti].task_id === taskId) { task = _upcomingTasks[ti]; break; }
+        }
         if (navigator.vibrate) navigator.vibrate(checked ? [40, 20, 60] : 20);
         var row = cb.closest('.bp-task-row');
         if (row) row.classList.toggle('bp-task-row--done', checked);
@@ -2443,6 +2532,9 @@
               if (row) {
                 row.setAttribute('data-save-state', 'saved');
                 setTimeout(function () { if (row) row.removeAttribute('data-save-state'); }, 1500);
+              }
+              if (checked && task && (task.title || '').toLowerCase().indexOf('transfer') !== -1) {
+                showTransferLocationSheet(task);
               }
             })
             .catch(function () {
@@ -2494,6 +2586,10 @@
         if (!cb || cb.type !== 'checkbox' || !cb.hasAttribute('data-task-id')) return;
         var taskId = cb.getAttribute('data-task-id');
         var checked = cb.checked;
+        var task = null;
+        for (var ti = 0; ti < _upcomingTasks.length; ti++) {
+          if (_upcomingTasks[ti].task_id === taskId) { task = _upcomingTasks[ti]; break; }
+        }
         if (navigator.vibrate) navigator.vibrate(checked ? [40, 20, 60] : 20);
         var row = cb.closest('.bp-task-row');
         if (row) row.classList.toggle('bp-task-row--done', checked);
@@ -2513,6 +2609,9 @@
                 row.setAttribute('data-save-state', 'saved');
                 setTimeout(function () { if (row) row.removeAttribute('data-save-state'); }, 1500);
               }
+              if (checked && task && (task.title || '').toLowerCase().indexOf('transfer') !== -1) {
+                showTransferLocationSheet(task);
+              }
             })
             .catch(function () {
               cb.checked = !checked;
@@ -2526,6 +2625,7 @@
         var chip = e.target.closest('.bp-batch-chip[data-batch-id]');
         if (!chip) return;
         e.stopPropagation();
+        _batchDetailReturnTab = 'tasks';
         switchTab('batches');
         selectBatch(chip.getAttribute('data-batch-id'));
       });
