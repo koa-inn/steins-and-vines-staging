@@ -1887,39 +1887,18 @@
 
   function loadKitCatalog(cb) {
     if (_kitCatalog) { if (cb) cb(); return; }
-    fetch(SHEETS_CONFIG.PUBLISHED_CSV_URL)
-      .then(function (r) { return r.text(); })
-      .then(function (csv) {
-        var lines = csv.trim().split('\n');
-        if (lines.length < 2) { _kitCatalog = []; if (cb) cb(); return; }
-        var headers = lines[0].split(',').map(function (h) { return h.trim().toLowerCase().replace(/\s+/g, '_'); });
-        var items = [];
-        for (var i = 1; i < lines.length; i++) {
-          var vals = parseKitCSVLine(lines[i]);
-          if (vals.length < 2) continue;
-          var obj = {};
-          for (var j = 0; j < headers.length; j++) obj[headers[j]] = (vals[j] || '').trim();
-          if (obj.sku || obj.name) items.push({ sku: obj.sku || '', name: obj.name || obj.product_name || obj.sku });
-        }
-        _kitCatalog = items;
+    fetch(mwUrl() + '/api/products')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        _kitCatalog = (data.items || []).map(function (p) {
+          return { sku: p.sku || p.item_id || '', name: p.name || '' };
+        });
         if (cb) cb();
       })
       .catch(function () {
         _kitCatalog = []; // graceful degradation — free text still works
         if (cb) cb();
       });
-  }
-
-  function parseKitCSVLine(line) {
-    var result = [], current = '', inQuotes = false;
-    for (var i = 0; i < line.length; i++) {
-      var ch = line[i];
-      if (ch === '"') { inQuotes = !inQuotes; }
-      else if (ch === ',' && !inQuotes) { result.push(current); current = ''; }
-      else { current += ch; }
-    }
-    result.push(current);
-    return result;
   }
 
   function bindCustomerSearch() {
