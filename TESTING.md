@@ -22,8 +22,8 @@ cd zoho-middleware && npm run test:coverage
 |------|--------|--------|
 | `zoho-middleware/lib/validate.js` | 100% | ✅ Done |
 | `zoho-middleware/lib/logger.js` | 95% | ✅ Done |
-| `zoho-middleware/lib/zoho-api.js` (`withRetry` only) | 80% | ✅ Done |
-| `zoho-middleware/lib/zohoAuth.js` (`encrypt`/`decrypt`) | 70% | ✅ Done |
+| `zoho-middleware/lib/zoho-api.js` (full — all helpers, normalizeTimeTo24h, fetchAllItems) | 100% | ✅ Done |
+| `zoho-middleware/lib/zohoAuth.js` (full — OAuth flow, encryption, scheduling) | 100% | ✅ Done |
 | `zoho-middleware/lib/cache.js` | 75% | ✅ Done |
 | `js/modules/02-utils.js` (`escapeHTML`, `parseCSVLine`) | 95% | ✅ Done |
 | `js/modules/04-label-cards.js` (`getTintClass`, `formatCurrency`) | 95% | ✅ Done |
