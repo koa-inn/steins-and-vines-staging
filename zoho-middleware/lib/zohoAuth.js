@@ -45,9 +45,13 @@ function decrypt(ciphertext) {
   var iv = Buffer.from(parts[0], 'hex');
   var tag = Buffer.from(parts[1], 'hex');
   var encrypted = Buffer.from(parts[2], 'hex');
-  var decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(tag);
-  return decipher.update(encrypted) + decipher.final('utf8');
+  try {
+    var decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(encrypted) + decipher.final('utf8');
+  } catch (e) {
+    return null;
+  }
 }
 
 // Zoho accounts base URL — varies by data center
@@ -338,5 +342,8 @@ module.exports = {
   getAccessToken: getAccessToken,
   isAuthenticated: isAuthenticated,
   setRefreshToken: setRefreshToken,
-  init: init
+  init: init,
+  // Exported for testing
+  encrypt: encrypt,
+  decrypt: decrypt
 };

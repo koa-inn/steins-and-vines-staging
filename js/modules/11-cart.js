@@ -1198,3 +1198,7 @@ function showMinQtyConfirm(dest) {
 }
 
 // ===== Reservation Page =====
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { getCartKey: getCartKey, getCartKeyForTab: getCartKeyForTab, getEffectiveMax: getEffectiveMax };
+}

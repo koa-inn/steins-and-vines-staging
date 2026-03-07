@@ -148,3 +148,7 @@ function buildLabelPriceFooter(product) {
 
   return footer;
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { getTintClass: getTintClass, formatCurrency: formatCurrency };
+}

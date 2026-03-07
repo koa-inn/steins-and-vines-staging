@@ -177,3 +177,7 @@ function parseCSVLine(line) {
   result.push(current);
   return result;
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { escapeHTML: escapeHTML, parseCSVLine: parseCSVLine };
+}

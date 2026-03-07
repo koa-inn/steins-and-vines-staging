@@ -74,7 +74,13 @@ function equalizeCardHeights() {
 }
 
 var _eqResizeTimer;
-window.addEventListener('resize', function () {
-  clearTimeout(_eqResizeTimer);
-  _eqResizeTimer = setTimeout(equalizeCardHeights, 150);
-});
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', function () {
+    clearTimeout(_eqResizeTimer);
+    _eqResizeTimer = setTimeout(equalizeCardHeights, 150);
+  });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { getCatalogViewMode: getCatalogViewMode };
+}
