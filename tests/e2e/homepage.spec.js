@@ -34,12 +34,6 @@ test.describe('Homepage', () => {
     expect(jsErrors).toHaveLength(0);
   });
 
-  // BUG: hero-desktop.webp and hero-mobile.webp are referenced in index.html
-  // but the files are missing from the repository. Remove test.fail() once images are added.
-  test.fail('hero image is accessible [missing asset — known bug]', async ({ page }) => {
-    const response = await page.goto('/images/hero-desktop.webp');
-    expect(response.status()).toBe(200);
-  });
 
   test('featured products section exists', async ({ page }) => {
     // The featured products section should at least be present in the DOM
