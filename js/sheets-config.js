@@ -52,13 +52,9 @@ var SHEETS_CONFIG = {
   // Leave blank to disable tracking; no events are sent until a URL is set.
   TRACK_EVENTS_URL: 'https://script.google.com/macros/s/AKfycbyWsu3oLF_q99IN_Xt-HdJrfLF9rXWxkGvd5HiG33stsrIDfpyMWzLXe-aeRoypM5C8RQ/exec',
 
-  // ADMIN_API_URL is a Google Apps Script web app URL. It is protected by
-  // Google OAuth ("Execute as: User accessing the web app") — unauthenticated
-  // requests are automatically rejected by Google. No server-side secret needed.
-  // Admin API URL (deploy adminApi.gs as web app with "Execute as: User accessing the web app")
-  // This provides server-side authentication for admin operations
-  // Leave blank to use direct Sheets API (less secure, for development only)
-  ADMIN_API_URL: 'https://script.google.com/macros/s/AKfycbw_t1zzpa3AQxvzPqo2wAg-cBU3IdevmyEz8P-dL205VrO2jx4s3DP30WxYoVUSDI968g/exec',
+  // ADMIN_API_URL is loaded from js/admin-config.js, which is only included
+  // on admin/staff pages (admin.html, brewpad.html, kiosk.html, batch.html).
+  // Not set here so it is not delivered to all public visitors.
 
   // Zoho middleware URL (for Bookings + Checkout API)
   MIDDLEWARE_URL: 'https://svmiddleware-production.up.railway.app',
