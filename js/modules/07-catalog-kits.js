@@ -608,6 +608,7 @@ function loadProducts() {
     var orderIn = rows.filter(function (r) { return getAvailable(r) <= 0; });
 
     renderSection(catalog, 'Currently available', inStock);
+    injectKitListSchema(rows);
 
     if (inStock.length > 0 && orderIn.length > 0) {
       var divider = document.createElement('div');
@@ -1160,6 +1161,8 @@ function loadProducts() {
           renderKitBuyControl(tdBuyKit, product);
           tr.appendChild(tdBuyKit);
 
+          injectProductSchema(product, 'kit');
+
           // Mobile summary cells (hidden on desktop, shown on mobile via CSS)
           var metaParts = [];
           if (visibleFields['brand'] && (product.brand || '').trim()) metaParts.push(product.brand.trim());
@@ -1325,6 +1328,7 @@ function loadProducts() {
             card = buildDefaultCard(product);
           }
           grid.appendChild(card);
+          injectProductSchema(product, 'kit');
         });
 
         group.appendChild(grid);

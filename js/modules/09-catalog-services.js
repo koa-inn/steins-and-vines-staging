@@ -230,6 +230,7 @@ function renderServices() {
         }
       }
       tr.appendChild(tdPrice);
+      injectProductSchema(svc, 'service');
 
       var svcDescText = (svc.desription || svc.description || '').trim();
       var svcHasDetail = svcDescText || svc.sku;
@@ -343,6 +344,7 @@ function renderServices() {
       }
 
       grid.appendChild(bubble);
+      injectProductSchema(svc, 'service');
     });
 
     wrapper.appendChild(grid);

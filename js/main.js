@@ -186,8 +186,124 @@ function parseCSVLine(line) {
   return result;
 }
 
+// ===== JSON-LD Product Schema =====
+
+// Injects a Schema.org Product JSON-LD <script> tag into document.head.
+// Uses data-schema-sku to avoid duplicate injection for the same SKU.
+// productType: 'kit' | 'ingredient' | 'service'
+function injectProductSchema(product, productType) {
+  if (!product || !product.name) return;
+
+  // Clean and parse price
+  var rawPrice;
+  if (productType === 'kit') {
+    rawPrice = product.retail_instore || product.retail_kit || product.price || '';
+  } else {
+    rawPrice = product.price_per_unit || product.price || '';
+  }
+  var cleanedPrice = parseFloat(String(rawPrice).replace(/[^0-9.]/g, '')) || 0;
+  if (cleanedPrice <= 0) return; // skip zero-price items
+
+  // Avoid duplicate injection
+  var skuAttr = product.sku || (product.name + '-nsku');
+  var existing = document.querySelector('script[data-schema-sku="' + skuAttr + '"]');
+  if (existing) return;
+
+  // Determine availability
+  var available;
+  if (productType === 'kit') {
+    var kitStock = parseInt(product.stock, 10) || 0;
+    var kitAvail = parseInt(product.available, 10) || 0;
+    available = (kitStock > 0 || kitAvail > 0);
+  } else {
+    available = (parseInt(product.stock, 10) || 0) > 0;
+  }
+
+  // Build schema object
+  var schema = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    'name': product.name
+  };
+
+  if (product.brand) {
+    schema['brand'] = { '@type': 'Brand', 'name': product.brand };
+  }
+
+  var descVal = (product.description || product.tasting_notes || product.subcategory || '').trim();
+  if (descVal) {
+    schema['description'] = descVal;
+  }
+
+  if (product.sku) {
+    schema['image'] = 'https://steinsandvines.ca/images/products/' + product.sku + '.png';
+    schema['sku'] = product.sku;
+  }
+
+  schema['offers'] = {
+    '@type': 'Offer',
+    'priceCurrency': 'CAD',
+    'price': cleanedPrice,
+    'availability': available
+      ? 'https://schema.org/InStock'
+      : 'https://schema.org/OutOfStock',
+    'url': product.sku
+      ? 'https://steinsandvines.ca/products.html?item=' + product.sku
+      : 'https://steinsandvines.ca/products.html',
+    'seller': { '@type': 'LocalBusiness', 'name': 'Steins & Vines' }
+  };
+
+  var scriptEl = document.createElement('script');
+  scriptEl.type = 'application/ld+json';
+  scriptEl.setAttribute('data-schema-sku', skuAttr);
+  scriptEl.text = JSON.stringify(schema);
+  document.head.appendChild(scriptEl);
+}
+
+// Injects (or replaces) an ItemList JSON-LD schema for the kits catalog.
+// Call after the full kit list renders. Pass the array of rendered products.
+function injectKitListSchema(products) {
+  // Remove any existing ItemList schema
+  var existing = document.querySelector('script[data-schema-type="ItemList"]');
+  if (existing) existing.parentNode.removeChild(existing);
+
+  if (!products || products.length === 0) return;
+
+  var listItems = [];
+  var pos = 1;
+  for (var i = 0; i < products.length; i++) {
+    var p = products[i];
+    if (!p.name) continue;
+    var entry = {
+      '@type': 'ListItem',
+      'position': pos,
+      'name': p.name
+    };
+    if (p.sku) {
+      entry['url'] = 'https://steinsandvines.ca/products.html?item=' + p.sku;
+    }
+    listItems.push(entry);
+    pos++;
+  }
+
+  var schema = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    'name': 'Ferment-in-Store Wine & Beer Kits',
+    'url': 'https://steinsandvines.ca/products.html',
+    'numberOfItems': listItems.length,
+    'itemListElement': listItems
+  };
+
+  var scriptEl = document.createElement('script');
+  scriptEl.type = 'application/ld+json';
+  scriptEl.setAttribute('data-schema-type', 'ItemList');
+  scriptEl.text = JSON.stringify(schema);
+  document.head.appendChild(scriptEl);
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { escapeHTML: escapeHTML, parseCSVLine: parseCSVLine };
+  module.exports = { escapeHTML: escapeHTML, parseCSVLine: parseCSVLine, injectProductSchema: injectProductSchema, injectKitListSchema: injectKitListSchema };
 }
 // ===== Anonymous Event Tracking =====
 
@@ -1876,6 +1992,7 @@ function loadProducts() {
     var orderIn = rows.filter(function (r) { return getAvailable(r) <= 0; });
 
     renderSection(catalog, 'Currently available', inStock);
+    injectKitListSchema(rows);
 
     if (inStock.length > 0 && orderIn.length > 0) {
       var divider = document.createElement('div');
@@ -2428,6 +2545,8 @@ function loadProducts() {
           renderKitBuyControl(tdBuyKit, product);
           tr.appendChild(tdBuyKit);
 
+          injectProductSchema(product, 'kit');
+
           // Mobile summary cells (hidden on desktop, shown on mobile via CSS)
           var metaParts = [];
           if (visibleFields['brand'] && (product.brand || '').trim()) metaParts.push(product.brand.trim());
@@ -2593,6 +2712,7 @@ function loadProducts() {
             card = buildDefaultCard(product);
           }
           grid.appendChild(card);
+          injectProductSchema(product, 'kit');
         });
 
         group.appendChild(grid);
@@ -3189,6 +3309,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
         tdCart.appendChild(ingReserveWrap);
       }
       tr.appendChild(tdCart);
+      injectProductSchema(item, 'ingredient');
 
       var hasDetail = (item.description || '').trim() || item.sku;
       if (hasDetail) {
@@ -3381,6 +3502,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
       }
 
       grid.appendChild(card);
+      injectProductSchema(item, 'ingredient');
     });
 
     wrapper.appendChild(grid);
@@ -3708,6 +3830,7 @@ function renderServices() {
         }
       }
       tr.appendChild(tdPrice);
+      injectProductSchema(svc, 'service');
 
       var svcDescText = (svc.desription || svc.description || '').trim();
       var svcHasDetail = svcDescText || svc.sku;
@@ -3821,6 +3944,7 @@ function renderServices() {
       }
 
       grid.appendChild(bubble);
+      injectProductSchema(svc, 'service');
     });
 
     wrapper.appendChild(grid);
@@ -4843,16 +4967,18 @@ function renderCartSidebar() {
       minusBtn.addEventListener('click', (function (itm, cartKey) {
         return function () {
           var current = getReservation(cartKey);
+          var removed = false;
           for (var i = 0; i < current.length; i++) {
             if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
               current[i].qty = (current[i].qty || 1) - 1;
-              if (current[i].qty <= 0) current.splice(i, 1);
+              if (current[i].qty <= 0) { current.splice(i, 1); removed = true; }
               break;
             }
           }
           saveReservation(current, cartKey);
           updateReservationBar();
           renderCartSidebar();
+          if (removed) refreshAllReserveControls();
         };
       })(item, itemCartKey));
 
@@ -5023,16 +5149,18 @@ function renderCartDrawer() {
       minusBtn.addEventListener('click', (function (itm, cartKey) {
         return function () {
           var current = getReservation(cartKey);
+          var removed = false;
           for (var i = 0; i < current.length; i++) {
             if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
               current[i].qty = (current[i].qty || 1) - 1;
-              if (current[i].qty <= 0) current.splice(i, 1);
+              if (current[i].qty <= 0) { current.splice(i, 1); removed = true; }
               break;
             }
           }
           saveReservation(current, cartKey);
           updateReservationBar();
           renderCartDrawer();
+          if (removed) refreshAllReserveControls();
         };
       })(item, itemCartKey));
 

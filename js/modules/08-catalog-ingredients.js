@@ -513,6 +513,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
         tdCart.appendChild(ingReserveWrap);
       }
       tr.appendChild(tdCart);
+      injectProductSchema(item, 'ingredient');
 
       var hasDetail = (item.description || '').trim() || item.sku;
       if (hasDetail) {
@@ -705,6 +706,7 @@ function renderIngredientSection(catalog, title, items, extraClass) {
       }
 
       grid.appendChild(card);
+      injectProductSchema(item, 'ingredient');
     });
 
     wrapper.appendChild(grid);

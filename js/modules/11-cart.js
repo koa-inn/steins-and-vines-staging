@@ -838,16 +838,18 @@ function renderCartSidebar() {
       minusBtn.addEventListener('click', (function (itm, cartKey) {
         return function () {
           var current = getReservation(cartKey);
+          var removed = false;
           for (var i = 0; i < current.length; i++) {
             if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
               current[i].qty = (current[i].qty || 1) - 1;
-              if (current[i].qty <= 0) current.splice(i, 1);
+              if (current[i].qty <= 0) { current.splice(i, 1); removed = true; }
               break;
             }
           }
           saveReservation(current, cartKey);
           updateReservationBar();
           renderCartSidebar();
+          if (removed) refreshAllReserveControls();
         };
       })(item, itemCartKey));
 
@@ -1018,16 +1020,18 @@ function renderCartDrawer() {
       minusBtn.addEventListener('click', (function (itm, cartKey) {
         return function () {
           var current = getReservation(cartKey);
+          var removed = false;
           for (var i = 0; i < current.length; i++) {
             if ((current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''))) {
               current[i].qty = (current[i].qty || 1) - 1;
-              if (current[i].qty <= 0) current.splice(i, 1);
+              if (current[i].qty <= 0) { current.splice(i, 1); removed = true; }
               break;
             }
           }
           saveReservation(current, cartKey);
           updateReservationBar();
           renderCartDrawer();
+          if (removed) refreshAllReserveControls();
         };
       })(item, itemCartKey));
 
