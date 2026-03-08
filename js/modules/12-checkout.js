@@ -5,6 +5,7 @@ var _millingServiceItem = null; // Zoho service item for milling fee (fetched la
 // Maker's fee state
 var _makersFeeItem = null;     // Zoho item for MAKERS-FEE (fetched lazily when kits present)
 var _makersFeeLoaded = false;  // true once fetch has been attempted
+var _prevHasKits = null;       // tracks previous hasKits state to avoid redundant timeslot reloads
 
 // #10/#21: renumber visible stepper digits after hiding steps
 function renumberVisibleSteps() {
@@ -81,6 +82,28 @@ function isValidEmail(val) {
 function isValidPhone(val) {
   var digits = val.replace(/\D/g, '');
   return digits.length >= 10 && digits.length <= 15;
+}
+
+// Show or hide elements that are only relevant for ferment-in-store kit orders.
+// Called on initial render and on every cart re-render so the page stays in sync.
+function applyKitSpecificVisibility(hasKits) {
+  var kitOnlyIds = [
+    'reservation-intro-strip',
+    'reservation-guarantee-note',
+    'reservation-dropin-note'
+  ];
+  kitOnlyIds.forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (hasKits) {
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
+  });
+  // The page-header section always shows but the hero is kit-specific context,
+  // so no change to the <section class="page-header"> itself —
+  // the h1 text is already adapted by initReservationPage copy-swap logic.
 }
 
 function initReservationPage() {
@@ -198,6 +221,9 @@ function initReservationPage() {
     batchNotes.forEach(function (n) { n.classList.add('hidden'); });
   }
 
+  // Hide/show ferment-in-store-specific blocks based on kit presence
+  applyKitSpecificVisibility(hasKits);
+
   // Adapt page copy based on cart composition
   if (!hasKits && items.length > 0) {
     // Ingredient/service-only order — use order-centric copy
@@ -289,9 +315,12 @@ function updateStepper(activeStep) {
 function refreshReservationDependents() {
   var items = getAllCartItems();
   var hasKits = items.some(function (item) { return (item.item_type || 'kit') === 'kit'; });
+  var kitsJustAppeared = (hasKits && _prevHasKits !== true);
+  _prevHasKits = hasKits;
 
   if (hasKits) {
-    loadTimeslots();
+    // Only reload the calendar when kit state transitions to true — preserve existing selection
+    if (kitsJustAppeared) { loadTimeslots(); }
     var selected = document.querySelector('input[name="timeslot"]:checked');
     if (selected) {
       updateCompletionEstimate(selected.value);
@@ -335,6 +364,8 @@ function renderReservationItems() {
   var items = getAllCartItems();
   // Item #2: recompute hasKits from the live cart on every render
   var hasKits = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
+  // Sync ferment-in-store-specific blocks whenever items change
+  applyKitSpecificVisibility(hasKits);
   container.innerHTML = '';
 
   if (items.length === 0) {

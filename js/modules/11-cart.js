@@ -34,6 +34,7 @@ function getCartKeyForTab(tab) {
 function getCartKey(product) {
   var itemType = product._item_type || product.item_type || 'kit';
   if (itemType === 'ingredient') return INGREDIENT_CART_KEY;
+  if (itemType === 'kit-purchase') return INGREDIENT_CART_KEY;
   return FERMENT_CART_KEY;
 }
 
@@ -56,11 +57,13 @@ function saveReservation(items, cartKey) {
   }
 }
 
-function getReservedQty(productKey) {
-  // Search both carts so reserve controls always find the item
-  var all = [].concat(getReservation(FERMENT_CART_KEY), getReservation(INGREDIENT_CART_KEY));
+function getReservedQty(productKey, cartKey) {
+  // When cartKey is specified, search only that cart (e.g. kit-purchase vs kit)
+  var all = cartKey
+    ? getReservation(cartKey)
+    : [].concat(getReservation(FERMENT_CART_KEY), getReservation(INGREDIENT_CART_KEY));
   for (var i = 0; i < all.length; i++) {
-    if ((all[i].name + '|' + all[i].brand) === productKey) {
+    if ((all[i].name + '|' + (all[i].brand || '')) === productKey) {
       return all[i].qty || 1;
     }
   }
@@ -137,6 +140,15 @@ function setReservationQty(product, qty) {
 
   saveReservation(items, cartKey);
   updateReservationBar();
+  // Re-render checkout page items when cart changes while on reservation.html
+  if (document.body && document.body.getAttribute('data-page') === 'reservation') {
+    if (typeof renderReservationItems === 'function') {
+      renderReservationItems();
+    }
+    if (typeof refreshReservationDependents === 'function') {
+      refreshReservationDependents();
+    }
+  }
 }
 
 function refreshAllReserveControls() {

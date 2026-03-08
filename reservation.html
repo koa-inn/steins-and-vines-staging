@@ -24,7 +24,7 @@
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap">
   <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <link rel="icon" href="images/Icon_green.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.min.css?v=mmi8p5u1">
+  <link rel="stylesheet" href="css/styles.min.css?v=mmiacgy3">
 </head>
 <body data-page="reservation">
   <a href="#main" class="skip-to-content">Skip to content</a>
@@ -82,15 +82,15 @@
           </ol>
         </nav>
 
-        <div class="reservation-intro-strip">
+        <div class="reservation-intro-strip hidden" id="reservation-intro-strip">
           <span>~<strong>30 bottles</strong> per batch (23&thinsp;L)</span>
           <span class="res-strip-dot" aria-hidden="true">&bull;</span>
           <span>Start your batch in <strong>~10 min</strong></span>
           <span class="res-strip-dot" aria-hidden="true">&bull;</span>
           <span>Bottle &amp; take home in <strong>~20&ndash;30 min</strong></span>
         </div>
-        <p class="catalog-price-note catalog-guarantee-note">&#10003; <strong>100% satisfaction guarantee</strong> &mdash; if your batch isn&rsquo;t what you wanted, we&rsquo;ll replace it with another kit or recipe.</p>
-        <p class="reservation-dropin-note">Walk-ins are always welcome &mdash; though we can&rsquo;t guarantee inventory availability or wait times without a reservation.</p>
+        <p class="catalog-price-note catalog-guarantee-note hidden" id="reservation-guarantee-note">&#10003; <strong>100% satisfaction guarantee</strong> &mdash; if your batch isn&rsquo;t what you wanted, we&rsquo;ll replace it with another kit or recipe.</p>
+        <p class="reservation-dropin-note hidden" id="reservation-dropin-note">Walk-ins are always welcome &mdash; though we can&rsquo;t guarantee inventory availability or wait times without a reservation.</p>
 
         <!-- Step 1: Review Items -->
         <div id="reservation-list" class="checkout-section" data-checkout-step="1">
@@ -243,7 +243,7 @@
   <script src="https://js.globalpay.com/4.1.11/globalpayments.js"></script>
   <script src="https://www.google.com/recaptcha/api.js?render=6LerSH0sAAAAAGKtltFqN5fu2w8opPV5BStdzNDu" async></script>
   <script src="js/sheets-config.js" defer></script>
-  <script src="js/main.min.js?v=mmi8p5u1" defer></script>
+  <script src="js/main.min.js?v=mmiacgy3" defer></script>
   <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js')})}</script>
 </body>
 </html>
