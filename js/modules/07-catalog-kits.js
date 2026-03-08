@@ -705,6 +705,11 @@ function loadProducts() {
     renderReserveControl(reserveWrap, product, productKey);
     card.appendChild(reserveWrap);
 
+    var kitBuyWrap = document.createElement('div');
+    kitBuyWrap.className = 'reserve-link reserve-link--secondary';
+    renderKitBuyControl(kitBuyWrap, product);
+    card.appendChild(kitBuyWrap);
+
     return card;
   }
 
@@ -792,6 +797,11 @@ function loadProducts() {
     var productKey = product.name + '|' + (product.brand || '');
     renderReserveControl(reserveWrap, product, productKey);
     card.appendChild(reserveWrap);
+
+    var kitBuyWrapBeer = document.createElement('div');
+    kitBuyWrapBeer.className = 'reserve-link reserve-link--secondary';
+    renderKitBuyControl(kitBuyWrapBeer, product);
+    card.appendChild(kitBuyWrapBeer);
 
     return card;
   }
@@ -937,6 +947,11 @@ function loadProducts() {
     renderReserveControl(reserveWrap, product, productKey);
     card.appendChild(reserveWrap);
 
+    var kitBuyWrapDefault = document.createElement('div');
+    kitBuyWrapDefault.className = 'product-reserve-wrap product-reserve-wrap--secondary';
+    renderKitBuyControl(kitBuyWrapDefault, product);
+    card.appendChild(kitBuyWrapDefault);
+
     return card;
   }
 
@@ -998,7 +1013,8 @@ function loadProducts() {
           { label: 'Time', sort: 'time', field: 'time' },
           { label: 'In-Store Price', sort: 'price', field: 'retail_instore' },
           { label: 'Kit Price', sort: 'price', field: 'retail_kit' },
-          { label: '', sort: 'reserved', field: null }
+          { label: '', sort: 'reserved', field: null },
+          { label: '', sort: null, field: null }
         ];
         // Determine which columns have data in this group
         var visibleCols = kitsCols.filter(function (col) {
@@ -1131,12 +1147,18 @@ function loadProducts() {
             tr.appendChild(tdKit);
           }
 
-          // Add to Cart
+          // Add to Cart (Reserve — ferment in store)
           var tdReserve = document.createElement('td');
           tdReserve.setAttribute('data-label', '');
           var productKey = product.name + '|' + (product.brand || '');
           renderReserveControl(tdReserve, product, productKey);
           tr.appendChild(tdReserve);
+
+          // Buy Kit — take home
+          var tdBuyKit = document.createElement('td');
+          tdBuyKit.setAttribute('data-label', '');
+          renderKitBuyControl(tdBuyKit, product);
+          tr.appendChild(tdBuyKit);
 
           // Mobile summary cells (hidden on desktop, shown on mobile via CSS)
           var metaParts = [];
@@ -1311,5 +1333,76 @@ function loadProducts() {
     }
 
     catalog.appendChild(wrapper);
+  }
+}
+
+// Renders a secondary "Buy Kit" button for kit products.
+// Adds the kit to the ingredient cart (sv-cart-ingredients) with _item_type='kit-purchase'
+// so it does NOT trigger the ferment-in-store reservation flow at checkout.
+function renderKitBuyControl(wrap, product) {
+  // Register for refreshAllReserveControls() so cart clears/removes update this button
+  wrap._reserveProduct = product;
+  wrap._reserveKey = product.name + '|' + (product.brand || '');
+  wrap._reserveRenderer = renderKitBuyControl;
+
+  wrap.innerHTML = '';
+  // Build a kit-purchase product object: same fields but different type and price
+  var kitProduct = {};
+  for (var k in product) {
+    if (Object.prototype.hasOwnProperty.call(product, k)) {
+      kitProduct[k] = product[k];
+    }
+  }
+  kitProduct._item_type = 'kit-purchase';
+  // Use kit-only price for take-home purchases
+  kitProduct.price = product.retail_kit || product.retail_instore || product.price || '';
+
+  // Scope qty lookup to ingredient cart to avoid cross-contamination with Reserve (ferment) qty
+  var productKey = product.name + '|' + (product.brand || '');
+  var existingQty = getReservedQty(productKey, INGREDIENT_CART_KEY);
+
+  if (existingQty === 0) {
+    var buyBtn = document.createElement('button');
+    buyBtn.type = 'button';
+    buyBtn.className = 'product-reserve-btn product-reserve-btn--secondary';
+    buyBtn.textContent = 'Buy Kit';
+    buyBtn.addEventListener('click', function () {
+      setReservationQty(kitProduct, 1);
+      trackEvent('add_to_cart', product.sku || '', product.name + ' (kit)');
+      renderKitBuyControl(wrap, product);
+    });
+    wrap.appendChild(buyBtn);
+  } else {
+    var controls = document.createElement('div');
+    controls.className = 'product-qty-controls';
+
+    var minusBtn = document.createElement('button');
+    minusBtn.type = 'button';
+    minusBtn.className = 'qty-btn';
+    minusBtn.textContent = '\u2212';
+    minusBtn.setAttribute('aria-label', 'Decrease take-home kit quantity');
+    minusBtn.addEventListener('click', function () {
+      setReservationQty(kitProduct, existingQty - 1);
+      renderKitBuyControl(wrap, product);
+    });
+
+    var qtySpan = document.createElement('span');
+    qtySpan.className = 'qty-value';
+    qtySpan.textContent = String(existingQty);
+
+    var plusBtn = document.createElement('button');
+    plusBtn.type = 'button';
+    plusBtn.className = 'qty-btn';
+    plusBtn.textContent = '+';
+    plusBtn.setAttribute('aria-label', 'Increase take-home kit quantity');
+    plusBtn.addEventListener('click', function () {
+      setReservationQty(kitProduct, existingQty + 1);
+      renderKitBuyControl(wrap, product);
+    });
+
+    controls.appendChild(minusBtn);
+    controls.appendChild(qtySpan);
+    controls.appendChild(plusBtn);
+    wrap.appendChild(controls);
   }
 }

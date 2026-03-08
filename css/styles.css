@@ -2336,6 +2336,46 @@ behold-widget {
   pointer-events: none;
 }
 
+/* Secondary "Buy Kit" button — muted style so Reserve stays primary */
+.product-reserve-btn--secondary {
+  font-size: 0.8rem;
+  font-weight: 400;
+  padding: 7px 12px;
+  min-height: 36px;
+  color: var(--color-muted);
+  border-color: var(--color-muted);
+}
+.product-reserve-btn--secondary:hover {
+  background-color: var(--color-muted);
+  border-color: var(--color-muted);
+  color: var(--color-cream);
+}
+
+/* Secondary reserve-link wrapper for label cards (wine/beer) */
+.label-wine .reserve-link--secondary,
+.label-beer .reserve-link--secondary {
+  background: transparent;
+}
+.label-wine .reserve-link--secondary .product-reserve-btn,
+.label-beer .reserve-link--secondary .product-reserve-btn {
+  background: transparent;
+  color: var(--color-muted);
+  border-top: 1px solid rgba(0,0,0,0.1);
+  border-bottom: none;
+  border-left: none;
+  border-right: none;
+  font-size: 0.78rem;
+  font-weight: 400;
+  min-height: 36px;
+  margin-top: 0;
+  border-radius: 0;
+}
+.label-wine .reserve-link--secondary .product-reserve-btn:hover,
+.label-beer .reserve-link--secondary .product-reserve-btn:hover {
+  background: rgba(0,0,0,0.06);
+  color: var(--color-body);
+}
+
 .product-reserve-wrap {
   margin-top: 0.75rem;
   width: 100%;
@@ -2513,22 +2553,27 @@ behold-widget {
   width: 54px;
   height: 36px;
   text-align: center;
-  border: 1px solid var(--color-brown);
-  border-radius: 4px;
+  border: none;
+  border-left: 1px solid var(--color-burgundy);
+  border-right: 1px solid var(--color-burgundy);
+  border-radius: 0;
   padding: 0 4px;
   font-size: 0.875rem;
   font-family: var(--font-body);
   font-weight: 700;
   color: var(--color-burgundy);
   background: var(--color-white);
+  -webkit-appearance: none;
   -moz-appearance: textfield;
+  appearance: none;
+  vertical-align: middle;
+  box-sizing: border-box;
 }
 .qty-input::-webkit-outer-spin-button,
-.qty-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .qty-input:focus {
   outline: none;
-  border-color: var(--color-burgundy);
-  box-shadow: 0 0 0 2px rgba(114, 47, 55, 0.15);
+  box-shadow: inset 0 0 0 2px rgba(114, 47, 55, 0.2);
 }
 
 .qty-unit-label {
