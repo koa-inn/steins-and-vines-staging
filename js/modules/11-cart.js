@@ -664,9 +664,12 @@ function updateReservationBar() {
     count += (parseFloat(item.qty) || 1);
   });
 
+  var sidebar = document.getElementById('cart-sidebar');
+
   if (count === 0) {
     bars.forEach(function (bar) { bar.classList.add('hidden'); });
     document.documentElement.style.setProperty('--reservation-bar-height', '0px');
+    if (sidebar) sidebar.classList.remove('cart-sidebar--active');
     return;
   }
 
@@ -677,6 +680,14 @@ function updateReservationBar() {
       countEl.textContent = count + ' item' + (count === 1 ? '' : 's') + ' in cart';
     }
   });
+
+  // Sync sidebar on desktop
+  if (sidebar && window.innerWidth >= 1024) {
+    sidebar.classList.add('cart-sidebar--active');
+    renderCartSidebar();
+  } else if (sidebar) {
+    sidebar.classList.remove('cart-sidebar--active');
+  }
 
   // Update layout variable for floating bar
   var fixedBar = document.getElementById('reservation-bar');
@@ -1093,8 +1104,14 @@ function initCartDrawer() {
       // Don't open if clicking the checkout link, clear button, or inline bar
       if (e.target.closest('.reservation-bar-link') || e.target.closest('.reservation-bar-clear')) return;
       if (bar.classList.contains('reservation-bar-inline')) return;
-      // Only open on mobile
-      if (window.innerWidth >= 1024) return;
+      
+      // If sidebar is visible on desktop, clicking the bar shouldn't do much,
+      // but if sidebar is hidden or we are on mobile, open the drawer.
+      var sidebar = document.getElementById('cart-sidebar');
+      var sidebarVisible = sidebar && sidebar.classList.contains('cart-sidebar--active') && getComputedStyle(sidebar).display !== 'none';
+      
+      if (sidebarVisible && window.innerWidth >= 1024) return;
+      
       openCartDrawer();
     });
   });
