@@ -1142,6 +1142,7 @@ function renderDataGapWarning(readings, now) {
     html += '<span class="bp-status-badge bp-status-badge--' + statusColor + ' bp-status-clickable" id="bp-detail-status">' + escapeHTML(statusLabel) + '</span>';
     html += '</div>';
     html += '<button type="button" class="btn bp-btn-sm" id="bp-detail-qr-btn" title="Generate printable QR code for public batch page">Print QR</button>';
+    html += '<button type="button" class="btn bp-btn-sm" id="bp-detail-label-btn" title="Download bottle label as PDF">Label PDF</button>';
     html += '</div>';
 
     // Info grid
@@ -1318,6 +1319,14 @@ function renderDataGapWarning(readings, now) {
       });
     }
 
+    // Label PDF
+    var labelBtn = document.getElementById('bp-detail-label-btn');
+    if (labelBtn) {
+      labelBtn.addEventListener('click', function () {
+        generateBatchLabelPDF(b, _detailPlatoReadings);
+      });
+    }
+
     // Delete
     var deleteBtn = document.getElementById('bp-delete-batch-btn');
     if (deleteBtn) {
@@ -1357,6 +1366,113 @@ function renderDataGapWarning(readings, now) {
       win.document.close();
       setTimeout(function () { win.print(); }, 400);
     }
+  }
+
+  function generateBatchLabelPDF(b, readings) {
+    if (typeof window.jspdf === 'undefined') { showToast('PDF library not loaded', 'error'); return; }
+    var jsPDF = window.jspdf.jsPDF;
+
+    // Label: 3.5" × 5" portrait
+    var W = 3.5, H = 5;
+    var doc = new jsPDF({ unit: 'in', format: [W, H], orientation: 'portrait' });
+    var m = 0.2; // margin
+
+    // Cream background
+    doc.setFillColor(229, 222, 193);
+    doc.rect(0, 0, W, H, 'F');
+
+    // Outer border (green)
+    doc.setDrawColor(74, 111, 75);
+    doc.setLineWidth(0.025);
+    doc.rect(m, m, W - m * 2, H - m * 2);
+    // Inner border (thinner)
+    doc.setLineWidth(0.008);
+    doc.rect(m + 0.06, m + 0.06, W - (m + 0.06) * 2, H - (m + 0.06) * 2);
+
+    // ── Business name ──────────────────────────────────────
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(55, 14, 19); // burgundy
+    doc.text('STEINS & VINES', W / 2, 0.54, { align: 'center' });
+
+    // Rule under name
+    doc.setDrawColor(55, 14, 19);
+    doc.setLineWidth(0.018);
+    doc.line(m + 0.22, 0.65, W - m - 0.22, 0.65);
+    doc.setLineWidth(0.006);
+    doc.line(m + 0.22, 0.69, W - m - 0.22, 0.69);
+
+    // ── Product name ────────────────────────────────────────
+    var productName = b.product_name || b.product_sku || 'Batch';
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(20);
+    doc.setTextColor(44, 44, 44);
+    var productLines = doc.splitTextToSize(productName, W - m * 2 - 0.3);
+    var productY = 1.08;
+    doc.text(productLines, W / 2, productY, { align: 'center' });
+
+    // ── ABV (if enough readings) ────────────────────────────
+    var curY = productY + productLines.length * 0.32;
+    var hasAbv = false;
+    if (readings && readings.length >= 2) {
+      var sorted = readings.slice().sort(function (a, r) {
+        return (a.timestamp || '') < (r.timestamp || '') ? -1 : 1;
+      });
+      var og = parseFloat(sorted[0].degrees_plato);
+      var fg = parseFloat(sorted[sorted.length - 1].degrees_plato);
+      if (!isNaN(og) && !isNaN(fg) && og > fg) {
+        var abv = calcAbv(og, fg).toFixed(1);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(12);
+        doc.setTextColor(74, 111, 75); // green
+        doc.text(abv + '% alc./vol.', W / 2, curY + 0.18, { align: 'center' });
+        curY += 0.42;
+        hasAbv = true;
+      }
+    }
+    if (!hasAbv) curY += 0.1;
+
+    // ── Gold divider ────────────────────────────────────────
+    doc.setDrawColor(184, 150, 62); // gold
+    doc.setLineWidth(0.018);
+    doc.line(m + 0.35, curY + 0.08, W - m - 0.35, curY + 0.08);
+    curY += 0.28;
+
+    // ── Info rows ────────────────────────────────────────────
+    var labelX = m + 0.18;
+    var valX = labelX + 0.85;
+    var rowH = 0.27;
+    var fields = [['Customer', b.customer_name || '\u2014'], ['Batch', b.batch_id], ['Started', fmtDate(b.start_date)]];
+    if (b.vessel_id) fields.push(['Vessel', b.vessel_id]);
+    var statusLabel = String(b.status || '').charAt(0).toUpperCase() + String(b.status || '').slice(1);
+    if (statusLabel) fields.push(['Status', statusLabel]);
+
+    fields.forEach(function (pair) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(95, 95, 95); // --color-muted new value
+      doc.text(pair[0].toUpperCase(), labelX, curY);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(44, 44, 44);
+      doc.text(String(pair[1]), valX, curY);
+      curY += rowH;
+    });
+
+    // ── Footer ──────────────────────────────────────────────
+    var footerRuleY = H - 0.48;
+    doc.setDrawColor(55, 14, 19);
+    doc.setLineWidth(0.008);
+    doc.line(m + 0.22, footerRuleY, W - m - 0.22, footerRuleY);
+    doc.setLineWidth(0.018);
+    doc.line(m + 0.22, footerRuleY + 0.04, W - m - 0.22, footerRuleY + 0.04);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(95, 95, 95);
+    doc.text('Squamish, BC  \u00B7  steinsandvines.ca', W / 2, H - 0.26, { align: 'center' });
+
+    // Save triggers download — no print dialog
+    doc.save('label-' + (b.batch_id || 'batch') + '.pdf');
   }
 
   function renderDetailTasks(tasks) {
