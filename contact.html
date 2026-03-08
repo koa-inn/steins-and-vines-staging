@@ -26,7 +26,7 @@
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap">
   <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <link rel="icon" href="images/Icon_green.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.min.css?v=mmicl1fd">
+  <link rel="stylesheet" href="css/styles.min.css?v=mmid3m2w">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -137,6 +137,42 @@
     <div class="section-icon">
       <img src="images/Icon_green.svg" alt="" aria-hidden="true" loading="lazy">
     </div>
+    <!-- Unified Cart UI -->
+    <aside class="cart-sidebar" id="cart-sidebar">
+      <div class="cart-sidebar-header">
+        <h3>Your Cart</h3>
+      </div>
+      <div class="cart-sidebar-items" id="cart-sidebar-items">
+        <p class="cart-sidebar-empty">Your cart is empty.</p>
+      </div>
+      <div class="cart-sidebar-footer" id="cart-sidebar-footer">
+        <div class="cart-sidebar-subtotal">
+          <span>Subtotal</span>
+          <span id="cart-sidebar-total">$0.00</span>
+        </div>
+        <a href="reservation.html" class="btn cart-sidebar-checkout">Checkout</a>
+        <button type="button" class="btn-secondary cart-sidebar-clear" id="cart-sidebar-clear">Clear Cart</button>
+      </div>
+    </aside>
+
+    <div class="cart-drawer-backdrop" id="cart-drawer-backdrop"></div>
+    <div class="cart-drawer" id="cart-drawer">
+      <div class="cart-drawer-header">
+        <h3 id="cart-drawer-title">Your Cart</h3>
+        <button type="button" class="cart-drawer-close" id="cart-drawer-close" aria-label="Close cart">&times;</button>
+      </div>
+      <div class="cart-drawer-items" id="cart-drawer-items">
+        <p class="cart-sidebar-empty">Your cart is empty.</p>
+      </div>
+      <div class="cart-drawer-footer" id="cart-drawer-footer">
+        <div class="cart-drawer-subtotal">
+          <span>Subtotal</span>
+          <span id="cart-drawer-total">$0.00</span>
+        </div>
+        <a href="reservation.html" class="btn cart-drawer-checkout" id="cart-drawer-checkout">Checkout</a>
+        <button type="button" class="btn-secondary cart-drawer-clear" id="cart-drawer-clear">Clear Cart</button>
+      </div>
+    </div>
   </main>
 
   <footer class="site-footer">
@@ -166,7 +202,7 @@
   </footer>
 
   <script src="js/sheets-config.js" defer></script>
-  <script src="js/main.min.js?v=mmicl1fd" defer></script>
+  <script src="js/main.min.js?v=mmid3m2w" defer></script>
   <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js')})}</script>
 </body>
 </html>
