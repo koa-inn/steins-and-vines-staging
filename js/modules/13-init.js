@@ -217,6 +217,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Social links on all pages
   loadSocialLinks();
+
+  // Listen for cart changes to refresh all UI controls (e.g. product card quantities)
+  window.addEventListener('reservation-changed', function() {
+    if (typeof refreshAllReserveControls === 'function') {
+      refreshAllReserveControls();
+    }
+  });
 });
 
 // ===== Mobile Bottom Controls =====

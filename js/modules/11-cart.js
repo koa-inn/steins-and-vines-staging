@@ -141,6 +141,10 @@ function setReservationQty(product, qty) {
   saveReservation(items, cartKey);
   updateReservationBar();
   refreshAllReserveControls();
+  window.dispatchEvent(new Event('reservation-changed'));
+  // Item #44c: manually trigger storage event for same-page listeners (e.g. sidebar)
+  window.dispatchEvent(new StorageEvent('storage', { key: cartKey, newValue: JSON.stringify(items) }));
+  
   // Re-render checkout page items when cart changes while on reservation.html
   if (document.body && document.body.getAttribute('data-page') === 'reservation') {
     if (typeof renderReservationItems === 'function') {
@@ -153,7 +157,9 @@ function setReservationQty(product, qty) {
 }
 
 function refreshAllReserveControls() {
-  document.querySelectorAll('.product-reserve-wrap').forEach(function (wrap) {
+  var wraps = document.querySelectorAll('.product-reserve-wrap');
+  console.log('[Cart] Refreshing ' + wraps.length + ' reserve controls');
+  wraps.forEach(function (wrap) {
     if (!wrap._reserveProduct) return;
     var fn = wrap._reserveRenderer || renderReserveControl;
     fn(wrap, wrap._reserveProduct, wrap._reserveKey);
