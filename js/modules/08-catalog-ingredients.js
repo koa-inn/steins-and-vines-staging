@@ -505,11 +505,14 @@ function renderIngredientSection(catalog, title, items, extraClass) {
         var ingReserveWrap = document.createElement('div');
         ingReserveWrap.className = 'product-reserve-wrap';
         var ingProductKey = item.name + '|';
-        if (hasWeightConfig(item)) {
-          renderWeightControlCompact(ingReserveWrap, ingForCart, ingProductKey);
-        } else {
-          renderReserveControl(ingReserveWrap, ingForCart, ingProductKey);
-        }
+        var ingRenderer = hasWeightConfig(item) ? renderWeightControlCompact : renderReserveControl;
+        
+        // Standard properties for sync
+        ingReserveWrap._reserveProduct = ingForCart;
+        ingReserveWrap._reserveKey = ingProductKey;
+        ingReserveWrap._reserveRenderer = ingRenderer;
+        
+        ingRenderer(ingReserveWrap, ingForCart, ingProductKey);
         tdCart.appendChild(ingReserveWrap);
       }
       tr.appendChild(tdCart);
@@ -697,11 +700,14 @@ function renderIngredientSection(catalog, title, items, extraClass) {
         var reserveWrap = document.createElement('div');
         reserveWrap.className = 'product-reserve-wrap';
         var productKey = item.name + '|';
-        if (hasWeightConfig(item)) {
-          renderWeightControl(reserveWrap, ingredientForCart, productKey);
-        } else {
-          renderReserveControl(reserveWrap, ingredientForCart, productKey);
-        }
+        var renderer = hasWeightConfig(item) ? renderWeightControl : renderReserveControl;
+        
+        // Standard properties for sync
+        reserveWrap._reserveProduct = ingredientForCart;
+        reserveWrap._reserveKey = productKey;
+        reserveWrap._reserveRenderer = renderer;
+        
+        renderer(reserveWrap, ingredientForCart, productKey);
         card.appendChild(reserveWrap);
       }
 

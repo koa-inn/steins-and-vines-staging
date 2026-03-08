@@ -945,11 +945,19 @@ function loadProducts() {
     var reserveWrap = document.createElement('div');
     reserveWrap.className = 'product-reserve-wrap';
     var productKey = product.name + '|' + (product.brand || '');
+    // Standard properties for refreshAllReserveControls sync
+    reserveWrap._reserveProduct = product;
+    reserveWrap._reserveKey = productKey;
+    reserveWrap._reserveRenderer = renderReserveControl;
     renderReserveControl(reserveWrap, product, productKey);
     card.appendChild(reserveWrap);
 
     var kitBuyWrapDefault = document.createElement('div');
     kitBuyWrapDefault.className = 'product-reserve-wrap product-reserve-wrap--secondary';
+    // Use renderKitBuyControl as the renderer for this specific wrap
+    kitBuyWrapDefault._reserveProduct = product;
+    kitBuyWrapDefault._reserveKey = productKey;
+    kitBuyWrapDefault._reserveRenderer = renderKitBuyControl;
     renderKitBuyControl(kitBuyWrapDefault, product);
     card.appendChild(kitBuyWrapDefault);
 
