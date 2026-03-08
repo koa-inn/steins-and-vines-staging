@@ -2541,19 +2541,20 @@ behold-widget {
 
 .reservation-table .product-qty-controls {
   padding: 0;
+  min-width: 140px; /* Ensure enough width for 0.00 qty + buttons */
 }
 
 .reservation-table .product-qty-controls .qty-btn {
-  width: 36px;
-  height: 36px;
-  font-size: 1rem;
+  width: 40px;
+  height: 40px;
+  font-size: 1.125rem;
   flex-shrink: 0;
 }
 
 .qty-input {
-  min-width: 3rem;
+  min-width: 4.5rem;
   flex: 1;
-  height: 36px;
+  height: 40px;
   text-align: center;
   border: none;
   border-left: 2px solid var(--color-burgundy);
