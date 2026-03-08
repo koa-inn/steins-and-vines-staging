@@ -1200,5 +1200,10 @@ function showMinQtyConfirm(dest) {
 // ===== Reservation Page =====
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getCartKey: getCartKey, getCartKeyForTab: getCartKeyForTab, getEffectiveMax: getEffectiveMax };
+  module.exports = {
+    getCartKey: getCartKey, getCartKeyForTab: getCartKeyForTab, getEffectiveMax: getEffectiveMax,
+    migrateReservationData: migrateReservationData, getReservation: getReservation,
+    saveReservation: saveReservation, getReservedQty: getReservedQty, isReserved: isReserved,
+    setReservationQty: setReservationQty, isWeightUnit: isWeightUnit, hasMinQtyIngredients: hasMinQtyIngredients
+  };
 }

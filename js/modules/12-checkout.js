@@ -12,6 +12,38 @@ function renumberVisibleSteps() {
   });
 }
 
+// Pure helpers — testable and reusable outside the DOMContentLoaded scope
+
+function formatTimeslot(ts) {
+  var parts = ts.split(' ');
+  if (parts.length < 2) return ts;
+  var d = new Date(parts[0] + 'T00:00:00');
+  if (isNaN(d.getTime())) return ts;
+  var day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return day + ' at ' + parts.slice(1).join(' ');
+}
+
+function formatPhoneInput(rawValue) {
+  var digits = rawValue.replace(/\D/g, '').slice(0, 10);
+  if (digits.length > 6) {
+    return '(' + digits.slice(0, 3) + ') ' + digits.slice(3, 6) + '-' + digits.slice(6);
+  } else if (digits.length > 3) {
+    return '(' + digits.slice(0, 3) + ') ' + digits.slice(3);
+  } else if (digits.length > 0) {
+    return '(' + digits;
+  }
+  return digits;
+}
+
+function isValidEmail(val) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+}
+
+function isValidPhone(val) {
+  var digits = val.replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15;
+}
+
 function initReservationPage() {
   // Determine which cart to check out based on URL param
   var cartParam = new URLSearchParams(window.location.search).get('cart');
@@ -1341,28 +1373,18 @@ function setupReservationForm() {
   if (emailInput) emailInput.addEventListener('blur', function () {
     var val = this.value.trim();
     if (!val) { clearValid(this); showFieldError(this, 'Email is required.'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { clearValid(this); showFieldError(this, 'Please enter a valid email.'); return; }
+    if (!isValidEmail(val)) { clearValid(this); showFieldError(this, 'Please enter a valid email.'); return; }
     markValid(this);
   });
 
   if (phoneInput) {
     phoneInput.addEventListener('input', function () {
-      var digits = this.value.replace(/\D/g, '').slice(0, 10);
-      var formatted = digits;
-      if (digits.length > 6) {
-        formatted = '(' + digits.slice(0, 3) + ') ' + digits.slice(3, 6) + '-' + digits.slice(6);
-      } else if (digits.length > 3) {
-        formatted = '(' + digits.slice(0, 3) + ') ' + digits.slice(3);
-      } else if (digits.length > 0) {
-        formatted = '(' + digits;
-      }
-      this.value = formatted;
+      this.value = formatPhoneInput(this.value);
     });
     phoneInput.addEventListener('blur', function () {
       var val = this.value.trim();
       if (!val) { clearValid(this); showFieldError(this, 'Phone number is required.'); return; }
-      var digits = val.replace(/\D/g, '');
-      if (digits.length < 10 || digits.length > 15) { clearValid(this); showFieldError(this, 'Please enter 10\u201315 digits.'); return; }
+      if (!isValidPhone(val)) { clearValid(this); showFieldError(this, 'Please enter 10\u201315 digits.'); return; }
       markValid(this);
     });
   }
@@ -1373,16 +1395,6 @@ function setupReservationForm() {
   });
 
   var _checkoutSubmitting = false;
-
-  // Item #28: human-readable timeslot formatter
-  function formatTimeslot(ts) {
-    var parts = ts.split(' ');
-    if (parts.length < 2) return ts;
-    var d = new Date(parts[0] + 'T00:00:00');
-    if (isNaN(d.getTime())) return ts;
-    var day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    return day + ' at ' + parts.slice(1).join(' ');
-  }
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -1935,4 +1947,13 @@ function setupContactSubmit() {
       submitWrap.insertBefore(errDiv, submitBtn || null);
     });
   });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    formatTimeslot: formatTimeslot,
+    formatPhoneInput: formatPhoneInput,
+    isValidEmail: isValidEmail,
+    isValidPhone: isValidPhone
+  };
 }

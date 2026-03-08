@@ -37,9 +37,14 @@ cd zoho-middleware && npm run test:coverage
 
 ---
 
+| `js/modules/11-cart.js` (`migrateReservationData`, `getReservation`, `saveReservation`, `getReservedQty`, `isReserved`, `setReservationQty`, `isWeightUnit`, `hasMinQtyIngredients`) | 90% | ✅ Done |
+| `js/modules/12-checkout.js` (`formatTimeslot`, `formatPhoneInput`, `isValidEmail`, `isValidPhone`) | 95% | ✅ Done |
+
+---
+
 ## Campaign Backlog (future sessions)
-- [ ] **Campaign 3:** `js/modules/11-cart.js` — DOM rendering (jsdom + mock products)
-- [ ] **Campaign 3:** `js/modules/12-checkout.js` — form validation logic
+- [ ] **Campaign 4:** `js/modules/11-cart.js` — DOM rendering (jsdom + mock products)
+- [ ] **Campaign 4:** `js/modules/12-checkout.js` — `updateCompletionEstimate` (requires getReservation mock + DOM)
 - [ ] **Campaign 4:** `js/brewpad.js` IIFE — extract pure fns (ABV calc, date helpers, batch filters)
 - [ ] **Campaign 4:** `js/admin.js` IIFE — reservation status logic
 - [ ] **Campaign 5:** E2E with Playwright against staging
