@@ -405,74 +405,100 @@ function renderReservationItems() {
     // Qty controls
     var tdQty = document.createElement('td');
     tdQty.setAttribute('data-label', 'Qty');
+    var itemIsWeighted = isWeightUnit(item.unit);
     var itemMax = getEffectiveMax(item);
+    var unitLower = (item.unit || '').toLowerCase();
+    var isKgUnit = unitLower === 'kg' || unitLower.indexOf('kg') !== -1;
+    var qtyStep = itemIsWeighted ? (isKgUnit ? 0.01 : 1) : 1;
     var qtyControls = document.createElement('div');
     qtyControls.className = 'product-qty-controls';
+
+    // Shared save helper — updates cart, re-renders table
+    var applyQtyChange = function (newQty) {
+      newQty = Math.round(newQty * 1000) / 1000; // avoid floating-point drift
+      if (itemMax !== Infinity && newQty > itemMax) newQty = itemMax;
+      var current = getReservation();
+      for (var ci = 0; ci < current.length; ci++) {
+        // Item #1: prefer zoho_item_id match, fall back to name|brand
+        var isMatch = item.zoho_item_id
+          ? current[ci].zoho_item_id === item.zoho_item_id
+          : (current[ci].name + '|' + (current[ci].brand || '')) === (item.name + '|' + (item.brand || ''));
+        if (isMatch) {
+          if (newQty <= 0) { current.splice(ci, 1); } else { current[ci].qty = newQty; }
+          break;
+        }
+      }
+      saveReservation(current);
+      renderReservationItems();
+      refreshReservationDependents();
+      updateReservationBar();
+      refreshAllReserveControls(); // Item #44
+    };
 
     var minusBtn = document.createElement('button');
     minusBtn.type = 'button';
     minusBtn.className = 'qty-btn';
+    minusBtn.setAttribute('aria-label', 'Decrease quantity of ' + item.name);
     minusBtn.textContent = '\u2212';
-    minusBtn.addEventListener('click', (function (itm) {
-      return function () {
-        var current = getReservation();
-        for (var i = 0; i < current.length; i++) {
-          // Item #1: prefer zoho_item_id match, fall back to name|brand
-          var isMatch = itm.zoho_item_id
-            ? current[i].zoho_item_id === itm.zoho_item_id
-            : (current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''));
-          if (isMatch) {
-            current[i].qty = (current[i].qty || 1) - 1;
-            if (current[i].qty <= 0) current.splice(i, 1);
-            break;
-          }
-        }
-        saveReservation(current);
-        renderReservationItems();
-        refreshReservationDependents();
-        updateReservationBar();
-        refreshAllReserveControls(); // Item #44
-      };
-    })(item));
 
-    var qtySpan = document.createElement('span');
-    qtySpan.className = 'qty-value';
-    qtySpan.textContent = item.qty || 1;
+    // Editable quantity input — supports decimals for weight-based items
+    var qtyInput = document.createElement('input');
+    qtyInput.type = 'number';
+    qtyInput.className = 'qty-input';
+    qtyInput.value = String(item.qty != null ? item.qty : 1);
+    qtyInput.setAttribute('aria-label', 'Quantity for ' + item.name);
+    if (itemIsWeighted) {
+      qtyInput.step = String(qtyStep);
+      qtyInput.setAttribute('inputmode', 'decimal');
+      qtyInput.min = String(qtyStep);
+    } else {
+      qtyInput.step = '1';
+      qtyInput.setAttribute('inputmode', 'numeric');
+      qtyInput.min = '1';
+    }
+    if (itemMax !== Infinity) qtyInput.max = String(itemMax);
 
     var plusBtn = document.createElement('button');
     plusBtn.type = 'button';
     plusBtn.textContent = '+';
-    if ((item.qty || 1) >= itemMax) {
+    plusBtn.setAttribute('aria-label', 'Increase quantity of ' + item.name);
+    var currentQty = parseFloat(item.qty) || 1;
+    if (itemMax !== Infinity && currentQty >= itemMax) {
       plusBtn.className = 'qty-btn qty-btn--disabled';
       plusBtn.disabled = true;
     } else {
       plusBtn.className = 'qty-btn';
-      plusBtn.addEventListener('click', (function (itm, max) {
-        return function () {
-          var current = getReservation();
-          for (var i = 0; i < current.length; i++) {
-            // Item #1: prefer zoho_item_id match, fall back to name|brand
-            var isMatch = itm.zoho_item_id
-              ? current[i].zoho_item_id === itm.zoho_item_id
-              : (current[i].name + '|' + (current[i].brand || '')) === (itm.name + '|' + (itm.brand || ''));
-            if (isMatch) {
-              var newQty = (current[i].qty || 1) + 1;
-              if (newQty > max) newQty = max;
-              current[i].qty = newQty;
-              break;
-            }
-          }
-          saveReservation(current);
-          renderReservationItems();
-          refreshReservationDependents();
-          updateReservationBar();
-          refreshAllReserveControls(); // Item #44
-        };
-      })(item, itemMax));
     }
 
+    minusBtn.addEventListener('click', function () {
+      var cur = parseFloat(qtyInput.value) || 0;
+      applyQtyChange(cur - qtyStep);
+    });
+
+    plusBtn.addEventListener('click', function () {
+      var cur = parseFloat(qtyInput.value) || 0;
+      applyQtyChange(cur + qtyStep);
+    });
+
+    qtyInput.addEventListener('change', function () {
+      var val = parseFloat(qtyInput.value);
+      if (isNaN(val) || val <= 0) {
+        // Reset to stored value on invalid entry; don't remove
+        qtyInput.value = String(item.qty != null ? item.qty : 1);
+        return;
+      }
+      if (!itemIsWeighted) val = Math.round(val); // integers only for non-weight
+      applyQtyChange(val);
+    });
+
     qtyControls.appendChild(minusBtn);
-    qtyControls.appendChild(qtySpan);
+    qtyControls.appendChild(qtyInput);
+    if (itemIsWeighted && item.unit) {
+      var unitLabel = document.createElement('span');
+      unitLabel.className = 'qty-unit-label';
+      unitLabel.textContent = item.unit;
+      qtyControls.appendChild(unitLabel);
+    }
     qtyControls.appendChild(plusBtn);
     tdQty.appendChild(qtyControls);
     tr.appendChild(tdQty);
