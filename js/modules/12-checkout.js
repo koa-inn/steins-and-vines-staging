@@ -1287,6 +1287,10 @@ function setupReservationForm() {
             }
             var submitEl = document.getElementById('credit-card-submit');
             if (submitEl) submitEl.classList.add('card-verified');
+            var verifiedMsg = document.getElementById('payment-verified-msg');
+            if (verifiedMsg) verifiedMsg.classList.remove('hidden');
+            var formSubmitBtn = form.querySelector('button[type="submit"]');
+            if (formSubmitBtn) formSubmitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
           });
 
           gpCardForm.on('token-error', function (resp) {

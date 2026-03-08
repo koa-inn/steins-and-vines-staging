@@ -3085,6 +3085,17 @@ behold-widget {
   pointer-events: none;
 }
 
+.payment-verified-msg {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #edf6ee;
+  border: 1px solid #4a6f4b;
+  border-radius: var(--radius-sm);
+  color: #2d5c2e;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
 #payment-error {
   margin-top: 0.5rem;
 }
