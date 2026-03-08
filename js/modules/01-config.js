@@ -5,5 +5,4 @@
 var MW_API_KEY = 'a9QKtDV3DtYSFIdWtfAMg9Ry70bHG55QGhyJa9GD3fM=';
 
 // ===== Payment flag =====
-// TODO: Set to false once Global Payments card entry is working again.
-var PAYMENT_DISABLED = true;
+var PAYMENT_DISABLED = false;
