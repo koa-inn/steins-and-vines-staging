@@ -1204,6 +1204,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getCartKey: getCartKey, getCartKeyForTab: getCartKeyForTab, getEffectiveMax: getEffectiveMax,
     migrateReservationData: migrateReservationData, getReservation: getReservation,
     saveReservation: saveReservation, getReservedQty: getReservedQty, isReserved: isReserved,
-    setReservationQty: setReservationQty, isWeightUnit: isWeightUnit, hasMinQtyIngredients: hasMinQtyIngredients
+    setReservationQty: setReservationQty, isWeightUnit: isWeightUnit, hasMinQtyIngredients: hasMinQtyIngredients,
+    renderReserveControl: renderReserveControl, renderWeightControl: renderWeightControl
   };
 }

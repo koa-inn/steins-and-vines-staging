@@ -42,9 +42,15 @@ cd zoho-middleware && npm run test:coverage
 
 ---
 
+| `js/modules/11-cart.js` (`renderReserveControl`, `renderWeightControl`) | 90% | ✅ Done |
+| `js/modules/12-checkout.js` (`calcCompletionRange`) | 95% | ✅ Done |
+| `js/brewpad.js` (`escapeHTML`, `fmtDate`, `todayStr`, `isOverdue`, `isToday`, `filterBatchesByStatus`, `calcAbv`, `renderDataGapWarning`) | 95% | ✅ Done |
+
+---
+
 ## Campaign Backlog (future sessions)
-- [ ] **Campaign 4:** `js/modules/11-cart.js` — DOM rendering (jsdom + mock products)
-- [ ] **Campaign 4:** `js/modules/12-checkout.js` — `updateCompletionEstimate` (requires getReservation mock + DOM)
+- [ ] **Campaign 5:** `js/admin.js` IIFE — reservation status logic
+- [ ] **Campaign 5:** E2E with Playwright against staging
 - [ ] **Campaign 4:** `js/brewpad.js` IIFE — extract pure fns (ABV calc, date helpers, batch filters)
 - [ ] **Campaign 4:** `js/admin.js` IIFE — reservation status logic
 - [ ] **Campaign 5:** E2E with Playwright against staging

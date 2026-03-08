@@ -1,6 +1,67 @@
 // ===== Steins & Vines BrewPad — iPad Batch Terminal =====
 // Self-contained IIFE — no dependency on admin.js.
 
+// Pure / near-pure helpers lifted out of the IIFE so they can be unit-tested.
+
+function escapeHTML(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '—';
+  return String(dateStr).substring(0, 10);
+}
+
+function isOverdue(dateStr) {
+  if (!dateStr) return false;
+  return String(dateStr).substring(0, 10) < todayStr();
+}
+
+function isToday(dateStr) {
+  if (!dateStr) return false;
+  return String(dateStr).substring(0, 10) === todayStr();
+}
+
+function filterBatchesByStatus(batches, filter) {
+  if (!filter || filter === 'all') return batches.slice();
+  if (filter === 'active') {
+    return batches.filter(function (b) {
+      var s = String(b.status || '').toLowerCase();
+      return s === 'primary' || s === 'secondary';
+    });
+  }
+  return batches.filter(function (b) {
+    return String(b.status || '').toLowerCase() === filter;
+  });
+}
+
+// Plato-based ABV estimation formula
+function calcAbv(og, fg) {
+  return (og - fg) / (2.0665 - 0.010665 * og);
+}
+
+// Optional `now` param makes this testable without real-time dependency
+function renderDataGapWarning(readings, now) {
+  if (!readings || readings.length === 0) return '';
+  var last = readings[readings.length - 1];
+  if (!last || !last.timestamp) return '';
+  var lastDate = new Date(last.timestamp);
+  var today = now ? new Date(now) : new Date();
+  var daysSince = Math.floor((today - lastDate) / 86400000);
+  if (daysSince < 3) return '';
+  var cls = daysSince >= 7 ? 'bp-chart-warning--danger' : 'bp-chart-warning--warn';
+  return '<div class="bp-chart-warning ' + cls + '">' +
+    '\u26a0\ufe0f Last reading ' + daysSince + ' day' + (daysSince !== 1 ? 's' : '') + ' ago</div>';
+}
+
 (function () {
   'use strict';
 
@@ -383,33 +444,6 @@
 
   // ===== Utilities =====
 
-  function escapeHTML(str) {
-    return String(str == null ? '' : str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  function todayStr() {
-    return new Date().toISOString().slice(0, 10);
-  }
-
-  function fmtDate(dateStr) {
-    if (!dateStr) return '—';
-    return String(dateStr).substring(0, 10);
-  }
-
-  function isOverdue(dateStr) {
-    if (!dateStr) return false;
-    return String(dateStr).substring(0, 10) < todayStr();
-  }
-
-  function isToday(dateStr) {
-    if (!dateStr) return false;
-    return String(dateStr).substring(0, 10) === todayStr();
-  }
-
   function getBatchMeta(batchId) {
     if (!batchId || !_allBatchesData.length) return '';
     for (var i = 0; i < _allBatchesData.length; i++) {
@@ -719,19 +753,6 @@
   }
 
   // ===== Batches =====
-
-  function filterBatchesByStatus(batches, filter) {
-    if (!filter || filter === 'all') return batches.slice();
-    if (filter === 'active') {
-      return batches.filter(function (b) {
-        var s = String(b.status || '').toLowerCase();
-        return s === 'primary' || s === 'secondary';
-      });
-    }
-    return batches.filter(function (b) {
-      return String(b.status || '').toLowerCase() === filter;
-    });
-  }
 
   function loadBatches() {
     // If eager-loaded cache is fresh, derive filtered list client-side (instant)
@@ -1378,7 +1399,7 @@
       if (ogReading && fgReading && ogReading !== fgReading) {
         var og = parseFloat(ogReading.degrees_plato);
         var fg = parseFloat(fgReading.degrees_plato);
-        var abv = (og - fg) / (2.0665 - 0.010665 * og);
+        var abv = calcAbv(og, fg);
         html += '<div class="bp-abv-strip">';
         html += '<span class="bp-abv-label">Est. ABV</span>';
         html += '<span class="bp-abv-val">' + abv.toFixed(1) + '%</span>';
@@ -1634,19 +1655,6 @@
   }
 
   // ===== Plato Chart (enhanced) =====
-
-  function renderDataGapWarning(readings) {
-    if (!readings || readings.length === 0) return '';
-    var last = readings[readings.length - 1];
-    if (!last || !last.timestamp) return '';
-    var lastDate = new Date(last.timestamp);
-    var today = new Date();
-    var daysSince = Math.floor((today - lastDate) / 86400000);
-    if (daysSince < 3) return '';
-    var cls = daysSince >= 7 ? 'bp-chart-warning--danger' : 'bp-chart-warning--warn';
-    return '<div class="bp-chart-warning ' + cls + '">' +
-      '\u26a0\ufe0f Last reading ' + daysSince + ' day' + (daysSince !== 1 ? 's' : '') + ' ago</div>';
-  }
 
   function renderPlatoChart(readings, startDate) {
     if (!readings || readings.length < 2) return '';
@@ -2797,3 +2805,12 @@
   });
 
 })();
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    escapeHTML: escapeHTML, fmtDate: fmtDate, todayStr: todayStr,
+    isOverdue: isOverdue, isToday: isToday,
+    filterBatchesByStatus: filterBatchesByStatus,
+    calcAbv: calcAbv, renderDataGapWarning: renderDataGapWarning
+  };
+}

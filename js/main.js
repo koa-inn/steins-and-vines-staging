@@ -5117,7 +5117,8 @@ if (typeof module !== 'undefined' && module.exports) {
     getCartKey: getCartKey, getCartKeyForTab: getCartKeyForTab, getEffectiveMax: getEffectiveMax,
     migrateReservationData: migrateReservationData, getReservation: getReservation,
     saveReservation: saveReservation, getReservedQty: getReservedQty, isReserved: isReserved,
-    setReservationQty: setReservationQty, isWeightUnit: isWeightUnit, hasMinQtyIngredients: hasMinQtyIngredients
+    setReservationQty: setReservationQty, isWeightUnit: isWeightUnit, hasMinQtyIngredients: hasMinQtyIngredients,
+    renderReserveControl: renderReserveControl, renderWeightControl: renderWeightControl
   };
 }
 // Milling state — persists across renderReservationItems() re-renders
@@ -5135,6 +5136,41 @@ function renumberVisibleSteps() {
 }
 
 // Pure helpers — testable and reusable outside the DOMContentLoaded scope
+
+// Returns the completion estimate text string, or null when the element should be hidden.
+// Extracted from updateCompletionEstimate so the date math can be unit-tested independently.
+function calcCompletionRange(items, timeslotValue) {
+  var maxWeeks = 0;
+  var hasTimeProp = false;
+  items.forEach(function (item) {
+    if (item.time) hasTimeProp = true;
+    var weeks = parseInt(item.time, 10);
+    if (!isNaN(weeks) && weeks > maxWeeks) maxWeeks = weeks;
+  });
+
+  if (maxWeeks === 0) {
+    return hasTimeProp ? 'varies' : null;
+  }
+
+  var datePart = timeslotValue.split(' ')[0];
+  var startDate = new Date(datePart + 'T00:00:00');
+  if (isNaN(startDate.getTime())) return null;
+
+  var weekStart = new Date(startDate);
+  weekStart.setDate(weekStart.getDate() + (maxWeeks * 7));
+  var weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+
+  var opts = { month: 'long', day: 'numeric' };
+  var startStr = weekStart.toLocaleDateString('en-US', opts);
+  var endOpts = weekStart.getMonth() === weekEnd.getMonth() ? { day: 'numeric' } : opts;
+  var endStr = weekEnd.toLocaleDateString('en-US', endOpts);
+  var yearStr = weekEnd.getFullYear();
+
+  return 'Estimated ready the week of ' + startStr + '\u2013' + endStr + ', ' + yearStr
+    + ' (approximately ' + maxWeeks + ' week' + (maxWeeks !== 1 ? 's' : '')
+    + ' from your appointment). This is an estimate \u2014 actual times may vary.';
+}
 
 function formatTimeslot(ts) {
   var parts = ts.split(' ');
@@ -6194,51 +6230,16 @@ function updateCompletionEstimate(timeslotValue) {
     return;
   }
 
-  // Find the longest brew time (in weeks) among reserved items
-  var maxWeeks = 0;
-  var hasTimeProp = false;
-  items.forEach(function (item) {
-    if (item.time) hasTimeProp = true;
-    var weeks = parseInt(item.time, 10);
-    if (!isNaN(weeks) && weeks > maxWeeks) {
-      maxWeeks = weeks;
-    }
-  });
-
-  if (maxWeeks === 0) {
-    // Item #35: fallback text when items have a time field but it's non-numeric
-    if (hasTimeProp) {
-      textEl.textContent = 'Ready time varies \u2014 we will confirm with you.';
-      estimateEl.classList.remove('hidden');
-    } else {
-      estimateEl.classList.add('hidden');
-    }
-    return;
-  }
-
-  // Parse the date portion of the timeslot value (e.g. "2026-02-15 10:00 AM")
-  var datePart = timeslotValue.split(' ')[0];
-  var startDate = new Date(datePart + 'T00:00:00');
-  if (isNaN(startDate.getTime())) {
+  var result = calcCompletionRange(items, timeslotValue);
+  if (result === null) {
     estimateEl.classList.add('hidden');
-    return;
+  } else if (result === 'varies') {
+    textEl.textContent = 'Ready time varies \u2014 we will confirm with you.';
+    estimateEl.classList.remove('hidden');
+  } else {
+    textEl.textContent = result;
+    estimateEl.classList.remove('hidden');
   }
-
-  var weekStart = new Date(startDate);
-  weekStart.setDate(weekStart.getDate() + (maxWeeks * 7));
-  var weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 6);
-
-  var opts = { month: 'long', day: 'numeric' };
-  var startStr = weekStart.toLocaleDateString('en-US', opts);
-  var endOpts = weekStart.getMonth() === weekEnd.getMonth() ? { day: 'numeric' } : opts;
-  var endStr = weekEnd.toLocaleDateString('en-US', endOpts);
-  var yearStr = weekEnd.getFullYear();
-
-  textEl.textContent = 'Estimated ready the week of ' + startStr + '–' + endStr + ', ' + yearStr
-    + ' (approximately ' + maxWeeks + ' week' + (maxWeeks !== 1 ? 's' : '')
-    + ' from your appointment). This is an estimate — actual times may vary.';
-  estimateEl.classList.remove('hidden');
 }
 
 
@@ -7076,7 +7077,8 @@ if (typeof module !== 'undefined' && module.exports) {
     formatTimeslot: formatTimeslot,
     formatPhoneInput: formatPhoneInput,
     isValidEmail: isValidEmail,
-    isValidPhone: isValidPhone
+    isValidPhone: isValidPhone,
+    calcCompletionRange: calcCompletionRange
   };
 }
 // Mobile nav toggle
