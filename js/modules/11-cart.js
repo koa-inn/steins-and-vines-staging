@@ -879,6 +879,7 @@ function renderCartSidebar() {
             saveReservation(current, cartKey);
             updateReservationBar();
             renderCartSidebar();
+            refreshAllReserveControls();
           };
         })(item, itemMax, itemCartKey));
       }
@@ -1061,6 +1062,7 @@ function renderCartDrawer() {
             saveReservation(current, cartKey);
             updateReservationBar();
             renderCartDrawer();
+            refreshAllReserveControls();
           };
         })(item, itemMax, itemCartKey));
       }

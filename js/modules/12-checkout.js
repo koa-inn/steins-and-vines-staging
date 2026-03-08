@@ -614,6 +614,61 @@ function renderReservationItems() {
 
     tbody.appendChild(tr);
   });
+
+  // Maker's Fee breakout row (Item #50: separate line item in table)
+  if (hasKits && _makersFeeItem) {
+    var feeTr = document.createElement('tr');
+    feeTr.className = 'makers-fee-row';
+    
+    var tdFeeName = document.createElement('td');
+    tdFeeName.setAttribute('data-label', 'Name');
+    tdFeeName.textContent = _makersFeeItem.name || 'Maker\'s Fee';
+    feeTr.appendChild(tdFeeName);
+
+    var tdFeeType = document.createElement('td');
+    tdFeeType.setAttribute('data-label', 'Type');
+    tdFeeType.className = 'res-col-type';
+    tdFeeType.textContent = 'Service';
+    feeTr.appendChild(tdFeeType);
+
+    if (hasBrand) {
+      var tdFeeBrand = document.createElement('td');
+      tdFeeBrand.setAttribute('data-label', 'Brand');
+      tdFeeBrand.textContent = '';
+      feeTr.appendChild(tdFeeBrand);
+    }
+
+    if (hasTime) {
+      var tdFeeTime = document.createElement('td');
+      tdFeeTime.setAttribute('data-label', 'Time');
+      tdFeeTime.textContent = '';
+      feeTr.appendChild(tdFeeTime);
+    }
+
+    var tdFeePrice = document.createElement('td');
+    tdFeePrice.setAttribute('data-label', 'Price');
+    tdFeePrice.style.textAlign = 'right';
+    tdFeePrice.textContent = formatCurrency(_makersFeeItem.rate || '50.00');
+    feeTr.appendChild(tdFeePrice);
+
+    var tdFeeStock = document.createElement('td');
+    tdFeeStock.setAttribute('data-label', 'Status');
+    tdFeeStock.textContent = '';
+    feeTr.appendChild(tdFeeStock);
+
+    var tdFeeQty = document.createElement('td');
+    tdFeeQty.setAttribute('data-label', 'Qty');
+    tdFeeQty.textContent = '1';
+    feeTr.appendChild(tdFeeQty);
+
+    var tdFeeRemove = document.createElement('td');
+    tdFeeRemove.setAttribute('data-label', '');
+    tdFeeRemove.textContent = '';
+    feeTr.appendChild(tdFeeRemove);
+
+    tbody.appendChild(feeTr);
+  }
+
   table.appendChild(tbody);
 
   // Wrap table for mobile horizontal scroll
@@ -638,8 +693,9 @@ function renderReservationItems() {
   // Add maker's fee to subtotal display when kits are present
   var makersFeeAmount = 0;
   if (hasKits && _makersFeeItem) {
-    makersFeeAmount = parseFloat(_makersFeeItem.rate) || 0;
+    makersFeeAmount = parseFloat(_makersFeeItem.rate) || 50.00;
   }
+  var grandSubtotal = subtotal + makersFeeAmount;
 
   var isProductOrder = !hasKits;
 
@@ -682,27 +738,35 @@ function renderReservationItems() {
 
     container.appendChild(summaryWrap);
   } else {
-    // Kit (or mixed) cart: show estimated subtotal + maker's fee note
-    var subtotalRow = document.createElement('div');
-    subtotalRow.className = 'reservation-subtotal';
-    subtotalRow.innerHTML = '<span>Estimated Subtotal <span class="reservation-disclaimer">\u2014 Final pricing may vary.</span></span><span>' + formatCurrency(subtotal) + '</span>';
-    container.appendChild(subtotalRow);
+    // Kit (or mixed) cart: show subtotal + maker's fee row + final subtotal
+    var summaryWrap = document.createElement('div');
+    summaryWrap.className = 'order-summary-totals';
+
+    var itemsSubtotalRow = document.createElement('div');
+    itemsSubtotalRow.className = 'reservation-subtotal';
+    itemsSubtotalRow.innerHTML = '<span>Items Subtotal</span><span>' + formatCurrency(subtotal) + '</span>';
+    summaryWrap.appendChild(itemsSubtotalRow);
 
     // Maker's fee row
-    if (hasKits) {
-      var makersFeeRow = document.createElement('div');
-      makersFeeRow.className = 'reservation-subtotal reservation-makers-fee';
-      if (_makersFeeItem) {
-        makersFeeRow.innerHTML = '<span>Makers Fee</span><span>' + formatCurrency(makersFeeAmount) + '</span>';
-      } else if (_makersFeeLoaded) {
-        // Fetch attempted but item not found — show nothing (silent)
-        makersFeeRow = null;
-      } else {
-        // Still loading
-        makersFeeRow.innerHTML = '<span>Makers Fee</span><span>Loading\u2026</span>';
-      }
-      if (makersFeeRow) container.appendChild(makersFeeRow);
+    var makersFeeRow = document.createElement('div');
+    makersFeeRow.className = 'reservation-subtotal reservation-makers-fee';
+    if (_makersFeeItem) {
+      makersFeeRow.innerHTML = '<span>Maker\'s Fee</span><span>' + formatCurrency(makersFeeAmount) + '</span>';
+    } else if (_makersFeeLoaded) {
+      // Fetch attempted but item not found — show default
+      makersFeeRow.innerHTML = '<span>Maker\'s Fee</span><span>' + formatCurrency(50) + '</span>';
+    } else {
+      // Still loading
+      makersFeeRow.innerHTML = '<span>Maker\'s Fee</span><span>Loading\u2026</span>';
     }
+    summaryWrap.appendChild(makersFeeRow);
+
+    var subtotalRow = document.createElement('div');
+    subtotalRow.className = 'reservation-subtotal reservation-subtotal--total';
+    subtotalRow.innerHTML = '<span>Estimated Subtotal <span class="reservation-disclaimer">\u2014 Final pricing may vary.</span></span><span>' + formatCurrency(grandSubtotal) + '</span>';
+    summaryWrap.appendChild(subtotalRow);
+    
+    container.appendChild(summaryWrap);
   }
 
   // Milling checkboxes — shown for any millable grain items
