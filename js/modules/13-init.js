@@ -222,9 +222,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Listen for cart changes to refresh all UI controls (e.g. product card quantities)
   window.addEventListener('reservation-changed', function() {
-    if (typeof refreshAllReserveControls === 'function') {
-      refreshAllReserveControls();
-    }
+    if (typeof updateReservationBar === 'function') updateReservationBar();
+    if (typeof renderCartSidebar === 'function') renderCartSidebar();
+    if (typeof renderCartDrawer === 'function') renderCartDrawer();
+    if (typeof refreshAllReserveControls === 'function') refreshAllReserveControls();
   });
 });
 

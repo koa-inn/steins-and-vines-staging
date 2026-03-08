@@ -55,6 +55,8 @@ function saveReservation(items, cartKey) {
     // localStorage unavailable (e.g. iOS private browsing quota exceeded) — use memory fallback
     _memoryStore[key] = items;
   }
+  // Item #44d: Guarantee UI sync whenever data is saved
+  window.dispatchEvent(new Event('reservation-changed'));
 }
 
 function getReservedQty(productKey, cartKey) {
@@ -141,9 +143,6 @@ function setReservationQty(product, qty) {
   saveReservation(items, cartKey);
   updateReservationBar();
   refreshAllReserveControls();
-  window.dispatchEvent(new Event('reservation-changed'));
-  // Item #44c: manually trigger storage event for same-page listeners (e.g. sidebar)
-  window.dispatchEvent(new StorageEvent('storage', { key: cartKey, newValue: JSON.stringify(items) }));
   
   // Re-render checkout page items when cart changes while on reservation.html
   if (document.body && document.body.getAttribute('data-page') === 'reservation') {
@@ -785,9 +784,6 @@ function renderCartSidebar() {
             }
           }
           saveReservation(current, cartKey);
-          updateReservationBar();
-          renderCartSidebar();
-          refreshAllReserveControls();
         };
       })(item, itemCartKey));
 
@@ -815,9 +811,6 @@ function renderCartSidebar() {
               }
             }
             saveReservation(current, cartKey);
-            updateReservationBar();
-            renderCartSidebar();
-            refreshAllReserveControls();
           };
         })(item, itemMax, itemCartKey));
       }
@@ -840,9 +833,6 @@ function renderCartSidebar() {
           return (r.name + '|' + (r.brand || '')) !== (itm.name + '|' + (itm.brand || ''));
         });
         saveReservation(filtered, cartKey);
-        updateReservationBar();
-        renderCartSidebar();
-        refreshAllReserveControls();
       };
     })(item, itemCartKey));
     controls.appendChild(removeBtn);
