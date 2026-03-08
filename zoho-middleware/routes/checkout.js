@@ -88,6 +88,7 @@ function notifyAdminPanel(soNumber, customerName, customerEmail, customerPhone, 
 }
 
 var PRODUCTS_CACHE_KEY = 'zoho:products';
+var SERVICES_CACHE_KEY = 'zoho:services';
 var KIOSK_PRODUCTS_CACHE_KEY = 'zoho:kiosk-products';
 var CHECKOUT_IDEMPOTENCY_TTL = 600; // 10 minutes in seconds
 
@@ -312,8 +313,13 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
   // Use the general products catalog for checkout validation.
   // (Kiosk catalog is a different item set — retail POS items — and must not
   //  be used to validate regular website reservations.)
-  cache.get(PRODUCTS_CACHE_KEY).then(function (catalog) {
-    // Build item_id → rate lookup from the authoritative catalog
+  Promise.all([
+    cache.get(PRODUCTS_CACHE_KEY),
+    cache.get(SERVICES_CACHE_KEY)
+  ]).then(function (results) {
+    var catalog = results[0];
+    var services = results[1];
+    // Build item_id → rate lookup from the authoritative catalog (products + services)
     var catalogMap = {};
     var catalogAvailable = Array.isArray(catalog) && catalog.length > 0;
 
@@ -321,6 +327,12 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
       catalog.forEach(function (p) {
         if (p && p.item_id) catalogMap[p.item_id] = p.rate;
       });
+      // Also include service items (e.g. Makers Fee, milling) so they pass validation
+      if (Array.isArray(services)) {
+        services.forEach(function (s) {
+          if (s && s.item_id) catalogMap[s.item_id] = s.rate;
+        });
+      }
 
       // Reject any item not present in the catalog cache
       for (var ci = 0; ci < body.items.length; ci++) {

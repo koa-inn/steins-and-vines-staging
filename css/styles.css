@@ -4857,6 +4857,19 @@ behold-widget {
   margin-top: 0.1rem;
 }
 
+.cart-sidebar-item-type {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-green, #4a7c59);
+  background: rgba(74, 124, 89, 0.1);
+  border-radius: 3px;
+  padding: 0.1em 0.4em;
+  margin-top: 0.15rem;
+}
+
 .cart-sidebar-item-price {
   font-size: 0.78rem;
   color: var(--color-brown);
