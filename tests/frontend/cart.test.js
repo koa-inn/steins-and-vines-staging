@@ -8,7 +8,9 @@ global.trackEvent = function () {};
 // jsdom provides localStorage natively; expose it as a global for the module
 global.localStorage = window.localStorage;
 
-const { getCartKey, getCartKeyForTab, getEffectiveMax } = require('../../js/modules/11-cart');
+const cart = require('../../js/modules/11-cart');
+const { getCartKey, getCartKeyForTab, getEffectiveMax } = cart;
+const { getAllCartItems, getReservation, saveReservation } = cart;
 
 var FERMENT_KEY = 'sv-cart-ferment';
 var INGREDIENT_KEY = 'sv-cart-ingredients';
@@ -128,5 +130,75 @@ describe('getEffectiveMax', () => {
     test('uses item_type fallback', () => {
       expect(getEffectiveMax({ item_type: 'ingredient', stock: '7' })).toBe(7);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getAllCartItems
+// ---------------------------------------------------------------------------
+describe('getAllCartItems', () => {
+  beforeEach(() => { localStorage.clear(); });
+
+  test('returns empty array when both carts are empty', () => {
+    expect(getAllCartItems()).toEqual([]);
+  });
+
+  test('returns items from ferment cart only', () => {
+    var kit = { name: 'Wine Kit', brand: 'RJS', qty: 1, item_type: 'kit' };
+    saveReservation([kit], FERMENT_KEY);
+    var result = getAllCartItems();
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('Wine Kit');
+  });
+
+  test('returns items from ingredient cart only', () => {
+    var malt = { name: 'Malt', brand: '', qty: 2, item_type: 'ingredient' };
+    saveReservation([malt], INGREDIENT_KEY);
+    var result = getAllCartItems();
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('Malt');
+  });
+
+  test('merges items from both carts', () => {
+    var kit = { name: 'Wine Kit', brand: 'RJS', qty: 1, item_type: 'kit' };
+    var malt = { name: 'Malt', brand: '', qty: 2, item_type: 'ingredient' };
+    saveReservation([kit], FERMENT_KEY);
+    saveReservation([malt], INGREDIENT_KEY);
+    var result = getAllCartItems();
+    expect(result).toHaveLength(2);
+    var names = result.map(function (i) { return i.name; });
+    expect(names).toContain('Wine Kit');
+    expect(names).toContain('Malt');
+  });
+
+  test('ferment items appear before ingredient items', () => {
+    var kit = { name: 'Wine Kit', brand: '', qty: 1, item_type: 'kit' };
+    var malt = { name: 'Malt', brand: '', qty: 1, item_type: 'ingredient' };
+    saveReservation([kit], FERMENT_KEY);
+    saveReservation([malt], INGREDIENT_KEY);
+    var result = getAllCartItems();
+    expect(result[0].name).toBe('Wine Kit');
+    expect(result[1].name).toBe('Malt');
+  });
+
+  test('multiple items in each cart are all included', () => {
+    saveReservation([
+      { name: 'Kit A', brand: '', qty: 1, item_type: 'kit' },
+      { name: 'Kit B', brand: '', qty: 2, item_type: 'kit' }
+    ], FERMENT_KEY);
+    saveReservation([
+      { name: 'Ingredient A', brand: '', qty: 1, item_type: 'ingredient' },
+      { name: 'Ingredient B', brand: '', qty: 3, item_type: 'ingredient' }
+    ], INGREDIENT_KEY);
+    expect(getAllCartItems()).toHaveLength(4);
+  });
+
+  test('returns a new array (does not mutate either cart)', () => {
+    var kit = { name: 'Wine Kit', brand: '', qty: 1, item_type: 'kit' };
+    saveReservation([kit], FERMENT_KEY);
+    var result = getAllCartItems();
+    result.push({ name: 'Extra', brand: '', qty: 1 });
+    // Ferment cart should still have only 1 item
+    expect(getReservation(FERMENT_KEY)).toHaveLength(1);
   });
 });
