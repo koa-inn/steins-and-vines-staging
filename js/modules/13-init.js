@@ -168,6 +168,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (page === 'products' || page === 'ingredients' || page === 'ferment-in-store' || page === 'ingredients-supplies') {
     loadProducts();
     initReservationBar();
+    initCartDrawer();
     initMobileBottomControls();
     initProductTabs();
     initCatalogViewToggle();
@@ -209,6 +210,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (page === 'home') {
     loadFeaturedProducts();
     initReservationBar();
+    initCartDrawer();
     setupBeerWaitlistForm();
   }
 
