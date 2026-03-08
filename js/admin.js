@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-03-07T14:43:39.782Z';
+  var BUILD_TIMESTAMP = '2026-03-08T01:29:04.597Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -5349,7 +5349,7 @@
       return;
     }
 
-    fetch(mwUrl + '/api/orders/recent?limit=20')
+    fetch(mwUrl + '/api/orders/recent?limit=20', { headers: getMwHeaders(true) })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         renderKioskOrders(data.orders || []);

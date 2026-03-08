@@ -208,8 +208,14 @@
     if (_silentRefreshTimer) { clearTimeout(_silentRefreshTimer); _silentRefreshTimer = null; }
     _handlingUnauthorized = false;
     if (response.error) {
-      clearSession();
-      showSignInButton();
+      if (accessToken) {
+        // Refresh failed while app was active — show sign-in screen so user can re-authenticate.
+        handleUnauthorized();
+      } else {
+        // Initial auth attempt failed (e.g. user closed popup) — stay on sign-in screen.
+        clearSession();
+        showSignInButton();
+      }
       return;
     }
     accessToken = response.access_token;

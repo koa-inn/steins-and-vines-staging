@@ -13,22 +13,35 @@ var router = express.Router();
 
 var AVAILABILITY_CACHE_PREFIX = 'zoho:availability:';
 var AVAILABILITY_CACHE_TTL = 300; // 5 minutes
+var BOOKING_SERVICES_CACHE_KEY = 'zoho:booking-services';
+var BOOKING_SERVICES_CACHE_TTL = 86400; // 24 hours — services rarely change
+var SLOTS_CACHE_PREFIX = 'zoho:slots:';
+var SLOTS_CACHE_TTL = 300; // 5 minutes per date
 
 /**
  * GET /api/bookings/services
  * List all services and staff from Zoho Bookings (debug/setup helper).
  */
 router.get('/api/bookings/services', function (req, res) {
-  Promise.all([
-    bookingsGet('/services'),
-    bookingsGet('/staffs')
-  ])
-    .then(function (results) {
-      var services = (results[0].response && results[0].response.returnvalue &&
-        results[0].response.returnvalue.data) || [];
-      var staff = (results[1].response && results[1].response.returnvalue &&
-        results[1].response.returnvalue.data) || [];
-      res.json({ services: services, staff: staff });
+  cache.get(BOOKING_SERVICES_CACHE_KEY)
+    .then(function (cached) {
+      if (cached) {
+        return res.json(JSON.parse(cached));
+      }
+
+      return Promise.all([
+        bookingsGet('/services'),
+        bookingsGet('/staffs')
+      ])
+        .then(function (results) {
+          var services = (results[0].response && results[0].response.returnvalue &&
+            results[0].response.returnvalue.data) || [];
+          var staff = (results[1].response && results[1].response.returnvalue &&
+            results[1].response.returnvalue.data) || [];
+          var payload = { services: services, staff: staff };
+          cache.set(BOOKING_SERVICES_CACHE_KEY, JSON.stringify(payload), BOOKING_SERVICES_CACHE_TTL).catch(function () {});
+          res.json(payload);
+        });
     })
     .catch(function (err) {
       log.error('[api/bookings/services] ' + err.message);
@@ -118,15 +131,26 @@ router.get('/api/bookings/slots', function (req, res) {
     return res.status(400).json({ error: 'Missing date query parameter' });
   }
 
-  bookingsGet('/availableslots', {
-    service_id: process.env.ZOHO_BOOKINGS_SERVICE_ID,
-    staff_id: process.env.ZOHO_BOOKINGS_STAFF_ID,
-    selected_date: date
-  })
-    .then(function (data) {
-      var raw = (data.response && data.response.returnvalue && data.response.returnvalue.data);
-      var slots = Array.isArray(raw) ? raw : [];
-      res.json({ date: date, slots: slots });
+  var slotsCacheKey = SLOTS_CACHE_PREFIX + date;
+
+  cache.get(slotsCacheKey)
+    .then(function (cached) {
+      if (cached) {
+        return res.json(JSON.parse(cached));
+      }
+
+      return bookingsGet('/availableslots', {
+        service_id: process.env.ZOHO_BOOKINGS_SERVICE_ID,
+        staff_id: process.env.ZOHO_BOOKINGS_STAFF_ID,
+        selected_date: date
+      })
+        .then(function (data) {
+          var raw = (data.response && data.response.returnvalue && data.response.returnvalue.data);
+          var slots = Array.isArray(raw) ? raw : [];
+          var payload = { date: date, slots: slots };
+          cache.set(slotsCacheKey, JSON.stringify(payload), SLOTS_CACHE_TTL).catch(function () {});
+          res.json(payload);
+        });
     })
     .catch(function (err) {
       log.error('[api/bookings/slots] ' + err.message);
@@ -198,9 +222,10 @@ router.post('/api/bookings', function (req, res) {
     .then(function (data) {
       var appointment = (data.response && data.response.returnvalue) || {};
 
-      // Invalidate availability cache for this month
+      // Invalidate availability + slots caches for this date/month
       var ym = body.date.substring(0, 7).split('-');
       cache.del(AVAILABILITY_CACHE_PREFIX + ym[0] + '-' + ym[1]);
+      cache.del(SLOTS_CACHE_PREFIX + body.date);
 
       res.status(201).json({
         ok: true,

@@ -10,6 +10,8 @@ var zohoGet = zohoApi.zohoGet;
 var zohoPost = zohoApi.zohoPost;
 
 var KIOSK_PRODUCTS_CACHE_KEY = 'zoho:kiosk-products';
+var RECENT_ORDERS_CACHE_KEY = 'zoho:recent-orders';
+var RECENT_ORDERS_CACHE_TTL = 60; // seconds
 var IDEMPOTENCY_KEY_TTL = 300; // 5 minutes in seconds
 
 var router = express.Router();
@@ -507,48 +509,58 @@ router.get('/api/orders/recent', function (req, res) {
 
   // Item #47: Cap at 50 regardless of caller-supplied value.
   var limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+  var cacheKey = RECENT_ORDERS_CACHE_KEY + ':' + limit;
 
-  zohoGet('/salesorders', {
-    sort_column: 'created_time',
-    sort_order: 'D',
-    per_page: limit
-  })
-    .then(function (data) {
-      var orders = (data.salesorders || []).map(function (so) {
-        // Extract custom field values
-        var customFields = so.custom_fields || [];
-        var status = '';
-        var timeslot = '';
-        var deposit = '';
-        var txnId = '';
+  Promise.resolve()
+    .then(function () { return cache.get(cacheKey); })
+    .then(function (cached) {
+      if (cached) {
+        return res.json({ orders: JSON.parse(cached), cached: true });
+      }
 
-        customFields.forEach(function (cf) {
-          if (cf.api_name === process.env.ZOHO_CF_STATUS) status = cf.value || '';
-          if (cf.api_name === process.env.ZOHO_CF_TIMESLOT) timeslot = cf.value || '';
-          if (cf.api_name === process.env.ZOHO_CF_DEPOSIT) deposit = cf.value || '';
-          if (cf.api_name === process.env.ZOHO_CF_TRANSACTION_ID) txnId = cf.value || '';
-        });
+      return zohoGet('/salesorders', {
+        sort_column: 'created_time',
+        sort_order: 'D',
+        per_page: limit
+      })
+        .then(function (data) {
+          var orders = (data.salesorders || []).map(function (so) {
+            // Extract custom field values
+            var customFields = so.custom_fields || [];
+            var status = '';
+            var timeslot = '';
+            var deposit = '';
+            var txnId = '';
 
-        return {
-          salesorder_number: so.salesorder_number || '',
-          customer_name: so.customer_name || '',
-          total: so.total || 0,
-          status: status,
-          timeslot: timeslot,
-          deposit: deposit,
-          transaction_id: txnId,
-          date: so.date || '',
-          items: (so.line_items || []).map(function (li) {
+            customFields.forEach(function (cf) {
+              if (cf.api_name === process.env.ZOHO_CF_STATUS) status = cf.value || '';
+              if (cf.api_name === process.env.ZOHO_CF_TIMESLOT) timeslot = cf.value || '';
+              if (cf.api_name === process.env.ZOHO_CF_DEPOSIT) deposit = cf.value || '';
+              if (cf.api_name === process.env.ZOHO_CF_TRANSACTION_ID) txnId = cf.value || '';
+            });
+
             return {
-              name: li.name || li.description || '',
-              quantity: li.quantity || 1,
-              rate: li.rate || 0
+              salesorder_number: so.salesorder_number || '',
+              customer_name: so.customer_name || '',
+              total: so.total || 0,
+              status: status,
+              timeslot: timeslot,
+              deposit: deposit,
+              transaction_id: txnId,
+              date: so.date || '',
+              items: (so.line_items || []).map(function (li) {
+                return {
+                  name: li.name || li.description || '',
+                  quantity: li.quantity || 1,
+                  rate: li.rate || 0
+                };
+              })
             };
-          })
-        };
-      });
+          });
 
-      res.json({ orders: orders });
+          cache.set(cacheKey, JSON.stringify(orders), RECENT_ORDERS_CACHE_TTL).catch(function () {});
+          res.json({ orders: orders });
+        });
     })
     .catch(function (err) {
       log.error('[api/orders/recent] ' + err.message);

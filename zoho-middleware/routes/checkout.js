@@ -225,39 +225,55 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
   // This prevents a caller from supplying an arbitrary customer_id to attach
   // the order to someone else's contact record.
   // Returns { contactId, freshlyCreated } so callers can log orphan warnings.
+  var CONTACT_CACHE_KEY = 'zoho:contact:email:' + customerEmail.toLowerCase();
+  var CONTACT_CACHE_TTL = 600; // 10 minutes
+
   function resolveCustomerId() {
-    return zohoGet('/contacts', { email: customerEmail })
-      .then(function (data) {
-        var contacts = (data.contacts || []);
-        if (contacts.length > 0) {
-          // Item #15: track that the contact already existed (not freshly created)
-          return { contactId: contacts[0].contact_id, freshlyCreated: false };
+    return cache.get(CONTACT_CACHE_KEY)
+      .then(function (cached) {
+        if (cached) {
+          return { contactId: cached, freshlyCreated: false };
         }
-        // Not found — create a new contact
-        var contactPayload = {
-          contact_name: customerName,
-          contact_type: 'customer',
-          email: customerEmail
-        };
-        if (customerPhone) contactPayload.phone = customerPhone;
-        return zohoPost('/contacts', contactPayload)
-          .then(function (createData) {
-            var contact = createData.contact || {};
-            return { contactId: contact.contact_id, freshlyCreated: true };
-          })
-          .catch(function (createErr) {
-            // Zoho rejects duplicate contact names — fall back to name search
-            if (createErr.response && createErr.response.status === 400) {
-              return zohoGet('/contacts', { contact_name: customerName })
-                .then(function (nameData) {
-                  var nameContacts = (nameData.contacts || []);
-                  if (nameContacts.length > 0) {
-                    return { contactId: nameContacts[0].contact_id, freshlyCreated: false };
-                  }
-                  throw createErr; // give up — surface the original error
-                });
+
+        return zohoGet('/contacts', { email: customerEmail })
+          .then(function (data) {
+            var contacts = (data.contacts || []);
+            if (contacts.length > 0) {
+              var contactId = contacts[0].contact_id;
+              cache.set(CONTACT_CACHE_KEY, contactId, CONTACT_CACHE_TTL).catch(function () {});
+              return { contactId: contactId, freshlyCreated: false };
             }
-            throw createErr;
+            // Not found — create a new contact
+            var contactPayload = {
+              contact_name: customerName,
+              contact_type: 'customer',
+              email: customerEmail
+            };
+            if (customerPhone) contactPayload.phone = customerPhone;
+            return zohoPost('/contacts', contactPayload)
+              .then(function (createData) {
+                var contact = createData.contact || {};
+                if (contact.contact_id) {
+                  cache.set(CONTACT_CACHE_KEY, contact.contact_id, CONTACT_CACHE_TTL).catch(function () {});
+                }
+                return { contactId: contact.contact_id, freshlyCreated: true };
+              })
+              .catch(function (createErr) {
+                // Zoho rejects duplicate contact names — fall back to name search
+                if (createErr.response && createErr.response.status === 400) {
+                  return zohoGet('/contacts', { contact_name: customerName })
+                    .then(function (nameData) {
+                      var nameContacts = (nameData.contacts || []);
+                      if (nameContacts.length > 0) {
+                        var contactId = nameContacts[0].contact_id;
+                        cache.set(CONTACT_CACHE_KEY, contactId, CONTACT_CACHE_TTL).catch(function () {});
+                        return { contactId: contactId, freshlyCreated: false };
+                      }
+                      throw createErr; // give up — surface the original error
+                    });
+                }
+                throw createErr;
+              });
           });
       });
   }
