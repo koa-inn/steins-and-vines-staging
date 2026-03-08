@@ -4899,7 +4899,7 @@ function renderCartSidebar() {
           saveReservation(current, cartKey);
           updateReservationBar();
           renderCartSidebar();
-          if (removed) refreshAllReserveControls();
+          refreshAllReserveControls();
         };
       })(item, itemCartKey));
 
@@ -5082,7 +5082,7 @@ function renderCartDrawer() {
           saveReservation(current, cartKey);
           updateReservationBar();
           renderCartDrawer();
-          if (removed) refreshAllReserveControls();
+          refreshAllReserveControls();
         };
       })(item, itemCartKey));
 
