@@ -32,10 +32,12 @@ cd zoho-middleware && npm run test:coverage
 
 ---
 
-## Campaign Backlog (future sessions)
+| `zoho-middleware/routes/taxes.js` (`parseCSVLine`, `keywordMatch`, `classifyItem`) | 95% | ✅ Done |
+| `zoho-middleware/routes/checkout.js` (`verifyRecaptcha`, `buildLineItems`) | 95% | ✅ Done |
 
-- [ ] **Campaign 2:** `routes/taxes.js` — tax calculation helpers
-- [ ] **Campaign 2:** `routes/checkout.js` — `verifyRecaptcha()`, price anchoring
+---
+
+## Campaign Backlog (future sessions)
 - [ ] **Campaign 3:** `js/modules/11-cart.js` — DOM rendering (jsdom + mock products)
 - [ ] **Campaign 3:** `js/modules/12-checkout.js` — form validation logic
 - [ ] **Campaign 4:** `js/brewpad.js` IIFE — extract pure fns (ABV calc, date helpers, batch filters)

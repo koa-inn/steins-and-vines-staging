@@ -91,6 +91,31 @@ var PRODUCTS_CACHE_KEY = 'zoho:products';
 var KIOSK_PRODUCTS_CACHE_KEY = 'zoho:kiosk-products';
 var CHECKOUT_IDEMPOTENCY_TTL = 600; // 10 minutes in seconds
 
+/**
+ * Build line items and compute order total from a cart.
+ * Uses catalog prices when available; falls back to client-supplied rates.
+ * @param {Array}   items            - Cart items from the request body
+ * @param {object}  catalogMap       - item_id → rate from authoritative cache
+ * @param {boolean} catalogAvailable - Whether catalogMap is populated
+ * @returns {{ lineItems: Array, orderTotal: number }}
+ */
+function buildLineItems(items, catalogMap, catalogAvailable) {
+  var orderTotal = 0;
+  var lineItems = items.map(function (item) {
+    var qty = Number(item.quantity) || 1;
+    var rate = catalogAvailable ? catalogMap[item.item_id] : (Number(item.rate) || 0);
+    var discount = Number(item.discount) || 0;
+    var effectiveRate = discount > 0 ? rate * (1 - discount / 100) : rate;
+    orderTotal += qty * effectiveRate;
+    var li = { item_id: item.item_id, name: item.name || '', quantity: qty, rate: rate };
+    if (discount > 0) li.discount = discount + '%';
+    return li;
+  });
+  // Round after accumulation loop to avoid floating-point drift (Item #5)
+  orderTotal = Math.round(orderTotal * 100) / 100;
+  return { lineItems: lineItems, orderTotal: orderTotal };
+}
+
 var router = express.Router();
 
 /**
@@ -312,25 +337,9 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
     }
 
     // --- Build line items (catalog price when available, else client-supplied rate) ---
-    var orderTotal = 0;
-    var lineItems = body.items.map(function (item) {
-      var qty = Number(item.quantity) || 1;
-      var rate = catalogAvailable ? catalogMap[item.item_id] : (Number(item.rate) || 0); // catalog price preferred
-      var discount = Number(item.discount) || 0;
-      var effectiveRate = discount > 0 ? rate * (1 - discount / 100) : rate;
-      orderTotal += qty * effectiveRate;
-      var li = {
-        item_id: item.item_id,
-        name: item.name || '',
-        quantity: qty,
-        rate: rate
-      };
-      if (discount > 0) li.discount = discount + '%';
-      return li;
-    });
-
-    // Item #5 — Round orderTotal after accumulation loop to avoid floating-point drift
-    orderTotal = Math.round(orderTotal * 100) / 100;
+    var built = buildLineItems(body.items, catalogMap, catalogAvailable);
+    var lineItems = built.lineItems;
+    var orderTotal = built.orderTotal;
 
     var balanceDue = Math.max(0, orderTotal - depositAmount);
 
@@ -556,3 +565,5 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
 }
 
 module.exports = router;
+module.exports.verifyRecaptcha = verifyRecaptcha;
+module.exports.buildLineItems = buildLineItems;

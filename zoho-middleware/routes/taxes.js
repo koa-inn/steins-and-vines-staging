@@ -15,6 +15,88 @@ var PRODUCTS_CACHE_KEY = 'zoho:products';
 
 var router = express.Router();
 
+/**
+ * Test if a keyword (possibly with \b word boundary markers) matches in text.
+ */
+function keywordMatch(kw, text) {
+  if (kw.indexOf('\\b') !== -1) {
+    return new RegExp(kw, 'i').test(text);
+  }
+  return text.indexOf(kw.toLowerCase()) !== -1;
+}
+
+/**
+ * Classify a single Zoho Inventory item into a tax category.
+ * Returns an assignment object with category, rule_id, tax_id etc.
+ * @param {object} item - Zoho item with name, category_name, description, group_name, item_id
+ * @param {object} categories - CATEGORIES map (capital_equipment, ingredients, services, etc.)
+ */
+function classifyItem(item, categories) {
+  var itemName = (item.name || '').toLowerCase();
+  var searchText = [
+    item.name || '',
+    item.category_name || '',
+    item.description || '',
+    item.group_name || ''
+  ].join(' ').toLowerCase();
+
+  // Check capital equipment first (name-only match)
+  var capEquip = categories.capital_equipment;
+  if (capEquip && capEquip.name_patterns) {
+    var isCapEquip = capEquip.name_patterns.some(function (p) {
+      return itemName.indexOf(p) !== -1;
+    });
+    if (isCapEquip) {
+      return {
+        item_id: item.item_id,
+        item_name: item.name,
+        category: 'capital_equipment',
+        rule_label: capEquip.rule_label,
+        rule_id: capEquip.rule_id,
+        tax_id: capEquip.tax_id,
+        current_purchase_rule: item.purchase_tax_rule_id || '(none)',
+        current_tax_id: item.tax_id || '(none)'
+      };
+    }
+  }
+
+  // Check remaining categories in priority order
+  var categoryOrder = ['ingredients', 'services', 'liquor', 'packaging', 'hardware'];
+  for (var c = 0; c < categoryOrder.length; c++) {
+    var catKey = categoryOrder[c];
+    var cat = categories[catKey];
+    if (!cat || !cat.keywords) continue;
+    var hasMatch = cat.keywords.some(function (kw) {
+      return keywordMatch(kw, searchText);
+    });
+    if (hasMatch) {
+      return {
+        item_id: item.item_id,
+        item_name: item.name,
+        category: catKey,
+        rule_label: cat.rule_label,
+        rule_id: cat.rule_id,
+        tax_id: cat.tax_id,
+        current_purchase_rule: item.purchase_tax_rule_id || '(none)',
+        current_tax_id: item.tax_id || '(none)'
+      };
+    }
+  }
+
+  // Default: zero-rated ingredients
+  var ingredientsCat = categories.ingredients;
+  return {
+    item_id: item.item_id,
+    item_name: item.name,
+    category: 'ingredients (default)',
+    rule_label: ingredientsCat.rule_label,
+    rule_id: ingredientsCat.rule_id,
+    tax_id: ingredientsCat.tax_id,
+    current_purchase_rule: item.purchase_tax_rule_id || '(none)',
+    current_tax_id: item.tax_id || '(none)'
+  };
+}
+
 // ---------------------------------------------------------------------------
 // CSV Helper & Item Migration
 // ---------------------------------------------------------------------------
@@ -292,93 +374,13 @@ router.post('/api/taxes/apply', function (req, res) {
     }
   };
 
-  /**
-   * Test if a keyword (possibly with \b word boundary markers) matches in text.
-   */
-  function keywordMatch(kw, text) {
-    if (kw.indexOf('\\b') !== -1) {
-      return new RegExp(kw, 'i').test(text);
-    }
-    return text.indexOf(kw.toLowerCase()) !== -1;
-  }
-
   inventoryGet('/items', { status: 'active' })
     .then(function (data) {
       var items = data.items || [];
 
       var assignments = [];
-
       items.forEach(function (item) {
-        var itemName = (item.name || '').toLowerCase();
-        var searchText = [
-          item.name || '',
-          item.category_name || '',
-          item.description || '',
-          item.group_name || ''
-        ].join(' ').toLowerCase();
-
-        var matched = false;
-
-        // Check capital equipment first (matched on item name only, not description)
-        var capEquip = CATEGORIES.capital_equipment;
-        var isCapEquip = capEquip.name_patterns.some(function (p) {
-          return itemName.indexOf(p) !== -1;
-        });
-        if (isCapEquip) {
-          assignments.push({
-            item_id: item.item_id,
-            item_name: item.name,
-            category: 'capital_equipment',
-            rule_label: capEquip.rule_label,
-            rule_id: capEquip.rule_id,
-            tax_id: capEquip.tax_id,
-            current_purchase_rule: item.purchase_tax_rule_id || '(none)',
-            current_tax_id: item.tax_id || '(none)'
-          });
-          matched = true;
-        }
-
-        // Check remaining categories in priority order (ingredients first — kits are zero-rated)
-        if (!matched) {
-          var categoryOrder = ['ingredients', 'services', 'liquor', 'packaging', 'hardware'];
-          for (var c = 0; c < categoryOrder.length; c++) {
-            var catKey = categoryOrder[c];
-            var cat = CATEGORIES[catKey];
-            var hasMatch = cat.keywords.some(function (kw) {
-              return keywordMatch(kw, searchText);
-            });
-
-            if (hasMatch) {
-              assignments.push({
-                item_id: item.item_id,
-                item_name: item.name,
-                category: catKey,
-                rule_label: cat.rule_label,
-                rule_id: cat.rule_id,
-                tax_id: cat.tax_id,
-                current_purchase_rule: item.purchase_tax_rule_id || '(none)',
-                current_tax_id: item.tax_id || '(none)'
-              });
-              matched = true;
-              break;
-            }
-          }
-        }
-
-        // Default unmatched items to ingredients (zero-rated)
-        if (!matched) {
-          var ingredientsCat = CATEGORIES.ingredients;
-          assignments.push({
-            item_id: item.item_id,
-            item_name: item.name,
-            category: 'ingredients (default)',
-            rule_label: ingredientsCat.rule_label,
-            rule_id: ingredientsCat.rule_id,
-            tax_id: ingredientsCat.tax_id,
-            current_purchase_rule: item.purchase_tax_rule_id || '(none)',
-            current_tax_id: item.tax_id || '(none)'
-          });
-        }
+        assignments.push(classifyItem(item, CATEGORIES));
       });
 
       if (dryRun) {
@@ -844,3 +846,6 @@ router.post('/api/items/migrate', function (req, res) {
 });
 
 module.exports = router;
+module.exports.parseCSVLine = parseCSVLine;
+module.exports.keywordMatch = keywordMatch;
+module.exports.classifyItem = classifyItem;
