@@ -1118,6 +1118,16 @@ function openCartDrawer() {
   var drawer = document.getElementById('cart-drawer');
   var backdrop = document.getElementById('cart-drawer-backdrop');
   if (!drawer) return;
+  // Close mobile nav if open to prevent ghost nav state (M15)
+  if (document.body.classList.contains('nav-open')) {
+    document.body.classList.remove('nav-open');
+    var _nl = document.querySelector('.nav-list');
+    var _nb = document.querySelector('.nav-backdrop');
+    var _nt = document.querySelector('.nav-toggle');
+    if (_nl) _nl.classList.remove('open');
+    if (_nb) _nb.classList.remove('open');
+    if (_nt) { _nt.setAttribute('aria-expanded', 'false'); _nt.innerHTML = '&#9776;'; }
+  }
   renderCartDrawer();
   drawer.classList.add('open');
   if (backdrop) backdrop.classList.add('open');

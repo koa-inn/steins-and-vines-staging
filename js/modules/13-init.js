@@ -37,13 +37,16 @@ document.addEventListener('DOMContentLoaded', function () {
     if (navList) navList.classList.remove('open');
     navBackdrop.classList.remove('open');
     document.body.classList.remove('nav-open');
+    if (toggle) { toggle.setAttribute('aria-expanded', 'false'); toggle.innerHTML = '&#9776;'; }
   }
 
   if (toggle && navList) {
     toggle.addEventListener('click', function () {
-      navList.classList.toggle('open');
+      var isOpen = navList.classList.toggle('open');
       navBackdrop.classList.toggle('open');
       document.body.classList.toggle('nav-open');
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggle.innerHTML = isOpen ? '&times;' : '&#9776;';
     });
 
     // Close mobile nav when backdrop is tapped

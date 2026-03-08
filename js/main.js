@@ -5031,6 +5031,16 @@ function openCartDrawer() {
   var drawer = document.getElementById('cart-drawer');
   var backdrop = document.getElementById('cart-drawer-backdrop');
   if (!drawer) return;
+  // Close mobile nav if open to prevent ghost nav state (M15)
+  if (document.body.classList.contains('nav-open')) {
+    document.body.classList.remove('nav-open');
+    var _nl = document.querySelector('.nav-list');
+    var _nb = document.querySelector('.nav-backdrop');
+    var _nt = document.querySelector('.nav-toggle');
+    if (_nl) _nl.classList.remove('open');
+    if (_nb) _nb.classList.remove('open');
+    if (_nt) { _nt.setAttribute('aria-expanded', 'false'); _nt.innerHTML = '&#9776;'; }
+  }
   renderCartDrawer();
   drawer.classList.add('open');
   if (backdrop) backdrop.classList.add('open');
@@ -7120,13 +7130,16 @@ document.addEventListener('DOMContentLoaded', function () {
     if (navList) navList.classList.remove('open');
     navBackdrop.classList.remove('open');
     document.body.classList.remove('nav-open');
+    if (toggle) { toggle.setAttribute('aria-expanded', 'false'); toggle.innerHTML = '&#9776;'; }
   }
 
   if (toggle && navList) {
     toggle.addEventListener('click', function () {
-      navList.classList.toggle('open');
+      var isOpen = navList.classList.toggle('open');
       navBackdrop.classList.toggle('open');
       document.body.classList.toggle('nav-open');
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggle.innerHTML = isOpen ? '&times;' : '&#9776;';
     });
 
     // Close mobile nav when backdrop is tapped
