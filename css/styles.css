@@ -125,8 +125,8 @@
   --color-error: #c0392b;
   --color-gold: #b8963e;
   --color-gold-dark: #96792e;
-  --color-muted: #999;
-  --color-muted-dark: #777;
+  --color-muted: #5f5f5f;
+  --color-muted-dark: #4f4f4f;
   /* Typography */
   --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
   --font-body: 'Lato', 'Helvetica Neue', Arial, sans-serif;
@@ -5073,7 +5073,7 @@ behold-widget {
 
 .weight-control-range-labels span {
   font-size: 0.68rem;
-  color: var(--color-muted, #999);
+  color: var(--color-muted, #5f5f5f);
   font-family: var(--font-body);
 }
 
@@ -5087,7 +5087,7 @@ behold-widget {
 
 .weight-control-input-label {
   font-size: 0.78rem;
-  color: var(--color-muted-dark, #777);
+  color: var(--color-muted-dark, #4f4f4f);
   font-family: var(--font-body);
 }
 
@@ -5124,7 +5124,7 @@ behold-widget {
 
 .weight-control-unit-label {
   font-size: 0.82rem;
-  color: var(--color-muted-dark, #777);
+  color: var(--color-muted-dark, #4f4f4f);
   font-weight: 600;
   white-space: nowrap;
   font-family: var(--font-body);
@@ -5264,7 +5264,7 @@ behold-widget {
   border: 1px solid var(--color-border, #d0c8b0);
   border-radius: 50%;
   background: transparent;
-  color: var(--color-muted, #888);
+  color: var(--color-muted, #5f5f5f);
   font-size: 1rem;
   line-height: 1;
   cursor: pointer;
@@ -5355,7 +5355,7 @@ behold-widget {
 
 .service-bubble-desc {
   font-size: 0.875rem;
-  color: var(--color-muted, #666);
+  color: var(--color-muted, #5f5f5f);
   line-height: 1.65;
   margin: 0;
   flex: 1;
