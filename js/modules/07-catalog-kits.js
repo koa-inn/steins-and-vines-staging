@@ -701,13 +701,19 @@ function loadProducts() {
     }
 
     var reserveWrap = document.createElement('div');
-    reserveWrap.className = 'reserve-link';
+    reserveWrap.className = 'reserve-link product-reserve-wrap';
     var productKey = product.name + '|' + (product.brand || '');
+    reserveWrap._reserveProduct = product;
+    reserveWrap._reserveKey = productKey;
+    reserveWrap._reserveRenderer = renderReserveControl;
     renderReserveControl(reserveWrap, product, productKey);
     card.appendChild(reserveWrap);
 
     var kitBuyWrap = document.createElement('div');
-    kitBuyWrap.className = 'reserve-link reserve-link--secondary';
+    kitBuyWrap.className = 'reserve-link reserve-link--secondary product-reserve-wrap';
+    kitBuyWrap._reserveProduct = product;
+    kitBuyWrap._reserveKey = productKey;
+    kitBuyWrap._reserveRenderer = renderKitBuyControl;
     renderKitBuyControl(kitBuyWrap, product);
     card.appendChild(kitBuyWrap);
 
@@ -794,13 +800,19 @@ function loadProducts() {
     }
 
     var reserveWrap = document.createElement('div');
-    reserveWrap.className = 'reserve-link';
+    reserveWrap.className = 'reserve-link product-reserve-wrap';
     var productKey = product.name + '|' + (product.brand || '');
+    reserveWrap._reserveProduct = product;
+    reserveWrap._reserveKey = productKey;
+    reserveWrap._reserveRenderer = renderReserveControl;
     renderReserveControl(reserveWrap, product, productKey);
     card.appendChild(reserveWrap);
 
     var kitBuyWrapBeer = document.createElement('div');
-    kitBuyWrapBeer.className = 'reserve-link reserve-link--secondary';
+    kitBuyWrapBeer.className = 'reserve-link reserve-link--secondary product-reserve-wrap';
+    kitBuyWrapBeer._reserveProduct = product;
+    kitBuyWrapBeer._reserveKey = productKey;
+    kitBuyWrapBeer._reserveRenderer = renderKitBuyControl;
     renderKitBuyControl(kitBuyWrapBeer, product);
     card.appendChild(kitBuyWrapBeer);
 
