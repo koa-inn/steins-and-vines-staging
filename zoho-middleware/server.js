@@ -322,6 +322,7 @@ app.use('/', require('./routes/checkout'));
 app.use('/', require('./routes/taxes'));
 app.use('/', require('./routes/pos'));
 app.use('/', require('./routes/purchaseorders'));
+app.use('/', require('./routes/webhooks'));
 
 // Sentry error handler (must be after routes, before other error handlers)
 if (process.env.SENTRY_DSN) {
