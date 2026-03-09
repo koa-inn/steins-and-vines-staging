@@ -2500,13 +2500,14 @@ behold-widget {
   display: none; /* Inline bar not used — sidebar handles desktop, fixed bar handles mobile */
 }
 
-@media (min-height: 750px) {
+@media (min-width: 1024px) and (min-height: 750px) {
   .catalog-controls {
     position: sticky;
     top: calc(var(--header-height, 0px) + var(--tabs-height, 48px));
     z-index: 100;
     background-color: var(--color-cream);
     padding: 0.75rem 0;
+    margin-bottom: 0;
   }
 }
 
@@ -5909,6 +5910,21 @@ footer {
     max-height: 50vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* Filter panel in the fixed bottom bar must expand upward, not downward */
+  #mobile-catalog-bar .catalog-collapsible.open {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    max-height: 50vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background-color: var(--color-cream);
+    border-top: 1px solid var(--color-brown);
+    padding: 0.75rem;
+    box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
   }
 
   .catalog-search {
