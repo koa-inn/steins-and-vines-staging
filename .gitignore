@@ -23,7 +23,19 @@ package-lock.json
 # Test coverage output
 coverage/
 zoho-middleware/coverage/
+test-results/
 
 # Local cache files
 zoho-middleware/products-cache.json
 .claude/
+
+# Source images (HEIC originals — JPG versions are used)
+*.heic
+
+# Unreferenced internal pages (kept locally, not deployed)
+coming-soon.html
+mockup-wine-labels.html
+product-label-templates.html
+
+# Cleanup script (one-time use)
+cleanup.sh

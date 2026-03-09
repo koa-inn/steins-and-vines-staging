@@ -132,6 +132,7 @@ function setReservationQty(product, qty) {
       sku: product.sku || '',
       unit: product.unit || '',
       tax_percentage: parseFloat(product.tax_percentage) || 0,
+      tax_name: product.tax_name || '',
       max_order_qty: product.max_order_qty || '',
       zoho_item_id: product.zoho_item_id || product.item_id || '',
       millable: product.millable || '',

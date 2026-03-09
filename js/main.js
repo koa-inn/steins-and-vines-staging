@@ -4374,6 +4374,7 @@ function setReservationQty(product, qty) {
       sku: product.sku || '',
       unit: product.unit || '',
       tax_percentage: parseFloat(product.tax_percentage) || 0,
+      tax_name: product.tax_name || '',
       max_order_qty: product.max_order_qty || '',
       zoho_item_id: product.zoho_item_id || product.item_id || '',
       millable: product.millable || '',
@@ -6240,14 +6241,22 @@ function renderReservationItems() {
     tr.appendChild(tdRemove);
 
     tbody.appendChild(tr);
+
+    // Maker's Fee row immediately after each kit item
+    if ((item.item_type || 'kit') === 'kit') {
+      var feeRateInline = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
+      var feeTrInline = document.createElement('tr');
+      feeTrInline.className = 'makers-fee-row makers-fee-row--inline';
+      feeTrInline.innerHTML = '<td data-label="Name">' + ((_makersFeeItem && _makersFeeItem.name) || "Maker\'s Fee") + '</td>'
+        + '<td data-label="Type" class="res-col-type">Service</td>'
+        + (hasBrand ? '<td></td>' : '')
+        + (hasTime ? '<td></td>' : '')
+        + '<td style="text-align:right">' + formatCurrency(feeRateInline) + '</td>'
+        + '<td></td><td>1</td><td></td>';
+      tbody.appendChild(feeTrInline);
+    }
   });
 
-  if (hasKits && _makersFeeItem) {
-    var feeRate = parseFloat(_makersFeeItem.rate) || 50;
-    var fTr = document.createElement('tr'); fTr.className = 'makers-fee-row';
-    fTr.innerHTML = '<td data-label="Name">' + (_makersFeeItem.name || "Maker's Fee") + '</td><td data-label="Type" class="res-col-type">Service</td>' + (hasBrand ? '<td></td>' : '') + (hasTime ? '<td></td>' : '') + '<td style="text-align:right">' + formatCurrency(feeRate) + '</td><td></td><td>' + totalKitQty + '</td><td></td>';
-    tbody.appendChild(fTr);
-  }
   table.appendChild(tbody);
   var tWrap = document.createElement('div'); tWrap.className = 'reservation-table-wrap'; tWrap.appendChild(table); container.appendChild(tWrap);
 
