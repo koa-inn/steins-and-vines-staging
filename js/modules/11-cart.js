@@ -857,7 +857,7 @@ function renderCartSidebar() {
   var hasKitsInSidebar = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
   if (hasKitsInSidebar) {
     var kitQtySidebar = 0;
-    items.forEach(function (i) { if ((i.item_type || 'kit') === 'kit') kitQtySidebar += (parseFloat(i.qty) || 1); });
+    items.forEach(function (i) { if ((i.item_type || 'kit') === 'kit') kitQtySidebar += (parseFloat(i.qty) || 0); });
     var feeRateSidebar = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
     var feeTotalSidebar = feeRateSidebar * kitQtySidebar;
     subtotal += feeTotalSidebar;
@@ -890,7 +890,7 @@ function renderCartSidebar() {
     container.appendChild(feeRow);
   }
 
-  if (totalEl) totalEl.textContent = '$' + subtotal.toFixed(2);
+  if (totalEl) totalEl.textContent = formatCurrency(subtotal);
 }
 
 // ===== Mobile Cart Drawer =====
@@ -1081,7 +1081,7 @@ function renderCartDrawer() {
   var hasKitsInDrawer = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
   if (hasKitsInDrawer) {
     var kitQtyDrawer = 0;
-    items.forEach(function (i) { if ((i.item_type || 'kit') === 'kit') kitQtyDrawer += (parseFloat(i.qty) || 1); });
+    items.forEach(function (i) { if ((i.item_type || 'kit') === 'kit') kitQtyDrawer += (parseFloat(i.qty) || 0); });
     var feeRateDrawer = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
     var feeTotalDrawer = feeRateDrawer * kitQtyDrawer;
     subtotal += feeTotalDrawer;
@@ -1114,7 +1114,7 @@ function renderCartDrawer() {
     container.appendChild(feeRowD);
   }
 
-  if (totalEl) totalEl.textContent = '$' + subtotal.toFixed(2);
+  if (totalEl) totalEl.textContent = formatCurrency(subtotal);
 }
 
 var _cartDrawerScrollY = 0;
@@ -1167,7 +1167,9 @@ function initCartDrawer() {
     clearBtn.addEventListener('click', function () {
       saveReservation([], FERMENT_CART_KEY);
       saveReservation([], INGREDIENT_CART_KEY);
+      _milledItemKeys = {};
       updateReservationBar();
+      renderCartSidebar();
       renderCartDrawer();
       refreshAllReserveControls();
     });
@@ -1178,8 +1180,10 @@ function initCartDrawer() {
     sidebarClearBtn.addEventListener('click', function () {
       saveReservation([], FERMENT_CART_KEY);
       saveReservation([], INGREDIENT_CART_KEY);
+      _milledItemKeys = {};
       updateReservationBar();
       renderCartSidebar();
+      renderCartDrawer();
       refreshAllReserveControls();
     });
   }
