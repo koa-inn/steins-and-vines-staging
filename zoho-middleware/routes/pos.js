@@ -5,6 +5,7 @@ var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
 var mailer = require('../lib/mailer');
+var ledger = require('../lib/inventory-ledger');
 
 var Transaction = gp.Transaction;
 var zohoGet = zohoApi.zohoGet;
@@ -266,6 +267,11 @@ function processSaleWithPrices(body, idempotencyKey, req, res,
           return paymentChain.then(function () {
             // Invalidate kiosk product cache so stock counts refresh
             cache.del(KIOSK_PRODUCTS_CACHE_KEY);
+
+            // Fire-and-forget: decrement inventory ledger for sold items
+            ledger.decrementStock(lineItems, 'kiosk:' + (invoiceNumber || 'unknown')).catch(function (err) {
+              log.error('[pos/kiosk/sale] Inventory ledger decrement failed (non-fatal): ' + err.message);
+            });
 
             var responseBody = {
               ok: true,
@@ -578,6 +584,36 @@ router.get('/api/orders/recent', function (req, res) {
       log.error('[api/orders/recent] ' + err.message);
       res.status(502).json({ error: 'Unable to fetch orders' });
     });
+});
+
+/**
+ * GET /api/admin/inventory-ledger
+ * Returns current ledger state for debugging.
+ * Shows recent stock adjustments and the current version counter.
+ */
+router.get('/api/admin/inventory-ledger', function (req, res) {
+  var apiKey = req.headers['x-api-key'] || req.query.api_key;
+  if (apiKey !== process.env.MW_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  Promise.all([
+    cache.get('inv:stock:version'),
+    cache.getClient().then(function (c) {
+      if (!c) return [];
+      return c.lRange('inv:adjustments:log', 0, 49);
+    })
+  ]).then(function (results) {
+    var adjustments = (results[1] || []).map(function (entry) {
+      try { return JSON.parse(entry); } catch (e) { return entry; }
+    });
+    res.json({
+      version: results[0] || 0,
+      recent_adjustments: adjustments
+    });
+  }).catch(function (err) {
+    res.status(500).json({ error: err.message });
+  });
 });
 
 module.exports = router;

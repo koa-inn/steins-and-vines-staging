@@ -5,6 +5,8 @@ var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
 
+var ledger = require('../lib/inventory-ledger');
+
 var inventoryGet = zohoApi.inventoryGet;
 var fetchAllItems = zohoApi.fetchAllItems;
 
@@ -227,6 +229,11 @@ function doRefreshProducts() {
         cache.set(PRODUCTS_CACHE_TS_KEY, Date.now(), PRODUCTS_CACHE_TTL);
         log.info('[api/products] Cached ' + enriched.length + ' kit items');
 
+        // Reconcile inventory ledger with fresh Zoho stock counts
+        ledger.reconcile(enriched).catch(function (err) {
+          log.error('[api/products] Inventory ledger reconcile failed: ' + err.message);
+        });
+
         // Write file fallback (async, fire-and-forget)
         fs.writeFile(PRODUCTS_FILE_CACHE, JSON.stringify(enriched), function (fileErr) {
           if (fileErr) {
@@ -302,7 +309,12 @@ router.get('/api/products', function (req, res) {
         if (!Object.keys(_kitItemIds).length) {
           cached.forEach(function (item) { _kitItemIds[item.item_id] = true; });
         }
-        res.json({ source: 'cache', items: cached });
+        ledger.overlayStock(cached).then(function (overlaid) {
+          res.json({ source: 'cache', items: overlaid });
+        }).catch(function (err) {
+          log.error('[api/products] overlayStock failed: ' + err.message);
+          res.json({ source: 'cache', items: cached });
+        });
 
         // Stale-while-revalidate: if cache is older than soft TTL, refresh in background
         cache.get(PRODUCTS_CACHE_TS_KEY).then(function (ts) {
@@ -330,7 +342,12 @@ router.get('/api/products', function (req, res) {
         // Also populate Redis cache from file
         cache.set(PRODUCTS_CACHE_KEY, fileData, PRODUCTS_CACHE_TTL);
         cache.set(PRODUCTS_CACHE_TS_KEY, Date.now(), PRODUCTS_CACHE_TTL);
-        res.json({ source: 'file-cache', items: fileData });
+        ledger.overlayStock(fileData).then(function (overlaid) {
+          res.json({ source: 'file-cache', items: overlaid });
+        }).catch(function (err) {
+          log.error('[api/products] overlayStock failed: ' + err.message);
+          res.json({ source: 'file-cache', items: fileData });
+        });
         // Trigger background refresh
         refreshProducts().catch(function (err) {
           log.error('[api/products] Background refresh failed: ' + err.message);
@@ -342,13 +359,23 @@ router.get('/api/products', function (req, res) {
       return refreshProducts()
         .then(function (enriched) {
           if (enriched && enriched.length) {
-            return res.json({ source: 'zoho', items: enriched });
+            return ledger.overlayStock(enriched).then(function (overlaid) {
+              res.json({ source: 'zoho', items: overlaid });
+            }).catch(function (err) {
+              log.error('[api/products] overlayStock failed: ' + err.message);
+              res.json({ source: 'zoho', items: enriched });
+            });
           }
           // refreshProducts() returned early (cooldown or lock held by another instance).
           // Check if another instance populated the cache in the meantime.
           return cache.get(PRODUCTS_CACHE_KEY).then(function (cached) {
             if (cached && cached.length) {
-              return res.json({ source: 'cache', items: cached });
+              return ledger.overlayStock(cached).then(function (overlaid) {
+                res.json({ source: 'cache', items: overlaid });
+              }).catch(function (err) {
+                log.error('[api/products] overlayStock failed: ' + err.message);
+                res.json({ source: 'cache', items: cached });
+              });
             }
             res.status(502).json({ error: 'Unable to fetch products' });
           });
@@ -470,6 +497,10 @@ function doRefreshIngredients() {
         if (enriched.length > 0) {
           cache.set(INGREDIENTS_CACHE_KEY, enriched, INGREDIENTS_CACHE_TTL);
           cache.set(INGREDIENTS_CACHE_TS_KEY, Date.now(), INGREDIENTS_CACHE_TTL);
+          // Reconcile inventory ledger with fresh Zoho stock counts
+          ledger.reconcile(enriched).catch(function (err) {
+            log.error('[api/ingredients] Inventory ledger reconcile failed: ' + err.message);
+          });
           // Write file fallback (async, fire-and-forget)
           fs.writeFile(INGREDIENTS_FILE_CACHE, JSON.stringify(enriched), function (fileErr) {
             if (fileErr) {
@@ -503,7 +534,12 @@ router.get('/api/ingredients', function (req, res) {
     .then(function (cached) {
       if (cached && cached.length > 0) {
         log.info('[api/ingredients] Cache hit (' + cached.length + ' items)');
-        res.json({ source: 'cache', items: cached });
+        ledger.overlayStock(cached).then(function (overlaid) {
+          res.json({ source: 'cache', items: overlaid });
+        }).catch(function (err) {
+          log.error('[api/ingredients] overlayStock failed: ' + err.message);
+          res.json({ source: 'cache', items: cached });
+        });
 
         // Stale-while-revalidate: if cache is older than soft TTL, refresh in background
         cache.get(INGREDIENTS_CACHE_TS_KEY).then(function (ts) {
@@ -527,7 +563,12 @@ router.get('/api/ingredients', function (req, res) {
       if (fileData && fileData.length > 0) {
         log.info('[api/ingredients] File fallback hit (' + fileData.length + ' items)');
         cache.set(INGREDIENTS_CACHE_KEY, fileData, INGREDIENTS_CACHE_TTL);
-        res.json({ source: 'file-cache', items: fileData });
+        ledger.overlayStock(fileData).then(function (overlaid) {
+          res.json({ source: 'file-cache', items: overlaid });
+        }).catch(function (err) {
+          log.error('[api/ingredients] overlayStock failed: ' + err.message);
+          res.json({ source: 'file-cache', items: fileData });
+        });
         // Trigger background refresh
         doRefreshIngredients().catch(function (err) {
           log.error('[api/ingredients] Background refresh failed: ' + err.message);
@@ -538,7 +579,12 @@ router.get('/api/ingredients', function (req, res) {
       log.info('[api/ingredients] Cache miss — fetching from Zoho Inventory');
       return doRefreshIngredients()
         .then(function (enriched) {
-          res.json({ source: 'zoho', items: enriched });
+          return ledger.overlayStock(enriched).then(function (overlaid) {
+            res.json({ source: 'zoho', items: overlaid });
+          }).catch(function (err) {
+            log.error('[api/ingredients] overlayStock failed: ' + err.message);
+            res.json({ source: 'zoho', items: enriched });
+          });
         });
     })
     .catch(function (err) {
@@ -564,7 +610,12 @@ router.get('/api/kiosk/products', function (req, res) {
     .then(function (cached) {
       if (cached) {
         log.info('[api/kiosk/products] Cache hit (' + cached.length + ' items)');
-        return res.json({ source: 'cache', items: cached });
+        return ledger.overlayStock(cached).then(function (overlaid) {
+          res.json({ source: 'cache', items: overlaid });
+        }).catch(function (err) {
+          log.error('[api/kiosk/products] overlayStock failed: ' + err.message);
+          res.json({ source: 'cache', items: cached });
+        });
       }
 
       log.info('[api/kiosk/products] Cache miss — fetching from Zoho Inventory');
@@ -595,7 +646,16 @@ router.get('/api/kiosk/products', function (req, res) {
 
           cache.set(KIOSK_PRODUCTS_CACHE_KEY, sellable, KIOSK_PRODUCTS_CACHE_TTL);
           log.info('[api/kiosk/products] Cached ' + sellable.length + ' sellable items');
-          res.json({ source: 'zoho', items: sellable });
+          // Reconcile inventory ledger with fresh kiosk catalog
+          ledger.reconcile(sellable).catch(function (err) {
+            log.error('[api/kiosk/products] Inventory ledger reconcile failed: ' + err.message);
+          });
+          return ledger.overlayStock(sellable).then(function (overlaid) {
+            res.json({ source: 'zoho', items: overlaid });
+          }).catch(function (err) {
+            log.error('[api/kiosk/products] overlayStock failed: ' + err.message);
+            res.json({ source: 'zoho', items: sellable });
+          });
         });
     })
     .catch(function (err) {
@@ -687,21 +747,31 @@ router.get('/api/snapshot', function (req, res) {
   function ensureProducts() {
     return cache.get(PRODUCTS_CACHE_KEY).then(function (cached) {
       if (cached && cached.length > 0) {
-        state.products = cached.map(shapeProduct);
-        return;
+        return ledger.overlayStock(cached).then(function (overlaid) {
+          state.products = overlaid.map(shapeProduct);
+        }).catch(function () {
+          state.products = cached.map(shapeProduct);
+        });
       }
       log.info('[api/snapshot] Products cache cold — triggering refresh');
       return refreshProducts()
         .then(function () { return cache.get(PRODUCTS_CACHE_KEY); })
-        .then(function (p) { state.products = (p || []).map(shapeProduct); });
+        .then(function (p) {
+          var items = p || [];
+          return ledger.overlayStock(items).catch(function () { return items; });
+        })
+        .then(function (overlaid) { state.products = overlaid.map(shapeProduct); });
     });
   }
 
   function ensureIngredients() {
     return cache.get(INGREDIENTS_CACHE_KEY).then(function (cached) {
       if (cached && cached.length > 0) {
-        state.ingredients = cached.map(shapeIngredient);
-        return;
+        return ledger.overlayStock(cached).then(function (overlaid) {
+          state.ingredients = overlaid.map(shapeIngredient);
+        }).catch(function () {
+          state.ingredients = cached.map(shapeIngredient);
+        });
       }
       log.info('[api/snapshot] Ingredients cache cold — fetching from Zoho');
       return fetchAllItemsCached().then(function (allItems) {
@@ -713,7 +783,9 @@ router.get('/api/snapshot', function (req, res) {
           if (_kitItemIds[item.item_id]) return false;
           return true;
         });
-        state.ingredients = filtered.map(shapeIngredient);
+        return ledger.overlayStock(filtered).catch(function () { return filtered; });
+      }).then(function (overlaid) {
+        state.ingredients = overlaid.map(shapeIngredient);
       });
     });
   }

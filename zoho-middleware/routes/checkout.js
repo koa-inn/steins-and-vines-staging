@@ -6,6 +6,7 @@ var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
 var gpLib = require('../lib/gp');
+var ledger = require('../lib/inventory-ledger');
 
 /**
  * Race a promise against a timeout.
@@ -513,6 +514,11 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
 
             var soId = data.salesorder ? data.salesorder.salesorder_id : null;
             var soNumber = data.salesorder ? data.salesorder.salesorder_number : null;
+
+            // Fire-and-forget: decrement inventory ledger for sold items
+            ledger.decrementStock(lineItems, 'checkout:' + (soNumber || 'unknown')).catch(function (err) {
+              log.error('[checkout] Inventory ledger decrement failed (non-fatal): ' + err.message);
+            });
 
             // Fire-and-forget: internal staff notification email
             mailer.sendReservationNotification({
