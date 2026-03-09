@@ -5953,7 +5953,203 @@ function renderReservationItems() {
       totalKitQty += (parseFloat(item.qty) || 1);
     }
     var tr = document.createElement('tr');
-    // ... rest of item rendering logic ...
+
+    // Name + discount badge
+    var tdName = document.createElement('td');
+    tdName.setAttribute('data-label', 'Name');
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'table-name';
+    nameSpan.textContent = item.name;
+    tdName.appendChild(nameSpan);
+    if (item.discount && parseFloat(item.discount) > 0) {
+      var badge = document.createElement('span');
+      badge.className = 'discount-badge-sm';
+      badge.textContent = Math.round(parseFloat(item.discount)) + '% OFF';
+      tdName.appendChild(badge);
+    }
+    tr.appendChild(tdName);
+
+    // Type
+    var tdType = document.createElement('td');
+    tdType.setAttribute('data-label', 'Type');
+    tdType.className = 'res-col-type';
+    var typeLabel = (item.item_type || 'kit').charAt(0).toUpperCase() + (item.item_type || 'kit').slice(1);
+    tdType.textContent = typeLabel;
+    tr.appendChild(tdType);
+
+    // Brand
+    if (hasBrand) {
+      var tdBrand = document.createElement('td');
+      tdBrand.setAttribute('data-label', 'Brand');
+      tdBrand.textContent = item.brand || '';
+      tr.appendChild(tdBrand);
+    }
+
+    // Time
+    if (hasTime) {
+      var tdTime = document.createElement('td');
+      tdTime.setAttribute('data-label', 'Time');
+      tdTime.textContent = item.time || '';
+      tr.appendChild(tdTime);
+    }
+
+    // Price
+    var tdPrice = document.createElement('td');
+    tdPrice.setAttribute('data-label', 'Price');
+    if (item.price) {
+      if (item.discount && parseFloat(item.discount) > 0) {
+        var origNum = parseFloat((item.price || '0').replace('$', '')) || 0;
+        var disc = parseFloat(item.discount);
+        tdPrice.className = 'table-prices';
+        tdPrice.innerHTML = '<span class="table-price-original">' + formatCurrency(item.price) + '</span><span class="table-price-sale">' + formatCurrency(origNum * (1 - disc / 100)) + '</span>';
+      } else {
+        tdPrice.textContent = formatCurrency(item.price);
+      }
+    }
+    tr.appendChild(tdPrice);
+
+    // Stock status
+    var tdStock = document.createElement('td');
+    tdStock.setAttribute('data-label', 'Status');
+    var stockNum = parseInt(item.stock, 10) || 0;
+    var stockBadge = document.createElement('span');
+    stockBadge.className = 'reservation-item-stock';
+    if (stockNum > 0) {
+      stockBadge.classList.add('reservation-item-stock--available');
+      stockBadge.textContent = 'In Stock';
+    } else {
+      stockBadge.classList.add('reservation-item-stock--order');
+      stockBadge.textContent = 'Ships in 2+ weeks';
+      stockBadge.title = 'This item requires extra lead time \u2014 timeslots within 2 weeks may be unavailable';
+    }
+    tdStock.appendChild(stockBadge);
+    tr.appendChild(tdStock);
+
+    // Qty controls
+    var tdQty = document.createElement('td');
+    tdQty.setAttribute('data-label', 'Qty');
+    var itemIsWeighted = isWeightUnit(item.unit);
+    var itemMax = getEffectiveMax(item);
+    var unitLower = (item.unit || '').toLowerCase();
+    var isKgUnit = unitLower === 'kg' || unitLower.indexOf('kg') !== -1;
+    var qtyStep = itemIsWeighted ? (isKgUnit ? 0.01 : 1) : 1;
+    var qtyControls = document.createElement('div');
+    qtyControls.className = 'product-qty-controls';
+
+    var itemCartKey = getCartKey(item);
+    var applyQtyChange = (function (cartKey) {
+      return function (newQty) {
+        newQty = Math.round(newQty * 1000) / 1000;
+        if (itemMax !== Infinity && newQty > itemMax) newQty = itemMax;
+        var current = getReservation(cartKey);
+        for (var ci = 0; ci < current.length; ci++) {
+          var isMatch = item.zoho_item_id
+            ? current[ci].zoho_item_id === item.zoho_item_id
+            : (current[ci].name + '|' + (current[ci].brand || '')) === (item.name + '|' + (item.brand || ''));
+          if (isMatch) {
+            if (newQty <= 0) { current.splice(ci, 1); } else { current[ci].qty = newQty; }
+            break;
+          }
+        }
+        saveReservation(current, cartKey);
+        renderReservationItems();
+        refreshReservationDependents();
+        updateReservationBar();
+        refreshAllReserveControls();
+      };
+    })(itemCartKey);
+
+    var minusBtn = document.createElement('button');
+    minusBtn.type = 'button';
+    minusBtn.className = 'qty-btn';
+    minusBtn.setAttribute('aria-label', 'Decrease quantity of ' + item.name);
+    minusBtn.textContent = '\u2212';
+
+    var qtyInput = document.createElement('input');
+    qtyInput.type = 'number';
+    qtyInput.className = 'qty-input';
+    qtyInput.value = String(item.qty != null ? item.qty : 1);
+    qtyInput.setAttribute('aria-label', 'Quantity for ' + item.name);
+    if (itemIsWeighted) {
+      qtyInput.step = String(qtyStep);
+      qtyInput.setAttribute('inputmode', 'decimal');
+      qtyInput.min = String(qtyStep);
+    } else {
+      qtyInput.step = '1';
+      qtyInput.setAttribute('inputmode', 'numeric');
+      qtyInput.min = '1';
+    }
+    if (itemMax !== Infinity) qtyInput.max = String(itemMax);
+
+    var plusBtn = document.createElement('button');
+    plusBtn.type = 'button';
+    plusBtn.textContent = '+';
+    plusBtn.setAttribute('aria-label', 'Increase quantity of ' + item.name);
+    var currentQty = parseFloat(item.qty) || 1;
+    if (itemMax !== Infinity && currentQty >= itemMax) {
+      plusBtn.className = 'qty-btn qty-btn--disabled';
+      plusBtn.disabled = true;
+    } else {
+      plusBtn.className = 'qty-btn';
+    }
+
+    minusBtn.addEventListener('click', function () {
+      var cur = parseFloat(qtyInput.value) || 0;
+      applyQtyChange(cur - qtyStep);
+    });
+
+    plusBtn.addEventListener('click', function () {
+      var cur = parseFloat(qtyInput.value) || 0;
+      applyQtyChange(cur + qtyStep);
+    });
+
+    qtyInput.addEventListener('change', function () {
+      var val = parseFloat(qtyInput.value);
+      if (isNaN(val) || val <= 0) {
+        qtyInput.value = String(item.qty != null ? item.qty : 1);
+        return;
+      }
+      if (!itemIsWeighted) val = Math.round(val);
+      applyQtyChange(val);
+    });
+
+    qtyControls.appendChild(minusBtn);
+    qtyControls.appendChild(qtyInput);
+    if (itemIsWeighted && item.unit) {
+      var unitLabel = document.createElement('span');
+      unitLabel.className = 'qty-unit-label';
+      unitLabel.textContent = item.unit;
+      qtyControls.appendChild(unitLabel);
+    }
+    qtyControls.appendChild(plusBtn);
+    tdQty.appendChild(qtyControls);
+    tr.appendChild(tdQty);
+
+    // Remove button
+    var tdRemove = document.createElement('td');
+    tdRemove.setAttribute('data-label', '');
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'reservation-item-remove';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', (function (itm, cartKey) {
+      return function () {
+        var current = getReservation(cartKey);
+        var filtered = current.filter(function (r) {
+          if (itm.zoho_item_id) return r.zoho_item_id !== itm.zoho_item_id;
+          return (r.name + '|' + (r.brand || '')) !== (itm.name + '|' + (itm.brand || ''));
+        });
+        saveReservation(filtered, cartKey);
+        renderReservationItems();
+        refreshReservationDependents();
+        updateReservationBar();
+        refreshAllReserveControls();
+      };
+    })(item, itemCartKey));
+    tdRemove.appendChild(removeBtn);
+    tr.appendChild(tdRemove);
+
+    tbody.appendChild(tr);
   });
 
   if (hasKits && _makersFeeItem) {
@@ -5965,8 +6161,108 @@ function renderReservationItems() {
   table.appendChild(tbody);
   var tWrap = document.createElement('div'); tWrap.className = 'reservation-table-wrap'; tWrap.appendChild(table); container.appendChild(tWrap);
 
-  // --- RE-ORDERED: Milling Section (above totals) ---
-  // ... rest of file ...
+  // Milling checkboxes — shown for any millable grain items
+  var millableGrains = items.filter(function (item) {
+    return item.item_type === 'ingredient' && isWeightUnit(item.unit) &&
+      (item.millable || '').toLowerCase() === 'true';
+  });
+
+  if (millableGrains.length > 0) {
+    var millingWrap = document.createElement('div');
+    millingWrap.className = 'milling-section';
+
+    var millingTitle = document.createElement('div');
+    millingTitle.className = 'milling-title';
+    millingTitle.innerHTML = '&#9881; Grain Milling';
+    millingWrap.appendChild(millingTitle);
+
+    var millAllRow = document.createElement('div');
+    millAllRow.className = 'milling-item-row milling-item-row--all';
+    var millAllId = 'mill-all-grains';
+    var millAllCb = document.createElement('input');
+    millAllCb.type = 'checkbox';
+    millAllCb.id = millAllId;
+    millAllCb.className = 'milling-checkbox';
+    var millAllLbl = document.createElement('label');
+    millAllLbl.htmlFor = millAllId;
+    millAllLbl.appendChild(millAllCb);
+    millAllLbl.appendChild(document.createTextNode(' Mill all grains'));
+    millAllRow.appendChild(millAllLbl);
+    millingWrap.appendChild(millAllRow);
+
+    millableGrains.forEach(function (grain, idx) {
+      var itemKey = grain.zoho_item_id || (grain.name + '|' + (grain.brand || ''));
+      var cbId = 'mill-grain-' + idx;
+      var row = document.createElement('div');
+      row.className = 'milling-item-row';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = cbId;
+      cb.className = 'milling-checkbox';
+      cb.setAttribute('data-mill-key', itemKey);
+      if (_milledItemKeys[itemKey]) cb.checked = true;
+      var lbl = document.createElement('label');
+      lbl.htmlFor = cbId;
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(' Mill ' + grain.name));
+      row.appendChild(lbl);
+      millingWrap.appendChild(row);
+
+      cb.addEventListener('change', (function (key) {
+        return function () {
+          if (this.checked) { _milledItemKeys[key] = true; } else { delete _milledItemKeys[key]; }
+          var numMilled = Object.keys(_milledItemKeys).length;
+          millAllCb.checked = numMilled === millableGrains.length;
+          millAllCb.indeterminate = numMilled > 0 && numMilled < millableGrains.length;
+          updateMillingFeeRow();
+        };
+      })(itemKey));
+    });
+
+    var initMilled = Object.keys(_milledItemKeys).length;
+    millAllCb.checked = initMilled === millableGrains.length && millableGrains.length > 0;
+    millAllCb.indeterminate = initMilled > 0 && initMilled < millableGrains.length;
+
+    millAllCb.addEventListener('change', function () {
+      if (this.checked) {
+        millableGrains.forEach(function (g) {
+          var k = g.zoho_item_id || (g.name + '|' + (g.brand || ''));
+          _milledItemKeys[k] = true;
+        });
+      } else {
+        _milledItemKeys = {};
+      }
+      var cbs = millingWrap.querySelectorAll('.milling-checkbox[data-mill-key]');
+      Array.prototype.forEach.call(cbs, function (c) {
+        c.checked = !!_milledItemKeys[c.getAttribute('data-mill-key')];
+      });
+      updateMillingFeeRow();
+    });
+
+    var feeRow = document.createElement('div');
+    feeRow.className = 'milling-fee-row';
+    feeRow.id = 'milling-fee-row';
+    millingWrap.appendChild(feeRow);
+
+    function updateMillingFeeRow() {
+      var numMilled = Object.keys(_milledItemKeys).length;
+      if (numMilled === 0) {
+        feeRow.innerHTML = '';
+        feeRow.classList.add('hidden');
+        return;
+      }
+      feeRow.classList.remove('hidden');
+      if (_millingServiceItem) {
+        var rate = parseFloat(_millingServiceItem.rate) || 0;
+        feeRow.innerHTML = 'Milling fee: <strong>' + formatCurrency(rate) + '</strong>';
+      } else {
+        feeRow.innerHTML = 'Milling fee: loading\u2026';
+      }
+    }
+    updateMillingFeeRow();
+
+    container.appendChild(millingWrap);
+  }
 
   // --- Totals Summary ---
   var sub = 0; items.forEach(function (i) {
