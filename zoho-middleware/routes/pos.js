@@ -465,8 +465,11 @@ router.post('/api/pos/sale', function (req, res) {
                 log.warn('[pos/sale] Invoice submit failed (non-fatal): ' + submitErr.message);
               })
               .then(function () {
+                // Match kiosk/sale: detect debit vs credit from terminal response
+                var cardType = (response.cardType || '').toLowerCase();
+                var posPaymentMode = (cardType.indexOf('debit') !== -1) ? 'debitcard' : 'creditcard';
                 return zohoPost('/customerpayments', {
-                  payment_mode: 'creditcard',
+                  payment_mode: posPaymentMode,
                   amount: amount,
                   date: today,
                   reference_number: txnId || refNumber,

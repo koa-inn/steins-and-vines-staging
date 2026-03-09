@@ -685,9 +685,11 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
   } // end runCheckout
 
   // #4: Server-side charge using payment_token — eliminates ghost-charge window.
-  // When the frontend supplies payment_token instead of transaction_id, the card
-  // is charged here inside the backend flow. Any failure after the charge triggers
-  // the existing void logic in the outer .catch(), keeping funds and orders in sync.
+  // IMPORTANT: We pre-validate the catalog cache BEFORE charging the card so that
+  // early-exit paths in runCheckout() (catalog 503, item-not-found 400, Makers Fee 400)
+  // cannot leave a charged card with no corresponding order (ghost charge).
+  // After the charge succeeds, transactionId is set so the outer .catch() void fires
+  // on any subsequent Zoho failure.
   function chargeAndProceed() {
     if (!body.payment_token) {
       // Legacy path: frontend pre-charged and passed transaction_id
@@ -696,24 +698,73 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
     if (!process.env.GP_APP_KEY) {
       return res.status(503).json({ error: 'Payment gateway not configured' });
     }
-    var card = new CreditCardData();
-    card.token = body.payment_token;
-    var chargeAmt = gpLib.getDepositAmount();
-    return card.charge(chargeAmt).withCurrency('CAD').withAllowDuplicates(true).execute()
-      .then(function (r) {
-        if (r.responseCode !== 'SUCCESS' && r.responseCode !== '00') {
-          log.warn('[checkout] Card declined during server-side charge: ' + r.responseCode + ' ' + (r.responseMessage || ''));
-          return res.status(402).json({ error: 'Payment declined: ' + (r.responseMessage || 'Unknown error') });
+
+    // Pre-validate catalog and cart before touching the card
+    return Promise.all([
+      cache.get(PRODUCTS_CACHE_KEY),
+      cache.get(SERVICES_CACHE_KEY)
+    ]).then(function (results) {
+      var catalog = results[0];
+      var services = results[1];
+
+      if (!Array.isArray(catalog) || catalog.length === 0) {
+        log.warn('[checkout/pre-charge] Catalog unavailable — rejecting before charge');
+        return res.status(503).json({ error: 'Pricing temporarily unavailable. Please try again in a moment.' });
+      }
+
+      var preMap = {};
+      catalog.forEach(function (p) { if (p && p.item_id) preMap[p.item_id] = true; });
+      if (Array.isArray(services)) {
+        services.forEach(function (s) { if (s && s.item_id) preMap[s.item_id] = true; });
+      }
+
+      // Reject unknown items before charging
+      for (var pi = 0; pi < body.items.length; pi++) {
+        if (preMap[body.items[pi].item_id] === undefined) {
+          log.warn('[checkout/pre-charge] item_id not in catalog: ' + body.items[pi].item_id);
+          return res.status(400).json({ error: 'One or more items could not be priced. Please refresh and try again.' });
         }
-        transactionId = r.transactionId;
-        depositAmount = chargeAmt;
-        log.info('[checkout] Server-side charge succeeded: txn=' + transactionId);
-        return checkTransactionIdAndProceed();
-      })
-      .catch(function (chargeErr) {
-        log.error('[checkout] Server-side charge failed: ' + chargeErr.message);
-        return res.status(502).json({ error: 'Payment could not be processed' });
-      });
+      }
+
+      // Makers Fee pre-check
+      var MAKERS_FEE_ITEM_ID = process.env.MAKERS_FEE_ITEM_ID || '';
+      var preKitCount = 0;
+      var preHasMakers = false;
+      for (var mi = 0; mi < body.items.length; mi++) {
+        var mItem = body.items[mi];
+        var isService = Array.isArray(services) && services.some(function (s) { return s && s.item_id === mItem.item_id; });
+        if (!isService) preKitCount++;
+        if (MAKERS_FEE_ITEM_ID && mItem.item_id === MAKERS_FEE_ITEM_ID) preHasMakers = true;
+        if (!MAKERS_FEE_ITEM_ID && mItem.name && mItem.name.toLowerCase().indexOf('maker') !== -1) preHasMakers = true;
+      }
+      if (preKitCount > 0 && !preHasMakers) {
+        log.warn('[checkout/pre-charge] Kit items present but Makers Fee missing — rejecting before charge');
+        return res.status(400).json({ error: 'Order validation failed. Please refresh and try again.' });
+      }
+
+      // All validation passed — now charge the card
+      var card = new CreditCardData();
+      card.token = body.payment_token;
+      var chargeAmt = gpLib.getDepositAmount();
+      return card.charge(chargeAmt).withCurrency('CAD').withAllowDuplicates(true).execute()
+        .then(function (r) {
+          if (r.responseCode !== 'SUCCESS' && r.responseCode !== '00') {
+            log.warn('[checkout] Card declined during server-side charge: ' + r.responseCode + ' ' + (r.responseMessage || ''));
+            return res.status(402).json({ error: 'Payment declined: ' + (r.responseMessage || 'Unknown error') });
+          }
+          transactionId = r.transactionId;
+          depositAmount = chargeAmt;
+          log.info('[checkout] Server-side charge succeeded: txn=' + transactionId);
+          return checkTransactionIdAndProceed();
+        })
+        .catch(function (chargeErr) {
+          log.error('[checkout] Server-side charge failed: ' + chargeErr.message);
+          return res.status(502).json({ error: 'Payment could not be processed' });
+        });
+    }).catch(function (cacheErr) {
+      log.error('[checkout/pre-charge] Cache read failed: ' + cacheErr.message);
+      return res.status(503).json({ error: 'Unable to verify item prices. Please try again.' });
+    });
   }
 
   return chargeAndProceed();
