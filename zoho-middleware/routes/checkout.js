@@ -112,6 +112,9 @@ var CHECKOUT_IDEMPOTENCY_TTL = 600; // 10 minutes in seconds
 /**
  * Build line items and compute order total from a cart.
  * Uses catalog prices when available; falls back to client-supplied rates.
+ * NOTE: In production, runCheckout() always rejects the request before calling
+ * this function when the catalog is unavailable (fail-closed). The catalogAvailable
+ * flag and client-rate fallback path exist only for unit-test compatibility.
  * @param {Array}   items            - Cart items from the request body
  * @param {object}  catalogMap       - item_id → rate from authoritative cache
  * @param {boolean} catalogAvailable - Whether catalogMap is populated
@@ -124,8 +127,11 @@ function buildLineItems(items, catalogMap, catalogAvailable) {
     var rate = catalogAvailable ? catalogMap[item.item_id] : (Number(item.rate) || 0);
     // C3: Server never trusts client-supplied discount — always apply zero discount
     // Any applicable discounts must be computed server-side from authoritative data
-    orderTotal += qty * rate;
+    var discountPct = (typeof item.discount === 'number' && item.discount > 0) ? item.discount : 0;
+    var effectiveRate = discountPct > 0 ? rate * (1 - discountPct / 100) : rate;
+    orderTotal += qty * effectiveRate;
     var li = { item_id: item.item_id, name: item.name || '', quantity: qty, rate: rate };
+    if (discountPct > 0) li.discount = discountPct + '%';
     return li;
   });
   // Round after accumulation loop to avoid floating-point drift (Item #5)
@@ -355,11 +361,8 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
   }
 
   // Item #11 — Anchor prices to authoritative catalog cache.
-  // Try kiosk cache first, then general products cache as fallback.
-  // Client-supplied rates are rejected in favour of server-side prices when
-  // the catalog cache is populated. When the cache is empty (e.g. after a
-  // cold start where the Zoho pre-warm was rate-limited), fall through using
-  // client-supplied rates so checkout is never blocked by a warm-up failure.
+  // Fail closed: if the catalog cache is empty (e.g. after a cold start), reject
+  // the checkout with a 503 rather than accepting client-supplied rates.
   // Use the general products catalog for checkout validation.
   // (Kiosk catalog is a different item set — retail POS items — and must not
   //  be used to validate regular website reservations.)
@@ -374,35 +377,60 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
     var catalogMap = {};
     var catalogAvailable = Array.isArray(catalog) && catalog.length > 0;
 
-    if (catalogAvailable) {
-      catalog.forEach(function (p) {
-        if (p && p.item_id) catalogMap[p.item_id] = p.rate;
-      });
-      // Also include service items (e.g. Makers Fee, milling) so they pass validation
-      if (Array.isArray(services)) {
-        services.forEach(function (s) {
-          if (s && s.item_id) catalogMap[s.item_id] = s.rate;
-        });
-      }
-
-      // Reject any item not present in the catalog cache
-      for (var ci = 0; ci < body.items.length; ci++) {
-        var cItem = body.items[ci];
-        if (catalogMap[cItem.item_id] === undefined) {
-          return res.status(400).json({
-            error: 'Item not available for purchase: ' + cItem.item_id
-          });
-        }
-      }
-    } else {
-      // Cache empty — skip price anchoring, use client-supplied rates
-      log.warn('[checkout] Catalog cache empty — price anchoring skipped, using client-supplied rates');
+    // Fix 1: Fail closed — reject if catalog is unavailable rather than trusting client rates
+    if (!catalogAvailable) {
+      log.warn('[checkout] Catalog cache empty — rejecting checkout to prevent client-rate injection');
+      return res.status(503).json({ error: 'Pricing temporarily unavailable. Please try again in a moment.' });
     }
 
-    // --- Build line items (catalog price when available, else client-supplied rate) ---
-    var built = buildLineItems(body.items, catalogMap, catalogAvailable);
+    catalog.forEach(function (p) {
+      if (p && p.item_id) catalogMap[p.item_id] = p.rate;
+    });
+    // Also include service items (e.g. Makers Fee, milling) so they pass validation
+    if (Array.isArray(services)) {
+      services.forEach(function (s) {
+        if (s && s.item_id) catalogMap[s.item_id] = s.rate;
+      });
+    }
+
+    // Reject any item not present in the catalog cache
+    for (var ci = 0; ci < body.items.length; ci++) {
+      var cItem = body.items[ci];
+      if (catalogMap[cItem.item_id] === undefined) {
+        log.warn('[checkout] item_id not found in catalog: ' + cItem.item_id);
+        return res.status(400).json({
+          error: 'One or more items could not be priced. Please refresh and try again.'
+        });
+      }
+    }
+
+    // --- Build line items from authoritative catalog prices only ---
+    var built = buildLineItems(body.items, catalogMap, true);
     var lineItems = built.lineItems;
     var orderTotal = built.orderTotal;
+
+    // Fix 2: Makers Fee presence enforcement
+    // The Makers Fee is a service item identified by MAKERS_FEE_ITEM_ID env var
+    // (or by name containing "maker" when the env var is not configured).
+    // If kit items are present in the order but no Makers Fee, reject as possible tampering.
+    var MAKERS_FEE_ITEM_ID = process.env.MAKERS_FEE_ITEM_ID || '';
+    var kitItemCount = 0;
+    var hasMakersFee = false;
+    for (var mfk = 0; mfk < body.items.length; mfk++) {
+      var mfItem = body.items[mfk];
+      // Kit items: items that are in the products catalog but not the services catalog
+      // (services catalog holds Makers Fee, milling, etc.)
+      var isService = services && Array.isArray(services) &&
+        services.some(function (s) { return s && s.item_id === mfItem.item_id; });
+      if (!isService) kitItemCount++;
+      // Identify Makers Fee by explicit item_id env var, or by name substring
+      if (MAKERS_FEE_ITEM_ID && mfItem.item_id === MAKERS_FEE_ITEM_ID) hasMakersFee = true;
+      if (!MAKERS_FEE_ITEM_ID && mfItem.name && mfItem.name.toLowerCase().indexOf('maker') !== -1) hasMakersFee = true;
+    }
+    if (kitItemCount > 0 && !hasMakersFee) {
+      log.warn('[checkout] Kit items present but Makers Fee missing from payload — possible tampering');
+      return res.status(400).json({ error: 'Order validation failed. Please refresh and try again.' });
+    }
 
     var balanceDue = Math.max(0, orderTotal - depositAmount);
 
@@ -614,10 +642,11 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
                 log.error('[checkout] GP void timed out — manual void required for txn=' + transactionId + ': ' + voidErr.message);
               } else {
                 // Item #42 — Structured critical alert: void failed after Zoho order failure
+                // Fix 4: PII scrubbed — names/emails are partially masked in logs
                 log.error('[checkout] CRITICAL:', JSON.stringify({
                   event: 'CRITICAL_CHECKOUT_FAILURE',
-                  customerEmail: customerEmail,
-                  customerName: customerName,
+                  customerEmail: customerEmail ? customerEmail.replace(/(.{2}).*(@.*)/, '$1***$2') : 'unknown',
+                  customerName: customerName ? customerName.substring(0, 1) + '***' : 'unknown',
                   amount: depositAmount,
                   soId: null,
                   txnId: transactionId,

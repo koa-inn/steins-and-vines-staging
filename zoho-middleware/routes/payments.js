@@ -29,6 +29,10 @@ router.post('/api/payment/charge', function (req, res) {
     return res.status(503).json({ error: 'Payment gateway not configured' });
   }
 
+  // Fix 3: amount is validated server-side; client-supplied amount is only accepted
+  // if it exactly matches the canonical deposit configured via GP_DEPOSIT_AMOUNT env var.
+  // The canonical amount is computed server-side from gpLib.getDepositAmount() —
+  // a client cannot dictate a different charge amount.
   var amount = parseFloat(body.amount);
   if (isNaN(amount) || amount !== gpLib.getDepositAmount()) {
     return res.status(400).json({ error: 'Invalid payment amount' });
