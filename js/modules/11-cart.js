@@ -667,7 +667,8 @@ function updateReservationBar() {
   var items = getAllCartItems();
   var count = 0;
   items.forEach(function (item) {
-    count += (parseFloat(item.qty) || 1);
+    // Weight-based items count as 1 line item regardless of qty
+    count += isWeightUnit(item.unit) ? 1 : (parseFloat(item.qty) || 1);
   });
 
   var sidebar = document.getElementById('cart-sidebar');

@@ -2442,6 +2442,19 @@ behold-widget {
   box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
 }
 
+@media (min-width: 1024px) {
+  .reservation-bar {
+    bottom: auto;
+    top: var(--header-height, 60px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    padding-bottom: 0.75rem;
+  }
+  /* Push main content below the top bar on desktop */
+  main {
+    padding-top: var(--reservation-bar-height, 0px);
+  }
+}
+
 .reservation-bar .container {
   display: flex;
   justify-content: space-between;
@@ -6081,10 +6094,15 @@ footer {
     min-height: 44px;
   }
 
-  /* Slimmer reservation bar */
+  /* Slimmer reservation bar (mobile landscape) */
   .reservation-bar {
     padding: 0.4rem 0;
     padding-bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px));
+  }
+  @media (min-width: 1024px) {
+    .reservation-bar {
+      padding-bottom: 0.4rem;
+    }
   }
 
   .reservation-bar .reservation-bar-count {
