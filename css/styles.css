@@ -5769,6 +5769,94 @@ footer {
 }
 
 /* =====================================================
+   MOBILE / TABLET BOTTOM CATALOG BAR
+   #mobile-catalog-bar is created by initMobileBottomControls()
+   on screens < 1024px wide. Rules are unconditional (not in a
+   media query) because the element only exists when JS creates it,
+   covering both mobile (≤768px) and tablet (769–1023px).
+   ===================================================== */
+
+#mobile-catalog-bar {
+  position: fixed;
+  bottom: var(--reservation-bar-height, 3rem);
+  left: 0;
+  right: 0;
+  z-index: 999;
+  background-color: var(--color-cream);
+  box-shadow: 0 -2px 6px rgba(0,0,0,0.1);
+}
+
+/* Reset controls positioning — the bar wrapper handles placement */
+#mobile-catalog-bar .catalog-controls {
+  position: static;
+  z-index: auto;
+  background-color: transparent;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0;
+  box-shadow: none;
+  gap: 0.5rem;
+}
+
+/* Search bar fills available width in the bottom bar */
+#mobile-catalog-bar .catalog-search {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  min-height: 44px;
+  line-height: 1.4;
+}
+
+/* Filter panel expands UPWARD above the bottom bar */
+#mobile-catalog-bar .catalog-collapsible {
+  display: none;
+}
+#mobile-catalog-bar .catalog-collapsible.open {
+  display: flex;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background-color: var(--color-cream);
+  border-top: 1px solid var(--color-brown);
+  padding: 0.75rem;
+  box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
+}
+
+#mobile-catalog-bar .catalog-filter-row {
+  width: 100%;
+  padding-left: 0;
+  overflow-x: visible;
+}
+
+#mobile-catalog-bar .catalog-filter-btn {
+  padding: 5px 12px;
+  font-size: 0.8125rem;
+  min-height: 44px;
+}
+
+#mobile-catalog-bar .catalog-filter-label {
+  width: 100%;
+  margin-left: 0;
+  text-align: left;
+}
+
+#mobile-catalog-bar .catalog-sort {
+  max-width: none;
+  width: 100%;
+}
+
+/* Product catalog bottom padding — room for both fixed bottom bars */
+@media (max-width: 1023px) {
+  #product-catalog {
+    padding-bottom: calc(var(--reservation-bar-height, 3rem) + var(--catalog-bar-height, 6rem) + 1rem);
+  }
+}
+
+/* =====================================================
    MEDIA QUERIES — Global breakpoints
    (formerly mid-file; moved here so all component
     sections above are covered by these overrides)
@@ -5869,34 +5957,6 @@ footer {
     padding: 4rem 0;
   }
 
-  /* Controls are relocated to #mobile-catalog-bar (body-level) by JS.
-     Reset positioning here so the body wrapper handles fixed placement. */
-  .catalog-controls {
-    position: static;
-    z-index: auto;
-    background-color: transparent;
-    padding: 0.5rem 0.75rem;
-    margin-bottom: 0;
-    box-shadow: none;
-    gap: 0.5rem;
-  }
-
-  /* Fixed bottom controls bar — populated by initMobileBottomControls() */
-  #mobile-catalog-bar {
-    position: fixed;
-    bottom: var(--reservation-bar-height, 3rem);
-    left: 0;
-    right: 0;
-    z-index: 999;
-    background-color: var(--color-cream);
-    box-shadow: 0 -2px 6px rgba(0,0,0,0.1);
-  }
-
-  #product-catalog {
-    /* Leave room for both fixed bottom bars */
-    padding-bottom: calc(var(--reservation-bar-height, 3rem) + var(--catalog-bar-height, 6rem) + 1rem);
-  }
-
   .product-tabs {
     margin-bottom: 1rem;
   }
@@ -5910,52 +5970,6 @@ footer {
     max-height: 50vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-  }
-
-  /* Filter panel in the fixed bottom bar must expand upward, not downward */
-  #mobile-catalog-bar .catalog-collapsible.open {
-    position: absolute;
-    bottom: 100%;
-    left: 0;
-    right: 0;
-    max-height: 50vh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    background-color: var(--color-cream);
-    border-top: 1px solid var(--color-brown);
-    padding: 0.75rem;
-    box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
-  }
-
-  .catalog-search {
-    flex: 1 1 auto;
-    width: auto;
-    max-width: none;
-    min-height: 44px;
-    line-height: 1.4;
-  }
-
-  .catalog-filter-row {
-    width: 100%;
-    padding-left: 0;
-    overflow-x: visible;
-  }
-
-  .catalog-filter-btn {
-    padding: 5px 12px;
-    font-size: 0.8125rem;
-    min-height: 44px;
-  }
-
-  .catalog-filter-label {
-    width: 100%;
-    margin-left: 0;
-    text-align: left;
-  }
-
-  .catalog-sort {
-    max-width: none;
-    width: 100%;
   }
 
   .title-icon {
