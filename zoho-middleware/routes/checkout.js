@@ -453,7 +453,7 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
         if (!customerId) {
           throw new Error('Could not resolve Zoho contact for email: ' + customerEmail);
         }
-        log.info('[checkout] Resolved contact_id=' + customerId + ' fresh=' + contactWasFresh + ' email=' + customerEmail);
+        log.info('[checkout] Resolved contact_id=' + customerId + ' fresh=' + contactWasFresh);
 
         var salesOrder = {
           customer_id: customerId,
