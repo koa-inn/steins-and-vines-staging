@@ -405,8 +405,30 @@ router.get('/api/services', function (req, res) {
           var items = allItems.filter(function (item) {
             return item.product_type === 'service';
           });
-          cache.set(SERVICES_CACHE_KEY, items, SERVICES_CACHE_TTL);
-          res.json({ source: 'zoho', items: items });
+          // Enrich each service item with detail (tax_percentage, tax_name, tax_id)
+          // Services list is small so we fetch all details sequentially
+          return items.reduce(function (chain, item) {
+            return chain.then(function () {
+              return inventoryGet('/items/' + item.item_id)
+                .then(function (data) {
+                  var detail = data.item || {};
+                  item.tax_id = detail.tax_id || '';
+                  item.tax_name = detail.tax_name || '';
+                  item.tax_percentage = (detail.tax_percentage !== undefined && detail.tax_percentage !== null)
+                    ? detail.tax_percentage : 0;
+                })
+                .catch(function (err) {
+                  log.warn('[api/services] Detail fetch failed for ' + item.name + ': ' + err.message);
+                  item.tax_percentage = item.tax_percentage != null ? item.tax_percentage : 0;
+                  item.tax_name = item.tax_name || '';
+                  item.tax_id = item.tax_id || '';
+                });
+            });
+          }, Promise.resolve())
+            .then(function () {
+              cache.set(SERVICES_CACHE_KEY, items, SERVICES_CACHE_TTL);
+              res.json({ source: 'zoho', items: items });
+            });
         });
     })
     .catch(function (err) {

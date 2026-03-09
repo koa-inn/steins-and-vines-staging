@@ -5728,11 +5728,15 @@ function updateDepositSummary() {
 }
 
 function initReservationPage() {
-  // H4: Filter items by ?cart= URL param if present
+  // H4: Filter items by ?cart= URL param if present; fall back to all items if that cart is empty
   var _checkoutCartKey = getActiveCheckoutCart();
   var initialItems = _checkoutCartKey ? getReservation(_checkoutCartKey) : getAllCartItems();
+  if (initialItems.length === 0 && _checkoutCartKey) {
+    // Specific cart is empty — fall back to all items so kit items are never silently lost
+    initialItems = getAllCartItems();
+  }
   if (initialItems.length === 0) {
-    setTimeout(function () { window.location.href = 'products.html'; }, 1500);
+    setTimeout(function () { window.location.href = '/products.html'; }, 1500);
   }
 
   initCheckoutStepper();
@@ -5740,13 +5744,6 @@ function initReservationPage() {
   // M1: Show which cart is being checked out
   var params = new URLSearchParams(window.location.search);
   var cartParam = params.get('cart');
-  var pageH1 = document.querySelector('.page-header h1');
-  if (pageH1 && cartParam) {
-    var cartLabel = document.createElement('p');
-    cartLabel.className = 'checkout-cart-label';
-    cartLabel.textContent = cartParam === 'ferment' ? 'Ferment in Store Cart' : 'Ingredients & Supplies Cart';
-    pageH1.parentNode.insertBefore(cartLabel, pageH1.nextSibling);
-  }
 
   var initialHasKits = initialItems.some(function (item) { return (item.item_type || 'kit') === 'kit'; });
 
@@ -5984,8 +5981,10 @@ function renderReservationItems() {
   if (!container) return;
 
   // H4: Only show items from the active checkout cart (based on ?cart= URL param)
+  // Fall back to all items if the specific cart is empty (prevents silent loss of kit items)
   var _renderCartKey = getActiveCheckoutCart();
   var items = _renderCartKey ? getReservation(_renderCartKey) : getAllCartItems();
+  if (items.length === 0 && _renderCartKey) items = getAllCartItems();
   var hasKits = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
   applyKitSpecificVisibility(hasKits);
   container.innerHTML = '';
