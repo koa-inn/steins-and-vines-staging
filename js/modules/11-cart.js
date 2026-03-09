@@ -717,6 +717,15 @@ function renderCartSidebar() {
   var totalEl = document.getElementById('cart-sidebar-total');
   if (!container) return;
 
+  // Update sidebar checkout link with correct ?cart= param
+  var sidebarCheckoutLink = document.querySelector('.cart-sidebar-checkout');
+  if (sidebarCheckoutLink) {
+    var sidebarCartParam = '';
+    if (_activeCartTab === 'kits') sidebarCartParam = '?cart=ferment';
+    else if (_activeCartTab === 'ingredients') sidebarCartParam = '?cart=ingredient';
+    sidebarCheckoutLink.setAttribute('href', '/reservation.html' + sidebarCartParam);
+  }
+
   // Unified view — show all items from both carts
   var items = getAllCartItems();
   container.innerHTML = '';
