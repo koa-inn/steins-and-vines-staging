@@ -553,7 +553,7 @@ function renderReservationItems() {
     }
     var tr = document.createElement('tr');
 
-    // Name + discount badge
+    // Name + discount badge + bottle yield for kits
     var tdName = document.createElement('td');
     tdName.setAttribute('data-label', 'Name');
     var nameSpan = document.createElement('span');
@@ -565,6 +565,15 @@ function renderReservationItems() {
       badge.className = 'discount-badge-sm';
       badge.textContent = Math.round(parseFloat(item.discount)) + '% OFF';
       tdName.appendChild(badge);
+    }
+    if ((item.item_type || 'kit') === 'kit') {
+      var batchL = parseFloat(item['batch_size_(l)'] || item.batch_size_liters || 23);
+      var bottlesLow = Math.floor(batchL * 1000 / 750) - 1;
+      var bottlesHigh = Math.round(batchL * 1000 / 750);
+      var yieldSpan = document.createElement('span');
+      yieldSpan.className = 'table-name-sub';
+      yieldSpan.textContent = bottlesLow + '\u2013' + bottlesHigh + ' bottles';
+      tdName.appendChild(yieldSpan);
     }
     tr.appendChild(tdName);
 
@@ -929,7 +938,7 @@ function renderReservationItems() {
   var totalRow = document.createElement('div');
   totalRow.className = 'reservation-subtotal reservation-subtotal--total';
   if (hasKits) {
-    totalRow.innerHTML = '<span>Estimated Total <span class="reservation-disclaimer">\u2014 Final pricing may vary.</span></span><span>' + formatCurrency(grandTotal) + '</span>';
+    totalRow.innerHTML = '<span>Total</span><span>' + formatCurrency(grandTotal) + '</span>';
   } else {
     totalRow.innerHTML = '<span>Total</span><span>' + formatCurrency(grandTotal) + '</span>';
   }

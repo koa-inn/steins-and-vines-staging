@@ -627,7 +627,7 @@ function initReservationBar() {
       '<span class="reservation-bar-count"></span>' +
       '<span class="reservation-bar-actions">' +
       '<button type="button" class="reservation-bar-clear">Clear Cart</button>' +
-      '<a href="reservation.html' + cartParam + '" class="reservation-bar-link">Checkout &rarr;</a>' +
+      '<a href="/reservation.html' + cartParam + '" class="reservation-bar-link">Checkout &rarr;</a>' +
       '</span>' +
       '</div>';
   }
@@ -682,6 +682,12 @@ function updateReservationBar() {
   }
 
   bars.forEach(function (bar) {
+    // On desktop, if a sidebar is present on this page, hide the fixed floating bar
+    // (the sidebar replaces it; the inline catalog bar still shows)
+    if (sidebar && window.innerWidth >= 1024 && bar.id === 'reservation-bar') {
+      bar.classList.add('hidden');
+      return;
+    }
     bar.classList.remove('hidden');
     var countEl = bar.querySelector('.reservation-bar-count');
     if (countEl) {
@@ -853,44 +859,34 @@ function renderCartSidebar() {
 
     row.appendChild(controls);
     container.appendChild(row);
-  });
 
-  // Maker's Fee row — shown when kit items are in the cart
-  var hasKitsInSidebar = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
-  if (hasKitsInSidebar) {
-    var kitQtySidebar = 0;
-    items.forEach(function (i) { if ((i.item_type || 'kit') === 'kit') kitQtySidebar += (parseFloat(i.qty) || 0); });
-    var feeRateSidebar = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
-    var feeTotalSidebar = feeRateSidebar * kitQtySidebar;
-    subtotal += feeTotalSidebar;
+    // Maker's Fee row immediately after each kit item
+    if ((item.item_type || 'kit') === 'kit') {
+      var feeRateSb = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
+      subtotal += feeRateSb;
 
-    var feeRow = document.createElement('div');
-    feeRow.className = 'cart-sidebar-item cart-sidebar-fee-row';
+      var feeRow = document.createElement('div');
+      feeRow.className = 'cart-sidebar-item cart-sidebar-fee-row cart-sidebar-fee-row--inline';
 
-    var feeInfo = document.createElement('div');
-    feeInfo.className = 'cart-sidebar-item-info';
-    var feeNameEl = document.createElement('div');
-    feeNameEl.className = 'cart-sidebar-item-name';
-    feeNameEl.textContent = (_makersFeeItem && _makersFeeItem.name) ? _makersFeeItem.name : "Maker's Fee";
-    feeInfo.appendChild(feeNameEl);
-    if (kitQtySidebar > 1) {
-      var feeDetailEl = document.createElement('div');
-      feeDetailEl.className = 'cart-sidebar-item-brand';
-      feeDetailEl.textContent = kitQtySidebar + ' \u00D7 ' + formatCurrency(feeRateSidebar);
-      feeInfo.appendChild(feeDetailEl);
+      var feeInfo = document.createElement('div');
+      feeInfo.className = 'cart-sidebar-item-info';
+      var feeNameEl = document.createElement('div');
+      feeNameEl.className = 'cart-sidebar-item-name';
+      feeNameEl.textContent = (_makersFeeItem && _makersFeeItem.name) ? _makersFeeItem.name : "Maker's Fee";
+      feeInfo.appendChild(feeNameEl);
+      feeRow.appendChild(feeInfo);
+
+      var feeTotalEl = document.createElement('div');
+      feeTotalEl.className = 'cart-sidebar-item-controls';
+      var feeAmountEl = document.createElement('div');
+      feeAmountEl.className = 'cart-sidebar-line-total';
+      feeAmountEl.textContent = formatCurrency(feeRateSb);
+      feeTotalEl.appendChild(feeAmountEl);
+      feeRow.appendChild(feeTotalEl);
+
+      container.appendChild(feeRow);
     }
-    feeRow.appendChild(feeInfo);
-
-    var feeTotalEl = document.createElement('div');
-    feeTotalEl.className = 'cart-sidebar-item-controls';
-    var feeAmountEl = document.createElement('div');
-    feeAmountEl.className = 'cart-sidebar-line-total';
-    feeAmountEl.textContent = formatCurrency(feeTotalSidebar);
-    feeTotalEl.appendChild(feeAmountEl);
-    feeRow.appendChild(feeTotalEl);
-
-    container.appendChild(feeRow);
-  }
+  });
 
   if (totalEl) totalEl.textContent = formatCurrency(subtotal);
 }
@@ -915,7 +911,7 @@ function renderCartDrawer() {
     var checkoutCartParam = '';
     if (_activeCartTab === 'kits') checkoutCartParam = '?cart=ferment';
     else if (_activeCartTab === 'ingredients') checkoutCartParam = '?cart=ingredient';
-    checkoutLink.setAttribute('href', 'reservation.html' + checkoutCartParam);
+    checkoutLink.setAttribute('href', '/reservation.html' + checkoutCartParam);
     checkoutLink.textContent = 'Checkout';
   }
 
@@ -1077,44 +1073,34 @@ function renderCartDrawer() {
 
     row.appendChild(controls);
     container.appendChild(row);
-  });
 
-  // Maker's Fee row — shown when kit items are in the cart
-  var hasKitsInDrawer = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
-  if (hasKitsInDrawer) {
-    var kitQtyDrawer = 0;
-    items.forEach(function (i) { if ((i.item_type || 'kit') === 'kit') kitQtyDrawer += (parseFloat(i.qty) || 0); });
-    var feeRateDrawer = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
-    var feeTotalDrawer = feeRateDrawer * kitQtyDrawer;
-    subtotal += feeTotalDrawer;
+    // Maker's Fee row immediately after each kit item
+    if ((item.item_type || 'kit') === 'kit') {
+      var feeRateDr = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
+      subtotal += feeRateDr;
 
-    var feeRowD = document.createElement('div');
-    feeRowD.className = 'cart-sidebar-item cart-sidebar-fee-row';
+      var feeRowD = document.createElement('div');
+      feeRowD.className = 'cart-sidebar-item cart-sidebar-fee-row cart-sidebar-fee-row--inline';
 
-    var feeInfoD = document.createElement('div');
-    feeInfoD.className = 'cart-sidebar-item-info';
-    var feeNameElD = document.createElement('div');
-    feeNameElD.className = 'cart-sidebar-item-name';
-    feeNameElD.textContent = (_makersFeeItem && _makersFeeItem.name) ? _makersFeeItem.name : "Maker's Fee";
-    feeInfoD.appendChild(feeNameElD);
-    if (kitQtyDrawer > 1) {
-      var feeDetailElD = document.createElement('div');
-      feeDetailElD.className = 'cart-sidebar-item-brand';
-      feeDetailElD.textContent = kitQtyDrawer + ' \u00D7 ' + formatCurrency(feeRateDrawer);
-      feeInfoD.appendChild(feeDetailElD);
+      var feeInfoD = document.createElement('div');
+      feeInfoD.className = 'cart-sidebar-item-info';
+      var feeNameElD = document.createElement('div');
+      feeNameElD.className = 'cart-sidebar-item-name';
+      feeNameElD.textContent = (_makersFeeItem && _makersFeeItem.name) ? _makersFeeItem.name : "Maker's Fee";
+      feeInfoD.appendChild(feeNameElD);
+      feeRowD.appendChild(feeInfoD);
+
+      var feeTotalElD = document.createElement('div');
+      feeTotalElD.className = 'cart-sidebar-item-controls';
+      var feeAmountElD = document.createElement('div');
+      feeAmountElD.className = 'cart-sidebar-line-total';
+      feeAmountElD.textContent = formatCurrency(feeRateDr);
+      feeTotalElD.appendChild(feeAmountElD);
+      feeRowD.appendChild(feeTotalElD);
+
+      container.appendChild(feeRowD);
     }
-    feeRowD.appendChild(feeInfoD);
-
-    var feeTotalElD = document.createElement('div');
-    feeTotalElD.className = 'cart-sidebar-item-controls';
-    var feeAmountElD = document.createElement('div');
-    feeAmountElD.className = 'cart-sidebar-line-total';
-    feeAmountElD.textContent = formatCurrency(feeTotalDrawer);
-    feeTotalElD.appendChild(feeAmountElD);
-    feeRowD.appendChild(feeTotalElD);
-
-    container.appendChild(feeRowD);
-  }
+  });
 
   if (totalEl) totalEl.textContent = formatCurrency(subtotal);
 }
