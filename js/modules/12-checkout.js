@@ -762,6 +762,7 @@ function renderReservationItems() {
     // Maker's Fee row immediately after each kit item
     if ((item.item_type || 'kit') === 'kit') {
       var feeRateInline = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
+      var kitQtyInline = parseFloat(item.qty) || 1;
       var feeTrInline = document.createElement('tr');
       feeTrInline.className = 'makers-fee-row makers-fee-row--inline';
       feeTrInline.innerHTML = '<td data-label="Name">' + ((_makersFeeItem && _makersFeeItem.name) || "Maker\'s Fee") + '</td>'
@@ -769,7 +770,7 @@ function renderReservationItems() {
         + (hasBrand ? '<td></td>' : '')
         + (hasTime ? '<td></td>' : '')
         + '<td style="text-align:right">' + formatCurrency(feeRateInline) + '</td>'
-        + '<td></td><td>1</td><td></td>';
+        + '<td></td><td>' + kitQtyInline + '</td><td></td>';
       tbody.appendChild(feeTrInline);
     }
   });

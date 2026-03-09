@@ -872,7 +872,8 @@ function renderCartSidebar() {
     // Maker's Fee row immediately after each kit item
     if ((item.item_type || 'kit') === 'kit') {
       var feeRateSb = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
-      subtotal += feeRateSb;
+      var kitQtySb = parseFloat(item.qty) || 1;
+      subtotal += feeRateSb * kitQtySb;
 
       var feeRow = document.createElement('div');
       feeRow.className = 'cart-sidebar-item cart-sidebar-fee-row cart-sidebar-fee-row--inline';
@@ -889,7 +890,7 @@ function renderCartSidebar() {
       feeTotalEl.className = 'cart-sidebar-item-controls';
       var feeAmountEl = document.createElement('div');
       feeAmountEl.className = 'cart-sidebar-line-total';
-      feeAmountEl.textContent = formatCurrency(feeRateSb);
+      feeAmountEl.textContent = formatCurrency(feeRateSb * kitQtySb);
       feeTotalEl.appendChild(feeAmountEl);
       feeRow.appendChild(feeTotalEl);
 
@@ -1086,7 +1087,8 @@ function renderCartDrawer() {
     // Maker's Fee row immediately after each kit item
     if ((item.item_type || 'kit') === 'kit') {
       var feeRateDr = (_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50;
-      subtotal += feeRateDr;
+      var kitQtyDr = parseFloat(item.qty) || 1;
+      subtotal += feeRateDr * kitQtyDr;
 
       var feeRowD = document.createElement('div');
       feeRowD.className = 'cart-sidebar-item cart-sidebar-fee-row cart-sidebar-fee-row--inline';
@@ -1103,7 +1105,7 @@ function renderCartDrawer() {
       feeTotalElD.className = 'cart-sidebar-item-controls';
       var feeAmountElD = document.createElement('div');
       feeAmountElD.className = 'cart-sidebar-line-total';
-      feeAmountElD.textContent = formatCurrency(feeRateDr);
+      feeAmountElD.textContent = formatCurrency(feeRateDr * kitQtyDr);
       feeTotalElD.appendChild(feeAmountElD);
       feeRowD.appendChild(feeTotalElD);
 
