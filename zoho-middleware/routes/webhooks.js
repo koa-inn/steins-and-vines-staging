@@ -1,4 +1,5 @@
 var express = require('express');
+var crypto = require('crypto');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
 
@@ -34,9 +35,13 @@ router.post('/webhooks/zoho-inventory', function (req, res) {
     return res.status(503).json({ error: 'Webhook not configured' });
   }
 
-  // Validate secret sent by Zoho
+  // Validate secret sent by Zoho using constant-time comparison (prevents timing attacks)
   var incoming = req.headers['x-webhook-secret'] || '';
-  if (incoming !== secret) {
+  var secretBuf = Buffer.from(secret);
+  var incomingBuf = Buffer.from(incoming);
+  var valid = incomingBuf.length === secretBuf.length &&
+    crypto.timingSafeEqual(incomingBuf, secretBuf);
+  if (!valid) {
     log.warn('[webhook] Invalid webhook secret from ' + (req.ip || 'unknown'));
     return res.status(401).json({ error: 'Unauthorized' });
   }
