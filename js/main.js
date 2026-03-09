@@ -6359,25 +6359,64 @@ function renderReservationItems() {
     var d = parseFloat(i.discount) || 0; if (d > 0) p *= (1 - d / 100); sub += p * (i.qty || 1);
   });
 
-  var feeRate = (hasKits && _makersFeeItem) ? (parseFloat(_makersFeeItem.rate) || 50) : 0;
+  var feeRate = hasKits ? ((_makersFeeItem && parseFloat(_makersFeeItem.rate)) ? parseFloat(_makersFeeItem.rate) : 50) : 0;
   var totalFee = feeRate * totalKitQty;
-  var payFull = true; var fR = document.querySelector('input[name="payment-option"][value="full"]'); if (fR) payFull = fR.checked;
 
-  var sWrap = document.createElement('div'); sWrap.className = 'order-summary-totals';
-  if (!hasKits || payFull) {
-    var tax = 0; items.forEach(function (i) {
-      var p = parseFloat((i.price || '0').replace('$', '')) || 0;
-      var d = parseFloat(i.discount) || 0; if (d > 0) p *= (1 - d / 100);
-      tax += p * (i.qty || 1) * ((parseFloat(i.tax_percentage) || 0) / 100);
-    });
-    sWrap.innerHTML = '<div class="reservation-subtotal"><span>Subtotal</span><span>' + formatCurrency(sub + totalFee) + '</span></div>' +
-      (tax > 0 ? '<div class="reservation-subtotal reservation-subtotal--detail"><span>Tax</span><span>' + formatCurrency(tax) + '</span></div>' : '') +
-      '<div class="reservation-subtotal reservation-subtotal--total"><span>Total</span><span>' + formatCurrency(sub + totalFee + tax) + '</span></div>';
-  } else {
-    sWrap.innerHTML = '<div class="reservation-subtotal"><span>Items Subtotal</span><span>' + formatCurrency(sub) + '</span></div>' +
-      '<div class="reservation-subtotal"><span>Maker\'s Fee (' + totalKitQty + ' \u00D7 ' + formatCurrency(feeRate) + ')</span><span>' + formatCurrency(totalFee) + '</span></div>' +
-      '<div class="reservation-subtotal reservation-subtotal--total"><span>Estimated Subtotal <span class="reservation-disclaimer">\u2014 Final pricing may vary.</span></span><span>' + formatCurrency(sub + totalFee) + '</span></div>';
+  // Group taxes by name for breakdown display
+  var taxGroups = {};
+  items.forEach(function (i) {
+    var p = parseFloat((i.price || '0').replace('$', '')) || 0;
+    var d = parseFloat(i.discount) || 0;
+    if (d > 0) p *= (1 - d / 100);
+    var pct = parseFloat(i.tax_percentage) || 0;
+    if (pct > 0) {
+      var name = (i.tax_name && i.tax_name.trim()) ? i.tax_name.trim() : (pct + '%');
+      if (!taxGroups[name]) taxGroups[name] = 0;
+      taxGroups[name] += p * (i.qty || 1) * (pct / 100);
+    }
+  });
+  var taxTotal = 0;
+  var taxNames = Object.keys(taxGroups);
+  taxNames.forEach(function (n) { taxTotal += taxGroups[n]; });
+
+  var sWrap = document.createElement('div');
+  sWrap.className = 'order-summary-totals';
+
+  // Items subtotal row
+  var itemsSubRow = document.createElement('div');
+  itemsSubRow.className = 'reservation-subtotal';
+  itemsSubRow.innerHTML = '<span>' + (hasKits ? 'Items Subtotal' : 'Subtotal') + '</span><span>' + formatCurrency(sub) + '</span>';
+  sWrap.appendChild(itemsSubRow);
+
+  // Maker's Fee row (kits only)
+  if (hasKits) {
+    var feeName = (_makersFeeItem && _makersFeeItem.name) ? _makersFeeItem.name : "Maker's Fee";
+    var feeLabel = totalKitQty > 1 ? feeName + ' (' + totalKitQty + ' \u00D7 ' + formatCurrency(feeRate) + ')' : feeName;
+    var feeRow = document.createElement('div');
+    feeRow.className = 'reservation-subtotal reservation-makers-fee';
+    feeRow.innerHTML = '<span>' + feeLabel + '</span><span>' + formatCurrency(totalFee) + '</span>';
+    sWrap.appendChild(feeRow);
   }
+
+  // Tax breakdown rows
+  taxNames.forEach(function (name) {
+    var taxRow = document.createElement('div');
+    taxRow.className = 'reservation-subtotal reservation-subtotal--detail';
+    taxRow.innerHTML = '<span>' + name + '</span><span>' + formatCurrency(taxGroups[name]) + '</span>';
+    sWrap.appendChild(taxRow);
+  });
+
+  // Total row
+  var grandTotal = sub + totalFee + taxTotal;
+  var totalRow = document.createElement('div');
+  totalRow.className = 'reservation-subtotal reservation-subtotal--total';
+  if (hasKits) {
+    totalRow.innerHTML = '<span>Estimated Total <span class="reservation-disclaimer">\u2014 Final pricing may vary.</span></span><span>' + formatCurrency(grandTotal) + '</span>';
+  } else {
+    totalRow.innerHTML = '<span>Total</span><span>' + formatCurrency(grandTotal) + '</span>';
+  }
+  sWrap.appendChild(totalRow);
+
   container.appendChild(sWrap);
 
   var cWrap = document.createElement('div'); cWrap.className = 'reservation-clear-wrap';
