@@ -237,9 +237,14 @@ function initMobileBottomControls() {
   var controls = Array.prototype.slice.call(document.querySelectorAll('.catalog-controls'));
   if (controls.length === 0) return;
 
-  var wrap = document.createElement('div');
-  wrap.id = 'mobile-catalog-bar';
-  document.body.appendChild(wrap);
+  var wrap = document.getElementById('mobile-catalog-bar');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'mobile-catalog-bar';
+    document.body.appendChild(wrap);
+  } else {
+    wrap.innerHTML = '';
+  }
   controls.forEach(function(ctrl) { wrap.appendChild(ctrl); });
 
   // Measure heights after first paint so CSS vars reflect actual layout
