@@ -6397,6 +6397,14 @@ function renderReservationItems() {
       taxGroups[name] += p * (i.qty || 1) * (pct / 100);
     }
   });
+  // Include Maker's Fee tax (it is a Zoho service item with its own tax_percentage)
+  if (hasKits && _makersFeeItem && parseFloat(_makersFeeItem.tax_percentage) > 0) {
+    var feeTaxPct = parseFloat(_makersFeeItem.tax_percentage);
+    var feeTaxName = (_makersFeeItem.tax_name && _makersFeeItem.tax_name.trim())
+      ? _makersFeeItem.tax_name.trim() : (feeTaxPct + '%');
+    if (!taxGroups[feeTaxName]) taxGroups[feeTaxName] = 0;
+    taxGroups[feeTaxName] += totalFee * (feeTaxPct / 100);
+  }
   var taxTotal = 0;
   var taxNames = Object.keys(taxGroups);
   taxNames.forEach(function (n) { taxTotal += taxGroups[n]; });
