@@ -2,6 +2,7 @@ var KIT_CATEGORIES = ['wine', 'beer', 'cider', 'seltzer'];
 
 function loadProducts() {
   var allProducts = [];
+  var _kitsFuse = null;
   var userHasSorted = false;
   var activeFilters = { type: [], brand: [], subcategory: [], time: [], body: [], oak: [], sweetness: [] };
   var saleFilterActive = false;
@@ -145,6 +146,15 @@ function loadProducts() {
         }
         allProducts.push(obj);
       });
+
+      if (typeof Fuse !== 'undefined') {
+        _kitsFuse = new Fuse(allProducts, {
+          keys: ['name', 'brand', 'subcategory', 'tasting_notes'],
+          threshold: 0.35,
+          minMatchCharLength: 2,
+          ignoreLocation: true
+        });
+      }
 
       buildFilterRow('filter-type', 'type', 'Type:');
       buildFilterRow('filter-brand', 'brand', 'Brand:');
@@ -436,7 +446,13 @@ function loadProducts() {
 
   function applyFilters() {
     var searchInput = document.getElementById('catalog-search');
-    var query = searchInput ? searchInput.value.toLowerCase() : '';
+    var query = searchInput ? searchInput.value.trim() : '';
+
+    var _kitsFuseSet = null;
+    if (query && _kitsFuse) {
+      var fuseResults = _kitsFuse.search(query);
+      _kitsFuseSet = new Set(fuseResults.map(function (r) { return r.item; }));
+    }
 
     var filtered = allProducts.filter(function (r) {
       if (activeFilters.type.length > 0 && activeFilters.type.indexOf(r.type) === -1) return false;
@@ -448,6 +464,7 @@ function loadProducts() {
       if (activeFilters.sweetness.length > 0 && activeFilters.sweetness.indexOf(r.sweetness) === -1) return false;
       if (saleFilterActive && !(parseFloat(r.discount) > 0)) return false;
       if (!query) return true;
+      if (_kitsFuse) return _kitsFuseSet.has(r);
       var name = (r.name || '').toLowerCase();
       var sub = (r.subcategory || '').toLowerCase();
       var notes = (r.tasting_notes || '').toLowerCase();

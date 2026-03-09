@@ -1,4 +1,5 @@
 var _allIngredients = [];
+var _ingredientsFuse = null;
 var _ingredientFilters = { unit: [], category: [], subcategory: [], price: [] };
 var _ingredientTypeOrder = null; // stable section order, set once on first load
 
@@ -122,6 +123,14 @@ function loadIngredients(callback) {
         if (KIT_CATEGORIES.some(function (kc) { return itemType.indexOf(kc) !== -1; })) return false;
         return true;
       });
+      if (typeof Fuse !== 'undefined') {
+        _ingredientsFuse = new Fuse(_allIngredients, {
+          keys: ['name', 'description', 'category', 'subcategory'],
+          threshold: 0.35,
+          minMatchCharLength: 2,
+          ignoreLocation: true
+        });
+      }
       buildIngredientFilters();
       wireIngredientEvents();
       // Default to Grains category on first load, unless deep-linking to a specific item
@@ -290,7 +299,13 @@ function renderIngredients() {
   sections.forEach(function (el) { el.parentNode.removeChild(el); });
 
   var searchInput = document.getElementById('ingredient-search');
-  var query = searchInput ? searchInput.value.toLowerCase() : '';
+  var query = searchInput ? searchInput.value.trim() : '';
+
+  var _ingFuseSet = null;
+  if (query && _ingredientsFuse) {
+    var ingFuseResults = _ingredientsFuse.search(query);
+    _ingFuseSet = new Set(ingFuseResults.map(function (r) { return r.item; }));
+  }
 
   var filtered = _allIngredients.filter(function (r) {
     if (_ingredientFilters.unit.length > 0 && _ingredientFilters.unit.indexOf(r.unit) === -1) return false;
@@ -308,6 +323,7 @@ function renderIngredients() {
       if (!matchPrice) return false;
     }
     if (!query) return true;
+    if (_ingFuseSet) return _ingFuseSet.has(r);
     var name = (r.name || '').toLowerCase();
     var desc = (r.description || '').toLowerCase();
     return name.indexOf(query) !== -1 || desc.indexOf(query) !== -1;
