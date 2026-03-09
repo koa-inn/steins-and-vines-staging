@@ -1,5 +1,14 @@
 require('dotenv').config();
 
+var Sentry = require('@sentry/node');
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'production',
+    tracesSampleRate: 0.1
+  });
+}
+
 var express = require('express');
 var cors = require('cors');
 var crypto = require('crypto');
@@ -313,6 +322,11 @@ app.use('/', require('./routes/checkout'));
 app.use('/', require('./routes/taxes'));
 app.use('/', require('./routes/pos'));
 app.use('/', require('./routes/purchaseorders'));
+
+// Sentry error handler (must be after routes, before other error handlers)
+if (process.env.SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
+}
 
 // ---------------------------------------------------------------------------
 // Start
