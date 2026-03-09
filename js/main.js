@@ -5415,6 +5415,17 @@ function initCartDrawer() {
     });
   }
 
+  var sidebarClearBtn = document.getElementById('cart-sidebar-clear');
+  if (sidebarClearBtn) {
+    sidebarClearBtn.addEventListener('click', function () {
+      saveReservation([], FERMENT_CART_KEY);
+      saveReservation([], INGREDIENT_CART_KEY);
+      updateReservationBar();
+      renderCartSidebar();
+      refreshAllReserveControls();
+    });
+  }
+
   // Tap on reservation bar (not its buttons) to open drawer
   document.querySelectorAll('.reservation-bar').forEach(function (bar) {
     bar.addEventListener('click', function (e) {
