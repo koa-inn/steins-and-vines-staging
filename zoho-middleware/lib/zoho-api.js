@@ -25,6 +25,8 @@ async function withRetry(fn, opts) {
       if (status === 429 && err.response && err.response.headers && err.response.headers['retry-after']) {
         delay = parseInt(err.response.headers['retry-after'], 10) * 1000 || delay;
       }
+      // M1: Cap retry delay to 30 seconds maximum
+      delay = Math.min(delay, 30000);
       await new Promise(function(r) { setTimeout(r, delay); });
       attempt++;
     }

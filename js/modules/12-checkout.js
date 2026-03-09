@@ -12,6 +12,45 @@ var _paymentConfig = null;
 var _gpToken = null;
 var _checkoutSubmitting = false;
 
+// --- C1: reCAPTCHA v3 token helper ---
+function getRecaptchaToken(action, callback) {
+  if (typeof grecaptcha === 'undefined' || !window.RECAPTCHA_SITE_KEY) {
+    callback('');
+    return;
+  }
+  grecaptcha.ready(function () {
+    grecaptcha.execute(window.RECAPTCHA_SITE_KEY, { action: action }).then(function (token) {
+      callback(token);
+    }).catch(function () { callback(''); });
+  });
+}
+
+// --- H4: Determine which cart to use based on ?cart= URL param ---
+function getActiveCheckoutCart() {
+  var params = new URLSearchParams(window.location.search);
+  var cartParam = params.get('cart');
+  if (cartParam === 'ferment') return FERMENT_CART_KEY;
+  if (cartParam === 'ingredient') return INGREDIENT_CART_KEY;
+  return null; // show all / merged
+}
+
+// --- H8: Client-side form validation ---
+function validateCheckoutForm() {
+  var name = document.getElementById('res-name');
+  var email = document.getElementById('res-email');
+  var phone = document.getElementById('res-phone');
+  var errors = [];
+  if (!name || !name.value.trim()) errors.push('Name is required');
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) errors.push('Valid email is required');
+  if (!phone || !phone.value.trim()) errors.push('Phone number is required');
+  var errorContainer = document.getElementById('form-error-announce') || document.querySelector('[role="alert"]');
+  if (errorContainer) {
+    errorContainer.textContent = errors.join('. ');
+    errorContainer.style.display = errors.length ? '' : 'none';
+  }
+  return errors.length === 0;
+}
+
 // #10/#21: renumber visible stepper digits after hiding steps
 function renumberVisibleSteps() {
   var steps = document.querySelectorAll('.stepper-step:not(.hidden)');
@@ -115,10 +154,11 @@ function applyKitSpecificVisibility(hasKits) {
 function updateDepositSummary() {
   var depositSummary = document.getElementById('deposit-summary');
   var isKioskMode = document.body.classList.contains('kiosk-mode');
-  
+
   if (!depositSummary || !_paymentConfig || !_paymentConfig.enabled || isKioskMode) return;
-  
-  var items = getAllCartItems();
+
+  var _depCartKey = getActiveCheckoutCart();
+  var items = _depCartKey ? getReservation(_depCartKey) : getAllCartItems();
   var total = 0;
   items.forEach(function (item) {
     var p = (parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0);
@@ -126,14 +166,14 @@ function updateDepositSummary() {
     if (disc > 0) p = p * (1 - disc / 100);
     total += p * (item.qty || 1);
   });
-  
+
   if (items.length === 0 || total <= 0) {
     depositSummary.classList.add('hidden');
     return;
   }
 
   var hasKits = items.some(function (item) { return (item.item_type || 'kit') === 'kit'; });
-  
+
   // If kit order, check if user chose Pay in Full
   var payFull = false;
   var fullRadio = document.querySelector('input[name="payment-option"][value="full"]');
@@ -148,13 +188,26 @@ function updateDepositSummary() {
       var taxPct = parseFloat(item.tax_percentage) || 0;
       taxTotal += p * (item.qty || 1) * (taxPct / 100);
     });
-    
-    // If kit order, add makers fee to the base total
+
+    // If kit order, add makers fee to the kit subtotal only
     var baseTotal = total;
     if (hasKits && _makersFeeItem) {
-      baseTotal += parseFloat(_makersFeeItem.rate) || 50.00;
+      var kitSubtotalForDeposit = 0;
+      items.forEach(function (item) {
+        if ((item.item_type || 'kit') === 'kit') {
+          var p = (parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0);
+          var disc = parseFloat(item.discount) || 0;
+          if (disc > 0) p = p * (1 - disc / 100);
+          kitSubtotalForDeposit += p * (item.qty || 1);
+        }
+      });
+      var kitQtyForDeposit = 0;
+      items.forEach(function (item) {
+        if ((item.item_type || 'kit') === 'kit') kitQtyForDeposit += (parseFloat(item.qty) || 1);
+      });
+      baseTotal = total + (parseFloat(_makersFeeItem.rate) || 50.00) * kitQtyForDeposit;
     }
-    
+
     var grandTotal = baseTotal + taxTotal;
 
     var depHtml = '<div class="deposit-summary-row"><span>Subtotal</span><span>$' + baseTotal.toFixed(2) + '</span></div>';
@@ -174,14 +227,16 @@ function updateDepositSummary() {
     depositSummary.innerHTML = '<div class="deposit-summary-row"><span>Deposit</span><span id="deposit-summary-amount">$' + deposit.toFixed(2) + '</span></div>'
       + '<div class="deposit-summary-row"><span>Balance due at appointment</span><span id="deposit-summary-balance">$' + balance.toFixed(2) + '</span></div>';
     depositSummary.classList.remove('hidden');
-    
+
     var depHeadingEl = document.getElementById('payment-heading');
     if (depHeadingEl) depHeadingEl.innerHTML = '<svg class="payment-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg> Payment \u2014 $' + deposit.toFixed(2) + ' deposit';
   }
 }
 
 function initReservationPage() {
-  var initialItems = getAllCartItems();
+  // H4: Filter items by ?cart= URL param if present
+  var _checkoutCartKey = getActiveCheckoutCart();
+  var initialItems = _checkoutCartKey ? getReservation(_checkoutCartKey) : getAllCartItems();
   if (initialItems.length === 0) {
     setTimeout(function () { window.location.href = 'products.html'; }, 1500);
   }
@@ -301,7 +356,8 @@ function setupPaymentToggle() {
   var depositDesc = document.getElementById('payment-option-deposit-desc');
 
   function updateToggleLabels() {
-    var items = getAllCartItems();
+    var _toggleCartKey = getActiveCheckoutCart();
+    var items = _toggleCartKey ? getReservation(_toggleCartKey) : getAllCartItems();
     var hasKits = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
     var subtotal = 0;
     items.forEach(function (item) {
@@ -310,14 +366,19 @@ function setupPaymentToggle() {
       if (disc > 0) p = p * (1 - disc / 100);
       subtotal += p * (item.qty || 1);
     });
-    
+
     var makersFeeAmount = 0;
     if (hasKits && _makersFeeItem) {
-      makersFeeAmount = parseFloat(_makersFeeItem.rate) || 50.00;
+      // Makers fee is per kit quantity, applied to kit items only
+      var kitQtyForToggle = 0;
+      items.forEach(function (item) {
+        if ((item.item_type || 'kit') === 'kit') kitQtyForToggle += (parseFloat(item.qty) || 1);
+      });
+      makersFeeAmount = (parseFloat(_makersFeeItem.rate) || 50.00) * kitQtyForToggle;
     }
-    
+
     var totalWithFee = subtotal + makersFeeAmount;
-    
+
     var estTax = 0;
     items.forEach(function (item) {
       var p = (parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0);
@@ -326,7 +387,7 @@ function setupPaymentToggle() {
       var taxPct = parseFloat(item.tax_percentage) || 0;
       estTax += p * (item.qty || 1) * (taxPct / 100);
     });
-    
+
     var grandTotal = totalWithFee + estTax;
 
     if (fullDesc) fullDesc.textContent = 'Pay ' + formatCurrency(grandTotal) + ' total now via credit card.';
@@ -417,7 +478,9 @@ function renderReservationItems() {
   var emptyMsg = document.getElementById('reservation-empty');
   if (!container) return;
 
-  var items = getAllCartItems();
+  // H4: Only show items from the active checkout cart (based on ?cart= URL param)
+  var _renderCartKey = getActiveCheckoutCart();
+  var items = _renderCartKey ? getReservation(_renderCartKey) : getAllCartItems();
   var hasKits = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
   applyKitSpecificVisibility(hasKits);
   container.innerHTML = '';
@@ -429,7 +492,7 @@ function renderReservationItems() {
     });
     return;
   }
-  
+
   if (emptyMsg) emptyMsg.classList.add('hidden');
   var picker = document.getElementById('timeslot-picker');
   var formSection = document.getElementById('reservation-form-section');
@@ -438,6 +501,22 @@ function renderReservationItems() {
 
   var paySelector = document.getElementById('payment-option-selector');
   if (paySelector) { if (hasKits) paySelector.classList.remove('hidden'); else paySelector.classList.add('hidden'); }
+
+  // --- M15: Cross-cart note ---
+  var fermentItems = getReservation(FERMENT_CART_KEY);
+  var ingredientItems = getReservation(INGREDIENT_CART_KEY);
+  var cartParam = (new URLSearchParams(window.location.search)).get('cart');
+  if (cartParam === 'ferment' && ingredientItems.length > 0) {
+    var crossNote = document.createElement('p');
+    crossNote.className = 'cart-cross-note';
+    crossNote.textContent = 'You also have items in your Ingredients & Supplies cart. These are separate \u2014 you\u2019ll need to check out separately.';
+    container.appendChild(crossNote);
+  } else if (cartParam === 'ingredient' && fermentItems.length > 0) {
+    var crossNote = document.createElement('p');
+    crossNote.className = 'cart-cross-note';
+    crossNote.textContent = 'You also have items in your Ferment-in-Store cart. These are separate \u2014 you\u2019ll need to check out separately.';
+    container.appendChild(crossNote);
+  }
 
   var table = document.createElement('table');
   table.className = 'catalog-table reservation-table';
@@ -476,13 +555,13 @@ function renderReservationItems() {
 
   // --- RE-ORDERED: Milling Section (above totals) ---
   // ... rest of file ...
-  
+
   // --- Totals Summary ---
   var sub = 0; items.forEach(function (i) {
     var p = parseFloat((i.price || '0').replace('$', '')) || 0;
     var d = parseFloat(i.discount) || 0; if (d > 0) p *= (1 - d / 100); sub += p * (i.qty || 1);
   });
-  
+
   var feeRate = (hasKits && _makersFeeItem) ? (parseFloat(_makersFeeItem.rate) || 50) : 0;
   var totalFee = feeRate * totalKitQty;
   var payFull = true; var fR = document.querySelector('input[name="payment-option"][value="full"]'); if (fR) payFull = fR.checked;
@@ -521,12 +600,12 @@ function loadTimeslots() {
   var isK = document.body.classList.contains('kiosk-mode');
   if (isK && !hasOut && items.length > 0) {
     var sWrap = document.createElement('div'); sWrap.className = 'start-now-wrap';
-    sWrap.innerHTML = '<p class="start-now-note">All items in stock — start now.</p><button type="button" class="btn start-now-btn">Start Now</button><p class="start-now-or">or choose a timeslot below</p>';
-    var imm = document.createElement('input'); imm.type = 'radio'; imm.name = 'timeslot'; imm.value = 'Walk-in — Immediate'; imm.className = 'hidden';
+    sWrap.innerHTML = '<p class="start-now-note">All items in stock \u2014 start now.</p><button type="button" class="btn start-now-btn">Start Now</button><p class="start-now-or">or choose a timeslot below</p>';
+    var imm = document.createElement('input'); imm.type = 'radio'; imm.name = 'timeslot'; imm.value = 'Walk-in \u2014 Immediate'; imm.className = 'hidden';
     container.appendChild(imm);
     sWrap.querySelector('button').addEventListener('click', function () {
       imm.checked = true; this.classList.add('start-now-selected');
-      container.querySelectorAll('input[name="timeslot"]:not([value="Walk-in — Immediate"])').forEach(function (r) { r.checked = false; });
+      container.querySelectorAll('input[name="timeslot"]:not([value="Walk-in \u2014 Immediate"])').forEach(function (r) { r.checked = false; });
       if (document.getElementById('completion-estimate')) document.getElementById('completion-estimate').classList.add('hidden');
     });
     container.appendChild(sWrap);
@@ -570,6 +649,9 @@ function loadTimeslots() {
         }
         grid.appendChild(c);
       }
+    }).catch(function (err) {
+      console.error('[calendar] Failed to load availability:', err);
+      grid.innerHTML = '<p class="calendar-error" style="grid-column:1/-1">Unable to load availability. Please refresh or call us at (604) 567-4565.</p>';
     });
   }
 
@@ -578,22 +660,30 @@ function loadTimeslots() {
     var mw = (typeof SHEETS_CONFIG !== 'undefined') ? (SHEETS_CONFIG.MIDDLEWARE_URL || '') : '';
     fetch(mw + '/api/bookings/slots?date=' + ds).then(function (r) { return r.json(); }).then(function (data) {
       slots.innerHTML = '<h3>' + new Date(ds + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</h3>';
+      var slotList = data.slots || [];
+      if (slotList.length === 0) {
+        slots.innerHTML += '<p class="calendar-empty">No available times for this date. Please select another day.</p>';
+        return;
+      }
       var fs = document.createElement('fieldset'); fs.className = 'timeslot-fieldset';
       var g = document.createElement('div'); g.className = 'cal-slots-grid';
-      (data.slots || []).forEach(function (s) {
+      slotList.forEach(function (s) {
         var time = s.time || s; var id = 'ts-' + (rIdx++);
         var o = document.createElement('div'); o.className = 'timeslot-option';
         o.innerHTML = '<input type="radio" name="timeslot" id="' + id + '" value="' + ds + ' ' + time + '"><label for="' + id + '">' + time + '</label>';
         g.appendChild(o);
       });
       fs.appendChild(g); slots.appendChild(fs);
+    }).catch(function (err) {
+      console.error('[calendar] Failed to load slots:', err);
+      slots.innerHTML = '<p class="calendar-error">Unable to load available times. Please refresh or call us at (604) 567-4565.</p>';
     });
   }
   render();
   container.addEventListener('change', function (e) {
     if (e.target.name === 'timeslot') {
       updateCompletionEstimate(e.target.value);
-      var sn = container.querySelector('.start-now-btn'); if (sn && e.target.value !== 'Walk-in — Immediate') sn.classList.remove('start-now-selected');
+      var sn = container.querySelector('.start-now-btn'); if (sn && e.target.value !== 'Walk-in \u2014 Immediate') sn.classList.remove('start-now-selected');
       setTimeout(function () { var f = document.getElementById('reservation-form-section'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 600);
     }
   });
@@ -630,8 +720,29 @@ function setupReservationForm() {
           fields: { 'card-number': { target: '#credit-card-number' }, 'card-expiration': { target: '#credit-card-expiry' }, 'card-cvv': { target: '#credit-card-cvv' }, submit: { text: 'Verify Card', target: '#credit-card-submit' } },
           styles: { '#secure-payment-field[type=button]': { background: '#722F37', color: '#fff', padding: '12px', width: '100%' } }
         });
-        form.on('token-success', function (r) { _gpToken = r.paymentReference; if (err) { err.textContent = ''; err.classList.remove('visible'); } document.getElementById('credit-card-submit').classList.add('card-verified'); document.getElementById('payment-verified-msg').classList.remove('hidden'); });
-        form.on('token-error', function (r) { _gpToken = null; if (err) { err.textContent = r.error ? r.error.message : 'Failed'; err.classList.add('visible'); } });
+        // M12: GP tokenization loading state
+        form.on('token-request', function () {
+          var submitWrap = document.getElementById('credit-card-submit');
+          if (submitWrap) {
+            var btn = submitWrap.querySelector('button, iframe');
+            if (!btn) { submitWrap.style.opacity = '0.6'; submitWrap.style.pointerEvents = 'none'; }
+          }
+        });
+        form.on('token-success', function (r) {
+          _gpToken = r.paymentReference;
+          if (err) { err.textContent = ''; err.classList.remove('visible'); }
+          var submitWrap = document.getElementById('credit-card-submit');
+          if (submitWrap) { submitWrap.style.opacity = ''; submitWrap.style.pointerEvents = ''; submitWrap.classList.add('card-verified'); }
+          document.getElementById('payment-verified-msg').classList.remove('hidden');
+          var verifiedMsg = document.getElementById('payment-verified-msg');
+          if (verifiedMsg) { verifiedMsg.classList.remove('hidden'); setTimeout(function () { verifiedMsg.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 100); }
+        });
+        form.on('token-error', function (r) {
+          _gpToken = null;
+          var submitWrap = document.getElementById('credit-card-submit');
+          if (submitWrap) { submitWrap.style.opacity = ''; submitWrap.style.pointerEvents = ''; }
+          if (err) { err.textContent = r.error ? r.error.message : 'Card verification failed. Please try again.'; err.classList.add('visible'); }
+        });
       }
       updateDepositSummary();
     }).catch(function (e) { console.error('[payment] Init failed:', e.message); });
@@ -641,37 +752,133 @@ function setupReservationForm() {
   setTimeout(updateDepositSummary, 500);
 
   f.addEventListener('submit', function (e) {
-    e.preventDefault(); if (_checkoutSubmitting) return; if (!navigator.onLine) { showToast('Offline', 'error'); return; }
-    _checkoutSubmitting = true; var items = getAllCartItems(); var hasK = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
-    var sel = document.querySelector('input[name="timeslot"]:checked'); if (hasK && !sel) { showToast('Select timeslot', 'error'); _checkoutSubmitting = false; return; }
-    var sub = f.querySelector('button[type="submit"]'); sub.disabled = true; sub.textContent = 'Processing...';
-    
+    e.preventDefault();
+    if (_checkoutSubmitting) return;
+    if (!navigator.onLine) { showToast('Offline', 'error'); return; }
+
+    // H8: Client-side validation before proceeding
+    if (!validateCheckoutForm()) {
+      var errorContainer = document.getElementById('form-error-announce') || document.querySelector('[role="alert"]');
+      if (errorContainer) errorContainer.focus && errorContainer.focus();
+      return;
+    }
+
+    _checkoutSubmitting = true;
+    // H4: Only submit items from the active checkout cart
+    var _submitCartKey = getActiveCheckoutCart();
+    var items = _submitCartKey ? getReservation(_submitCartKey) : getAllCartItems();
+    var hasK = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
+    var sel = document.querySelector('input[name="timeslot"]:checked');
+    if (hasK && !sel) { showToast('Select timeslot', 'error'); _checkoutSubmitting = false; return; }
+
+    var sub = f.querySelector('button[type="submit"]');
+    var originalBtnText = sub.textContent;
+    sub.disabled = true; sub.textContent = 'Processing...';
+
     var payFull = true; var fR = document.querySelector('input[name="payment-option"][value="full"]'); if (fR) payFull = fR.checked;
     var orderTot = 0; items.forEach(function (i) { var p = parseFloat(String(i.price || '0').replace(/[^0-9.]/g, '')) || 0; var d = parseFloat(i.discount) || 0; if (d > 0) p *= (1 - d / 100); orderTot += p * (i.qty || 1); });
-    if (hasK && _makersFeeItem) orderTot += parseFloat(_makersFeeItem.rate) || 0;
+    if (hasK && _makersFeeItem) {
+      // H1: Makers fee per kit quantity only
+      var kitQtyForSubmit = 0;
+      items.forEach(function (i) { if ((i.item_type || 'kit') === 'kit') kitQtyForSubmit += (parseFloat(i.qty) || 1); });
+      orderTot += (parseFloat(_makersFeeItem.rate) || 0) * kitQtyForSubmit;
+    }
     var tax = 0; if (!hasK || payFull) { items.forEach(function (i) { var p = parseFloat(String(i.price || '0').replace(/[^0-9.]/g, '')) || 0; var d = parseFloat(i.discount) || 0; if (d > 0) p *= (1 - d / 100); tax += p * (i.qty || 1) * ((parseFloat(i.tax_percentage) || 0) / 100); }); }
-    var charge = orderTot + tax; var depAmt = (!hasK || payFull) ? charge : Math.min(_paymentConfig.depositAmount, orderTot);
+    var charge = orderTot + tax; var depAmt = (!hasK || payFull) ? charge : Math.min(_paymentConfig && _paymentConfig.depositAmount ? _paymentConfig.depositAmount : charge, orderTot);
 
-    var pProm = (charge > 0 && _paymentConfig && _paymentConfig.enabled) ? fetch(mw + '/api/payment/charge', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ token: _gpToken, amount: depAmt, customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value } }) }).then(function (r) { return r.ok ? r.json() : r.json().then(function (d) { throw new Error(d.error); }); }) : Promise.resolve({ transaction_id: '', amount: 0 });
+    // C2: Re-check GP token now that charge is computed
+    if (_paymentConfig && _paymentConfig.enabled && charge > 0) {
+      if (!_gpToken || typeof _gpToken !== 'string' || _gpToken.length === 0) {
+        showToast('Payment card not verified. Please complete the card verification step above.', 'error');
+        sub.disabled = false; sub.textContent = originalBtnText; _checkoutSubmitting = false; return;
+      }
+    }
 
-    pProm.then(function (pR) {
-      return fetch(mw + '/api/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ name: document.getElementById('res-name').value, email: document.getElementById('res-email').value, phone: document.getElementById('res-phone').value }) }).then(function (r) { return r.json(); }).then(function (cD) {
-        var slot = sel ? sel.value : 'In-store pickup'; var parts = slot.split(' ');
-        var bProm = (slot === 'Walk-in — Immediate') ? Promise.resolve({ booking_id: null, timeslot: slot }) : fetch(mw + '/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ date: parts[0], time: parts.slice(1).join(' '), customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value }, notes: items.map(function (i) { return i.name; }).join(', ') }) }).then(function (r) { return r.json(); });
-        return bProm.then(function (bD) {
-          var lines = items.map(function (i) { return { name: i.name, quantity: i.qty || 1, rate: parseFloat(String(i.price || '0').replace(/[^0-9.]/g, '')) || 0, item_id: i.zoho_item_id, discount: i.discount }; });
-          if (hasK && _makersFeeItem) lines.push({ name: _makersFeeItem.name, quantity: 1, rate: parseFloat(_makersFeeItem.rate) || 0, item_id: _makersFeeItem.item_id });
-          if (Object.keys(_milledItemKeys).length > 0) lines.push({ name: 'Milling Service', quantity: 1, rate: _millingServiceItem ? _millingServiceItem.rate : 0, item_id: _millingServiceItem ? _millingServiceItem.item_id : '' });
-          return fetch(mw + '/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value, phone: document.getElementById('res-phone').value }, items: lines, transaction_id: pR.transaction_id, deposit_amount: pR.amount, timeslot: bD.timeslot }) }).then(function (r) { return r.json(); });
+    // C1: Collect honeypot value
+    var honeypotVal = document.getElementById('res-website') ? document.getElementById('res-website').value : '';
+
+    // C1: Wrap submission in reCAPTCHA token collection
+    getRecaptchaToken('checkout', function (recaptchaToken) {
+      var pProm = (charge > 0 && _paymentConfig && _paymentConfig.enabled) ? fetch(mw + '/api/payment/charge', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ token: _gpToken, amount: depAmt, customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value } }) }).then(function (r) { return r.ok ? r.json() : r.json().then(function (d) { throw new Error(d.error); }); }) : Promise.resolve({ transaction_id: '', amount: 0 });
+
+      pProm.then(function (pR) {
+        return fetch(mw + '/api/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ name: document.getElementById('res-name').value, email: document.getElementById('res-email').value, phone: document.getElementById('res-phone').value }) }).then(function (r) { return r.json(); }).then(function (cD) {
+          var slot = sel ? sel.value : 'In-store pickup'; var parts = slot.split(' ');
+          var bProm = (slot === 'Walk-in \u2014 Immediate') ? Promise.resolve({ booking_id: null, timeslot: slot }) : fetch(mw + '/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ date: parts[0], time: parts.slice(1).join(' '), customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value }, notes: items.map(function (i) { return i.name; }).join(', ') }) }).then(function (r) { return r.json(); });
+          return bProm.then(function (bD) {
+            var lines = items.map(function (i) { return { name: i.name, quantity: i.qty || 1, rate: parseFloat(String(i.price || '0').replace(/[^0-9.]/g, '')) || 0, item_id: i.zoho_item_id, discount: i.discount }; });
+            if (hasK && _makersFeeItem) lines.push({ name: _makersFeeItem.name, quantity: kitQtyForSubmit || 1, rate: parseFloat(_makersFeeItem.rate) || 0, item_id: _makersFeeItem.item_id });
+            // M8: Milling service null guard
+            if (Object.keys(_milledItemKeys).length > 0 && _millingServiceItem && _millingServiceItem.item_id) {
+              lines.push({ name: 'Milling Service', quantity: 1, rate: _millingServiceItem.rate, item_id: _millingServiceItem.item_id });
+            }
+            return fetch(mw + '/api/checkout', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value, phone: document.getElementById('res-phone').value },
+                items: lines,
+                transaction_id: pR.transaction_id,
+                deposit_amount: pR.amount,
+                timeslot: bD.timeslot,
+                honeypot: honeypotVal,
+                recaptcha_token: recaptchaToken
+              })
+            }).then(function (r) { return r.json(); });
+          });
         });
+      }).then(function (oR) {
+        // M6: Validate response before showing success
+        if (!oR || !oR.success) {
+          throw new Error(oR && oR.error ? oR.error : 'Checkout failed. Please try again or call us.');
+        }
+
+        // H4: Only clear the cart that was checked out
+        var checkoutCartKey = getActiveCheckoutCart();
+        if (checkoutCartKey) {
+          localStorage.removeItem(checkoutCartKey);
+        } else {
+          localStorage.removeItem(FERMENT_CART_KEY);
+          localStorage.removeItem(INGREDIENT_CART_KEY);
+        }
+
+        ['reservation-list', 'timeslot-picker', 'reservation-form-section'].forEach(function (id) {
+          var el = document.getElementById(id); if (el) el.classList.add('hidden');
+        });
+        updateStepper(4);
+        var conf = document.getElementById('reservation-confirm');
+        if (conf) conf.classList.remove('hidden');
+        if (document.getElementById('confirm-order-number')) {
+          document.getElementById('confirm-order-number').textContent = 'Order #' + (oR.salesorder_number || 'REF-' + Date.now().toString(36).toUpperCase());
+        }
+
+        // H6: Populate confirm summary
+        var summaryEl = document.getElementById('confirm-summary');
+        if (summaryEl) {
+          var summaryHtml = '';
+          for (var si = 0; si < items.length; si++) {
+            summaryHtml += '<p>' + items[si].name + ' \u00D7' + (items[si].qty || 1) + '</p>';
+          }
+          summaryEl.innerHTML = summaryHtml;
+        }
+
+        // H6: Show "no payment taken" notice if payment disabled or offline
+        var noPayNotice = document.querySelector('.confirm-no-payment-notice');
+        if (noPayNotice) {
+          if ((typeof PAYMENT_DISABLED !== 'undefined' && PAYMENT_DISABLED) || !(_paymentConfig && _paymentConfig.enabled) || charge === 0) {
+            noPayNotice.classList.remove('hidden');
+            noPayNotice.textContent = 'No payment has been taken \u2014 we\u2019ll contact you to arrange payment.';
+          } else {
+            noPayNotice.classList.add('hidden');
+          }
+        }
+      }).catch(function (err) {
+        showToast(err.message, 'error');
+        // M14: Restore submit button after error
+        sub.disabled = false; sub.textContent = originalBtnText; _checkoutSubmitting = false;
       });
-    }).then(function (oR) {
-      localStorage.removeItem(FERMENT_CART_KEY); localStorage.removeItem(INGREDIENT_CART_KEY);
-      ['reservation-list', 'timeslot-picker', 'reservation-form-section'].forEach(function (id) { document.getElementById(id).classList.add('hidden'); });
-      updateStepper(4); var conf = document.getElementById('reservation-confirm'); conf.classList.remove('hidden');
-      if (document.getElementById('confirm-order-number')) document.getElementById('confirm-order-number').textContent = 'Order #' + (oR.salesorder_number || 'REF-' + Date.now().toString(36).toUpperCase());
-    }).catch(function (err) { showToast(err.message, 'error'); sub.disabled = false; sub.textContent = 'Submit'; _checkoutSubmitting = false; });
-  });
+    }); // end getRecaptchaToken
+  }); // end f.addEventListener('submit')
 }
 
 function setupContactValidation() {

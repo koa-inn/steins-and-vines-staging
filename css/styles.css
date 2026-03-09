@@ -1804,7 +1804,8 @@ behold-widget {
   padding: 0.5rem 0.75rem;
   border: 1px solid #ccc;
   border-radius: 6px;
-  font-size: 0.95rem;
+  /* M16/L4: 16px minimum to prevent iOS Safari auto-zoom on focus */
+  font-size: 1rem;
   font-family: inherit;
   background: #fff;
   color: var(--color-dark-green, #2a3d1f);
@@ -2563,7 +2564,8 @@ behold-widget {
   border-right: 2px solid var(--color-burgundy);
   border-radius: 0;
   padding: 0 4px;
-  font-size: 0.875rem;
+  /* M16: 16px minimum to prevent iOS Safari auto-zoom on focus */
+  font-size: 1rem;
   font-family: var(--font-body);
   font-weight: 700;
   color: var(--color-burgundy);
@@ -2964,6 +2966,32 @@ behold-widget {
 
 .cal-slots:empty {
   display: none;
+}
+
+/* H7: Calendar empty and error states */
+.calendar-empty {
+  color: var(--color-muted, #666);
+  font-size: 0.9rem;
+  padding: 0.75rem 0;
+  text-align: center;
+}
+
+.calendar-error {
+  color: var(--color-error, #c0392b);
+  font-size: 0.9rem;
+  padding: 0.75rem 0;
+  text-align: center;
+}
+
+/* M15: Cross-cart note on reservation page */
+.cart-cross-note {
+  background: var(--color-cream-dark, #ede7c7);
+  border-left: 3px solid var(--color-brown, #77462d);
+  padding: 0.6rem 0.85rem;
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  font-size: 0.875rem;
+  color: var(--color-brown, #77462d);
+  margin-bottom: 1rem;
 }
 
 .cal-slots-heading {
@@ -5696,6 +5724,13 @@ behold-widget {
   }
   .reservation-table {
     font-size: 0.82rem;
+  }
+
+  /* M18: Ensure non-reservation catalog tables can scroll horizontally if
+     the card layout doesn't apply (e.g. tablets in landscape, edge cases) */
+  .product-group {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 

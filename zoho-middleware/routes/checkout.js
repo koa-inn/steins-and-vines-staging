@@ -5,6 +5,18 @@ var gp = require('globalpayments-api');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
+var gpLib = require('../lib/gp');
+
+/**
+ * Race a promise against a timeout.
+ * Rejects with an Error('Timeout after Nms') if the promise doesn't settle in time.
+ */
+function withTimeout(promise, ms) {
+  var timeout = new Promise(function(_, reject) {
+    setTimeout(function() { reject(new Error('Timeout after ' + ms + 'ms')); }, ms);
+  });
+  return Promise.race([promise, timeout]);
+}
 
 /**
  * Verify a reCAPTCHA v3 token with Google.
@@ -16,7 +28,7 @@ function verifyRecaptcha(token) {
   if (!secret) return Promise.resolve({ success: true, score: 1.0 }); // unconfigured → allow
   if (!token) return Promise.resolve({ success: false, score: 0 });
 
-  return new Promise(function (resolve, reject) {
+  var verifyPromise = new Promise(function (resolve, reject) {
     var body = querystring.stringify({ secret: secret, response: token });
     var options = {
       hostname: 'www.google.com',
@@ -38,6 +50,11 @@ function verifyRecaptcha(token) {
     req.on('error', reject);
     req.write(body);
     req.end();
+  });
+  // M11: 5s timeout on reCAPTCHA — fail open so slow Google responses don't block customers
+  return withTimeout(verifyPromise, 5000).catch(function(timeoutErr) {
+    log.warn('[checkout] reCAPTCHA verification timed out — allowing through: ' + timeoutErr.message);
+    return { success: true, score: 1.0 };
   });
 }
 
@@ -105,11 +122,10 @@ function buildLineItems(items, catalogMap, catalogAvailable) {
   var lineItems = items.map(function (item) {
     var qty = Number(item.quantity) || 1;
     var rate = catalogAvailable ? catalogMap[item.item_id] : (Number(item.rate) || 0);
-    var discount = Number(item.discount) || 0;
-    var effectiveRate = discount > 0 ? rate * (1 - discount / 100) : rate;
-    orderTotal += qty * effectiveRate;
+    // C3: Server never trusts client-supplied discount — always apply zero discount
+    // Any applicable discounts must be computed server-side from authoritative data
+    orderTotal += qty * rate;
     var li = { item_id: item.item_id, name: item.name || '', quantity: qty, rate: rate };
-    if (discount > 0) li.discount = discount + '%';
     return li;
   });
   // Round after accumulation loop to avoid floating-point drift (Item #5)
@@ -166,20 +182,31 @@ router.post('/api/checkout', function (req, res) {
     return res.status(400).json({ error: 'Invalid transaction_id' });
   }
 
+  // M2: Server-side string length limits
+  var nameVal = (body.customer && body.customer.name) ? String(body.customer.name) : '';
+  var emailVal = (body.customer && body.customer.email) ? String(body.customer.email) : '';
+  var phoneVal = (body.customer && body.customer.phone) ? String(body.customer.phone) : '';
+  var notesVal = body.notes ? String(body.notes) : '';
+  if (nameVal.length > 100) return res.status(400).json({ error: 'Input too long: name' });
+  if (emailVal.length > 200) return res.status(400).json({ error: 'Input too long: email' });
+  if (phoneVal.length > 30) return res.status(400).json({ error: 'Input too long: phone' });
+  if (notesVal.length > 1000) return res.status(400).json({ error: 'Input too long: notes' });
+
   // --- Validate each line item ---
   for (var v = 0; v < body.items.length; v++) {
     var vi = body.items[v];
     var vQty = Number(vi.quantity) || 1;
     var vRate = Number(vi.rate) || 0;
-    var vDiscount = Number(vi.discount) || 0;
     if (vQty < 1 || vQty > 100) {
       return res.status(400).json({ error: 'Invalid quantity for item ' + v });
     }
     if (vRate < 0 || vRate > 10000) {
       return res.status(400).json({ error: 'Invalid rate for item ' + v });
     }
-    if (vDiscount < 0 || vDiscount > 100) {
-      return res.status(400).json({ error: 'Invalid discount for item ' + v });
+    // M3: Validate item_id is a non-empty string or number
+    if (!vi.item_id || (typeof vi.item_id !== 'string' && typeof vi.item_id !== 'number') ||
+        String(vi.item_id).trim().length === 0) {
+      return res.status(400).json({ error: 'Invalid or missing item_id for item ' + v });
     }
   }
 
@@ -245,7 +272,30 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
   var customerPhone = (body.customer.phone || '').toString().trim().substring(0, 40);
 
   var transactionId = body.transaction_id || '';
-  var depositAmount = transactionId ? (parseFloat(body.deposit_amount) || 0) : 0;
+  // H2: Clamp deposit_amount to the server-configured canonical deposit — never trust client amount
+  var depositAmount = 0;
+  if (transactionId) {
+    depositAmount = gpLib.getDepositAmount();
+  }
+
+  // H3: Transaction ID single-use enforcement — prevent replay attacks
+  // Check Redis before processing; mark as used after successful order creation
+  function checkTransactionIdAndProceed() {
+    if (!transactionId) {
+      return runCheckout();
+    }
+    var txnKey = 'gp:txn:' + transactionId;
+    return cache.get(txnKey).then(function(existing) {
+      if (existing) {
+        log.warn('[checkout] Replay attack detected — transaction_id already used: ' + transactionId);
+        return res.status(409).json({ error: 'Payment already processed' });
+      }
+      return runCheckout();
+    }).catch(function() {
+      // Redis unavailable — allow through (fail open)
+      return runCheckout();
+    });
+  }
 
   // --- Resolve Zoho contact server-side from email (lookup or create) ---
   // This prevents a caller from supplying an arbitrary customer_id to attach
@@ -313,10 +363,11 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
   // Use the general products catalog for checkout validation.
   // (Kiosk catalog is a different item set — retail POS items — and must not
   //  be used to validate regular website reservations.)
-  Promise.all([
-    cache.get(PRODUCTS_CACHE_KEY),
-    cache.get(SERVICES_CACHE_KEY)
-  ]).then(function (results) {
+  function runCheckout() {
+    return Promise.all([
+      cache.get(PRODUCTS_CACHE_KEY),
+      cache.get(SERVICES_CACHE_KEY)
+    ]).then(function (results) {
     var catalog = results[0];
     var services = results[1];
     // Build item_id → rate lookup from the authoritative catalog (products + services)
@@ -476,7 +527,11 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
                 var cacheWrite = idempotencyKey
                   ? cache.set(idempotencyKey, responseBody, CHECKOUT_IDEMPOTENCY_TTL).catch(function () {})
                   : Promise.resolve();
-                return cacheWrite.then(function () {
+                // H3: Mark transaction ID as used in Redis (24h TTL) to prevent replay
+                var txnMark = transactionId
+                  ? cache.set('gp:txn:' + transactionId, 'used', 86400).catch(function () {})
+                  : Promise.resolve();
+                return Promise.all([cacheWrite, txnMark]).then(function () {
                   responseSent = true;
                   res.status(201).json(responseBody);
                 });
@@ -496,7 +551,11 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
               var cacheWrite = idempotencyKey
                 ? cache.set(idempotencyKey, responseBody, CHECKOUT_IDEMPOTENCY_TTL).catch(function () {})
                 : Promise.resolve();
-              return cacheWrite.then(function () {
+              // H3: Mark transaction ID as used in Redis (24h TTL) to prevent replay
+              var txnMark = transactionId
+                ? cache.set('gp:txn:' + transactionId, 'used', 86400).catch(function () {})
+                : Promise.resolve();
+              return Promise.all([cacheWrite, txnMark]).then(function () {
                 responseSent = true;
                 res.status(201).json(responseBody);
               });
@@ -517,63 +576,79 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
         }
 
         var status = 502;
-        var message = err.message;
+        var internalMessage = err.message;
 
-        // Surface Zoho-specific errors (e.g. "Out of Stock", validation)
+        // M9: Extract Zoho error details for server-side logging only — never send raw Zoho messages to client
         if (err.response && err.response.data) {
-          message = err.response.data.message || err.response.data.error || message;
-          // 400-level from Zoho -> relay as 400 to the client
+          internalMessage = err.response.data.message || err.response.data.error || internalMessage;
+          // 400-level from Zoho -> relay as 400 to the client (but with generic message)
           if (err.response.status >= 400 && err.response.status < 500) {
             status = 400;
           }
         }
 
-        // Sanitize: only pass Zoho 400-level messages (user-meaningful) to the client
-        var clientMsg = (status === 400) ? message : 'Order could not be placed. Please try again.';
+        // M9: Log the actual Zoho error server-side; send only generic message to client
+        log.error('[checkout] Order creation failed: ' + internalMessage);
+        var clientMsg = 'Order creation failed. Please try again.';
 
         // If payment was already charged but Zoho failed, void the transaction
-        if (transactionId) {
+        // H5: Only attempt void when a real transaction_id is present (not offline mode)
+        if (transactionId && typeof transactionId === 'string' && transactionId.length > 0) {
           log.error('[checkout] Zoho failed after payment — voiding txn=' + transactionId);
-          Transaction.fromId(transactionId)
-            .void()
-            .execute()
-            .then(function () {
-              log.info('[checkout] Voided txn=' + transactionId);
+          // C4: Wrap void in 8s timeout; log for manual action if it times out
+          withTimeout(
+            Transaction.fromId(transactionId).void().execute(),
+            8000
+          )
+            .then(function (voidResponse) {
+              // M17: Check void response for failure codes
+              if (voidResponse && voidResponse.responseCode && voidResponse.responseCode !== '00' && voidResponse.responseCode !== 'SUCCESS') {
+                log.error('[checkout] GP void failed: ' + JSON.stringify(voidResponse));
+              } else {
+                log.info('[checkout] Voided txn=' + transactionId);
+              }
             })
             .catch(function (voidErr) {
-              // Item #42 — Structured critical alert: void failed after Zoho order failure
-              log.error('[checkout] CRITICAL:', JSON.stringify({
-                event: 'CRITICAL_CHECKOUT_FAILURE',
-                customerEmail: customerEmail,
-                customerName: customerName,
-                amount: depositAmount,
-                soId: null,
-                txnId: transactionId,
-                error: voidErr.message,
-                timestamp: new Date().toISOString()
-              }));
+              if (voidErr && voidErr.message && voidErr.message.indexOf('Timeout') === 0) {
+                // C4: Void timed out — log transaction_id for manual void
+                log.error('[checkout] GP void timed out — manual void required for txn=' + transactionId + ': ' + voidErr.message);
+              } else {
+                // Item #42 — Structured critical alert: void failed after Zoho order failure
+                log.error('[checkout] CRITICAL:', JSON.stringify({
+                  event: 'CRITICAL_CHECKOUT_FAILURE',
+                  customerEmail: customerEmail,
+                  customerName: customerName,
+                  amount: depositAmount,
+                  soId: null,
+                  txnId: transactionId,
+                  error: voidErr.message,
+                  timestamp: new Date().toISOString()
+                }));
+              }
             })
             .then(function () {
               if (!responseSent) {
+                // M10: Do not include voided_transaction_id in client response
                 res.status(status).json({
                   error: clientMsg,
-                  payment_voided: true,
-                  voided_transaction_id: transactionId
+                  payment_voided: true
                 });
               }
             });
           return;
         }
 
-        log.error('[checkout] ' + message);
         res.status(status).json({ error: clientMsg });
       });
-  }).catch(function (cacheErr) {
-    // Catalog cache read failed entirely — still allow checkout to proceed
-    // by falling back to an empty catalogMap (which will reject items not found)
-    log.error('[checkout] Catalog cache read failed: ' + cacheErr.message);
-    res.status(503).json({ error: 'Unable to verify item prices. Please try again.' });
-  });
+    }).catch(function (cacheErr) {
+      // Catalog cache read failed entirely — still allow checkout to proceed
+      // by falling back to an empty catalogMap (which will reject items not found)
+      log.error('[checkout] Catalog cache read failed: ' + cacheErr.message);
+      res.status(503).json({ error: 'Unable to verify item prices. Please try again.' });
+    });
+  } // end runCheckout
+
+  return checkTransactionIdAndProceed();
 }
 
 module.exports = router;

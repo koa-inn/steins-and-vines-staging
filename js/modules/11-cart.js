@@ -617,13 +617,20 @@ function renderWeightControlCompact(wrap, product, productKey) {
 }
 
 function initReservationBar() {
-  var barHTML = '<div class="container">' +
-    '<span class="reservation-bar-count"></span>' +
-    '<span class="reservation-bar-actions">' +
-    '<button type="button" class="reservation-bar-clear">Clear Cart</button>' +
-    '<a href="reservation.html" class="reservation-bar-link">Checkout &rarr;</a>' +
-    '</span>' +
-    '</div>';
+  // H4: Build checkout URL with ?cart= param based on active tab
+  function getReservationBarHtml() {
+    var cartParam = '';
+    if (_activeCartTab === 'kits') cartParam = '?cart=ferment';
+    else if (_activeCartTab === 'ingredients') cartParam = '?cart=ingredient';
+    return '<div class="container">' +
+      '<span class="reservation-bar-count"></span>' +
+      '<span class="reservation-bar-actions">' +
+      '<button type="button" class="reservation-bar-clear">Clear Cart</button>' +
+      '<a href="reservation.html' + cartParam + '" class="reservation-bar-link">Checkout &rarr;</a>' +
+      '</span>' +
+      '</div>';
+  }
+  var barHTML = getReservationBarHtml();
 
   // Fixed bar at bottom of viewport
   var bar = document.createElement('div');
@@ -865,7 +872,11 @@ function renderCartDrawer() {
 
   if (titleEl) titleEl.textContent = 'Your Cart';
   if (checkoutLink) {
-    checkoutLink.setAttribute('href', 'reservation.html');
+    // H4: Append ?cart= param based on active tab so reservation page shows the right cart
+    var checkoutCartParam = '';
+    if (_activeCartTab === 'kits') checkoutCartParam = '?cart=ferment';
+    else if (_activeCartTab === 'ingredients') checkoutCartParam = '?cart=ingredient';
+    checkoutLink.setAttribute('href', 'reservation.html' + checkoutCartParam);
     checkoutLink.textContent = 'Checkout';
   }
 
