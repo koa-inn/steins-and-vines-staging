@@ -1,8 +1,8 @@
 // ===== Middleware API Key =====
 
-// Semi-public key — protected by CORS origin whitelist on the middleware.
-// Rotate via: openssl rand -base64 32, then update Railway MW_API_KEY env var.
-var MW_API_KEY = 'a9QKtDV3DtYSFIdWtfAMg9Ry70bHG55QGhyJa9GD3fM=';
+// Loaded from js/sheets-config.js (SHEETS_CONFIG.MW_API_KEY = Railway API_SECRET_KEY).
+// Rotate via: openssl rand -base64 32, then update Railway API_SECRET_KEY + sheets-config.js.
+var MW_API_KEY = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MW_API_KEY) ? SHEETS_CONFIG.MW_API_KEY : '';
 
 // ===== Payment flag =====
 var PAYMENT_DISABLED = false;
@@ -459,7 +459,7 @@ function buildLabelPriceFooter(product) {
     if (discount > 0) {
       var num1 = parseFloat(instore.replace(/[^0-9.]/g, ''));
       var sale1 = formatCurrency(num1 * (1 - discount / 100));
-      val1.innerHTML = '<s style="color:#999;font-size:0.8rem;">' + formatCurrency(instore) + '</s> ' + sale1 + plusSign;
+      val1.innerHTML = '<s class="price-strike">' + formatCurrency(instore) + '</s> ' + sale1 + plusSign;
     } else {
       val1.textContent = formatCurrency(instore) + plusSign;
     }
@@ -479,7 +479,7 @@ function buildLabelPriceFooter(product) {
     if (discount > 0) {
       var num2 = parseFloat(kit.replace(/[^0-9.]/g, ''));
       var sale2 = formatCurrency(num2 * (1 - discount / 100));
-      val2.innerHTML = '<s style="color:#999;font-size:0.8rem;">' + formatCurrency(kit) + '</s> ' + sale2 + plusSign;
+      val2.innerHTML = '<s class="price-strike">' + formatCurrency(kit) + '</s> ' + sale2 + plusSign;
     } else {
       val2.textContent = formatCurrency(kit) + plusSign;
     }
@@ -979,7 +979,8 @@ function loadFeaturedProducts() {
           dot.type = 'button';
           dot.className = 'promo-carousel-dot' + (i === 0 ? ' active' : '');
           dot.dataset.index = i;
-          dot.setAttribute('aria-label', 'Go to product ' + (i + 1));
+          dot.setAttribute('aria-label', 'Slide ' + (i + 1) + ' of ' + featured.length);
+          dot.setAttribute('aria-current', i === 0 ? 'true' : 'false');
           dotsContainer.appendChild(dot);
         }
       }
@@ -1015,6 +1016,7 @@ function loadFeaturedProducts() {
         // Update dots
         dots.forEach(function (d, i) {
           d.classList.toggle('active', i === newIndex);
+          d.setAttribute('aria-current', i === newIndex ? 'true' : 'false');
         });
 
         // Clean up after animation
@@ -1051,8 +1053,24 @@ function loadFeaturedProducts() {
 
       // Auto-rotate every 12 seconds, pause if More Information is open or user prefers reduced motion
       var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+      var carouselPaused = false;
+
+      if (nav) {
+        var pauseBtn = document.createElement('button');
+        pauseBtn.type = 'button';
+        pauseBtn.className = 'promo-carousel-pause';
+        pauseBtn.setAttribute('aria-label', 'Pause slideshow');
+        pauseBtn.textContent = '⏸';
+        pauseBtn.addEventListener('click', function () {
+          carouselPaused = !carouselPaused;
+          pauseBtn.textContent = carouselPaused ? '▶' : '⏸';
+          pauseBtn.setAttribute('aria-label', carouselPaused ? 'Play slideshow' : 'Pause slideshow');
+        });
+        nav.appendChild(pauseBtn);
+      }
+
       setInterval(function () {
-        if (prefersReducedMotion.matches) return;
+        if (carouselPaused || prefersReducedMotion.matches) return;
         var hasOpenNotes = productsContainer.querySelector('.product-notes.open, .notes-wrap.open');
         if (!hasOpenNotes) {
           showSlide((carouselIndex + 1) % featured.length);
@@ -4073,8 +4091,12 @@ function initProductTabs() {
 
     // Swap active button
     var allBtns = tabs.querySelectorAll('.product-tab-btn');
-    allBtns.forEach(function (b) { b.classList.remove('active'); });
+    allBtns.forEach(function (b) {
+      b.classList.remove('active');
+      b.setAttribute('aria-selected', 'false');
+    });
     btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
 
     // Show/hide controls
     var controlIds = ['catalog-controls-kits', 'catalog-controls-ingredients'];
@@ -4132,6 +4154,20 @@ function initProductTabs() {
     }
   });
 
+  // Arrow key navigation between tabs (WAI-ARIA tabs pattern)
+  tabs.addEventListener('keydown', function (e) {
+    var allBtns = Array.prototype.slice.call(tabs.querySelectorAll('.product-tab-btn'));
+    var idx = allBtns.indexOf(document.activeElement);
+    if (idx === -1) return;
+    if (e.key === 'ArrowRight') {
+      allBtns[(idx + 1) % allBtns.length].focus();
+      e.preventDefault();
+    } else if (e.key === 'ArrowLeft') {
+      allBtns[(idx - 1 + allBtns.length) % allBtns.length].focus();
+      e.preventDefault();
+    }
+  });
+
   // Wire up ingredients filter/sort toggle
   var ingredientToggle = document.getElementById('ingredient-toggle');
   var ingredientCollapsible = document.getElementById('ingredient-collapsible');
@@ -4156,8 +4192,12 @@ function initAboutTabs() {
     var tab = btn.getAttribute('data-about-tab');
 
     var allBtns = tabs.querySelectorAll('.product-tab-btn');
-    allBtns.forEach(function (b) { b.classList.remove('active'); });
+    allBtns.forEach(function (b) {
+      b.classList.remove('active');
+      b.setAttribute('aria-selected', 'false');
+    });
     btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
 
     ['info', 'story', 'services'].forEach(function (name) {
       var panel = document.getElementById('about-panel-' + name);
@@ -4173,6 +4213,20 @@ function initAboutTabs() {
       } else {
         renderServices();
       }
+    }
+  });
+
+  // Arrow key navigation between tabs (WAI-ARIA tabs pattern)
+  tabs.addEventListener('keydown', function (e) {
+    var allBtns = Array.prototype.slice.call(tabs.querySelectorAll('.product-tab-btn'));
+    var idx = allBtns.indexOf(document.activeElement);
+    if (idx === -1) return;
+    if (e.key === 'ArrowRight') {
+      allBtns[(idx + 1) % allBtns.length].focus();
+      e.preventDefault();
+    } else if (e.key === 'ArrowLeft') {
+      allBtns[(idx - 1 + allBtns.length) % allBtns.length].focus();
+      e.preventDefault();
     }
   });
 
@@ -5590,6 +5644,17 @@ function initReservationPage() {
 
   initCheckoutStepper();
 
+  // M1: Show which cart is being checked out
+  var params = new URLSearchParams(window.location.search);
+  var cartParam = params.get('cart');
+  var pageH1 = document.querySelector('.page-header h1');
+  if (pageH1 && cartParam) {
+    var cartLabel = document.createElement('p');
+    cartLabel.className = 'checkout-cart-label';
+    cartLabel.textContent = cartParam === 'ferment' ? 'Ferment in Store Cart' : 'Ingredients & Supplies Cart';
+    pageH1.parentNode.insertBefore(cartLabel, pageH1.nextSibling);
+  }
+
   var initialHasKits = initialItems.some(function (item) { return (item.item_type || 'kit') === 'kit'; });
 
   // Fetch maker's fee item lazily when kit items are present
@@ -6146,7 +6211,10 @@ function setupReservationForm() {
 
     // C1: Wrap submission in reCAPTCHA token collection
     getRecaptchaToken('checkout', function (recaptchaToken) {
-      var pProm = (charge > 0 && _paymentConfig && _paymentConfig.enabled) ? fetch(mw + '/api/payment/charge', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ token: _gpToken, amount: depAmt, customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value } }) }).then(function (r) { return r.ok ? r.json() : r.json().then(function (d) { throw new Error(d.error); }); }) : Promise.resolve({ transaction_id: '', amount: 0 });
+      // #4: Card is now charged server-side inside /api/checkout using payment_token.
+      // The separate /api/payment/charge call has been removed to eliminate the
+      // ghost-charge window where the card could be charged but the order never created.
+      var pProm = Promise.resolve({});
 
       pProm.then(function (pR) {
         return fetch(mw + '/api/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ name: document.getElementById('res-name').value, email: document.getElementById('res-email').value, phone: document.getElementById('res-phone').value }) }).then(function (r) { return r.json(); }).then(function (cD) {
@@ -6165,8 +6233,7 @@ function setupReservationForm() {
               body: JSON.stringify({
                 customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value, phone: document.getElementById('res-phone').value },
                 items: lines,
-                transaction_id: pR.transaction_id,
-                deposit_amount: pR.amount,
+                payment_token: (charge > 0 && _paymentConfig && _paymentConfig.enabled) ? _gpToken : '',
                 timeslot: bD.timeslot,
                 honeypot: honeypotVal,
                 recaptcha_token: recaptchaToken

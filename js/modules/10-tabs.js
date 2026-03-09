@@ -26,8 +26,12 @@ function initProductTabs() {
 
     // Swap active button
     var allBtns = tabs.querySelectorAll('.product-tab-btn');
-    allBtns.forEach(function (b) { b.classList.remove('active'); });
+    allBtns.forEach(function (b) {
+      b.classList.remove('active');
+      b.setAttribute('aria-selected', 'false');
+    });
     btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
 
     // Show/hide controls
     var controlIds = ['catalog-controls-kits', 'catalog-controls-ingredients'];
@@ -85,6 +89,20 @@ function initProductTabs() {
     }
   });
 
+  // Arrow key navigation between tabs (WAI-ARIA tabs pattern)
+  tabs.addEventListener('keydown', function (e) {
+    var allBtns = Array.prototype.slice.call(tabs.querySelectorAll('.product-tab-btn'));
+    var idx = allBtns.indexOf(document.activeElement);
+    if (idx === -1) return;
+    if (e.key === 'ArrowRight') {
+      allBtns[(idx + 1) % allBtns.length].focus();
+      e.preventDefault();
+    } else if (e.key === 'ArrowLeft') {
+      allBtns[(idx - 1 + allBtns.length) % allBtns.length].focus();
+      e.preventDefault();
+    }
+  });
+
   // Wire up ingredients filter/sort toggle
   var ingredientToggle = document.getElementById('ingredient-toggle');
   var ingredientCollapsible = document.getElementById('ingredient-collapsible');
@@ -109,8 +127,12 @@ function initAboutTabs() {
     var tab = btn.getAttribute('data-about-tab');
 
     var allBtns = tabs.querySelectorAll('.product-tab-btn');
-    allBtns.forEach(function (b) { b.classList.remove('active'); });
+    allBtns.forEach(function (b) {
+      b.classList.remove('active');
+      b.setAttribute('aria-selected', 'false');
+    });
     btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
 
     ['info', 'story', 'services'].forEach(function (name) {
       var panel = document.getElementById('about-panel-' + name);
@@ -126,6 +148,20 @@ function initAboutTabs() {
       } else {
         renderServices();
       }
+    }
+  });
+
+  // Arrow key navigation between tabs (WAI-ARIA tabs pattern)
+  tabs.addEventListener('keydown', function (e) {
+    var allBtns = Array.prototype.slice.call(tabs.querySelectorAll('.product-tab-btn'));
+    var idx = allBtns.indexOf(document.activeElement);
+    if (idx === -1) return;
+    if (e.key === 'ArrowRight') {
+      allBtns[(idx + 1) % allBtns.length].focus();
+      e.preventDefault();
+    } else if (e.key === 'ArrowLeft') {
+      allBtns[(idx - 1 + allBtns.length) % allBtns.length].focus();
+      e.preventDefault();
     }
   });
 

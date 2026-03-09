@@ -59,10 +59,16 @@ function verifyRecaptcha(token) {
 }
 
 var Transaction = gp.Transaction;
+var CreditCardData = gp.CreditCardData;
 var zohoPost = zohoApi.zohoPost;
 var zohoGet = zohoApi.zohoGet;
 var mailer = require('../lib/mailer');
 var axios = require('axios');
+
+// #6: Warn at startup when reCAPTCHA is not configured — bot protection bypassed on /api/checkout
+if (!process.env.RECAPTCHA_SECRET_KEY) {
+  log.warn('[checkout] RECAPTCHA_SECRET_KEY is not set — bot protection disabled on /api/checkout');
+}
 
 /**
  * Fire-and-forget: write the new reservation to Google Sheets via Apps Script
@@ -186,6 +192,9 @@ router.post('/api/checkout', function (req, res) {
   }
   if (body.transaction_id && (typeof body.transaction_id !== 'string' || body.transaction_id.length > 64)) {
     return res.status(400).json({ error: 'Invalid transaction_id' });
+  }
+  if (body.payment_token && (typeof body.payment_token !== 'string' || body.payment_token.length > 500)) {
+    return res.status(400).json({ error: 'Invalid payment_token' });
   }
 
   // M2: Server-side string length limits
@@ -592,7 +601,7 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
           .catch(function (soErr) {
             // Item #15 — Warn if a freshly created contact is now orphaned because the SO failed
             if (contactWasFresh) {
-              log.warn('[checkout] Orphan contact created — sales order failed. contact_id=' + customerId + ' email=' + customerEmail + ' err=' + soErr.message);
+              log.warn('[checkout] Orphan contact created — sales order failed. contact_id=' + customerId + ' err=' + soErr.message);
             }
             throw soErr;
           });
@@ -641,18 +650,16 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
                 // C4: Void timed out — log transaction_id for manual void
                 log.error('[checkout] GP void timed out — manual void required for txn=' + transactionId + ': ' + voidErr.message);
               } else {
-                // Item #42 — Structured critical alert: void failed after Zoho order failure
-                // Fix 4: PII scrubbed — names/emails are partially masked in logs
-                log.error('[checkout] CRITICAL:', JSON.stringify({
-                  event: 'CRITICAL_CHECKOUT_FAILURE',
-                  customerEmail: customerEmail ? customerEmail.replace(/(.{2}).*(@.*)/, '$1***$2') : 'unknown',
-                  customerName: customerName ? customerName.substring(0, 1) + '***' : 'unknown',
-                  amount: depositAmount,
-                  soId: null,
+                var voidFailTs = new Date().toISOString();
+                log.error('[checkout] CRITICAL: Void failed for txn=' + transactionId + ': ' + voidErr.message);
+                mailer.sendVoidFailureAlert({
                   txnId: transactionId,
+                  amount: depositAmount,
                   error: voidErr.message,
-                  timestamp: new Date().toISOString()
-                }));
+                  timestamp: voidFailTs
+                }).catch(function (mailErr) {
+                  log.error('[checkout] Void failure alert email failed: ' + mailErr.message);
+                });
               }
             })
             .then(function () {
@@ -677,7 +684,39 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
     });
   } // end runCheckout
 
-  return checkTransactionIdAndProceed();
+  // #4: Server-side charge using payment_token — eliminates ghost-charge window.
+  // When the frontend supplies payment_token instead of transaction_id, the card
+  // is charged here inside the backend flow. Any failure after the charge triggers
+  // the existing void logic in the outer .catch(), keeping funds and orders in sync.
+  function chargeAndProceed() {
+    if (!body.payment_token) {
+      // Legacy path: frontend pre-charged and passed transaction_id
+      return checkTransactionIdAndProceed();
+    }
+    if (!process.env.GP_APP_KEY) {
+      return res.status(503).json({ error: 'Payment gateway not configured' });
+    }
+    var card = new CreditCardData();
+    card.token = body.payment_token;
+    var chargeAmt = gpLib.getDepositAmount();
+    return card.charge(chargeAmt).withCurrency('CAD').withAllowDuplicates(true).execute()
+      .then(function (r) {
+        if (r.responseCode !== 'SUCCESS' && r.responseCode !== '00') {
+          log.warn('[checkout] Card declined during server-side charge: ' + r.responseCode + ' ' + (r.responseMessage || ''));
+          return res.status(402).json({ error: 'Payment declined: ' + (r.responseMessage || 'Unknown error') });
+        }
+        transactionId = r.transactionId;
+        depositAmount = chargeAmt;
+        log.info('[checkout] Server-side charge succeeded: txn=' + transactionId);
+        return checkTransactionIdAndProceed();
+      })
+      .catch(function (chargeErr) {
+        log.error('[checkout] Server-side charge failed: ' + chargeErr.message);
+        return res.status(502).json({ error: 'Payment could not be processed' });
+      });
+  }
+
+  return chargeAndProceed();
 }
 
 module.exports = router;

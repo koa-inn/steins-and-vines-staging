@@ -398,7 +398,8 @@ function loadFeaturedProducts() {
           dot.type = 'button';
           dot.className = 'promo-carousel-dot' + (i === 0 ? ' active' : '');
           dot.dataset.index = i;
-          dot.setAttribute('aria-label', 'Go to product ' + (i + 1));
+          dot.setAttribute('aria-label', 'Slide ' + (i + 1) + ' of ' + featured.length);
+          dot.setAttribute('aria-current', i === 0 ? 'true' : 'false');
           dotsContainer.appendChild(dot);
         }
       }
@@ -434,6 +435,7 @@ function loadFeaturedProducts() {
         // Update dots
         dots.forEach(function (d, i) {
           d.classList.toggle('active', i === newIndex);
+          d.setAttribute('aria-current', i === newIndex ? 'true' : 'false');
         });
 
         // Clean up after animation
@@ -470,8 +472,24 @@ function loadFeaturedProducts() {
 
       // Auto-rotate every 12 seconds, pause if More Information is open or user prefers reduced motion
       var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+      var carouselPaused = false;
+
+      if (nav) {
+        var pauseBtn = document.createElement('button');
+        pauseBtn.type = 'button';
+        pauseBtn.className = 'promo-carousel-pause';
+        pauseBtn.setAttribute('aria-label', 'Pause slideshow');
+        pauseBtn.textContent = '⏸';
+        pauseBtn.addEventListener('click', function () {
+          carouselPaused = !carouselPaused;
+          pauseBtn.textContent = carouselPaused ? '▶' : '⏸';
+          pauseBtn.setAttribute('aria-label', carouselPaused ? 'Play slideshow' : 'Pause slideshow');
+        });
+        nav.appendChild(pauseBtn);
+      }
+
       setInterval(function () {
-        if (prefersReducedMotion.matches) return;
+        if (carouselPaused || prefersReducedMotion.matches) return;
         var hasOpenNotes = productsContainer.querySelector('.product-notes.open, .notes-wrap.open');
         if (!hasOpenNotes) {
           showSlide((carouselIndex + 1) % featured.length);

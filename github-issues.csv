@@ -1,0 +1,319 @@
+title,labels,body
+"[CRIT] Hardcoded MW_API_KEY in client-side JavaScript","priority:critical,type:security,source:code-review","**File:** `js/modules/01-config.js:5`
+
+`MW_API_KEY` is shipped to every browser, visible in source, and committed to git history. CORS is browser-only — any HTTP client can bypass it. The Referer check is also spoofable server-side.
+
+**Impact:** Any route checking MW_API_KEY (e.g. `/api/orders/recent`) can be called by anyone who views source. Exposes customer names, order totals, and transaction IDs.
+
+**Recommendation:** Treat MW_API_KEY as a public identifier, not a secret. Require proper session-based auth for sensitive endpoints. Rotate the key since the current value is in git history.
+
+**Ref:** Code Review #1, Payment Audit #14 (deferred)"
+"[CRIT] Dual API key confusion — MW_API_KEY vs API_SECRET_KEY","priority:critical,type:security,source:code-review","**File:** `zoho-middleware/routes/pos.js:505-507`
+
+The global API key guard in `server.js` checks `API_SECRET_KEY`, but `/api/orders/recent` checks `MW_API_KEY`. Two separate env vars for the same purpose. If only one is set, the other endpoint's protection is silently disabled.
+
+Additionally, the endpoint accepts the key via `req.query.api_key` (URL query param), meaning the secret appears in server access logs, browser history, and Referer headers.
+
+**Recommendation:** Standardize on one API key env var. Remove the query parameter option — headers only.
+
+**Ref:** Code Review #2"
+"[CRIT] Price fail-open when catalog unavailable","priority:critical,type:security,source:gemini-review","**File:** `zoho-middleware/routes/checkout.js` ~line 192
+
+When catalog cache is unavailable, the code falls back to client-supplied `item.rate`:
+```
+var rate = catalogAvailable ? catalogMap[item.item_id] : (Number(item.rate) || 0)
+```
+
+This defeats the entire server-side price anchoring system. An attacker could force a catalog cache miss and submit items at $0.
+
+**Recommendation:** Fail closed — reject the checkout if catalog is unavailable rather than trusting client prices.
+
+**Ref:** Gemini v1.3.0 Review Gap #1"
+"[CRIT] Ghost charge — no void on Contact/Booking failure","priority:critical,type:security,source:gemini-review","**Architectural issue**
+
+Frontend orchestrates: Charge → Contact → Booking → Order. Backend void only fires if the backend Order step fails. If Contact or Booking step fails after card is charged, no void is triggered — customer is charged but gets no order.
+
+**Recommendation:** Move all orchestration to backend. The charge-to-order pipeline should be a single atomic server-side transaction with void on any step failure.
+
+**Ref:** Gemini v1.3.0 Review Gap #2"
+"[CRIT] Makers Fee bypass — not enforced server-side","priority:critical,type:security,source:gemini-review","**File:** `zoho-middleware/routes/checkout.js`
+
+Backend checks the makers fee price if present, but does NOT enforce that it MUST be present when kits are in the cart. A client could submit a kit order with no makers fee line item.
+
+**Recommendation:** Add server-side check: `if (hasKits && !hasMakersFee) reject`.
+
+**Ref:** Gemini v1.3.0 Review Gap #3"
+"[HIGH] reCAPTCHA fail-open may be too permissive","priority:high,type:security,source:code-review","**File:** `zoho-middleware/routes/checkout.js:55-58`
+
+When Google is unreachable or times out, reCAPTCHA verification returns `{ success: true, score: 1.0 }`. An attacker could block outbound connections to Google and bypass reCAPTCHA entirely, limited only by rate limiter (10/min payment, 60/min API).
+
+**Recommendation:** Add a Redis counter of consecutive reCAPTCHA failures. If it exceeds a threshold (e.g. 10 in 5 minutes), switch to fail-closed mode temporarily and return 503.
+
+**Ref:** Code Review #3"
+"[HIGH] Contact form: no reCAPTCHA + email header injection risk","priority:high,type:security,source:code-review","**File:** `zoho-middleware/server.js:123-159`
+
+`/api/contact` has rate limiting (5/min) but no reCAPTCHA. The `replyTo: email` field accepts user input directly — potential for header injection in older nodemailer versions.
+
+**Recommendation:** Add reCAPTCHA to contact form (infrastructure already exists). Use `{ name, address }` object format for `replyTo`.
+
+**Ref:** Code Review #4"
+"[HIGH] pos/sale records card payments as 'cash'","priority:high,type:bug,source:code-review","**File:** `zoho-middleware/routes/pos.js:459`
+
+The legacy `POST /api/pos/sale` hardcodes `payment_mode: 'cash'` for GP card terminal transactions. The kiosk sale endpoint correctly detects card type. This creates inaccurate financial records in Zoho.
+
+**Recommendation:** Detect card type from terminal response (as kiosk endpoint does), or default to `'creditcard'`.
+
+**Ref:** Code Review #6, improvements.md L6"
+"[HIGH] /api/payment/charge may trust client-supplied amount","priority:high,type:security,source:gemini-review","**File:** `zoho-middleware/routes/payments.js`
+
+Needs verification — the charge endpoint may accept the payment amount from the client rather than computing it server-side from the validated cart total.
+
+**Recommendation:** Verify and ensure the charge amount is always computed server-side from catalog prices, never from client input.
+
+**Ref:** Gemini v1.3.0 Review — additional note"
+"[HIGH] PII in critical error logs — PIPEDA risk","priority:high,type:security,source:gemini-review","Customer names and email addresses appear in critical error log entries (e.g. failed void scenarios). Under PIPEDA (Canadian privacy law), PII in logs creates compliance risk — especially if logs are stored in third-party services.
+
+**Recommendation:** Redact or hash PII in log output. Use customer IDs instead of names/emails.
+
+**Ref:** Gemini v1.3.0 Review — additional note"
+"[MED] POS status endpoint leaks GP_* env var names","priority:medium,type:security,source:code-review","**File:** `zoho-middleware/routes/pos.js:349`
+
+Lists all `GP_*` environment variable names in the response. Helps attackers understand payment gateway configuration.
+
+**Recommendation:** Remove `gp_vars_present` from response, or put behind admin auth.
+
+**Ref:** Code Review #8"
+"[MED] Kiosk sale idempotency double-response bug","priority:medium,type:bug,source:code-review","**File:** `zoho-middleware/routes/pos.js:57-69`
+
+When `idempotencyKey` is truthy, the `return cache.get(...)` returns a promise but execution falls through to the next `processSale()` call before the promise resolves. This causes a double-response crash (`Error: Can't set headers after they are sent`).
+
+**Recommendation:** Add `return` before the fallback `processSale`, or restructure with `else`.
+
+**Ref:** Code Review #9"
+"[MED] innerHTML XSS risk in cart sidebar","priority:medium,type:security,source:code-review","**File:** `js/modules/11-cart.js:757-758` and `934-935`
+
+`priceEl.innerHTML` uses `formatCurrency(item.price)` where `item.price` comes from localStorage. If localStorage is manipulated, this creates an XSS vector. Rest of the codebase correctly uses `textContent`.
+
+**Recommendation:** Build these elements with `createElement`/`textContent` like the rest of the code.
+
+**Ref:** Code Review #10"
+"[MED] Health endpoint exposes auth state + env var names","priority:medium,type:security,source:code-review","**File:** `zoho-middleware/server.js:92-98`
+
+Unauthenticated `/health` endpoint reveals Zoho OAuth state and server uptime. Also doesn't reflect actual Redis/token validity (returns 200 even when token expired or Redis down).
+
+**Recommendation:** Keep minimal `{ status: 'ok' }` for public endpoint. Move diagnostics to authenticated admin endpoint. Add real health checks for Redis and token validity.
+
+**Ref:** Code Review #7, improvements.md L5"
+"[MED] OAuth callback missing CSRF state parameter","priority:medium,type:security,source:backlog","**File:** `zoho-middleware/lib/zohoAuth.js`
+
+`/auth/zoho/callback` validates no state parameter. This is a textbook OAuth CSRF vulnerability.
+
+**Recommendation:** Generate a random state param on auth initiation, store in session/Redis, validate on callback.
+
+**Ref:** improvements.md M18"
+"[MED] Product request form lacks rate limiting","priority:medium,type:security,source:backlog","**File:** `zoho-middleware/server.js`
+
+`POST /product-requests` is mounted before the auth guard and apiLimiter. Unlimited spam possible.
+
+**Recommendation:** Apply rate limiter to this endpoint.
+
+**Ref:** improvements.md M17"
+"[MED] Overly broad Zoho OAuth scopes (fullaccess.all)","priority:medium,type:security,source:backlog","**File:** `zoho-middleware/lib/zohoAuth.js`
+
+Requests `fullaccess.all` — includes delete/org settings capabilities never used. Larger breach blast radius.
+
+**Recommendation:** Scope down to only the specific modules/actions needed (Inventory read/write, Books invoices).
+
+**Ref:** improvements.md M22"
+"[MED] No structured alerting for critical events","priority:medium,type:infra,source:backlog","**File:** `zoho-middleware/server.js`, `routes/pos.js`
+
+Failed payment voids are written to Redis but never surfaced to admin. No webhook or email on critical errors.
+
+**Recommendation:** Add email/webhook notification for failed voids and other critical error conditions.
+
+**Ref:** improvements.md M19"
+"[MED] Flat rate limit shared across public and admin routes","priority:medium,type:security,source:backlog","**File:** `zoho-middleware/server.js`
+
+Public reads and admin writes share one 60 req/min bucket. Admin operations can be throttled by public traffic.
+
+**Recommendation:** Add tiered limits with separate Redis key prefixes for public vs admin routes.
+
+**Ref:** improvements.md M21"
+"[MED] Dual cart mental model not visible to users","priority:medium,type:ux,source:backlog","No header badge for each cart, no explanation of two checkout flows. Users don't know which cart they're reviewing on reservation.html.
+
+**Recommendation:** Add visual indicators for both carts and explain the dual-flow concept.
+
+**Ref:** improvements.md M1"
+"[MED] Reservation page H1 hidden by JS from page load","priority:medium,type:accessibility,source:backlog","**File:** `reservation.html`
+
+`<h1 style=""visibility:hidden"">` — screen readers encounter hidden heading. Should default to visible and be updated by JS.
+
+**Ref:** improvements.md M2"
+"[MED] Hamburger menu has no visual open/close state","priority:medium,type:accessibility,source:backlog","No X icon or animated state change when nav is open. Phone number not visually differentiated from nav links.
+
+**Ref:** improvements.md M3"
+"[MED] Carousel dots missing accessible labels + no pause control","priority:medium,type:accessibility,source:backlog","**File:** `index.html`, `js/modules/06-featured.js`
+
+Homepage carousel dot buttons have no aria-label. Auto-advancing content needs pause mechanism (WCAG 2.2.2).
+
+**Ref:** improvements.md M4"
+"[MED] Tabs missing full WAI-ARIA pattern","priority:medium,type:accessibility,source:backlog","**File:** `products.html`, `about.html`, `js/modules/10-tabs.js`
+
+No role=tablist/tab/tabpanel, no aria-selected/controls/labelledby, no arrow-key navigation.
+
+**Ref:** improvements.md M5"
+"[MED] Google Fonts render-blocking on homepage","priority:medium,type:performance,source:backlog","**File:** `index.html`
+
+Uses blocking font link; `products.html` uses print-media swap trick. Homepage has worse strategy despite being most performance-sensitive.
+
+**Recommendation:** Use the same swap pattern as products.html.
+
+**Ref:** improvements.md M6"
+"[MED] Static content JSON has no client-side cache","priority:medium,type:performance,source:backlog","**File:** `js/modules/13-init.js`
+
+`content/shared.json` and `content/{page}.json` fetched on every page load. Could use sessionStorage like the product cache.
+
+**Ref:** improvements.md M7"
+"[MED] Cart identity key uses mutable name|brand instead of SKU","priority:medium,type:bug,source:backlog","**File:** `js/modules/11-cart.js`
+
+If product name changes in Zoho, stored cart items become orphaned in localStorage.
+
+**Recommendation:** Use Zoho item_id or SKU as the cart identity key.
+
+**Ref:** improvements.md M8"
+"[MED] SW cache version is timestamp not content hash","priority:medium,type:performance,source:backlog","**File:** `sw.js`
+
+Every build busts entire SW cache even if assets unchanged.
+
+**Recommendation:** Use content hash instead of build timestamp.
+
+**Ref:** improvements.md M9"
+"[MED] equalizeCardHeights uses JS where CSS Grid suffices","priority:medium,type:cleanup,source:backlog","**File:** `js/modules/05-catalog-view.js`, `css/styles.css`
+
+JS height-equalization loop and resize listener can be replaced with CSS Grid `align-items: stretch`.
+
+**Ref:** improvements.md M10"
+"[MED] OpenGraph tags missing on homepage; mismatch on products","priority:medium,type:ux,source:backlog","**File:** `index.html`, `products.html`
+
+Homepage has no og:title/type/image. Products og:url contradicts canonical. Social shares look broken.
+
+**Ref:** improvements.md M11"
+"[MED] Fixed bottom bars missing safe-area-inset-bottom","priority:medium,type:ux,source:backlog","**File:** `css/styles.css`, `js/modules/13-init.js`
+
+`#mobile-catalog-bar` sits on iOS home indicator. No `env(safe-area-inset-bottom)`.
+
+**Ref:** improvements.md M12"
+"[MED] Cart sidebar qty buttons below 44px touch target","priority:medium,type:accessibility,source:backlog","**File:** `css/styles.css`
+
+`.cart-sidebar-item-controls .qty-btn` overridden to 26x26px. Remove button ~16x16px. Both below WCAG/Apple HIG minimum.
+
+**Ref:** improvements.md M13"
+"[MED] No offline fallback UI for products page","priority:medium,type:ux,source:backlog","**File:** `sw.js`, `products.html`
+
+Middleware not cached by SW. Offline = blank catalog with no retry or message.
+
+**Ref:** improvements.md M14"
+"[MED] Nav ghost state when cart drawer opens over open nav","priority:medium,type:bug,source:backlog","**File:** `js/modules/11-cart.js`, `js/modules/13-init.js`
+
+If hamburger nav is open and cart drawer opens, `body.nav-open` class is stuck. Fix: call `closeNav()` on cart drawer open.
+
+**Ref:** improvements.md M15"
+"[MED] Reservation bar buttons too small at 480px","priority:medium,type:accessibility,source:backlog","**File:** `css/styles.css`
+
+Clear Cart ~24px tall, Checkout ~28px tall at 480px — well below 44px. Highest-traffic touch zone on phone.
+
+**Ref:** improvements.md M16"
+"[MED] File-system cache committed to repo","priority:medium,type:infra,source:backlog","**File:** `zoho-middleware/routes/catalog.js`, `.gitignore`
+
+Cache files written to project dir, not /tmp. Can be committed with stale data. Useless on Railway (ephemeral FS).
+
+**Recommendation:** Write cache to /tmp, add cache files to .gitignore.
+
+**Ref:** improvements.md M20"
+"[MED] Massively duplicated card-rendering logic","priority:medium,type:cleanup,source:backlog","**File:** `js/modules/04-label-cards.js`, `06-featured.js`, `07-catalog-kits.js`, `11-cart.js`
+
+buildWineCard/buildBeerCard/buildFeaturedWineCard/buildFeaturedBeerCard are near-identical. renderCartSidebar/renderCartDrawer are ~180-line duplicates.
+
+**Recommendation:** Extract shared rendering into helper functions.
+
+**Ref:** improvements.md M23, Code Review #11"
+"[MED] Screen reader announcements missing for loading/filter state","priority:medium,type:accessibility,source:backlog","**File:** `js/modules/07-catalog-kits.js`, `js/modules/04-label-cards.js`
+
+Skeleton-to-content transition is silent. Notes toggle `aria-expanded` never set in label card variants.
+
+**Ref:** improvements.md H15"
+"[LOW] console.log left in production code","priority:low,type:cleanup,source:code-review","**File:** `js/modules/11-cart.js:161`
+
+`console.log('[Cart] Refreshing...')` fires on every cart change in production browsers.
+
+**Ref:** Code Review #12"
+"[LOW] Floating-point edge case in weight controls","priority:low,type:bug,source:code-review","**File:** `js/modules/11-cart.js:373-376`
+
+When `stepVal` is 0.01, repeated multiply/divide accumulates IEEE 754 drift. `toFixed` partially mitigates but working in integer cents/grams internally would be more robust.
+
+**Ref:** Code Review #13"
+"[LOW] Double-parse bug in orders/recent","priority:low,type:bug,source:code-review","**File:** `zoho-middleware/routes/pos.js:518`
+
+`cache.get()` already returns parsed JSON, but the code wraps it in `JSON.parse(cached)` again. Will crash at runtime if this cache path is ever hit. Also `cache.set` double-stringifies.
+
+**Recommendation:** Remove the `JSON.parse()` wrapper.
+
+**Ref:** Code Review #14"
+"[LOW] Lorem ipsum placeholder copy on About page","priority:low,type:ux,source:backlog","**File:** `about.html`, `content/about.json`
+
+Our Story tab and owner bio cards contain Lorem Ipsum text and 'Owner Name' placeholders — publicly visible, damages brand trust.
+
+**Ref:** improvements.md H1"
+"[LOW] Hero subtitle weak value proposition","priority:low,type:ux,source:backlog","**File:** `index.html`, `content/home.json`
+
+'Your brew. Your vintage.' carries no value proposition. Concept not explained until far below fold. Losing new visitors immediately.
+
+**Ref:** improvements.md H5"
+"[LOW] Beer banner may contradict live catalog","priority:low,type:ux,source:backlog","Homepage 'Beer Is Coming' banner may coexist with beer kits already in catalog. Audit and add CMS flag for visibility.
+
+**Ref:** improvements.md L1"
+"[LOW] Footer hours hard-coded; no 'Open Now' indicator","priority:low,type:ux,source:backlog","Static footer hours on every page; dynamic hours only on About/Contact. No 'Open now' signal for walk-in customers.
+
+**Ref:** improvements.md L2"
+"[LOW] OG image is SVG — social previews fail","priority:low,type:ux,source:backlog","og:image references SVG. iMessage, WhatsApp, social platforms don't render SVG previews. Use PNG instead.
+
+**Ref:** improvements.md L3"
+"[LOW] Product request form inputs below 16px triggers iOS zoom","priority:low,type:accessibility,source:backlog","**File:** `css/styles.css`
+
+`.product-request-field input/textarea` at 0.95rem triggers iOS Safari auto-zoom on focus.
+
+**Ref:** improvements.md L4"
+"[LOW] Global body size limit may block large catalog uploads","priority:low,type:infra,source:backlog","**File:** `zoho-middleware/server.js`
+
+`express.json({ limit: '1mb' })` globally. Large Zoho catalog could exceed 1MB.
+
+**Ref:** improvements.md L7"
+"[LOW] Inline styles hardcoded in JS-generated HTML","priority:low,type:cleanup,source:backlog","**File:** `js/modules/04-label-cards.js`
+
+`buildLabelPriceFooter` uses inline `style=""color:#999""` instead of existing CSS classes.
+
+**Ref:** improvements.md L8"
+"[SETUP] Sentry: Configure email alert for reservation.html errors","priority:low,type:infra,source:backlog","In Sentry UI → Alerts → Create Alert → Error Alert → filter to `url:*reservation*` → notify via email. Catches silent payment/checkout crashes. No code change needed.
+
+**Ref:** improvements.md MANUAL-1"
+"[TEST] Campaign 4: brewpad.js + admin.js pure function extraction","priority:low,type:testing,source:testing-backlog","Extract and test pure functions from:
+- `js/brewpad.js` IIFE — ABV calc, date helpers, batch filters
+- `js/admin.js` IIFE — reservation status logic
+
+**Ref:** TESTING.md Campaign 4 backlog"
+"[TEST] Campaign 5: E2E tests with Playwright against staging","priority:low,type:testing,source:testing-backlog","Set up Playwright E2E test suite running against staging.steinsandvines.ca. Cover critical user paths: browsing catalog, adding to cart, checkout flow.
+
+**Ref:** TESTING.md Campaign 5 backlog"
+"[KIOSK] Add KIOSK_CONTACT_ID env var to Railway","priority:medium,type:infra,source:kiosk-setup","In Railway dashboard, add `KIOSK_CONTACT_ID=<zoho_contact_id>`. Create a 'Walk-In Customer' contact in Zoho Inventory and use that ID. Without this, kiosk invoices won't aggregate walk-in sales cleanly.
+
+**Ref:** kiosk-checkout-setup.md Step 1"
+"[KIOSK] Verify GP POS terminal + test full sale flow","priority:medium,type:infra,source:kiosk-setup","On-site steps:
+1. Confirm GP terminal powered on, network connected, status shows 'Ready' in admin panel
+2. Run a complete test transaction (add products → charge → verify receipt)
+3. Check Zoho Inventory for new invoice + stock decrements
+4. Optionally test void-on-failure by temporarily breaking Zoho URL
+
+**Ref:** kiosk-checkout-setup.md Steps 2-4"
+"[KIOSK] Deploy kiosk checkout to production","priority:medium,type:infra,source:kiosk-setup","Once staging tests pass: `git push production main`. Verify kiosk works on production domain.
+
+**Ref:** kiosk-checkout-setup.md Step 5"

@@ -243,6 +243,17 @@ function initReservationPage() {
 
   initCheckoutStepper();
 
+  // M1: Show which cart is being checked out
+  var params = new URLSearchParams(window.location.search);
+  var cartParam = params.get('cart');
+  var pageH1 = document.querySelector('.page-header h1');
+  if (pageH1 && cartParam) {
+    var cartLabel = document.createElement('p');
+    cartLabel.className = 'checkout-cart-label';
+    cartLabel.textContent = cartParam === 'ferment' ? 'Ferment in Store Cart' : 'Ingredients & Supplies Cart';
+    pageH1.parentNode.insertBefore(cartLabel, pageH1.nextSibling);
+  }
+
   var initialHasKits = initialItems.some(function (item) { return (item.item_type || 'kit') === 'kit'; });
 
   // Fetch maker's fee item lazily when kit items are present
@@ -799,7 +810,10 @@ function setupReservationForm() {
 
     // C1: Wrap submission in reCAPTCHA token collection
     getRecaptchaToken('checkout', function (recaptchaToken) {
-      var pProm = (charge > 0 && _paymentConfig && _paymentConfig.enabled) ? fetch(mw + '/api/payment/charge', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ token: _gpToken, amount: depAmt, customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value } }) }).then(function (r) { return r.ok ? r.json() : r.json().then(function (d) { throw new Error(d.error); }); }) : Promise.resolve({ transaction_id: '', amount: 0 });
+      // #4: Card is now charged server-side inside /api/checkout using payment_token.
+      // The separate /api/payment/charge call has been removed to eliminate the
+      // ghost-charge window where the card could be charged but the order never created.
+      var pProm = Promise.resolve({});
 
       pProm.then(function (pR) {
         return fetch(mw + '/api/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY }, body: JSON.stringify({ name: document.getElementById('res-name').value, email: document.getElementById('res-email').value, phone: document.getElementById('res-phone').value }) }).then(function (r) { return r.json(); }).then(function (cD) {
@@ -818,8 +832,7 @@ function setupReservationForm() {
               body: JSON.stringify({
                 customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value, phone: document.getElementById('res-phone').value },
                 items: lines,
-                transaction_id: pR.transaction_id,
-                deposit_amount: pR.amount,
+                payment_token: (charge > 0 && _paymentConfig && _paymentConfig.enabled) ? _gpToken : '',
                 timeslot: bD.timeslot,
                 honeypot: honeypotVal,
                 recaptcha_token: recaptchaToken

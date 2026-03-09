@@ -88,14 +88,19 @@ var refreshTimer = null;
 /**
  * Build the Zoho authorization URL that the user should visit.
  */
-function getAuthorizationUrl() {
+function generateState() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function getAuthorizationUrl(state) {
   var params = querystring.stringify({
     response_type: 'code',
     client_id: process.env.ZOHO_CLIENT_ID,
     scope: 'ZohoBooks.fullaccess.all,ZohoInventory.fullaccess.all,ZohoBookings.appointments.ALL',
     redirect_uri: process.env.ZOHO_REDIRECT_URI,
     access_type: 'offline',   // gives us a refresh token
-    prompt: 'consent'          // always show consent screen
+    prompt: 'consent',         // always show consent screen
+    state: state || ''
   });
   return accountsBase() + '/oauth/v2/auth?' + params;
 }
@@ -336,6 +341,7 @@ function init() {
 }
 
 module.exports = {
+  generateState: generateState,
   getAuthorizationUrl: getAuthorizationUrl,
   exchangeCode: exchangeCode,
   refreshAccessToken: refreshAccessToken,

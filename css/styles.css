@@ -4401,6 +4401,19 @@ behold-widget {
   display: none !important;
 }
 
+.price-strike {
+  color: #999;
+  font-size: 0.8rem;
+}
+
+.checkout-cart-label {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 /* ===== Toast notifications ===== */
 .toast-container {
   position: fixed;

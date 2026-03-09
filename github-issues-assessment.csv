@@ -1,0 +1,163 @@
+title,labels,body
+"[MED] Route-level integration tests for payments.js","priority:medium,type:testing,source:testing-assessment","**Scope:** `zoho-middleware/routes/payments.js`
+
+The payment route (charge, void, refund) has zero test coverage. This is the highest-risk untested code in the middleware — it handles credit card transactions via the Global Payments SDK.
+
+**What to test:**
+- `POST /api/payment/charge` — success path, missing token, invalid amount, declined card, GP error
+- `POST /api/payment/void` — success, invalid txn_id, GP error
+- `POST /api/payment/refund` — success, invalid amount, declined refund
+- Verify `withAllowDuplicates(true)` behavior is covered
+
+**Approach:** Mock the GP SDK (`globalpayments-api`) and use supertest for HTTP-level integration tests. Follow the pattern established in `checkout.test.js`.
+
+**Ref:** Testing Strategy Assessment — Campaign 3 candidate"
+"[MED] Route-level integration tests for checkout.js edge cases","priority:medium,type:testing,source:testing-assessment","**Scope:** `zoho-middleware/routes/checkout.js`
+
+Checkout already has unit tests for `verifyRecaptcha` and `buildLineItems`, but the route handler logic is untested at the integration level. Key untested paths:
+
+- Idempotency key deduplication (Redis check → early return)
+- Price anchoring (server-side price lookup vs. client-submitted prices)
+- Void-on-failure flow (GP charge succeeds → Zoho order fails → automatic void)
+- Race conditions between concurrent checkout requests
+
+**Ref:** Testing Strategy Assessment — Campaign 3 candidate"
+"[LOW] Reconcile coverage thresholds — jest configs vs. TESTING.md","priority:low,type:testing,source:testing-assessment","**Files:** `jest.config.js`, `zoho-middleware/jest.config.js`, `TESTING.md`
+
+`TESTING.md` (Architecture Notes section, line 133) claims: middleware ≥70% lines, frontend ≥80% lines. However, the actual jest configs enforce 35% (middleware global) and 5% (frontend global).
+
+Either raise the jest config thresholds to match the documented targets, or update TESTING.md to reflect the current reality. Mismatched docs erode trust in the testing SOP.
+
+**Ref:** Testing Strategy Assessment"
+"[MED] E2E test for the reservation/booking flow","priority:medium,type:testing,source:testing-assessment","**Scope:** `tests/e2e/` — new spec file
+
+The reservation flow is customer-facing and touches the payment terminal (deposit collection). There are currently no E2E tests covering this path.
+
+**Minimum viable test:**
+1. Navigate to reservation page
+2. Verify date picker loads
+3. Select a date and service
+4. Verify deposit form / payment section appears
+5. Verify form validation works
+
+This does not need to complete a real payment — just verify the UI flow is functional.
+
+**Ref:** Testing Strategy Assessment — Campaign 4 candidate"
+"[LOW] Add Firefox/WebKit to Playwright browser matrix","priority:low,type:testing,source:testing-assessment","**File:** `playwright.config.js`
+
+Currently Chromium-only. Adding WebKit (Safari engine) would catch rendering and JS differences that affect a meaningful segment of visitors.
+
+```js
+projects: [
+  { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+],
+```
+
+Consider also adding a mobile viewport project for responsive testing.
+
+**Trade-off:** More browsers = longer CI run. May want to run multi-browser only on main pushes, not on every PR.
+
+**Ref:** Testing Strategy Assessment — Campaign 5 candidate"
+"[HIGH] Create README.md","priority:high,type:docs,source:docs-assessment","**Location:** Project root
+
+There is no README.md in the repository. This is the most impactful documentation gap.
+
+**Recommended sections:**
+1. **What this is** — Steins & Vines e-commerce site (static HTML + Express middleware)
+2. **Tech stack** — GitHub Pages, Express on Railway, Zoho Books/Inventory/Bookings, Global Payments, Redis, Sentry
+3. **Local setup** — Prerequisites, cloning, environment variables, running frontend + middleware
+4. **Running tests** — Unit tests, E2E, coverage
+5. **Deployment** — Staging vs. production repos, Railway deployment, GitHub Pages
+6. **Project structure** — Key directories and what they contain
+7. **Links** — To style_guide.md, TESTING.md, and other docs
+
+**Ref:** Documentation Assessment"
+"[MED] Create .env.example for the middleware","priority:medium,type:docs,source:docs-assessment","**Location:** `zoho-middleware/.env.example`
+
+The middleware references 15+ environment variables scattered across files. No .env.example exists. A new developer must grep the codebase to discover required configuration.
+
+**Known env vars to document:**
+- `ZOHO_ORG_ID`, `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_DOMAIN`
+- `GP_APP_KEY`, `GP_APP_ID`, `GP_DEPOSIT_AMOUNT`
+- `REDIS_URL`
+- `SENTRY_DSN`
+- `API_SECRET_KEY` (middleware auth)
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (OAuth)
+- `RECAPTCHA_SECRET_KEY`
+- `TOKEN_ENCRYPTION_KEY` (AES-256-GCM)
+- `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_TO`
+
+Each should have a description and whether it's required or optional.
+
+**Ref:** Documentation Assessment"
+"[MED] Create API endpoint reference document","priority:medium,type:docs,source:docs-assessment","**Location:** `docs/API.md` or similar
+
+The middleware exposes ~25 endpoints across 10 route files with no API documentation. Endpoint behavior must currently be reverse-engineered from source code.
+
+**Recommended format for each endpoint:**
+- Method + Path
+- Auth requirement (API key, Google OAuth, public)
+- Request body schema
+- Response shape (success + error)
+- Rate limiting notes
+
+**Route files to document:** auth.js, bookings.js, catalog.js, checkout.js, items.js, payments.js, pos.js, purchaseorders.js, requests.js, taxes.js
+
+**Ref:** Documentation Assessment"
+"[MED] Create deployment runbook","priority:medium,type:docs,source:docs-assessment","**Location:** `docs/DEPLOYMENT.md` or similar
+
+The project uses a two-repo staging/production workflow but the process is undocumented.
+
+**Recommended content:**
+1. **Staging deployment** — Push to `koa-inn/steins-and-vines-staging` main branch → auto-deploys to GitHub Pages + Railway
+2. **Production promotion** — How to push from staging to `koa-inn/steins-and-vines-production`
+3. **Railway middleware** — How to deploy, view logs, restart, rollback
+4. **Rollback procedure** — Steps to revert a bad deploy
+5. **Pre-deploy checklist** — Tests passing, staging verified, env vars confirmed
+6. **DNS and domain config** — staging.steinsandvines.ca vs. steinsandvines.ca
+
+**Ref:** Documentation Assessment"
+"[LOW] Add architecture diagram","priority:low,type:docs,source:docs-assessment","**Location:** README.md or separate `docs/ARCHITECTURE.md`
+
+No document explains how the system's components connect. A mermaid diagram would make the architecture immediately understandable.
+
+**Components to show:**
+- Browser → GitHub Pages (static HTML/CSS/JS)
+- Browser → Railway Express middleware → Zoho Books API
+- Browser → Railway Express middleware → Zoho Inventory API
+- Browser → Railway Express middleware → Zoho Bookings API
+- Browser → Railway Express middleware → Global Payments SDK
+- Middleware → Redis (caching, rate limiting, idempotency)
+- Middleware → Sentry (error reporting)
+- Browser → Google Apps Script (event tracking, Sheets)
+- Admin pages → Google OAuth → Middleware
+
+**Ref:** Documentation Assessment"
+"[LOW] Extract and test kiosk.js pure functions","priority:low,type:testing,source:testing-assessment","**File:** `js/kiosk.js` (~1700 lines)
+
+The kiosk module is a large IIFE with significant untested business logic including payment terminal handling, cart calculations, and Google OAuth token management (stored in localStorage).
+
+**Approach:** Apply the same campaign strategy used for other modules:
+1. Identify pure functions within the IIFE
+2. Extract them with conditional exports
+3. Write unit tests with jsdom
+
+**Priority candidates for extraction:**
+- Cart total / line item calculations
+- Receipt formatting
+- Terminal status parsing
+- Input validation helpers
+
+**Ref:** Testing Strategy Assessment — Campaign 5+ candidate"
+"[LOW] E2E tests for mobile viewports","priority:low,type:testing,source:testing-assessment","**File:** `playwright.config.js`
+
+No mobile viewport testing exists. Add a Playwright project targeting a mobile device:
+
+```js
+{ name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
+```
+
+Focus mobile E2E on: responsive navigation (hamburger menu), product catalog scrolling, cart sidebar behavior on small screens, and checkout form usability.
+
+**Ref:** Testing Strategy Assessment — Campaign 5+ candidate"

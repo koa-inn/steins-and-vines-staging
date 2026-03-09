@@ -110,7 +110,41 @@ function sendReservationNotification(orderData) {
   });
 }
 
+/**
+ * Send an admin alert when a GP void fails after a Zoho order failure.
+ * Manual action is required to void the transaction in Global Payments.
+ *
+ * @param {Object} data
+ * @param {string} data.txnId     - Global Payments transaction ID
+ * @param {number} data.amount    - Charged amount
+ * @param {string} data.error     - Error message
+ * @param {string} data.timestamp - ISO timestamp
+ */
+function sendVoidFailureAlert(data) {
+  var to = process.env.CONTACT_TO || 'hello@steinsandvines.ca';
+  var subject = '[ACTION REQUIRED] GP void failed — manual review needed';
+  var body = [
+    'A Global Payments transaction void FAILED after a Zoho order failure.',
+    'Manual action is required to void this transaction.',
+    '',
+    'Transaction ID: ' + (data.txnId || 'unknown'),
+    'Amount:         $' + (Number(data.amount) || 0).toFixed(2),
+    'Error:          ' + (data.error || 'unknown'),
+    'Timestamp:      ' + (data.timestamp || new Date().toISOString()),
+    '',
+    'Please void this transaction manually in the Global Payments dashboard.'
+  ].join('\n');
+
+  return createTransport().sendMail({
+    from: process.env.SMTP_USER,
+    to: to,
+    subject: subject,
+    text: body
+  });
+}
+
 module.exports = {
   sendOfflineOrderNotification: sendOfflineOrderNotification,
-  sendReservationNotification: sendReservationNotification
+  sendReservationNotification: sendReservationNotification,
+  sendVoidFailureAlert: sendVoidFailureAlert
 };

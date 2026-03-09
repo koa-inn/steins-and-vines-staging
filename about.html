@@ -15,7 +15,7 @@
   <meta property="og:description" content="About Steins and Vines - Learn about our ferment-on-premises facility in BC.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://steinsandvines.ca/about">
-  <meta property="og:image" content="https://steinsandvines.ca/images/SV_Logo_PrimaryCircle_green.svg">
+  <meta property="og:image" content="https://steinsandvines.ca/images/icon-512.png">
   <meta property="og:site_name" content="Steins &amp; Vines">
   <meta name="twitter:card" content="summary">
   <title>About | Steins &amp; Vines</title>
@@ -26,7 +26,7 @@
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap">
   <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <link rel="icon" href="images/Icon_green.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.min.css?v=mmit0gdc">
+  <link rel="stylesheet" href="css/styles.min.css?v=mmjh1sq6">
 </head>
 <body data-page="about">
   <a href="#main" class="skip-to-content">Skip to content</a>
@@ -58,13 +58,13 @@
       </div>
     </section>
 
-    <nav class="product-tabs" id="about-tabs">
-      <button type="button" class="product-tab-btn active" data-about-tab="info">FAQs &amp; Info</button>
-      <button type="button" class="product-tab-btn" data-about-tab="story">Our Story</button>
-      <button type="button" class="product-tab-btn" data-about-tab="services">Services</button>
+    <nav class="product-tabs" id="about-tabs" role="tablist" aria-label="About sections">
+      <button type="button" class="product-tab-btn active" data-about-tab="info" role="tab" id="tab-about-info" aria-selected="true" aria-controls="about-panel-info">FAQs &amp; Info</button>
+      <button type="button" class="product-tab-btn" data-about-tab="story" role="tab" id="tab-about-story" aria-selected="false" aria-controls="about-panel-story">Our Story</button>
+      <button type="button" class="product-tab-btn" data-about-tab="services" role="tab" id="tab-about-services" aria-selected="false" aria-controls="about-panel-services">Services</button>
     </nav>
 
-    <div id="about-panel-info">
+    <div id="about-panel-info" role="tabpanel" aria-labelledby="tab-about-info" tabindex="0">
       <section class="content">
         <div class="container">
           <h2>Frequently Asked Questions</h2>
@@ -96,7 +96,7 @@
       </section>
     </div>
 
-    <div id="about-panel-story" class="hidden">
+    <div id="about-panel-story" class="hidden" role="tabpanel" aria-labelledby="tab-about-story" tabindex="0">
       <section class="content">
         <div class="container">
           <h2 data-content="story-title">Our Story</h2>
@@ -140,7 +140,7 @@
       </section>
     </div>
 
-    <div id="about-panel-services" class="hidden">
+    <div id="about-panel-services" class="hidden" role="tabpanel" aria-labelledby="tab-about-services" tabindex="0">
       <div class="container">
         <div class="catalog-controls" id="catalog-controls-services">
           <input type="text" class="catalog-search" id="service-search" placeholder="Search services...">
@@ -220,7 +220,7 @@
   <script src="js/vendor/sentry.min.js"></script>
   <script src="js/sentry-init.js"></script>
   <script src="js/sheets-config.js" defer></script>
-  <script src="js/main.min.js?v=mmit0gdc" defer></script>
+  <script src="js/main.min.js?v=mmjh1sq6" defer></script>
   <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js')})}</script>
 </body>
 </html>

@@ -4,6 +4,7 @@ var gpLib = require('../lib/gp');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
+var mailer = require('../lib/mailer');
 
 var Transaction = gp.Transaction;
 var zohoGet = zohoApi.zohoGet;
@@ -305,18 +306,26 @@ function processSaleWithPrices(body, idempotencyKey, req, res,
             })
             .catch(function (voidErr) {
               log.error('[pos/kiosk/sale] CRITICAL: Void failed for txn=' + txnId + ': ' + voidErr.message);
-              // Item #19: Write a durable Redis record so this survives log rotation.
+              // Write a durable Redis record so this survives log rotation.
               var failRecord = {
                 txnId: txnId,
                 amount: grandTotal,
                 timestamp: new Date().toISOString(),
                 error: voidErr.message,
-                customerEmail: body.customer_email || ''
+                needs_manual_review: true
               };
               cache.set('sv:void-failure:' + Date.now(), failRecord, 60 * 60 * 24 * 30)
                 .catch(function (redisErr) {
                   log.error('[pos/kiosk/sale] CRITICAL: Failed to persist void-failure record: ' + redisErr.message);
                 });
+              mailer.sendVoidFailureAlert({
+                txnId: txnId,
+                amount: grandTotal,
+                error: voidErr.message,
+                timestamp: failRecord.timestamp
+              }).catch(function (mailErr) {
+                log.error('[pos/kiosk/sale] Void failure alert email failed: ' + mailErr.message);
+              });
             })
             .then(function () {
               if (res.headersSent) return;
@@ -457,7 +466,7 @@ router.post('/api/pos/sale', function (req, res) {
               })
               .then(function () {
                 return zohoPost('/customerpayments', {
-                  payment_mode: 'cash',
+                  payment_mode: 'creditcard',
                   amount: amount,
                   date: today,
                   reference_number: txnId || refNumber,

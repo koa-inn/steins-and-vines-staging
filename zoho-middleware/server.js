@@ -90,10 +90,21 @@ app.use(function (req, res, next) {
 // ---------------------------------------------------------------------------
 
 app.get('/health', function (req, res) {
-  res.json({
-    status: 'ok',
-    authenticated: zohoAuth.isAuthenticated(),
-    uptime: process.uptime()
+  var redisOk = cache.isConnected();
+  var redisCheck = redisOk
+    ? cache.getClient().then(function (c) {
+        if (!c) return false;
+        return c.ping().then(function (r) { return r === 'PONG'; }).catch(function () { return false; });
+      }).catch(function () { return false; })
+    : Promise.resolve(false);
+
+  redisCheck.then(function (redisPong) {
+    res.json({
+      status: 'ok',
+      authenticated: zohoAuth.isAuthenticated(),
+      redis: redisPong,
+      uptime: process.uptime()
+    });
   });
 });
 
@@ -103,6 +114,17 @@ app.get('/health', function (req, res) {
 // ---------------------------------------------------------------------------
 
 app.use('/', require('./routes/auth'));
+
+var requestsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: makeRedisStore(60 * 1000, 'requests'),
+  skip: redisUnavailableSkip,
+  message: { error: 'Too many requests, please try again later' }
+});
+app.post('/product-requests', requestsLimiter);
 app.use('/', require('./routes/requests'));
 
 // ---------------------------------------------------------------------------
@@ -121,7 +143,7 @@ var contactLimiter = rateLimit({
 });
 
 app.post('/api/contact', contactLimiter, async function(req, res) {
-  var name = (req.body.name || '').trim();
+  var name = (req.body.name || '').trim().replace(/[\r\n]/g, ' ');
   var email = (req.body.email || '').trim();
   var message = (req.body.message || '').trim();
 

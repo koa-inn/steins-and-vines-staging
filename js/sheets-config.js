@@ -59,6 +59,11 @@ var SHEETS_CONFIG = {
   // Zoho middleware URL (for Bookings + Checkout API)
   MIDDLEWARE_URL: 'https://svmiddleware-production.up.railway.app',
 
+  // Middleware API key — semi-public, protected by CORS origin whitelist on the server.
+  // This key matches the API_SECRET_KEY env var on Railway. Both ends must match.
+  // To rotate: openssl rand -base64 32 → update Railway API_SECRET_KEY → update this value.
+  MW_API_KEY: 'a9QKtDV3DtYSFIdWtfAMg9Ry70bHG55QGhyJa9GD3fM=',
+
   // Google reCAPTCHA v3 site key (public — safe to expose)
   RECAPTCHA_SITE_KEY: '6LerSH0sAAAAAGKtltFqN5fu2w8opPV5BStdzNDu',
 

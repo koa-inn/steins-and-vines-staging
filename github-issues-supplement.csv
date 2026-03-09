@@ -1,0 +1,63 @@
+title,labels,body
+"[MED] bookings.js double-parse bug — same class as pos.js #518","priority:medium,type:bug,source:code-review-2","**File:** `zoho-middleware/routes/bookings.js:29` and `bookings.js:139`
+
+`cache.get()` already returns parsed JSON (via `JSON.parse` in `cache.js:68`), but both `/api/bookings/services` and `/api/bookings/slots` wrap the result in `JSON.parse(cached)` again. This will throw at runtime when the cache path is hit.
+
+Additionally, the corresponding `cache.set()` calls use `JSON.stringify(payload)`, meaning the data is double-stringified on write. The `/api/bookings/availability` endpoint does NOT stringify — creating an inconsistency where one cache path works and the others don't.
+
+**Recommendation:** Remove `JSON.parse(cached)` from lines 29 and 139. Remove `JSON.stringify(payload)` from the corresponding `cache.set()` calls. Match the pattern used by the availability endpoint.
+
+**Ref:** Code Review Round 2 — same class as existing issue #41 (pos.js double-parse)"
+"[MED] items.js passes req.body directly to Zoho with no validation","priority:medium,type:security,source:code-review-2","**Files:** `zoho-middleware/routes/items.js:33` and `items.js:93`
+
+`POST /api/items` forwards `req.body` verbatim to Zoho via `zohoPost('/items', req.body)`. `PUT /api/inventory/items/:id` does the same with `inventoryPut`. No field validation, no allowlist — any JSON the client sends goes straight to Zoho.
+
+While these endpoints are behind the API key guard, a compromised client or spoofed request could set arbitrary Zoho fields (mass assignment). Compare with `purchaseorders.js` which properly validates and constructs a clean payload.
+
+Additionally, `req.params.id` in the item image proxy (line 110) has no format validation, unlike `purchaseorders.js` which uses `isValidId()`.
+
+**Recommendation:** Add input validation and construct explicit payloads. Validate `:id` params with a numeric format check."
+"[MED] Payment charge allows duplicate transactions — no idempotency","priority:medium,type:security,source:code-review-2","**File:** `zoho-middleware/routes/payments.js:46`
+
+The charge endpoint calls `.withAllowDuplicates(true)` on the GP SDK, and there is no idempotency key on `POST /api/payment/charge`. A network retry from the client could result in double-charging the customer's card.
+
+The kiosk sale and checkout endpoints both implement idempotency keys — this endpoint does not.
+
+**Recommendation:** Add an idempotency key to the charge endpoint (accept it from the client and check Redis before processing). Remove `.withAllowDuplicates(true)` unless there's a specific business reason for it."
+"[LOW] product-requests silently swallows Redis failures","priority:low,type:bug,source:code-review-2","**File:** `zoho-middleware/routes/requests.js:44-48`
+
+When Redis fails to store a product request, the error is logged but the response is `{ ok: true }`. The customer thinks their request was saved, but the data is lost.
+
+**Recommendation:** Either return an error status so the customer can retry, or add a fallback storage mechanism (e.g. write to a file, or queue for retry)."
+"[LOW] kiosk.html, batch.html, brewpad.html missing Content-Security-Policy","priority:low,type:security,source:code-review-2","**Files:** `kiosk.html`, `batch.html`, `brewpad.html`
+
+All public-facing pages (index, products, reservation, about, contact, 404) have CSP meta tags, but the admin/internal pages don't. While these pages are behind Google OAuth, a CSP would add defense-in-depth against XSS — especially since `kiosk.js` handles payment terminals and `brewpad.js` processes user-entered batch data.
+
+**Recommendation:** Add appropriate CSP meta tags to these three pages, following the same pattern as the public pages."
+"[LOW] admin.js heavy innerHTML usage with API-sourced data","priority:low,type:security,source:code-review-2","**File:** `js/admin.js` — 30+ occurrences
+
+The admin panel renders most of its UI via string concatenation + `innerHTML`. Data comes from Zoho API responses, Google Sheets, and middleware endpoints. While many fields use `escapeHTML()`, the sheer volume of `innerHTML` assignments creates a large XSS surface area if any data source is compromised or if escaping is missed.
+
+Key examples: pipeline stage rendering (line 216), attention items (line 307), modal body (line 1279), reservation table rows (line 1720), and purchase order tables (line 3009).
+
+**Recommendation:** This is a long-term refactor candidate. For now, audit each `innerHTML` assignment to ensure all interpolated values pass through `escapeHTML()`. Tag for Campaign 5+ as part of the broader code quality effort."
+"[LOW] Sentry release version hardcoded — doesn't track deployments","priority:low,type:infra,source:code-review-2","**File:** `js/sentry-init.js:7`
+
+```js
+release: 'steins-vines@1.2.0'
+```
+
+This is a static string that doesn't update with the build. All errors in Sentry will be attributed to v1.2.0 regardless of what's deployed, making release-based filtering and regression detection useless.
+
+**Recommendation:** Either auto-stamp the version from `package.json` during `npm run build`, or use the cache-busting timestamp already generated by the build step."
+"[MED] Middleware has no security headers (HSTS, X-Frame-Options, etc.)","priority:medium,type:security,source:code-review-2","**File:** `zoho-middleware/server.js`
+
+The Express middleware sets no security headers. Missing:
+- `Strict-Transport-Security` (HSTS) — prevent downgrade attacks
+- `X-Content-Type-Options: nosniff` — prevent MIME sniffing
+- `X-Frame-Options: DENY` — prevent clickjacking on API responses
+- `Referrer-Policy` — control what's sent in Referer header
+
+Railway serves over HTTPS, but without HSTS the first request could be intercepted.
+
+**Recommendation:** Add `helmet` middleware (`npm install helmet`) or set these headers manually. This is a quick win for security posture."

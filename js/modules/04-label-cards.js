@@ -118,7 +118,7 @@ function buildLabelPriceFooter(product) {
     if (discount > 0) {
       var num1 = parseFloat(instore.replace(/[^0-9.]/g, ''));
       var sale1 = formatCurrency(num1 * (1 - discount / 100));
-      val1.innerHTML = '<s style="color:#999;font-size:0.8rem;">' + formatCurrency(instore) + '</s> ' + sale1 + plusSign;
+      val1.innerHTML = '<s class="price-strike">' + formatCurrency(instore) + '</s> ' + sale1 + plusSign;
     } else {
       val1.textContent = formatCurrency(instore) + plusSign;
     }
@@ -138,7 +138,7 @@ function buildLabelPriceFooter(product) {
     if (discount > 0) {
       var num2 = parseFloat(kit.replace(/[^0-9.]/g, ''));
       var sale2 = formatCurrency(num2 * (1 - discount / 100));
-      val2.innerHTML = '<s style="color:#999;font-size:0.8rem;">' + formatCurrency(kit) + '</s> ' + sale2 + plusSign;
+      val2.innerHTML = '<s class="price-strike">' + formatCurrency(kit) + '</s> ' + sale2 + plusSign;
     } else {
       val2.textContent = formatCurrency(kit) + plusSign;
     }
