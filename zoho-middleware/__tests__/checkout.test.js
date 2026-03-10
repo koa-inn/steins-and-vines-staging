@@ -15,6 +15,12 @@ jest.mock('express', () => {
 jest.mock('globalpayments-api', () => ({
   Transaction: { fromId: jest.fn() }
 }));
+jest.mock('../lib/gp', () => ({
+  getDepositAmount: jest.fn().mockReturnValue(50),
+  chargeToken: jest.fn().mockResolvedValue({ transactionId: 'txn-mock', authCode: 'auth-mock' }),
+  voidTransaction: jest.fn().mockResolvedValue({}),
+  getTerminalConfig: jest.fn().mockReturnValue(null)
+}));
 jest.mock('../lib/zoho-api', () => ({
   zohoPost: jest.fn(), zohoGet: jest.fn()
 }));
@@ -138,16 +144,20 @@ describe('verifyRecaptcha', () => {
     expect(result['error-codes']).toContain('invalid-input-response');
   });
 
-  test('network error → rejects', async () => {
+  test('network error → fails open (success)', async () => {
     process.env.RECAPTCHA_SECRET_KEY = 'secret123';
     mockHttpsNetworkError(new Error('ECONNREFUSED'));
-    await expect(verifyRecaptcha('tok')).rejects.toThrow('ECONNREFUSED');
+    var result = await verifyRecaptcha('tok');
+    expect(result.success).toBe(true);
+    expect(result.score).toBe(1.0);
   });
 
-  test('invalid JSON response → rejects', async () => {
+  test('invalid JSON response → fails open (success)', async () => {
     process.env.RECAPTCHA_SECRET_KEY = 'secret123';
     mockHttpsBadJson();
-    await expect(verifyRecaptcha('tok')).rejects.toThrow();
+    var result = await verifyRecaptcha('tok');
+    expect(result.success).toBe(true);
+    expect(result.score).toBe(1.0);
   });
 });
 
