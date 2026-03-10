@@ -5,7 +5,7 @@
 var MW_API_KEY = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MW_API_KEY) ? SHEETS_CONFIG.MW_API_KEY : '';
 
 // ===== Payment flag =====
-var PAYMENT_DISABLED = true;
+var PAYMENT_DISABLED = false;
 // ===== Deep-link (?item=SKU) =====
 
 var _deepLinkHandled = false;
