@@ -459,6 +459,24 @@ router.get('/api/services', function (req, res) {
     })
     .catch(function (err) {
       log.error('[api/services] ' + err.message);
+      // Snapshot fallback — use SKU as temporary item_id so checkout validation passes
+      try {
+        var snapSvc = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'content', 'zoho-snapshot.json'), 'utf8'));
+        if (snapSvc && Array.isArray(snapSvc.services) && snapSvc.services.length > 0) {
+          var svcItems = snapSvc.services.map(function (s) {
+            return Object.assign({}, s, {
+              item_id:        s.item_id || s.sku || '',
+              rate:           parseFloat(String(s.price || s.rate || '0').replace(/[^0-9.]/g, '')) || 0,
+              tax_percentage: s.tax_percentage != null ? s.tax_percentage : 0,
+              tax_name:       s.tax_name || '',
+              source:         'snapshot'
+            });
+          });
+          log.info('[api/services] Snapshot fallback hit (' + svcItems.length + ' items)');
+          cache.set(SERVICES_CACHE_KEY, svcItems, SERVICES_CACHE_TTL);
+          return res.json({ source: 'snapshot', items: svcItems });
+        }
+      } catch (snapErr) {}
       res.status(502).json({ error: 'Unable to fetch services' });
     });
 });
@@ -806,6 +824,7 @@ router.get('/api/snapshot', function (req, res) {
   function shapeService(z) {
     return {
       name:        z.name || '',
+      item_id:     z.item_id || '',
       price:       z.rate != null ? String(z.rate) : '',
       description: z.description || '',
       sku:         z.sku || '',

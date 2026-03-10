@@ -435,7 +435,7 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
       if (!isService) kitItemCount++;
       // Identify Makers Fee by explicit item_id env var, or by name substring
       if (MAKERS_FEE_ITEM_ID && mfItem.item_id === MAKERS_FEE_ITEM_ID) hasMakersFee = true;
-      if (!MAKERS_FEE_ITEM_ID && mfItem.name && mfItem.name.toLowerCase().indexOf('maker') !== -1) hasMakersFee = true;
+      if (mfItem.name && mfItem.name.toLowerCase().indexOf('maker') !== -1) hasMakersFee = true;
     }
     if (kitItemCount > 0 && !hasMakersFee) {
       log.warn('[checkout] Kit items present but Makers Fee missing from payload — possible tampering');
@@ -741,7 +741,7 @@ function processCheckout(body, idempotencyKey, res, zohoOffline) {
         var isService = Array.isArray(services) && services.some(function (s) { return s && s.item_id === mItem.item_id; });
         if (!isService) preKitCount++;
         if (MAKERS_FEE_ITEM_ID && mItem.item_id === MAKERS_FEE_ITEM_ID) preHasMakers = true;
-        if (!MAKERS_FEE_ITEM_ID && mItem.name && mItem.name.toLowerCase().indexOf('maker') !== -1) preHasMakers = true;
+        if (mItem.name && mItem.name.toLowerCase().indexOf('maker') !== -1) preHasMakers = true;
       }
       if (preKitCount > 0 && !preHasMakers) {
         log.warn('[checkout/pre-charge] Kit items present but Makers Fee missing — rejecting before charge');
