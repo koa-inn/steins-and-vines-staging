@@ -126,10 +126,15 @@ function loadFeaturedProducts() {
             sku: z.sku || '',
             item_id: z.item_id || '',
             brand: z.brand || '',
-            stock: z.stock_on_hand != null ? String(z.stock_on_hand) : '0',
+            stock: z.stock || (z.stock_on_hand != null ? String(z.stock_on_hand) : '0'),
             description: z.description || '',
             discount: z.discount != null ? String(z.discount) : '0',
-            _zoho_category: z.category_name || ''
+            _zoho_category: z._zoho_category || z.category_name || '',
+            type: z.type || '',
+            subcategory: z.subcategory || '',
+            tasting_notes: z.tasting_notes || '',
+            retail_kit: z.retail_kit || '',
+            retail_instore: z.retail_instore || ''
           };
           if (z.custom_fields && z.custom_fields.length) {
             z.custom_fields.forEach(function (cf) {

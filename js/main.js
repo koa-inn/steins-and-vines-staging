@@ -707,10 +707,15 @@ function loadFeaturedProducts() {
             sku: z.sku || '',
             item_id: z.item_id || '',
             brand: z.brand || '',
-            stock: z.stock_on_hand != null ? String(z.stock_on_hand) : '0',
+            stock: z.stock || (z.stock_on_hand != null ? String(z.stock_on_hand) : '0'),
             description: z.description || '',
             discount: z.discount != null ? String(z.discount) : '0',
-            _zoho_category: z.category_name || ''
+            _zoho_category: z._zoho_category || z.category_name || '',
+            type: z.type || '',
+            subcategory: z.subcategory || '',
+            tasting_notes: z.tasting_notes || '',
+            retail_kit: z.retail_kit || '',
+            retail_instore: z.retail_instore || ''
           };
           if (z.custom_fields && z.custom_fields.length) {
             z.custom_fields.forEach(function (cf) {
@@ -1456,20 +1461,29 @@ function loadProducts() {
       .then(function (data) {
         var items = data.items || [];
         return items.map(function (z) {
-          // Start with standard Zoho fields
+          // Map middleware shaped response fields (handles both pre-shaped cache and raw Zoho)
           var obj = {
             name: z.name || '',
             sku: z.sku || '',
             brand: z.brand || '',
-            stock: z.stock_on_hand != null ? String(z.stock_on_hand) : '0',
+            stock: z.stock || (z.stock_on_hand != null ? String(z.stock_on_hand) : '0'),
             description: z.description || '',
             discount: z.discount != null ? String(z.discount) : '0',
-            _zoho_category: z.category_name || '',
+            _zoho_category: z._zoho_category || z.category_name || '',
             zoho_item_id: z.item_id || '',
             tax_percentage: z.tax_percentage != null ? z.tax_percentage : 0,
-            tax_name: z.tax_name || ''
+            tax_name: z.tax_name || '',
+            type: z.type || '',
+            subcategory: z.subcategory || '',
+            tasting_notes: z.tasting_notes || '',
+            favorite: z.favorite || '',
+            abv: z.abv || '',
+            time: z.time || '',
+            millable: z.millable || '',
+            retail_kit: z.retail_kit || '',
+            retail_instore: z.retail_instore || ''
           };
-          // Flatten custom fields (label → snake_case key)
+          // Flatten custom fields if present (raw Zoho response — overrides top-level fields)
           if (z.custom_fields && z.custom_fields.length) {
             z.custom_fields.forEach(function (cf) {
               var key = (cf.label || '').toLowerCase().replace(/\s+/g, '_');
@@ -1478,7 +1492,7 @@ function loadProducts() {
               }
             });
           }
-          // Derive kit-only and ferment-in-store prices from rate
+          // Derive prices from rate only if not already set
           if (z.rate != null) {
             var rateNum = parseFloat(z.rate);
             if (!obj.retail_kit) {
@@ -2922,11 +2936,11 @@ function loadIngredients(callback) {
           var obj = {
             name: z.name || '',
             unit: z.unit || '',
-            price_per_unit: z.rate != null ? String(z.rate) : '',
-            stock: z.stock_on_hand != null ? String(z.stock_on_hand) : '0',
+            price_per_unit: z.price_per_unit != null ? String(z.price_per_unit) : (z.rate != null ? String(z.rate) : ''),
+            stock: z.stock != null ? String(z.stock) : (z.stock_on_hand != null ? String(z.stock_on_hand) : '0'),
             description: z.description || '',
             sku: z.sku || '',
-            category: z.category_name || '',
+            category: z.category || z.category_name || '',
             zoho_item_id: z.item_id || '',
             low_amount: '',
             high_amount: '',
