@@ -96,7 +96,7 @@ function getAuthorizationUrl(state) {
   var params = querystring.stringify({
     response_type: 'code',
     client_id: process.env.ZOHO_CLIENT_ID,
-    scope: 'ZohoBooks.fullaccess.all,ZohoInventory.fullaccess.all,ZohoBookings.appointments.ALL',
+    scope: 'ZohoBooks.fullaccess.all,ZohoInventory.fullaccess.all,ZohoBookings.manage.ALL',
     redirect_uri: process.env.ZOHO_REDIRECT_URI,
     access_type: 'offline',   // gives us a refresh token
     prompt: 'consent',         // always show consent screen
