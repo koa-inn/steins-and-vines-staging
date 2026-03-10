@@ -355,6 +355,32 @@ router.get('/api/products', function (req, res) {
         return;
       }
 
+      // Try static snapshot as last resort before hitting Zoho (avoids rate-limit storms)
+      var snapshotData = null;
+      try {
+        var snapRaw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'content', 'zoho-snapshot.json'), 'utf8'));
+        if (snapRaw && Array.isArray(snapRaw.products) && snapRaw.products.length > 0) {
+          snapshotData = snapRaw.products.map(function (p) {
+            var rateStr = p.retail_instore || p.retail_kit || '0';
+            var rate = parseFloat(String(rateStr).replace(/[^0-9.]/g, '')) || 0;
+            return Object.assign({}, p, { rate: rate, source: 'snapshot' });
+          });
+        }
+      } catch (e) {}
+
+      if (snapshotData && snapshotData.length > 0) {
+        log.info('[api/products] Snapshot fallback hit (' + snapshotData.length + ' items)');
+        snapshotData.forEach(function (item) { _kitItemIds[item.item_id] = true; });
+        cache.set(PRODUCTS_CACHE_KEY, snapshotData, PRODUCTS_CACHE_TTL);
+        cache.set(PRODUCTS_CACHE_TS_KEY, Date.now(), PRODUCTS_CACHE_TTL);
+        res.json({ source: 'snapshot', items: snapshotData });
+        // Trigger background refresh from Zoho when rate limit clears
+        refreshProducts().catch(function (err) {
+          log.warn('[api/products] Background snapshot→Zoho refresh failed: ' + err.message);
+        });
+        return;
+      }
+
       log.info('[api/products] Cache miss — fetching from Zoho Inventory');
       return refreshProducts()
         .then(function (enriched) {
@@ -594,6 +620,28 @@ router.get('/api/ingredients', function (req, res) {
         // Trigger background refresh
         doRefreshIngredients().catch(function (err) {
           log.error('[api/ingredients] Background refresh failed: ' + err.message);
+        });
+        return;
+      }
+
+      // Try static snapshot as last resort before hitting Zoho
+      var snapIngData = null;
+      try {
+        var snapIngRaw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'content', 'zoho-snapshot.json'), 'utf8'));
+        if (snapIngRaw && Array.isArray(snapIngRaw.ingredients) && snapIngRaw.ingredients.length > 0) {
+          snapIngData = snapIngRaw.ingredients.map(function (p) {
+            var rate = parseFloat(String(p.rate || p.price_per_unit || p.price || '0').replace(/[^0-9.]/g, '')) || 0;
+            return Object.assign({}, p, { rate: rate, source: 'snapshot' });
+          });
+        }
+      } catch (e) {}
+
+      if (snapIngData && snapIngData.length > 0) {
+        log.info('[api/ingredients] Snapshot fallback hit (' + snapIngData.length + ' items)');
+        cache.set(INGREDIENTS_CACHE_KEY, snapIngData, INGREDIENTS_CACHE_TTL);
+        res.json({ source: 'snapshot', items: snapIngData });
+        doRefreshIngredients().catch(function (err) {
+          log.warn('[api/ingredients] Background snapshot→Zoho refresh failed: ' + err.message);
         });
         return;
       }
