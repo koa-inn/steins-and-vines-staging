@@ -1248,6 +1248,8 @@ function setupReservationForm() {
       }).catch(function (err) {
         showToast(err.message, 'error');
         // M14: Restore submit button after error
+        // Clear GP token so retry requires fresh card verification (prevents stale/voided token reuse)
+        _gpToken = null;
         sub.disabled = false; sub.textContent = originalBtnText; _checkoutSubmitting = false;
       });
     }); // end getRecaptchaToken
