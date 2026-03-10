@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-03-09T23:10:07.854Z';
+  var BUILD_TIMESTAMP = '2026-03-10T02:13:02.313Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
