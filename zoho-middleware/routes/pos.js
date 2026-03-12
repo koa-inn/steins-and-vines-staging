@@ -6,13 +6,14 @@ var cache = require('../lib/cache');
 var log = require('../lib/logger');
 var mailer = require('../lib/mailer');
 var ledger = require('../lib/inventory-ledger');
+var C = require('../lib/constants');
 
 var Transaction = gp.Transaction;
 var zohoGet = zohoApi.zohoGet;
 var zohoPost = zohoApi.zohoPost;
 
-var KIOSK_PRODUCTS_CACHE_KEY = 'zoho:kiosk-products';
-var RECENT_ORDERS_CACHE_KEY = 'zoho:recent-orders';
+var KIOSK_PRODUCTS_CACHE_KEY = C.CACHE_KEYS.KIOSK_PRODUCTS;
+var RECENT_ORDERS_CACHE_KEY = C.CACHE_KEYS.RECENT_ORDERS;
 var RECENT_ORDERS_CACHE_TTL = 60; // seconds
 var IDEMPOTENCY_KEY_TTL = 300; // 5 minutes in seconds
 
@@ -53,7 +54,7 @@ router.post('/api/kiosk/sale', function (req, res) {
 
   // Idempotency: if client supplies a key, return cached result on retry
   var idempotencyKey = (body && typeof body.idempotency_key === 'string' && body.idempotency_key)
-    ? 'kiosk:idem:' + body.idempotency_key.slice(0, 128)
+    ? C.CACHE_KEYS.KIOSK_IDEM_PREFIX + body.idempotency_key.slice(0, 128)
     : null;
 
   if (idempotencyKey) {
@@ -598,10 +599,10 @@ router.get('/api/admin/inventory-ledger', function (req, res) {
   }
 
   Promise.all([
-    cache.get('inv:stock:version'),
+    cache.get(C.LEDGER_KEYS.VERSION),
     cache.getClient().then(function (c) {
       if (!c) return [];
-      return c.lRange('inv:adjustments:log', 0, 49);
+      return c.lRange(C.LEDGER_KEYS.ADJUSTMENTS, 0, 49);
     })
   ]).then(function (results) {
     var adjustments = (results[1] || []).map(function (entry) {

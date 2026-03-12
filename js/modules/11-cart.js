@@ -1,7 +1,14 @@
-var RESERVATION_KEY = 'sv-reservation';       // legacy, for migration only
-var FERMENT_CART_KEY = 'sv-cart-ferment';
-var INGREDIENT_CART_KEY = 'sv-cart-ingredients';
-var _activeCartTab = 'kits';                  // tracks which product tab is active
+// In Node test environment constants.js is not loaded globally — require it.
+if (typeof CART_KEYS === 'undefined' && typeof require !== 'undefined') {
+  var _c = require('../lib/constants');
+  var CART_KEYS    = _c.CART_KEYS;
+  var PRODUCT_TABS = _c.PRODUCT_TABS;
+}
+
+var RESERVATION_KEY    = CART_KEYS.LEGACY_RESERVATION;  // legacy, for migration only
+var FERMENT_CART_KEY   = CART_KEYS.FERMENT;
+var INGREDIENT_CART_KEY = CART_KEYS.INGREDIENTS;
+var _activeCartTab = 'kits';                             // tracks which product tab is active
 
 // In-memory fallback for environments where localStorage is unavailable (e.g. iOS Safari private browsing)
 var _memoryStore = {};

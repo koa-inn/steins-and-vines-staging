@@ -11,10 +11,11 @@
 
 var cache = require('./cache');
 var log = require('./logger');
+var C = require('./constants');
 
-var STOCK_KEY_PREFIX = 'inv:stock:';
-var VERSION_KEY = 'inv:stock:version';
-var ADJUSTMENTS_KEY = 'inv:adjustments:log';
+var STOCK_KEY_PREFIX = C.LEDGER_KEYS.STOCK_PREFIX;
+var VERSION_KEY = C.LEDGER_KEYS.VERSION;
+var ADJUSTMENTS_KEY = C.LEDGER_KEYS.ADJUSTMENTS;
 var STOCK_TTL = 7200;        // 2 hours
 var VERSION_TTL = 7200;      // 2 hours
 var ADJUSTMENTS_TTL = 86400; // 24 hours

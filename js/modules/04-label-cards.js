@@ -96,6 +96,7 @@ function formatCurrency(val) {
   return '$' + num.toFixed(2);
 }
 
+// DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
 function buildLabelPriceFooter(product) {
   var discount = parseFloat(product.discount) || 0;
   var pricingFrom = (product.pricing_from || '').trim().toUpperCase() === 'TRUE';

@@ -5,6 +5,7 @@ var zohoAuth = require('../lib/zohoAuth');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
 var gpLib = require('../lib/gp');
+var C = require('../lib/constants');
 
 var OAUTH_STATE_TTL = 600; // 10 minutes
 
@@ -20,7 +21,7 @@ var GP_API_BASE = process.env.GP_ENVIRONMENT === 'production'
  */
 router.get('/auth/zoho', function (req, res) {
   var state = zohoAuth.generateState();
-  cache.set('zoho:oauth-state:' + state, '1', OAUTH_STATE_TTL).catch(function () {});
+  cache.set(C.CACHE_KEYS.OAUTH_STATE_PREFIX + state, '1', OAUTH_STATE_TTL).catch(function () {});
   res.redirect(zohoAuth.getAuthorizationUrl(state));
 });
 
@@ -37,7 +38,7 @@ router.get('/auth/zoho/callback', function (req, res) {
   if (!state) {
     return res.status(403).json({ error: 'Missing state parameter' });
   }
-  var stateKey = 'zoho:oauth-state:' + state;
+  var stateKey = C.CACHE_KEYS.OAUTH_STATE_PREFIX + state;
   cache.get(stateKey).then(function (stored) {
     if (!stored) {
       return res.status(403).json({ error: 'Invalid or expired OAuth state' });

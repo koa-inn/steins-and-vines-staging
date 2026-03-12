@@ -2,6 +2,7 @@ var express = require('express');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
+var C = require('../lib/constants');
 
 var bookingsGet = zohoApi.bookingsGet;
 var bookingsPost = zohoApi.bookingsPost;
@@ -11,42 +12,39 @@ var normalizeTimeTo24h = zohoApi.normalizeTimeTo24h;
 
 var router = express.Router();
 
-var AVAILABILITY_CACHE_PREFIX = 'zoho:availability:';
+var AVAILABILITY_CACHE_PREFIX = C.CACHE_KEYS.AVAILABILITY_PREFIX;
 var AVAILABILITY_CACHE_TTL = 300; // 5 minutes
-var BOOKING_SERVICES_CACHE_KEY = 'zoho:booking-services';
+var BOOKING_SERVICES_CACHE_KEY = C.CACHE_KEYS.BOOKING_SERVICES;
 var BOOKING_SERVICES_CACHE_TTL = 86400; // 24 hours — services rarely change
-var SLOTS_CACHE_PREFIX = 'zoho:slots:';
+var SLOTS_CACHE_PREFIX = C.CACHE_KEYS.SLOTS_PREFIX;
 var SLOTS_CACHE_TTL = 300; // 5 minutes per date
 
 /**
  * GET /api/bookings/services
  * List all services and staff from Zoho Bookings (debug/setup helper).
  */
-router.get('/api/bookings/services', function (req, res) {
-  cache.get(BOOKING_SERVICES_CACHE_KEY)
-    .then(function (cached) {
-      if (cached) {
-        return res.json(JSON.parse(cached));
-      }
+router.get('/api/bookings/services', async function (req, res) {
+  try {
+    var cached = await cache.get(BOOKING_SERVICES_CACHE_KEY);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
 
-      return Promise.all([
-        bookingsGet('/services'),
-        bookingsGet('/staffs')
-      ])
-        .then(function (results) {
-          var services = (results[0].response && results[0].response.returnvalue &&
-            results[0].response.returnvalue.data) || [];
-          var staff = (results[1].response && results[1].response.returnvalue &&
-            results[1].response.returnvalue.data) || [];
-          var payload = { services: services, staff: staff };
-          cache.set(BOOKING_SERVICES_CACHE_KEY, JSON.stringify(payload), BOOKING_SERVICES_CACHE_TTL).catch(function () {});
-          res.json(payload);
-        });
-    })
-    .catch(function (err) {
-      log.error('[api/bookings/services] ' + err.message);
-      res.status(502).json({ error: 'Unable to fetch booking services' });
-    });
+    var results = await Promise.all([
+      bookingsGet('/services'),
+      bookingsGet('/staffs')
+    ]);
+    var services = (results[0].response && results[0].response.returnvalue &&
+      results[0].response.returnvalue.data) || [];
+    var staff = (results[1].response && results[1].response.returnvalue &&
+      results[1].response.returnvalue.data) || [];
+    var payload = { services: services, staff: staff };
+    cache.set(BOOKING_SERVICES_CACHE_KEY, JSON.stringify(payload), BOOKING_SERVICES_CACHE_TTL).catch(function () {});
+    res.json(payload);
+  } catch (err) {
+    log.error('[api/bookings/services] ' + err.message);
+    res.status(502).json({ error: 'Unable to fetch booking services' });
+  }
 });
 
 /**
@@ -54,7 +52,7 @@ router.get('/api/bookings/services', function (req, res) {
  * Returns which dates in a month have available slots.
  * Cached in Redis for 5 minutes.
  */
-router.get('/api/bookings/availability', function (req, res) {
+router.get('/api/bookings/availability', async function (req, res) {
   var year = req.query.year;
   var month = req.query.month;
 
@@ -65,67 +63,64 @@ router.get('/api/bookings/availability', function (req, res) {
   month = String(month).padStart(2, '0');
   var cacheKey = AVAILABILITY_CACHE_PREFIX + year + '-' + month;
 
-  cache.get(cacheKey)
-    .then(function (cached) {
-      if (cached) {
-        log.info('[api/bookings/availability] Cache hit for ' + year + '-' + month);
-        return res.json({ source: 'cache', dates: cached });
-      }
+  try {
+    var cached = await cache.get(cacheKey);
+    if (cached) {
+      log.info('[api/bookings/availability] Cache hit for ' + year + '-' + month);
+      return res.json({ source: 'cache', dates: cached });
+    }
 
-      log.info('[api/bookings/availability] Cache miss — fetching from Zoho');
+    log.info('[api/bookings/availability] Cache miss — fetching from Zoho');
 
-      // Calculate all dates in the month
-      var daysInMonth = new Date(parseInt(year, 10), parseInt(month, 10), 0).getDate();
-      var allDates = [];
-      for (var d = 1; d <= daysInMonth; d++) {
-        allDates.push(year + '-' + month + '-' + String(d).padStart(2, '0'));
-      }
+    // Calculate all dates in the month
+    var daysInMonth = new Date(parseInt(year, 10), parseInt(month, 10), 0).getDate();
+    var allDates = [];
+    for (var d = 1; d <= daysInMonth; d++) {
+      allDates.push(year + '-' + month + '-' + String(d).padStart(2, '0'));
+    }
 
-      // Process in batches of 5 to avoid exhausting Zoho's rate limit
-      var BATCH_SIZE = 5;
-      var allResults = [];
+    // Process in batches of 5 to avoid exhausting Zoho's rate limit
+    var BATCH_SIZE = 5;
+    var allResults = [];
 
-      function fetchBatch(startIndex) {
-        var batch = allDates.slice(startIndex, startIndex + BATCH_SIZE);
-        if (batch.length === 0) return Promise.resolve();
+    async function fetchBatch(startIndex) {
+      var batch = allDates.slice(startIndex, startIndex + BATCH_SIZE);
+      if (batch.length === 0) return;
 
-        return Promise.all(batch.map(function (ds) {
-          return bookingsGet('/availableslots', {
-            service_id: process.env.ZOHO_BOOKINGS_SERVICE_ID,
-            staff_id: process.env.ZOHO_BOOKINGS_STAFF_ID,
-            selected_date: ds
-          }).then(function (data) {
-            var raw = (data.response && data.response.returnvalue && data.response.returnvalue.data);
-            var slots = Array.isArray(raw) ? raw : [];
-            return { date: ds, available: slots.length > 0, slots_count: slots.length };
-          }).catch(function () {
-            return { date: ds, available: false, slots_count: 0 };
-          });
-        })).then(function (batchResults) {
-          allResults = allResults.concat(batchResults);
-          return fetchBatch(startIndex + BATCH_SIZE);
+      var batchResults = await Promise.all(batch.map(function (ds) {
+        return bookingsGet('/availableslots', {
+          service_id: process.env.ZOHO_BOOKINGS_SERVICE_ID,
+          staff_id: process.env.ZOHO_BOOKINGS_STAFF_ID,
+          selected_date: ds
+        }).then(function (data) {
+          var raw = (data.response && data.response.returnvalue && data.response.returnvalue.data);
+          var slots = Array.isArray(raw) ? raw : [];
+          return { date: ds, available: slots.length > 0, slots_count: slots.length };
+        }).catch(function () {
+          return { date: ds, available: false, slots_count: 0 };
         });
-      }
+      }));
+      allResults = allResults.concat(batchResults);
+      return fetchBatch(startIndex + BATCH_SIZE);
+    }
 
-      return fetchBatch(0).then(function () {
-        var dates = allResults.filter(function (r) { return r.available; });
+    await fetchBatch(0);
+    var dates = allResults.filter(function (r) { return r.available; });
 
-        cache.set(cacheKey, dates, AVAILABILITY_CACHE_TTL);
+    cache.set(cacheKey, dates, AVAILABILITY_CACHE_TTL);
 
-        res.json({ source: 'zoho', dates: dates });
-      });
-    })
-    .catch(function (err) {
-      log.error('[api/bookings/availability] ' + err.message);
-      res.status(502).json({ error: 'Unable to check availability' });
-    });
+    res.json({ source: 'zoho', dates: dates });
+  } catch (err) {
+    log.error('[api/bookings/availability] ' + err.message);
+    res.status(502).json({ error: 'Unable to check availability' });
+  }
 });
 
 /**
  * GET /api/bookings/slots?date=YYYY-MM-DD
  * Fetch available time slots for a specific date.
  */
-router.get('/api/bookings/slots', function (req, res) {
+router.get('/api/bookings/slots', async function (req, res) {
   var date = req.query.date;
   if (!date) {
     return res.status(400).json({ error: 'Missing date query parameter' });
@@ -133,29 +128,26 @@ router.get('/api/bookings/slots', function (req, res) {
 
   var slotsCacheKey = SLOTS_CACHE_PREFIX + date;
 
-  cache.get(slotsCacheKey)
-    .then(function (cached) {
-      if (cached) {
-        return res.json(JSON.parse(cached));
-      }
+  try {
+    var cached = await cache.get(slotsCacheKey);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
 
-      return bookingsGet('/availableslots', {
-        service_id: process.env.ZOHO_BOOKINGS_SERVICE_ID,
-        staff_id: process.env.ZOHO_BOOKINGS_STAFF_ID,
-        selected_date: date
-      })
-        .then(function (data) {
-          var raw = (data.response && data.response.returnvalue && data.response.returnvalue.data);
-          var slots = Array.isArray(raw) ? raw : [];
-          var payload = { date: date, slots: slots };
-          cache.set(slotsCacheKey, JSON.stringify(payload), SLOTS_CACHE_TTL).catch(function () {});
-          res.json(payload);
-        });
-    })
-    .catch(function (err) {
-      log.error('[api/bookings/slots] ' + err.message);
-      res.status(502).json({ error: 'Unable to fetch time slots' });
+    var data = await bookingsGet('/availableslots', {
+      service_id: process.env.ZOHO_BOOKINGS_SERVICE_ID,
+      staff_id: process.env.ZOHO_BOOKINGS_STAFF_ID,
+      selected_date: date
     });
+    var raw = (data.response && data.response.returnvalue && data.response.returnvalue.data);
+    var slots = Array.isArray(raw) ? raw : [];
+    var payload = { date: date, slots: slots };
+    cache.set(slotsCacheKey, JSON.stringify(payload), SLOTS_CACHE_TTL).catch(function () {});
+    res.json(payload);
+  } catch (err) {
+    log.error('[api/bookings/slots] ' + err.message);
+    res.status(502).json({ error: 'Unable to fetch time slots' });
+  }
 });
 
 /**
@@ -170,7 +162,7 @@ router.get('/api/bookings/slots', function (req, res) {
  *   notes: "optional"
  * }
  */
-router.post('/api/bookings', function (req, res) {
+router.post('/api/bookings', async function (req, res) {
   var body = req.body;
 
   if (!body || !body.date || !body.time) {
@@ -218,29 +210,28 @@ router.post('/api/bookings', function (req, res) {
     }
   };
 
-  bookingsPost('/appointment', bookingPayload)
-    .then(function (data) {
-      var appointment = (data.response && data.response.returnvalue) || {};
+  try {
+    var data = await bookingsPost('/appointment', bookingPayload);
+    var appointment = (data.response && data.response.returnvalue) || {};
 
-      // Invalidate availability + slots caches for this date/month
-      var ym = body.date.substring(0, 7).split('-');
-      cache.del(AVAILABILITY_CACHE_PREFIX + ym[0] + '-' + ym[1]);
-      cache.del(SLOTS_CACHE_PREFIX + body.date);
+    // Invalidate availability + slots caches for this date/month
+    var ym = body.date.substring(0, 7).split('-');
+    cache.del(AVAILABILITY_CACHE_PREFIX + ym[0] + '-' + ym[1]);
+    cache.del(SLOTS_CACHE_PREFIX + body.date);
 
-      res.status(201).json({
-        ok: true,
-        booking_id: appointment.booking_id || null,
-        timeslot: body.date + ' ' + body.time
-      });
-    })
-    .catch(function (err) {
-      var message = err.message;
-      if (err.response && err.response.data) {
-        message = err.response.data.message || err.response.data.error || message;
-      }
-      log.error('[api/bookings POST] ' + message);
-      res.status(502).json({ error: 'Unable to create booking' });
+    res.status(201).json({
+      ok: true,
+      booking_id: appointment.booking_id || null,
+      timeslot: body.date + ' ' + body.time
     });
+  } catch (err) {
+    var message = err.message;
+    if (err.response && err.response.data) {
+      message = err.response.data.message || err.response.data.error || message;
+    }
+    log.error('[api/bookings POST] ' + message);
+    res.status(502).json({ error: 'Unable to create booking' });
+  }
 });
 
 /**
@@ -252,7 +243,7 @@ router.post('/api/bookings', function (req, res) {
  *
  * Returns: { contact_id: "..." }
  */
-router.post('/api/contacts', function (req, res) {
+router.post('/api/contacts', async function (req, res) {
   var body = req.body;
   if (!body || !body.email) {
     return res.status(400).json({ error: 'Missing email' });
@@ -273,54 +264,50 @@ router.post('/api/contacts', function (req, res) {
     return res.json({ contact_id: 'offline', created: false, offline: true });
   }
 
-  // Search for existing contact by email
-  zohoGet('/contacts', { email: body.email })
-    .then(function (data) {
-      var contacts = data.contacts || [];
-      if (contacts.length > 0) {
-        return res.json({ contact_id: contacts[0].contact_id, created: false });
-      }
+  try {
+    // Search for existing contact by email
+    var data = await zohoGet('/contacts', { email: body.email });
+    var contacts = data.contacts || [];
+    if (contacts.length > 0) {
+      return res.json({ contact_id: contacts[0].contact_id, created: false });
+    }
 
-      // Not found by email — create new contact
-      var contactPayload = {
-        contact_name: body.name || body.email,
-        contact_type: 'customer',
-        email: body.email,
-        phone: body.phone || ''
-      };
+    // Not found by email — create new contact
+    var contactPayload = {
+      contact_name: body.name || body.email,
+      contact_type: 'customer',
+      email: body.email,
+      phone: body.phone || ''
+    };
 
-      return zohoPost('/contacts', contactPayload)
-        .then(function (createData) {
-          var contact = createData.contact || {};
-          res.status(201).json({ contact_id: contact.contact_id, created: true });
-        })
-        .catch(function (createErr) {
-          // If name already exists, search by name and return that contact
-          var msg = '';
-          if (createErr.response && createErr.response.data) {
-            msg = createErr.response.data.message || '';
-          }
-          if (msg.indexOf('already exists') !== -1) {
-            return zohoGet('/contacts', { contact_name: body.name })
-              .then(function (nameData) {
-                var nameContacts = nameData.contacts || [];
-                if (nameContacts.length > 0) {
-                  return res.json({ contact_id: nameContacts[0].contact_id, created: false });
-                }
-                throw createErr; // couldn't find by name either
-              });
-          }
-          throw createErr;
-        });
-    })
-    .catch(function (err) {
-      var message = err.message;
-      if (err.response && err.response.data) {
-        message = err.response.data.message || err.response.data.error || message;
+    try {
+      var createData = await zohoPost('/contacts', contactPayload);
+      var contact = createData.contact || {};
+      res.status(201).json({ contact_id: contact.contact_id, created: true });
+    } catch (createErr) {
+      // If name already exists, search by name and return that contact
+      var msg = '';
+      if (createErr.response && createErr.response.data) {
+        msg = createErr.response.data.message || '';
       }
-      log.error('[api/contacts POST] ' + message);
-      res.status(502).json({ error: 'Unable to create contact' });
-    });
+      if (msg.indexOf('already exists') !== -1) {
+        var nameData = await zohoGet('/contacts', { contact_name: body.name });
+        var nameContacts = nameData.contacts || [];
+        if (nameContacts.length > 0) {
+          return res.json({ contact_id: nameContacts[0].contact_id, created: false });
+        }
+        throw createErr; // couldn't find by name either
+      }
+      throw createErr;
+    }
+  } catch (err) {
+    var message = err.message;
+    if (err.response && err.response.data) {
+      message = err.response.data.message || err.response.data.error || message;
+    }
+    log.error('[api/contacts POST] ' + message);
+    res.status(502).json({ error: 'Unable to create contact' });
+  }
 });
 
 module.exports = router;

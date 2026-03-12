@@ -138,8 +138,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
     var now = Date.now();
     var allItems = [];
-    try { allItems = allItems.concat(JSON.parse(localStorage.getItem('sv-cart-ferment')) || []); } catch (e) {}
-    try { allItems = allItems.concat(JSON.parse(localStorage.getItem('sv-cart-ingredients')) || []); } catch (e) {}
+    try { allItems = allItems.concat(JSON.parse(localStorage.getItem(FERMENT_CART_KEY)) || []); } catch (e) {}
+    try { allItems = allItems.concat(JSON.parse(localStorage.getItem(INGREDIENT_CART_KEY)) || []); } catch (e) {}
     var hasStale = false;
     for (var i = 0; i < allItems.length; i++) {
       if (allItems[i].cartAddedAt && (now - allItems[i].cartAddedAt) > FOURTEEN_DAYS) {
@@ -332,7 +332,7 @@ function initKioskAttractScreen() {
 
   function showAttractScreen() {
     // Clear reservation on idle
-    localStorage.removeItem('sv-reservation');
+    localStorage.removeItem(RESERVATION_KEY);
     attract.classList.add('active');
   }
 

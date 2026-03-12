@@ -1,3 +1,52 @@
+// ===== Steins & Vines — Shared Constants =====
+// Canonical identifiers used across frontend modules.
+// Load this script before any page-specific JS (and before utils.js).
+//
+// For concatenated builds (main.min.js): listed first in the concat:js pipeline.
+// For standalone pages (admin, kiosk, brewpad, batch): loaded via <script> tag.
+
+// ---------------------------------------------------------------------------
+// Cart storage keys
+// ---------------------------------------------------------------------------
+var CART_KEYS = {
+  FERMENT:             'sv-cart-ferment',
+  INGREDIENTS:         'sv-cart-ingredients',
+  LEGACY_RESERVATION:  'sv-reservation'  // migration only — do not write new data here
+};
+
+// ---------------------------------------------------------------------------
+// Product item type values (_item_type / item_type field)
+// ---------------------------------------------------------------------------
+var ITEM_TYPES = {
+  KIT:          'kit',
+  INGREDIENT:   'ingredient',
+  SERVICE:      'service',
+  KIT_PURCHASE: 'kit-purchase'  // kit added directly to ingredient cart for purchase
+};
+
+// ---------------------------------------------------------------------------
+// Product tab identifiers (data-product-tab attribute values)
+// ---------------------------------------------------------------------------
+var PRODUCT_TABS = {
+  KITS:        'kits',
+  INGREDIENTS: 'ingredients',
+  SERVICES:    'services'
+};
+
+// ---------------------------------------------------------------------------
+// Kit category filter values (Zoho category_name substrings)
+// Used to distinguish kit products from ingredients/services.
+// ---------------------------------------------------------------------------
+var KIT_CATEGORIES = ['wine', 'beer', 'cider', 'seltzer'];
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    CART_KEYS:     CART_KEYS,
+    ITEM_TYPES:    ITEM_TYPES,
+    PRODUCT_TABS:  PRODUCT_TABS,
+    KIT_CATEGORIES: KIT_CATEGORIES
+  };
+}
 // ===== Middleware API Key =====
 
 // Loaded from js/sheets-config.js (SHEETS_CONFIG.MW_API_KEY = Railway API_SECRET_KEY).
@@ -437,6 +486,7 @@ function formatCurrency(val) {
   return '$' + num.toFixed(2);
 }
 
+// DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
 function buildLabelPriceFooter(product) {
   var discount = parseFloat(product.discount) || 0;
   var pricingFrom = (product.pricing_from || '').trim().toUpperCase() === 'TRUE';
@@ -1423,7 +1473,11 @@ function loadFeaturedProducts() {
     container.appendChild(btn);
   }
 }
-var KIT_CATEGORIES = ['wine', 'beer', 'cider', 'seltzer'];
+// KIT_CATEGORIES is defined in js/lib/constants.js (prepended to the concat pipeline).
+// Node test env fallback — when this module is loaded in isolation via require():
+if (typeof KIT_CATEGORIES === 'undefined' && typeof require !== 'undefined') {
+  var KIT_CATEGORIES = require('../lib/constants').KIT_CATEGORIES;
+}
 
 function loadProducts() {
   var allProducts = [];
@@ -4307,10 +4361,17 @@ function initAboutTabs() {
 }
 
 // ===== Ingredients & Supplies =====
-var RESERVATION_KEY = 'sv-reservation';       // legacy, for migration only
-var FERMENT_CART_KEY = 'sv-cart-ferment';
-var INGREDIENT_CART_KEY = 'sv-cart-ingredients';
-var _activeCartTab = 'kits';                  // tracks which product tab is active
+// In Node test environment constants.js is not loaded globally — require it.
+if (typeof CART_KEYS === 'undefined' && typeof require !== 'undefined') {
+  var _c = require('../lib/constants');
+  var CART_KEYS    = _c.CART_KEYS;
+  var PRODUCT_TABS = _c.PRODUCT_TABS;
+}
+
+var RESERVATION_KEY    = CART_KEYS.LEGACY_RESERVATION;  // legacy, for migration only
+var FERMENT_CART_KEY   = CART_KEYS.FERMENT;
+var INGREDIENT_CART_KEY = CART_KEYS.INGREDIENTS;
+var _activeCartTab = 'kits';                             // tracks which product tab is active
 
 // In-memory fallback for environments where localStorage is unavailable (e.g. iOS Safari private browsing)
 var _memoryStore = {};
@@ -5706,6 +5767,7 @@ function applyKitSpecificVisibility(hasKits) {
 
 /**
  * Update the deposit summary display based on cart items and payment config.
+ * DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
  */
 function updateDepositSummary() {
   var depositSummary = document.getElementById('deposit-summary');
@@ -5919,6 +5981,7 @@ function setupPaymentToggle() {
   var fullDesc = document.getElementById('payment-option-full-desc');
   var depositDesc = document.getElementById('payment-option-deposit-desc');
 
+  // DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
   function updateToggleLabels() {
     var _toggleCartKey = getActiveCheckoutCart();
     var items = _toggleCartKey ? getReservation(_toggleCartKey) : getAllCartItems();
@@ -6437,6 +6500,7 @@ function renderReservationItems() {
   }
 
   // --- Totals Summary ---
+  // DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
   var sub = 0; items.forEach(function (i) {
     var p = parseFloat((i.price || '0').replace('$', '')) || 0;
     var d = parseFloat(i.discount) || 0; if (d > 0) p *= (1 - d / 100); sub += p * (i.qty || 1);
@@ -6975,8 +7039,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
     var now = Date.now();
     var allItems = [];
-    try { allItems = allItems.concat(JSON.parse(localStorage.getItem('sv-cart-ferment')) || []); } catch (e) {}
-    try { allItems = allItems.concat(JSON.parse(localStorage.getItem('sv-cart-ingredients')) || []); } catch (e) {}
+    try { allItems = allItems.concat(JSON.parse(localStorage.getItem(FERMENT_CART_KEY)) || []); } catch (e) {}
+    try { allItems = allItems.concat(JSON.parse(localStorage.getItem(INGREDIENT_CART_KEY)) || []); } catch (e) {}
     var hasStale = false;
     for (var i = 0; i < allItems.length; i++) {
       if (allItems[i].cartAddedAt && (now - allItems[i].cartAddedAt) > FOURTEEN_DAYS) {
@@ -7169,7 +7233,7 @@ function initKioskAttractScreen() {
 
   function showAttractScreen() {
     // Clear reservation on idle
-    localStorage.removeItem('sv-reservation');
+    localStorage.removeItem(RESERVATION_KEY);
     attract.classList.add('active');
   }
 

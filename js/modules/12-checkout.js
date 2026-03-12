@@ -150,6 +150,7 @@ function applyKitSpecificVisibility(hasKits) {
 
 /**
  * Update the deposit summary display based on cart items and payment config.
+ * DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
  */
 function updateDepositSummary() {
   var depositSummary = document.getElementById('deposit-summary');
@@ -363,6 +364,7 @@ function setupPaymentToggle() {
   var fullDesc = document.getElementById('payment-option-full-desc');
   var depositDesc = document.getElementById('payment-option-deposit-desc');
 
+  // DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
   function updateToggleLabels() {
     var _toggleCartKey = getActiveCheckoutCart();
     var items = _toggleCartKey ? getReservation(_toggleCartKey) : getAllCartItems();
@@ -881,6 +883,7 @@ function renderReservationItems() {
   }
 
   // --- Totals Summary ---
+  // DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
   var sub = 0; items.forEach(function (i) {
     var p = parseFloat((i.price || '0').replace('$', '')) || 0;
     var d = parseFloat(i.discount) || 0; if (d > 0) p *= (1 - d / 100); sub += p * (i.qty || 1);

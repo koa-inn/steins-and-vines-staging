@@ -4,6 +4,7 @@ var path = require('path');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
+var C = require('../lib/constants');
 
 var ledger = require('../lib/inventory-ledger');
 
@@ -63,31 +64,31 @@ var router = express.Router();
 // Cache constants
 // ---------------------------------------------------------------------------
 
-var PRODUCTS_CACHE_KEY = 'zoho:products';
+var PRODUCTS_CACHE_KEY = C.CACHE_KEYS.PRODUCTS;
 var PRODUCTS_CACHE_TTL = 3600; // 1 hour hard TTL
 var PRODUCTS_SOFT_TTL = 600;   // 10 minutes — triggers background refresh
-var PRODUCTS_CACHE_TS_KEY = 'zoho:products:ts'; // timestamp of last enrichment
-var PRODUCT_IMAGE_HASHES_KEY = 'zoho:product-image-hashes'; // image change detection
+var PRODUCTS_CACHE_TS_KEY = C.CACHE_KEYS.PRODUCTS_TS; // timestamp of last enrichment
+var PRODUCT_IMAGE_HASHES_KEY = C.CACHE_KEYS.PRODUCT_IMAGE_HASHES; // image change detection
 var REFRESH_LOCK_KEY = 'products:refresh';
 var REFRESH_LOCK_TTL = 120; // 2-min auto-expire if process crashes mid-refresh
 // __dirname is routes/ subdirectory, so go up one level to middleware root
 var PRODUCTS_FILE_CACHE = path.join(__dirname, '..', 'products-cache.json');
 var INGREDIENTS_FILE_CACHE = path.join(__dirname, '..', 'ingredients-cache.json');
 
-var SERVICES_CACHE_KEY = 'zoho:services';
+var SERVICES_CACHE_KEY = C.CACHE_KEYS.SERVICES;
 var SERVICES_CACHE_TTL = 1800; // 30 minutes
 
-var INGREDIENTS_CACHE_KEY = 'zoho:ingredients';
+var INGREDIENTS_CACHE_KEY = C.CACHE_KEYS.INGREDIENTS;
 var INGREDIENTS_CACHE_TTL = 3600; // 1 hour (match products TTL)
-var INGREDIENTS_CACHE_TS_KEY = 'zoho:ingredients:ts';
+var INGREDIENTS_CACHE_TS_KEY = C.CACHE_KEYS.INGREDIENTS_TS;
 var INGREDIENTS_SOFT_TTL = 600; // 10 minutes — triggers background refresh
 
-var KIOSK_PRODUCTS_CACHE_KEY = 'zoho:kiosk-products';
+var KIOSK_PRODUCTS_CACHE_KEY = C.CACHE_KEYS.KIOSK_PRODUCTS;
 var KIOSK_PRODUCTS_CACHE_TTL = 1800; // 30 minutes
 
 // Kit type values that belong on the kits/products page.
 // Used by both doRefreshProducts() and GET /api/ingredients.
-var KIT_CATEGORIES = ['wine', 'beer', 'cider', 'seltzer'];
+var KIT_CATEGORIES = C.KIT_CATEGORIES;
 
 // In-memory set of kit item IDs (populated by GET /api/products).
 // Used by /api/ingredients to exclude kits even when Redis is down.

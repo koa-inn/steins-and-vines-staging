@@ -13,6 +13,7 @@ var https = require('https');
 var querystring = require('querystring');
 var crypto = require('crypto');
 var cache = require('./cache');
+var C = require('./constants');
 
 // ---------------------------------------------------------------------------
 // Refresh token encryption (AES-256-GCM)
@@ -151,7 +152,7 @@ function postToken(params) {
  * Exchange an authorization code for access + refresh tokens.
  * Called once after the user completes the OAuth consent flow.
  */
-var REFRESH_TOKEN_CACHE_KEY = 'zoho:refresh_token';
+var REFRESH_TOKEN_CACHE_KEY = C.CACHE_KEYS.REFRESH_TOKEN;
 var REFRESH_TOKEN_TTL = 60 * 60 * 24 * 90; // 90 days
 
 function exchangeCode(code) {
@@ -172,8 +173,8 @@ function exchangeCode(code) {
     // Persist access token + expiry to Redis for cross-instance sharing
     var ttl = data.expires_in - 60;
     try {
-      cache.set('zoho:access-token', data.access_token, ttl);
-      cache.set('zoho:token-expiry', String(Date.now() + ttl * 1000), ttl);
+      cache.set(C.CACHE_KEYS.ACCESS_TOKEN, data.access_token, ttl);
+      cache.set(C.CACHE_KEYS.TOKEN_EXPIRY, String(Date.now() + ttl * 1000), ttl);
     } catch (e) {
       // Redis unavailable — in-memory only
     }
@@ -196,7 +197,7 @@ function refreshAccessToken() {
   }
 
   // Acquire distributed refresh lock (30s TTL) — falls back to true if Redis is down
-  return cache.acquireLock('zoho:refresh-lock', 30).then(function (locked) {
+  return cache.acquireLock(C.CACHE_KEYS.REFRESH_LOCK, 30).then(function (locked) {
     if (!locked) {
       // Another instance holds the lock — wait 1.5s then retry getAccessToken()
       // which will either find the freshly-written Redis token or retry again
@@ -217,8 +218,8 @@ function refreshAccessToken() {
       // Persist access token + expiry to Redis so other instances can use it
       var ttl = data.expires_in - 60;
       try {
-        cache.set('zoho:access-token', data.access_token, ttl);
-        cache.set('zoho:token-expiry', String(Date.now() + ttl * 1000), ttl);
+        cache.set(C.CACHE_KEYS.ACCESS_TOKEN, data.access_token, ttl);
+        cache.set(C.CACHE_KEYS.TOKEN_EXPIRY, String(Date.now() + ttl * 1000), ttl);
       } catch (e) {
         // Redis unavailable — in-memory only is fine
       }
@@ -228,7 +229,7 @@ function refreshAccessToken() {
       console.log('[zoho-auth] Access token refreshed — expires in ' + data.expires_in + 's');
       return tokens;
     }).finally(function () {
-      cache.releaseLock('zoho:refresh-lock').catch(function () {});
+      cache.releaseLock(C.CACHE_KEYS.REFRESH_LOCK).catch(function () {});
     });
   });
 }
@@ -264,9 +265,9 @@ function getAccessToken() {
   // Try Redis for a token written by another instance
   return Promise.resolve().then(function () {
     try {
-      return cache.get('zoho:access-token').then(function (redisToken) {
+      return cache.get(C.CACHE_KEYS.ACCESS_TOKEN).then(function (redisToken) {
         if (redisToken) {
-          return cache.get('zoho:token-expiry').then(function (redisExpiry) {
+          return cache.get(C.CACHE_KEYS.TOKEN_EXPIRY).then(function (redisExpiry) {
             var expiry = redisExpiry ? parseInt(redisExpiry, 10) : 0;
             if (expiry && Date.now() < expiry - REFRESH_BUFFER_MS) {
               // Redis token is still fresh — hydrate in-memory state and return

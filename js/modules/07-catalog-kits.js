@@ -1,4 +1,8 @@
-var KIT_CATEGORIES = ['wine', 'beer', 'cider', 'seltzer'];
+// KIT_CATEGORIES is defined in js/lib/constants.js (prepended to the concat pipeline).
+// Node test env fallback — when this module is loaded in isolation via require():
+if (typeof KIT_CATEGORIES === 'undefined' && typeof require !== 'undefined') {
+  var KIT_CATEGORIES = require('../lib/constants').KIT_CATEGORIES;
+}
 
 function loadProducts() {
   var allProducts = [];

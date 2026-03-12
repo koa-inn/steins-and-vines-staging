@@ -21,6 +21,7 @@ var helmet = require('helmet');
 var zohoAuth = require('./lib/zohoAuth');
 var cache = require('./lib/cache');
 var log = require('./lib/logger');
+var C = require('./lib/constants');
 var gpLib = require('./lib/gp');
 var cron = require('node-cron');
 
@@ -252,7 +253,7 @@ function makeRedisStore(windowMs, prefix) {
   var windowSec = Math.ceil(windowMs / 1000);
   // Each limiter must use a unique prefix so they track separate counters per IP.
   // Without a prefix all limiters share 'rl:<ip>' and cross-contaminate each other.
-  var keyPrefix = 'rl:' + (prefix || 'default') + ':';
+  var keyPrefix = C.RATE_LIMIT_PREFIX + (prefix || 'default') + ':';
 
   return {
     increment: function (key) {

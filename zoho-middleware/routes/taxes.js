@@ -3,6 +3,7 @@ var axios = require('axios');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
+var C = require('../lib/constants');
 
 var zohoGet = zohoApi.zohoGet;
 var zohoPost = zohoApi.zohoPost;
@@ -11,7 +12,7 @@ var inventoryGet = zohoApi.inventoryGet;
 var inventoryPut = zohoApi.inventoryPut;
 var fetchAllItems = zohoApi.fetchAllItems;
 
-var PRODUCTS_CACHE_KEY = 'zoho:products';
+var PRODUCTS_CACHE_KEY = C.CACHE_KEYS.PRODUCTS;
 
 var router = express.Router();
 
