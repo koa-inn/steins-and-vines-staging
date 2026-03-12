@@ -154,15 +154,24 @@ function loadIngredients(callback) {
       if (callback) callback();
     })
     .catch(function () {
-      // Both middleware and snapshot failed — show error state and clear skeletons
+      // Both middleware and snapshot failed — show error state with retry
       var catalog = document.getElementById('product-catalog');
       if (catalog) {
-        var skeletons = catalog.querySelectorAll('.catalog-skeleton-grid');
-        skeletons.forEach(function (el) { el.parentNode.removeChild(el); });
-        var errMsg = document.createElement('p');
-        errMsg.className = 'catalog-no-results';
-        errMsg.textContent = 'Ingredients could not be loaded. Please try again shortly.';
-        catalog.appendChild(errMsg);
+        catalog.innerHTML = '';
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'catalog-error';
+        var errorMsg = document.createElement('p');
+        errorMsg.textContent = "Couldn't load products. Check your connection and try again.";
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn-retry btn-outline';
+        retryBtn.type = 'button';
+        retryBtn.textContent = 'Try again';
+        retryBtn.addEventListener('click', function () {
+          loadIngredients(callback);
+        });
+        errorDiv.appendChild(errorMsg);
+        errorDiv.appendChild(retryBtn);
+        catalog.appendChild(errorDiv);
       }
       if (callback) callback();
     });

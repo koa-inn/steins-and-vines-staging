@@ -803,8 +803,26 @@ function loadFeaturedProducts() {
       renderFeaturedProducts(products, featuredSkus);
     })
     .catch(function () {
-      // Fallback: hide promo section on error
-      if (promoSection) promoSection.classList.add('hidden');
+      // Both config and product loads failed — show inline error with retry
+      if (productsContainer) {
+        productsContainer.innerHTML = '';
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'catalog-error';
+        var errorMsg = document.createElement('p');
+        errorMsg.textContent = "Couldn't load products. Check your connection and try again.";
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn-retry btn-outline';
+        retryBtn.type = 'button';
+        retryBtn.textContent = 'Try again';
+        retryBtn.addEventListener('click', function () {
+          loadFeaturedProducts();
+        });
+        errorDiv.appendChild(errorMsg);
+        errorDiv.appendChild(retryBtn);
+        productsContainer.appendChild(errorDiv);
+      } else if (promoSection) {
+        promoSection.classList.add('hidden');
+      }
     });
 
   function escapeHTMLPromo(str) {
@@ -1664,7 +1682,7 @@ function loadProducts() {
         var errorDiv = document.createElement('div');
         errorDiv.className = 'catalog-error';
         var errorMsg = document.createElement('p');
-        errorMsg.textContent = 'Could not load products. Please check your connection and try again.';
+        errorMsg.textContent = "Couldn't load products. Check your connection and try again.";
         var retryBtn = document.createElement('button');
         retryBtn.className = 'btn-retry btn-outline';
         retryBtn.type = 'button';
@@ -3022,15 +3040,24 @@ function loadIngredients(callback) {
       if (callback) callback();
     })
     .catch(function () {
-      // Both middleware and snapshot failed — show error state and clear skeletons
+      // Both middleware and snapshot failed — show error state with retry
       var catalog = document.getElementById('product-catalog');
       if (catalog) {
-        var skeletons = catalog.querySelectorAll('.catalog-skeleton-grid');
-        skeletons.forEach(function (el) { el.parentNode.removeChild(el); });
-        var errMsg = document.createElement('p');
-        errMsg.className = 'catalog-no-results';
-        errMsg.textContent = 'Ingredients could not be loaded. Please try again shortly.';
-        catalog.appendChild(errMsg);
+        catalog.innerHTML = '';
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'catalog-error';
+        var errorMsg = document.createElement('p');
+        errorMsg.textContent = "Couldn't load products. Check your connection and try again.";
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn-retry btn-outline';
+        retryBtn.type = 'button';
+        retryBtn.textContent = 'Try again';
+        retryBtn.addEventListener('click', function () {
+          loadIngredients(callback);
+        });
+        errorDiv.appendChild(errorMsg);
+        errorDiv.appendChild(retryBtn);
+        catalog.appendChild(errorDiv);
       }
       if (callback) callback();
     });
@@ -3787,7 +3814,28 @@ function loadServices(callback) {
       wireServiceEvents();
       if (callback) callback();
     })
-    .catch(function () {});
+    .catch(function () {
+      // Both middleware and snapshot failed — show error state with retry
+      var catalog = document.getElementById('product-catalog');
+      if (catalog) {
+        catalog.innerHTML = '';
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'catalog-error';
+        var errorMsg = document.createElement('p');
+        errorMsg.textContent = "Couldn't load products. Check your connection and try again.";
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn-retry btn-outline';
+        retryBtn.type = 'button';
+        retryBtn.textContent = 'Try again';
+        retryBtn.addEventListener('click', function () {
+          loadServices(callback);
+        });
+        errorDiv.appendChild(errorMsg);
+        errorDiv.appendChild(retryBtn);
+        catalog.appendChild(errorDiv);
+      }
+      if (callback) callback();
+    });
 }
 
 function wireServiceEvents() {

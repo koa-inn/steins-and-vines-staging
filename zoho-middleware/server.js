@@ -1,5 +1,9 @@
 require('dotenv').config();
 
+var validateEnv = require('./lib/validateEnv');
+var checkRedis = require('./lib/checkRedis');
+validateEnv();
+
 var Sentry = require('@sentry/node');
 if (process.env.SENTRY_DSN) {
   Sentry.init({
@@ -65,7 +69,7 @@ function requireAllowedReferer(req, res, next) {
   if (req.path === '/checkout') return next();
   var referer = req.headers.referer;
   var allowed = allowedReferers.some(function(origin) {
-    return referer.startsWith(origin);
+    return referer === origin || referer.startsWith(origin + '/');
   });
   if (!allowed) {
     log.warn('[referer-guard] Blocked: referer=' + referer + ' path=' + req.path);
@@ -204,7 +208,7 @@ app.use('/api', function (req, res, next) {
 // API key guard — protects mutating /api/* endpoints from unauthorized callers
 // ---------------------------------------------------------------------------
 
-var API_SECRET_KEY = process.env.API_SECRET_KEY || '';
+var API_SECRET_KEY = process.env.API_SECRET_KEY || process.env.MW_API_KEY || '';
 
 if (!API_SECRET_KEY) {
   log.warn('');
@@ -357,6 +361,8 @@ if (process.env.SENTRY_DSN) {
 // Initialize GP SDK, connect Redis, restore Zoho auth, then start listening
 gpLib.init();
 cache.init().then(function () {
+  return checkRedis();
+}).then(function () {
   return zohoAuth.init();
 }).then(function () {
   var server = app.listen(PORT, function () {

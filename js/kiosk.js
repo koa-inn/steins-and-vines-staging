@@ -329,6 +329,7 @@
 
   // ===== Shared Utilities =====
 
+  // escapeHTML defined in js/lib/utils.js
   function escapeHTML(str) {
     return String(str)
       .replace(/&/g, '&amp;')

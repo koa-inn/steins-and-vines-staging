@@ -91,7 +91,28 @@ function loadServices(callback) {
       wireServiceEvents();
       if (callback) callback();
     })
-    .catch(function () {});
+    .catch(function () {
+      // Both middleware and snapshot failed — show error state with retry
+      var catalog = document.getElementById('product-catalog');
+      if (catalog) {
+        catalog.innerHTML = '';
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'catalog-error';
+        var errorMsg = document.createElement('p');
+        errorMsg.textContent = "Couldn't load products. Check your connection and try again.";
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn-retry btn-outline';
+        retryBtn.type = 'button';
+        retryBtn.textContent = 'Try again';
+        retryBtn.addEventListener('click', function () {
+          loadServices(callback);
+        });
+        errorDiv.appendChild(errorMsg);
+        errorDiv.appendChild(retryBtn);
+        catalog.appendChild(errorDiv);
+      }
+      if (callback) callback();
+    });
 }
 
 function wireServiceEvents() {

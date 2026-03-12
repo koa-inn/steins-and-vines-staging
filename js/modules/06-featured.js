@@ -222,8 +222,26 @@ function loadFeaturedProducts() {
       renderFeaturedProducts(products, featuredSkus);
     })
     .catch(function () {
-      // Fallback: hide promo section on error
-      if (promoSection) promoSection.classList.add('hidden');
+      // Both config and product loads failed — show inline error with retry
+      if (productsContainer) {
+        productsContainer.innerHTML = '';
+        var errorDiv = document.createElement('div');
+        errorDiv.className = 'catalog-error';
+        var errorMsg = document.createElement('p');
+        errorMsg.textContent = "Couldn't load products. Check your connection and try again.";
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn-retry btn-outline';
+        retryBtn.type = 'button';
+        retryBtn.textContent = 'Try again';
+        retryBtn.addEventListener('click', function () {
+          loadFeaturedProducts();
+        });
+        errorDiv.appendChild(errorMsg);
+        errorDiv.appendChild(retryBtn);
+        productsContainer.appendChild(errorDiv);
+      } else if (promoSection) {
+        promoSection.classList.add('hidden');
+      }
     });
 
   function escapeHTMLPromo(str) {

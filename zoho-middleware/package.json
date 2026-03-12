@@ -6,11 +6,13 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "lint": "eslint routes/ lib/ server.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },
   "devDependencies": {
+    "eslint": "^9.39.4",
     "jest": "^29.7.0"
   },
   "dependencies": {

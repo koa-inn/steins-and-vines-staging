@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-03-10T02:52:46.095Z';
+  var BUILD_TIMESTAMP = '2026-03-12T13:58:32.007Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -5284,6 +5284,7 @@
     return letter;
   }
 
+  // escapeHTML defined in js/lib/utils.js
   function escapeHTML(str) {
     var div = document.createElement('div');
     div.textContent = str;

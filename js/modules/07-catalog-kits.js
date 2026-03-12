@@ -257,7 +257,7 @@ function loadProducts() {
         var errorDiv = document.createElement('div');
         errorDiv.className = 'catalog-error';
         var errorMsg = document.createElement('p');
-        errorMsg.textContent = 'Could not load products. Please check your connection and try again.';
+        errorMsg.textContent = "Couldn't load products. Check your connection and try again.";
         var retryBtn = document.createElement('button');
         retryBtn.className = 'btn-retry btn-outline';
         retryBtn.type = 'button';

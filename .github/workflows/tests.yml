@@ -17,6 +17,14 @@ jobs:
         working-directory: zoho-middleware
       - run: npm test
         working-directory: zoho-middleware
+      - name: Lint middleware
+        run: npm run lint
+        working-directory: zoho-middleware
+        continue-on-error: true
+      - name: Audit middleware dependencies
+        run: npm audit --audit-level=high
+        working-directory: zoho-middleware
+        continue-on-error: true
 
   test-frontend:
     runs-on: ubuntu-latest
@@ -27,6 +35,12 @@ jobs:
           node-version: '20'
       - run: npm install
       - run: npm test
+      - name: Lint frontend
+        run: npm run lint
+        continue-on-error: true
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
   # E2E runs only on push to main (not PRs) — tests hit the live staging site.
   # Requires staging to be deployed before this job runs.
