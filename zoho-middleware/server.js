@@ -22,7 +22,7 @@ var zohoAuth = require('./lib/zohoAuth');
 var cache = require('./lib/cache');
 var log = require('./lib/logger');
 var C = require('./lib/constants');
-var gpLib = require('./lib/gp');
+var helcimLib = require('./lib/helcim');
 var cron = require('node-cron');
 
 var nodemailer = require('nodemailer');
@@ -349,6 +349,7 @@ app.use('/', require('./routes/checkout'));
 app.use('/', require('./routes/taxes'));
 app.use('/', require('./routes/pos'));
 app.use('/', require('./routes/purchaseorders'));
+app.use(require('./routes/webhooks'));
 
 // Sentry error handler (must be after routes, before other error handlers)
 if (process.env.SENTRY_DSN) {
@@ -359,8 +360,8 @@ if (process.env.SENTRY_DSN) {
 // Start
 // ---------------------------------------------------------------------------
 
-// Initialize GP SDK, connect Redis, restore Zoho auth, then start listening
-gpLib.init();
+// Initialize Helcim, connect Redis, restore Zoho auth, then start listening
+helcimLib.init();
 cache.init().then(function () {
   return checkRedis();
 }).then(function () {

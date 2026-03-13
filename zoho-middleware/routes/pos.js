@@ -1,6 +1,5 @@
 var express = require('express');
-var gp = require('globalpayments-api');
-var gpLib = require('../lib/gp');
+var helcimLib = require('../lib/helcim');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
@@ -9,7 +8,6 @@ var mailer = require('../lib/mailer');
 var ledger = require('../lib/inventory-ledger');
 var C = require('../lib/constants');
 
-var Transaction = gp.Transaction;
 var zohoGet = zohoApi.zohoGet;
 var zohoPost = zohoApi.zohoPost;
 
@@ -47,7 +45,7 @@ var router = express.Router();
  * not present in that cache causes an immediate 400 rejection.
  */
 router.post('/api/kiosk/sale', function (req, res) {
-  if (!gpLib.isTerminalEnabled()) {
+  if (!helcimLib.isTerminalEnabled()) {
     return res.status(503).json({ error: 'POS terminal not configured' });
   }
 
@@ -163,29 +161,45 @@ function processSaleWithPrices(body, idempotencyKey, req, res,
     ' ref=' + refNumber + ' items=' + lineItems.length);
 
   // Step 1: Send payment to POS terminal
-  // Item #17: Race the terminal call against a 90-second timeout so a hung
-  // device or customer walkaway cannot block the server indefinitely.
+  // Push payment request to Helcim Smart Terminal (202 Accepted immediately).
+  // Result is delivered via webhook; poll as fallback with 5s intervals up to 90s.
   var TERMINAL_TIMEOUT_MS = 90000;
-  var terminalTimeout = new Promise(function (_, reject) {
-    setTimeout(function () {
-      reject(new Error('Terminal timeout after 90s'));
-    }, TERMINAL_TIMEOUT_MS);
-  });
+  var POLL_INTERVAL_MS = 5000;
 
-  Promise.race([
-    gpLib.getTerminal().sale(grandTotal)
-      .withCurrency('CAD')
-      .withInvoiceNumber(refNumber)
-      .execute('terminal'),
-    terminalTimeout
-  ])
+  helcimLib.terminalPurchase(grandTotal, refNumber)
+    .then(function (pushResult) {
+      log.info('[pos/kiosk/sale] Terminal push sent: ref=' + refNumber + ' idem=' + pushResult.idempotencyKey);
+
+      // Poll for result — Helcim terminal responds asynchronously
+      var pollStart = Date.now();
+      function poll() {
+        return helcimLib.pollTerminalResult(refNumber).then(function (result) {
+          if (result.approved) {
+            return result;
+          }
+          if (result.status === 'DECLINED') {
+            var declineErr = new Error('Payment declined');
+            declineErr.isDeclined = true;
+            throw declineErr;
+          }
+          if (Date.now() - pollStart >= TERMINAL_TIMEOUT_MS) {
+            throw new Error('Terminal timeout after 90s');
+          }
+          // Still pending — wait and retry
+          return new Promise(function (resolve) {
+            setTimeout(function () { resolve(poll()); }, POLL_INTERVAL_MS);
+          });
+        });
+      }
+
+      return poll();
+    })
     .then(function (termResponse) {
-      if (termResponse.deviceResponseCode !== '00' && termResponse.status !== 'Success') {
-        log.warn('[pos/kiosk/sale] Terminal declined: ' +
-          termResponse.deviceResponseCode + ' ' + termResponse.deviceResponseText);
+      if (!termResponse.approved) {
+        log.warn('[pos/kiosk/sale] Terminal declined');
         return res.status(402).json({
-          error: 'Payment declined: ' + (termResponse.deviceResponseText || 'Unknown'),
-          code: termResponse.deviceResponseCode
+          error: 'Payment declined',
+          code: 'DECLINED'
         });
       }
 
@@ -317,9 +331,7 @@ function processSaleWithPrices(body, idempotencyKey, req, res,
             grandTotal: grandTotal
           });
 
-          Transaction.fromId(txnId)
-            .void()
-            .execute()
+          helcimLib.voidTransaction(txnId)
             .then(function () {
               log.info('[pos/kiosk/sale] Voided txn=' + txnId + ' after invoice failure');
             })
@@ -372,15 +384,12 @@ function processSaleWithPrices(body, idempotencyKey, req, res,
  * Check if the POS terminal is enabled and configured.
  */
 router.get('/api/pos/status', function (req, res) {
-  var diag = gpLib.getTerminalDiagnostics();
-  // List which GP_ env var names are actually present in process.env
-  var gpVarsPresent = Object.keys(process.env).filter(function(k) { return k.indexOf('GP_') === 0; });
+  var diag = helcimLib.getTerminalDiagnostics();
   res.json({
-    enabled: gpLib.isTerminalEnabled(),
-    terminal_type: gpLib.isTerminalEnabled() ? 'UPA (Meet in the Cloud)' : 'none',
+    enabled: helcimLib.isTerminalEnabled(),
+    terminal_type: helcimLib.isTerminalEnabled() ? 'Helcim Smart Terminal' : 'none',
     diagnostics: diag,
-    gp_vars_present: gpVarsPresent,
-    _v: '20260227-2'
+    _v: '20260312-1'
   });
 });
 
@@ -400,7 +409,7 @@ router.get('/api/pos/status', function (req, res) {
  * Returns: { transaction_id, status, auth_code } on success
  */
 router.post('/api/pos/sale', function (req, res) {
-  if (!gpLib.isTerminalEnabled()) {
+  if (!helcimLib.isTerminalEnabled()) {
     return res.status(503).json({ error: 'POS terminal not configured' });
   }
 
@@ -418,29 +427,42 @@ router.post('/api/pos/sale', function (req, res) {
 
   log.info('[pos/sale] Initiating terminal sale: $' + amount.toFixed(2) + ' SO=' + soNumber);
 
-  gpLib.getTerminal().sale(amount)
-    .withCurrency('CAD')
-    .withInvoiceNumber(soNumber)
-    .execute('terminal')
-    .then(function (response) {
-      if (response.deviceResponseCode === '00' || response.status === 'Success') {
-        var txnId = response.transactionId || '';
-        log.info('[pos/sale] Terminal sale approved: txn=' + txnId);
+  var posRefNumber = soNumber || ('POS-' + Date.now());
+  var LEGACY_TIMEOUT_MS = 90000;
+  var LEGACY_POLL_MS = 5000;
 
-        // Respond immediately so the admin panel is not blocked by Zoho I/O
-        res.json({
-          ok: true,
-          transaction_id: txnId,
-          status: 'approved',
-          auth_code: response.authorizationCode || '',
-          amount: amount
+  helcimLib.terminalPurchase(amount, posRefNumber)
+    .then(function () {
+      var pollStart = Date.now();
+      function pollLegacy() {
+        return helcimLib.pollTerminalResult(posRefNumber).then(function (result) {
+          if (result.approved) return result;
+          if (result.status === 'DECLINED') { var e = new Error('declined'); e.isDeclined = true; throw e; }
+          if (Date.now() - pollStart >= LEGACY_TIMEOUT_MS) throw new Error('Terminal timeout after 90s');
+          return new Promise(function (resolve) { setTimeout(function () { resolve(pollLegacy()); }, LEGACY_POLL_MS); });
         });
+      }
+      return pollLegacy();
+    })
+    .then(function (response) {
+      if (!response.approved) {
+        return res.status(402).json({ error: 'Terminal payment declined', code: 'DECLINED' });
+      }
+      var txnId = response.transactionId || '';
+      log.info('[pos/sale] Terminal sale approved: txn=' + txnId);
+      res.json({
+        ok: true,
+        transaction_id: txnId,
+        status: 'approved',
+        auth_code: '',
+        amount: amount
+      });
 
-        // Item #9: Record the sale in Zoho Books as a background operation.
-        // Create a one-line invoice then record a customer payment against it.
-        // Errors are non-fatal — the GP terminal charge has already succeeded.
-        var today = new Date().toISOString().slice(0, 10);
-        var refNumber = soNumber || ('POS-' + Date.now());
+      // Item #9: Record the sale in Zoho Books as a background operation.
+      // Create a one-line invoice then record a customer payment against it.
+      // Errors are non-fatal — the Helcim terminal charge has already succeeded.
+      var today = new Date().toISOString().slice(0, 10);
+      var refNumber = posRefNumber;
 
         var invoicePayload = {
           date: today,
@@ -510,18 +532,14 @@ router.post('/api/pos/sale', function (req, res) {
             }
             log.error('[pos/sale] Zoho invoice creation failed (non-fatal, txn=' + txnId + '): ' + msg);
           });
-
-      } else {
-        log.warn('[pos/sale] Terminal declined: ' + response.deviceResponseCode + ' ' + response.deviceResponseText);
-        res.status(402).json({
-          error: 'Terminal payment declined: ' + (response.deviceResponseText || 'Unknown'),
-          code: response.deviceResponseCode
-        });
-      }
     })
     .catch(function (err) {
+      if (err && err.isDeclined) {
+        if (!res.headersSent) res.status(402).json({ error: 'Terminal payment declined' });
+        return;
+      }
       log.error('[pos/sale] Terminal error: ' + err.message);
-      res.status(502).json({ error: 'Terminal error' });
+      if (!res.headersSent) res.status(502).json({ error: 'Terminal error' });
     });
 });
 

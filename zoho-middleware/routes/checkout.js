@@ -1,12 +1,11 @@
 var express = require('express');
 var https = require('https');
 var querystring = require('querystring');
-var gp = require('globalpayments-api');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
 var eventLog = require('../lib/eventLog');
-var gpLib = require('../lib/gp');
+var helcimLib = require('../lib/helcim');
 var ledger = require('../lib/inventory-ledger');
 var pricing = require('../lib/pricing');
 var C = require('../lib/constants');
@@ -62,8 +61,6 @@ function verifyRecaptcha(token) {
   });
 }
 
-var Transaction = gp.Transaction;
-var CreditCardData = gp.CreditCardData;
 var zohoPost = zohoApi.zohoPost;
 var zohoGet = zohoApi.zohoGet;
 var mailer = require('../lib/mailer');
@@ -160,6 +157,30 @@ function buildLineItems(items, catalogMap, catalogAvailable) {
 }
 
 var router = express.Router();
+
+/**
+ * POST /api/payment/initialize
+ * Initialize a HelcimPay.js checkout session.
+ * Returns a checkoutToken that the frontend uses to render the payment iframe.
+ * The payment is processed inside the Helcim iframe; result comes back via postMessage.
+ *
+ * Expected body: { amount?: number, currency?: string }
+ * Returns: { checkoutToken: string, depositAmount: number }
+ */
+router.post('/api/payment/initialize', function (req, res) {
+  if (!helcimLib.isEnabled()) {
+    return res.status(503).json({ error: 'Payment gateway not configured' });
+  }
+  var depositAmount = helcimLib.getDepositAmount();
+  helcimLib.initializeCheckout(depositAmount, 'CAD')
+    .then(function (result) {
+      res.json({ checkoutToken: result.checkoutToken, depositAmount: depositAmount });
+    })
+    .catch(function (err) {
+      log.error('[payment/initialize] Failed: ' + err.message);
+      res.status(502).json({ error: 'Payment initialization failed' });
+    });
+});
 
 /**
  * POST /api/checkout
@@ -307,7 +328,7 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
   // H2: Clamp deposit_amount to the server-configured canonical deposit — never trust client amount
   var depositAmount = 0;
   if (transactionId) {
-    depositAmount = gpLib.getDepositAmount();
+    depositAmount = helcimLib.getDepositAmount();
   }
 
   // H3: Transaction ID single-use enforcement — prevent replay attacks
@@ -316,7 +337,7 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
     if (!transactionId) {
       return runCheckout();
     }
-    var txnKey = 'gp:txn:' + transactionId;
+    var txnKey = 'helcim:txn:' + transactionId;
     try {
       var existing = await cache.get(txnKey);
       if (existing) {
@@ -601,7 +622,7 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
         : Promise.resolve();
       // H3: Mark transaction ID as used in Redis (24h TTL) to prevent replay
       var txnMark = transactionId
-        ? cache.set('gp:txn:' + transactionId, 'used', 86400).catch(function () {})
+        ? cache.set('helcim:txn:' + transactionId, 'used', 86400).catch(function () {})
         : Promise.resolve();
       await Promise.all([cacheWrite, txnMark]);
       responseSent = true;
@@ -647,17 +668,15 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
         });
         // C4: Wrap void in 8s timeout; log for manual action if it times out
         withTimeout(
-          Transaction.fromId(transactionId).void().execute(),
+          helcimLib.voidTransaction(transactionId),
           8000
         )
-          .then(function (voidResponse) {
-            // M17: Check void response for failure codes
-            if (voidResponse && voidResponse.responseCode && voidResponse.responseCode !== '00' && voidResponse.responseCode !== 'SUCCESS') {
-              log.error('[checkout] GP void failed: ' + JSON.stringify(voidResponse));
+          .then(function (voidResult) {
+            if (!voidResult || !voidResult.ok) {
+              log.error('[checkout] Helcim void returned non-ok: ' + JSON.stringify(voidResult));
               eventLog.logEvent('checkout.void_fired', {
                 txnId: transactionId,
-                voidResult: 'declined',
-                voidResponseCode: voidResponse.responseCode || ''
+                voidResult: 'declined'
               });
             } else {
               log.info('[checkout] Voided txn=' + transactionId);
@@ -669,8 +688,7 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
           })
           .catch(function (voidErr) {
             if (voidErr && voidErr.message && voidErr.message.indexOf('Timeout') === 0) {
-              // C4: Void timed out — log transaction_id for manual void
-              log.error('[checkout] GP void timed out — manual void required for txn=' + transactionId + ': ' + voidErr.message);
+              log.error('[checkout] Helcim void timed out — manual void required for txn=' + transactionId + ': ' + voidErr.message);
             } else {
               var voidFailTs = new Date().toISOString();
               log.error('[checkout] CRITICAL: Void failed for txn=' + transactionId + ': ' + voidErr.message);
@@ -704,51 +722,65 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
     }
   } // end runCheckout
 
-  // #4: Server-side charge using payment_token — eliminates ghost-charge window.
-  // IMPORTANT: We pre-validate the catalog cache BEFORE charging the card so that
-  // early-exit paths in runCheckout() (catalog 503, item-not-found 400, Makers Fee 400)
-  // cannot leave a charged card with no corresponding order (ghost charge).
-  // After the charge succeeds, transactionId is set so the outer .catch() void fires
-  // on any subsequent Zoho failure.
+  // Payment was processed in the HelcimPay.js iframe before the customer submitted.
+  // payment_token is the Helcim transactionId returned via window.postMessage.
+  // The card was already charged inside the HelcimPay.js iframe before this runs.
+  // Pre-validate catalog and cart here as defense-in-depth: if validation fails we
+  // void the already-charged transaction before rejecting, preventing ghost charges.
+  // If Zoho order creation fails after validation, voidTransaction() handles recovery.
   async function chargeAndProceed() {
     if (!body.payment_token) {
-      // Legacy path: frontend pre-charged and passed transaction_id
+      // No payment — offline booking or deposit-free order
       return checkTransactionIdAndProceed();
     }
-    if (!process.env.GP_APP_KEY) {
+    if (!helcimLib.isEnabled()) {
       return res.status(503).json({ error: 'Payment gateway not configured' });
     }
 
-    // Pre-validate catalog and cart before touching the card
-    var results;
+    // Card is already charged — set transactionId so void fires if any check below fails
+    transactionId = body.payment_token;
+    depositAmount = helcimLib.getDepositAmount();
+    log.info('[checkout] Helcim payment received: txn=' + transactionId);
+
+    // Pre-validate catalog and cart before proceeding to order creation.
+    // On any validation failure: void the already-charged transaction then reject.
+    var preResults;
     try {
-      results = await Promise.all([
+      preResults = await Promise.all([
         cache.get(PRODUCTS_CACHE_KEY),
         cache.get(SERVICES_CACHE_KEY)
       ]);
     } catch (cacheErr) {
-      log.error('[checkout/pre-charge] Cache read failed: ' + cacheErr.message);
+      log.error('[checkout/pre-validate] Cache read failed: ' + cacheErr.message);
+      helcimLib.voidTransaction(transactionId).catch(function (vErr) {
+        log.error('[checkout/pre-validate] Void after cache failure failed: ' + vErr.message);
+      });
       return res.status(503).json({ error: 'Unable to verify item prices. Please try again.' });
     }
 
-    var catalog = results[0];
-    var services = results[1];
+    var preCatalog = preResults[0];
+    var preServices = preResults[1];
 
-    if (!Array.isArray(catalog) || catalog.length === 0) {
-      log.warn('[checkout/pre-charge] Catalog unavailable — rejecting before charge');
+    if (!Array.isArray(preCatalog) || preCatalog.length === 0) {
+      log.warn('[checkout/pre-validate] Catalog unavailable — voiding txn=' + transactionId);
+      helcimLib.voidTransaction(transactionId).catch(function (vErr) {
+        log.error('[checkout/pre-validate] Void after catalog unavailable failed: ' + vErr.message);
+      });
       return res.status(503).json({ error: 'Pricing temporarily unavailable. Please try again in a moment.' });
     }
 
     var preMap = {};
-    catalog.forEach(function (p) { if (p && p.item_id) preMap[p.item_id] = true; });
-    if (Array.isArray(services)) {
-      services.forEach(function (s) { if (s && s.item_id) preMap[s.item_id] = true; });
+    preCatalog.forEach(function (p) { if (p && p.item_id) preMap[p.item_id] = true; });
+    if (Array.isArray(preServices)) {
+      preServices.forEach(function (s) { if (s && s.item_id) preMap[s.item_id] = true; });
     }
 
-    // Reject unknown items before charging
     for (var pi = 0; pi < body.items.length; pi++) {
       if (preMap[body.items[pi].item_id] === undefined) {
-        log.warn('[checkout/pre-charge] item_id not in catalog: ' + body.items[pi].item_id);
+        log.warn('[checkout/pre-validate] item_id not in catalog: ' + body.items[pi].item_id + ' — voiding txn=' + transactionId);
+        helcimLib.voidTransaction(transactionId).catch(function (vErr) {
+          log.error('[checkout/pre-validate] Void after unknown item failed: ' + vErr.message);
+        });
         return res.status(400).json({ error: 'One or more items could not be priced. Please refresh and try again.' });
       }
     }
@@ -759,38 +791,24 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
     var preHasMakers = false;
     for (var mi = 0; mi < body.items.length; mi++) {
       var mItem = body.items[mi];
-      var isService = Array.isArray(services) && services.some(function (s) { return s && s.item_id === mItem.item_id; });
+      var isService = Array.isArray(preServices) && preServices.some(function (s) { return s && s.item_id === mItem.item_id; });
       if (!isService) preKitCount++;
       if (MAKERS_FEE_ITEM_ID && mItem.item_id === MAKERS_FEE_ITEM_ID) preHasMakers = true;
       if (mItem.name && mItem.name.toLowerCase().indexOf('maker') !== -1) preHasMakers = true;
     }
     if (preKitCount > 0 && !preHasMakers) {
-      log.warn('[checkout/pre-charge] Kit items present but Makers Fee missing — rejecting before charge');
+      log.warn('[checkout/pre-validate] Makers Fee missing — voiding txn=' + transactionId);
+      helcimLib.voidTransaction(transactionId).catch(function (vErr) {
+        log.error('[checkout/pre-validate] Void after missing Makers Fee failed: ' + vErr.message);
+      });
       return res.status(400).json({ error: 'Order validation failed. Please refresh and try again.' });
     }
 
-    // All validation passed — now charge the card
     eventLog.logEvent('checkout.cart_validated', {
       cartKey: body.cart_key || '',
       itemCount: body.items.length
     });
-    var card = new CreditCardData();
-    card.token = body.payment_token;
-    var chargeAmt = gpLib.getDepositAmount();
-    try {
-      var r = await card.charge(chargeAmt).withCurrency('CAD').withAllowDuplicates(true).execute();
-      if (r.responseCode !== 'SUCCESS' && r.responseCode !== '00') {
-        log.warn('[checkout] Card declined during server-side charge: ' + r.responseCode + ' ' + (r.responseMessage || ''));
-        return res.status(402).json({ error: 'Payment declined: ' + (r.responseMessage || 'Unknown error') });
-      }
-      transactionId = r.transactionId;
-      depositAmount = chargeAmt;
-      log.info('[checkout] Server-side charge succeeded: txn=' + transactionId);
-      return checkTransactionIdAndProceed();
-    } catch (chargeErr) {
-      log.error('[checkout] Server-side charge failed: ' + chargeErr.message);
-      return res.status(502).json({ error: 'Payment could not be processed' });
-    }
+    return checkTransactionIdAndProceed();
   }
 
   return chargeAndProceed();

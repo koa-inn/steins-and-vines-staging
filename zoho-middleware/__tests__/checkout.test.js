@@ -12,14 +12,11 @@ jest.mock('express', () => {
   express.Router = function () { return router; };
   return express;
 });
-jest.mock('globalpayments-api', () => ({
-  Transaction: { fromId: jest.fn() }
-}));
-jest.mock('../lib/gp', () => ({
+jest.mock('../lib/helcim', () => ({
+  isEnabled: jest.fn().mockReturnValue(true),
   getDepositAmount: jest.fn().mockReturnValue(50),
-  chargeToken: jest.fn().mockResolvedValue({ transactionId: 'txn-mock', authCode: 'auth-mock' }),
-  voidTransaction: jest.fn().mockResolvedValue({}),
-  getTerminalConfig: jest.fn().mockReturnValue(null)
+  voidTransaction: jest.fn().mockResolvedValue({ ok: true, transactionId: 'txn-mock' }),
+  getTerminalDiagnostics: jest.fn().mockReturnValue({})
 }));
 jest.mock('../lib/zoho-api', () => ({
   zohoPost: jest.fn(), zohoGet: jest.fn()

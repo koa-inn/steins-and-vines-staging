@@ -4,16 +4,12 @@ var axios = require('axios');
 var zohoAuth = require('../lib/zohoAuth');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
-var gpLib = require('../lib/gp');
+var helcimLib = require('../lib/helcim');
 var C = require('../lib/constants');
 
 var OAUTH_STATE_TTL = 600; // 10 minutes
 
 var router = express.Router();
-
-var GP_API_BASE = process.env.GP_ENVIRONMENT === 'production'
-  ? 'https://apis.globalpay.com/ucp'
-  : 'https://apis.sandbox.globalpay.com/ucp';
 
 /**
  * GET /auth/zoho
@@ -69,49 +65,11 @@ router.get('/auth/status', function (req, res) {
 
 /**
  * GET /api/payment/config
- * Generate a restricted access token for client-side tokenization and return
- * it with the deposit amount. Token expires in 10 minutes.
- * Card data never touches our server — tokenized client-side by @globalpayments/js.
+ * Legacy endpoint — superseded by POST /api/payment/initialize (checkout.js).
+ * Returns basic payment status for any older clients that may still call this.
  */
 router.get('/api/payment/config', function (req, res) {
-  if (!process.env.GP_APP_KEY) {
-    return res.json({ enabled: false, depositAmount: gpLib.getDepositAmount() });
-  }
-
-  var nonce = String(Date.now());
-  var secret = crypto.createHash('sha512').update(nonce + process.env.GP_APP_KEY).digest('hex');
-
-  axios.post(GP_API_BASE + '/accesstoken', {
-    app_id: process.env.GP_APP_ID,
-    secret: secret,
-    grant_type: 'client_credentials',
-    nonce: nonce,
-    interval_to_expire: '10_MINUTES',
-    restricted_token: 'YES',
-    permissions: ['PMT_POST_Create_Single']
-  }, {
-    headers: {
-      'Content-Type': 'application/json',
-      'X-GP-Version': '2021-03-22'
-    },
-    timeout: 10000
-  })
-  .then(function (tokenResp) {
-    res.json({
-      enabled: true,
-      accessToken: tokenResp.data.token,
-      env: process.env.GP_ENVIRONMENT === 'production' ? 'production' : 'sandbox',
-      depositAmount: gpLib.getDepositAmount()
-    });
-  })
-  .catch(function (err) {
-    var msg = err.message;
-    if (err.response && err.response.data) {
-      msg = err.response.data.error_description || err.response.data.message || msg;
-    }
-    log.error('[payment/config] Access token failed: ' + msg);
-    res.status(502).json({ error: 'Payment configuration unavailable', enabled: false });
-  });
+  res.json({ enabled: helcimLib.isEnabled(), depositAmount: helcimLib.getDepositAmount() });
 });
 
 module.exports = router;

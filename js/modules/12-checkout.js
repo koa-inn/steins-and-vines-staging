@@ -9,7 +9,7 @@ var _prevHasKits = null;       // tracks previous hasKits state to avoid redunda
 
 // Payment state
 var _paymentConfig = null;
-var _gpToken = null;
+var _helcimTransactionId = null;
 var _checkoutSubmitting = false;
 
 // Form validation functions defined in 12a-checkout-validation.js:
@@ -737,41 +737,35 @@ function setupReservationForm() {
   var sec = document.getElementById('payment-section'); var err = document.getElementById('payment-error');
   var mw = (typeof SHEETS_CONFIG !== 'undefined') ? (SHEETS_CONFIG.MIDDLEWARE_URL || '') : '';
   if (!document.body.classList.contains('kiosk-mode') && sec && (typeof PAYMENT_DISABLED === 'undefined' || !PAYMENT_DISABLED)) {
-    fetch(mw + '/api/payment/config').then(function (r) { return r.json(); }).then(function (cfg) {
-      _paymentConfig = cfg; if (!cfg.enabled || !cfg.accessToken) return;
-      sec.classList.remove('hidden'); if (document.getElementById('payment-offline-notice')) document.getElementById('payment-offline-notice').classList.add('hidden');
-      if (typeof GlobalPayments !== 'undefined') {
-        GlobalPayments.configure({ accessToken: cfg.accessToken, apiVersion: '2021-03-22', env: cfg.env === 'production' ? 'production' : 'sandbox' });
-        var form = GlobalPayments.ui.form({
-          fields: { 'card-number': { target: '#credit-card-number' }, 'card-expiration': { target: '#credit-card-expiry' }, 'card-cvv': { target: '#credit-card-cvv' }, submit: { text: 'Verify Card', target: '#credit-card-submit' } },
-          styles: { '#secure-payment-field[type=button]': { background: '#722F37', color: '#fff', padding: '12px', width: '100%' } }
-        });
-        // M12: GP tokenization loading state
-        form.on('token-request', function () {
-          var submitWrap = document.getElementById('credit-card-submit');
-          if (submitWrap) {
-            var btn = submitWrap.querySelector('button, iframe');
-            if (!btn) { submitWrap.style.opacity = '0.6'; submitWrap.style.pointerEvents = 'none'; }
-          }
-        });
-        form.on('token-success', function (r) {
-          _gpToken = r.paymentReference;
-          if (err) { err.textContent = ''; err.classList.remove('visible'); }
-          var submitWrap = document.getElementById('credit-card-submit');
-          if (submitWrap) { submitWrap.style.opacity = ''; submitWrap.style.pointerEvents = ''; submitWrap.classList.add('card-verified'); }
-          document.getElementById('payment-verified-msg').classList.remove('hidden');
-          var verifiedMsg = document.getElementById('payment-verified-msg');
-          if (verifiedMsg) { verifiedMsg.classList.remove('hidden'); setTimeout(function () { verifiedMsg.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 100); }
-        });
-        form.on('token-error', function (r) {
-          _gpToken = null;
-          var submitWrap = document.getElementById('credit-card-submit');
-          if (submitWrap) { submitWrap.style.opacity = ''; submitWrap.style.pointerEvents = ''; }
-          if (err) { err.textContent = r.error ? r.error.message : 'Card verification failed. Please try again.'; err.classList.add('visible'); }
-        });
+    fetch(mw + '/api/payment/initialize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    }).then(function (r) { return r.json(); }).then(function (cfg) {
+      if (!cfg || !cfg.checkoutToken) return;
+      _paymentConfig = { enabled: true, depositAmount: cfg.depositAmount || 0, env: 'helcim' };
+
+      // Render HelcimPay.js iframe
+      if (typeof appendHelcimPayIframe === 'function') {
+        appendHelcimPayIframe(cfg.checkoutToken);
       }
-      updateDepositSummary();
-    }).catch(function (e) { console.error('[payment] Init failed:', e.message); });
+
+      // Listen for payment result via postMessage from Helcim iframe
+      window.addEventListener('message', function (event) {
+        if (event.origin !== 'https://secure.helcim.app') return;
+        var data = event.data || {};
+        if (data.eventName === 'HELCIM_PAY_JS_INIT_COMPLETE') return; // ignore init event
+        if (data.eventName === 'HELCIM_PAY_JS_PAYMENT_SUCCESS' || (data.status && data.status.toUpperCase() === 'APPROVED')) {
+          _helcimTransactionId = data.transactionId || '';
+          if (sec) sec.classList.remove('payment-pending');
+        } else if (data.eventName === 'HELCIM_PAY_JS_PAYMENT_FAILED' || (data.status && data.status.toUpperCase() === 'DECLINED')) {
+          _helcimTransactionId = null;
+          if (sec) sec.classList.add('payment-pending');
+        }
+      });
+    }).catch(function (err) {
+      // non-fatal — payment form just won't appear
+    });
   }
   window.addEventListener('reservation-changed', updateDepositSummary);
   window.addEventListener('storage', updateDepositSummary);
@@ -814,7 +808,7 @@ function setupReservationForm() {
 
     // C2: Re-check GP token now that charge is computed
     if (_paymentConfig && _paymentConfig.enabled && charge > 0) {
-      if (!_gpToken || typeof _gpToken !== 'string' || _gpToken.length === 0) {
+      if (!_helcimTransactionId || typeof _helcimTransactionId !== 'string' || _helcimTransactionId.length === 0) {
         showToast('Payment card not verified. Please complete the card verification step above.', 'error');
         sub.disabled = false; sub.textContent = originalBtnText; _checkoutSubmitting = false; return;
       }
@@ -847,7 +841,7 @@ function setupReservationForm() {
               body: JSON.stringify({
                 customer: { name: document.getElementById('res-name').value, email: document.getElementById('res-email').value, phone: document.getElementById('res-phone').value },
                 items: lines,
-                payment_token: (charge > 0 && _paymentConfig && _paymentConfig.enabled) ? _gpToken : '',
+                payment_token: (charge > 0 && _paymentConfig && _paymentConfig.enabled) ? _helcimTransactionId : '',
                 timeslot: bD.timeslot,
                 honeypot: honeypotVal,
                 recaptcha_token: recaptchaToken
@@ -903,8 +897,8 @@ function setupReservationForm() {
       }).catch(function (err) {
         showToast(err.message, 'error');
         // M14: Restore submit button after error
-        // Clear GP token so retry requires fresh card verification (prevents stale/voided token reuse)
-        _gpToken = null;
+        // Clear Helcim transaction ID so retry requires fresh payment (prevents stale/voided token reuse)
+        _helcimTransactionId = null;
         sub.disabled = false; sub.textContent = originalBtnText; _checkoutSubmitting = false;
       });
     }); // end getRecaptchaToken
