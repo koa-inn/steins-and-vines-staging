@@ -5,6 +5,7 @@ var gp = require('globalpayments-api');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
+var eventLog = require('../lib/eventLog');
 var gpLib = require('../lib/gp');
 var ledger = require('../lib/inventory-ledger');
 var pricing = require('../lib/pricing');
@@ -604,6 +605,12 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
         : Promise.resolve();
       await Promise.all([cacheWrite, txnMark]);
       responseSent = true;
+      eventLog.logEvent('checkout.completed', {
+        cartKey: body.cart_key || '',
+        itemCount: lineItems.length,
+        grandTotal: orderTotal,
+        txnId: transactionId || ''
+      });
       res.status(201).json(responseBody);
 
     } catch (err) {
@@ -632,6 +639,12 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
       // H5: Only attempt void when a real transaction_id is present (not offline mode)
       if (transactionId && typeof transactionId === 'string' && transactionId.length > 0) {
         log.error('[checkout] Zoho failed after payment — voiding txn=' + transactionId);
+        eventLog.logEvent('checkout.failed_after_charge', {
+          cartKey: body.cart_key || '',
+          itemCount: body.items ? body.items.length : 0,
+          grandTotal: orderTotal,
+          txnId: transactionId
+        });
         // C4: Wrap void in 8s timeout; log for manual action if it times out
         withTimeout(
           Transaction.fromId(transactionId).void().execute(),
@@ -641,8 +654,17 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
             // M17: Check void response for failure codes
             if (voidResponse && voidResponse.responseCode && voidResponse.responseCode !== '00' && voidResponse.responseCode !== 'SUCCESS') {
               log.error('[checkout] GP void failed: ' + JSON.stringify(voidResponse));
+              eventLog.logEvent('checkout.void_fired', {
+                txnId: transactionId,
+                voidResult: 'declined',
+                voidResponseCode: voidResponse.responseCode || ''
+              });
             } else {
               log.info('[checkout] Voided txn=' + transactionId);
+              eventLog.logEvent('checkout.void_fired', {
+                txnId: transactionId,
+                voidResult: 'success'
+              });
             }
           })
           .catch(function (voidErr) {
@@ -652,6 +674,10 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
             } else {
               var voidFailTs = new Date().toISOString();
               log.error('[checkout] CRITICAL: Void failed for txn=' + transactionId + ': ' + voidErr.message);
+              eventLog.logEvent('checkout.void_failed', {
+                txnId: transactionId,
+                voidError: voidErr.message
+              });
               mailer.sendVoidFailureAlert({
                 txnId: transactionId,
                 amount: depositAmount,
@@ -744,6 +770,10 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
     }
 
     // All validation passed — now charge the card
+    eventLog.logEvent('checkout.cart_validated', {
+      cartKey: body.cart_key || '',
+      itemCount: body.items.length
+    });
     var card = new CreditCardData();
     card.token = body.payment_token;
     var chargeAmt = gpLib.getDepositAmount();

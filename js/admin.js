@@ -4,7 +4,7 @@
   'use strict';
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-03-12T14:32:52.424Z';
+  var BUILD_TIMESTAMP = '2026-03-12T21:46:23.239Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP);
 
   var accessToken = null;
@@ -358,7 +358,8 @@
     initSaveBar();
     initOrderControls();
     initScheduleControls();
-    waitForGoogleIdentity();
+    // waitForGoogleIdentity defined in js/lib/auth.js
+    waitForGoogleIdentity(initGoogleAuth);
 
     // Render order tab from localStorage immediately (doesn't need auth)
     renderOrderTab();
@@ -366,16 +367,9 @@
 
   // ===== Google OAuth =====
 
-  function waitForGoogleIdentity() {
-    if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
-      initGoogleAuth();
-    } else {
-      setTimeout(waitForGoogleIdentity, 100);
-    }
-  }
-
   function initGoogleAuth() {
-    tokenClient = google.accounts.oauth2.initTokenClient({
+    // gsiInitTokenClient defined in js/lib/auth.js
+    tokenClient = gsiInitTokenClient({
       client_id: SHEETS_CONFIG.CLIENT_ID,
       scope: SHEETS_CONFIG.SCOPES + ' https://www.googleapis.com/auth/userinfo.email',
       callback: onTokenResponse
@@ -436,11 +430,8 @@
     accessToken = response.access_token;
     var expiresIn = response.expires_in || 3600;
 
-    // Get user info
-    fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: 'Bearer ' + accessToken }
-    })
-      .then(function (res) { return res.json(); })
+    // fetchGoogleUserInfo defined in js/lib/auth.js
+    fetchGoogleUserInfo(accessToken)
       .then(function (info) {
         userEmail = info.email;
         saveSession(accessToken, expiresIn, userEmail);

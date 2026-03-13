@@ -1,0 +1,38 @@
+# This file instructs Redocly's linter to ignore the rules contained for specific parts of your API.
+# See https://redocly.com/docs/cli/ for more information.
+openapi.yaml:
+  info-license:
+    - '#/info'
+  no-server-example.com:
+    - '#/servers/1/url'
+  operation-4xx-response:
+    - '#/paths/~1health/get/responses'
+    - '#/paths/~1auth~1status/get/responses'
+    - '#/paths/~1auth~1zoho/get/responses'
+    - '#/paths/~1api~1payment~1config/get/responses'
+    - '#/paths/~1api~1pos~1status/get/responses'
+  operation-2xx-response:
+    - '#/paths/~1auth~1zoho/get/responses'
+  security-defined:
+    - '#/paths/~1health/get'
+    - '#/paths/~1auth~1status/get'
+    - '#/paths/~1auth~1zoho/get'
+    - '#/paths/~1auth~1zoho~1callback/get'
+    - '#/paths/~1api~1products/get'
+    - '#/paths/~1api~1ingredients/get'
+    - '#/paths/~1api~1services/get'
+    - '#/paths/~1api~1kiosk~1products/get'
+    - '#/paths/~1api~1snapshot/get'
+    - '#/paths/~1api~1checkout/post'
+    - '#/paths/~1api~1bookings~1services/get'
+    - '#/paths/~1api~1bookings~1availability/get'
+    - '#/paths/~1api~1bookings~1slots/get'
+    - '#/paths/~1api~1payment~1config/get'
+    - '#/paths/~1api~1pos~1status/get'
+    - '#/paths/~1api~1taxes/get'
+    - '#/paths/~1api~1taxes~1rules/get'
+    - '#/paths/~1api~1items~1inspect/get'
+    - '#/paths/~1api~1purchase-orders/get'
+    - '#/paths/~1api~1purchase-orders~1{id}/get'
+    - '#/paths/~1product-requests/post'
+    - '#/paths/~1api~1contact/post'

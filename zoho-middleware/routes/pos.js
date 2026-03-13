@@ -4,6 +4,7 @@ var gpLib = require('../lib/gp');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
+var eventLog = require('../lib/eventLog');
 var mailer = require('../lib/mailer');
 var ledger = require('../lib/inventory-ledger');
 var C = require('../lib/constants');
@@ -293,6 +294,12 @@ function processSaleWithPrices(body, idempotencyKey, req, res,
               : Promise.resolve();
 
             return cacheWrite.then(function () {
+              eventLog.logEvent('kiosk.sale_completed', {
+                txnId: txnId,
+                itemCount: lineItems.length,
+                grandTotal: grandTotal,
+                invoiceNumber: invoiceNumber
+              });
               res.status(201).json(responseBody);
             });
           });
@@ -304,6 +311,11 @@ function processSaleWithPrices(body, idempotencyKey, req, res,
             invoiceMsg = invoiceErr.response.data.message || invoiceErr.response.data.error || invoiceMsg;
           }
           log.error('[pos/kiosk/sale] Invoice creation failed after payment — voiding txn=' + txnId + ': ' + invoiceMsg);
+          eventLog.logEvent('kiosk.sale_failed_after_charge', {
+            txnId: txnId,
+            itemCount: lineItems.length,
+            grandTotal: grandTotal
+          });
 
           Transaction.fromId(txnId)
             .void()

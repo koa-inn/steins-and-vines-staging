@@ -7,6 +7,12 @@ global.navigator = global.navigator || {};
 global.google = { accounts: { oauth2: { initTokenClient: jest.fn() } } };
 global.fetch = jest.fn();
 
+// auth.js primitives are loaded via <script> in the browser; in tests wire them as globals.
+var _auth = require('../../js/lib/auth');
+global.waitForGoogleIdentity = _auth.waitForGoogleIdentity;
+global.gsiInitTokenClient = _auth.gsiInitTokenClient;
+global.fetchGoogleUserInfo = _auth.fetchGoogleUserInfo;
+
 var bp = require('../../js/brewpad');
 var escapeHTML            = bp.escapeHTML;
 var fmtDate               = bp.fmtDate;

@@ -194,16 +194,9 @@ function renderDataGapWarning(readings, now) {
 
   // ===== Google OAuth =====
 
-  function waitForGoogleIdentity() {
-    if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
-      initGoogleAuth();
-    } else {
-      setTimeout(waitForGoogleIdentity, 100);
-    }
-  }
-
   function initGoogleAuth() {
-    tokenClient = google.accounts.oauth2.initTokenClient({
+    // waitForGoogleIdentity / gsiInitTokenClient defined in js/lib/auth.js
+    tokenClient = gsiInitTokenClient({
       client_id: SHEETS_CONFIG.CLIENT_ID,
       scope: SHEETS_CONFIG.SCOPES + ' https://www.googleapis.com/auth/userinfo.email',
       callback: onTokenResponse
@@ -281,10 +274,8 @@ function renderDataGapWarning(readings, now) {
     }
     accessToken = response.access_token;
     var expiresIn = response.expires_in || 3600;
-    fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: 'Bearer ' + accessToken }
-    })
-      .then(function (res) { return res.json(); })
+    // fetchGoogleUserInfo defined in js/lib/auth.js
+    fetchGoogleUserInfo(accessToken)
       .then(function (info) {
         userEmail = info.email;
         saveSession(accessToken, expiresIn, userEmail);
@@ -3021,7 +3012,8 @@ function renderDataGapWarning(readings, now) {
 
     initDelegation();
 
-    waitForGoogleIdentity();
+    // waitForGoogleIdentity defined in js/lib/auth.js
+    waitForGoogleIdentity(initGoogleAuth);
   });
 
 })();

@@ -1,0 +1,2911 @@
+openapi: 3.0.3
+info:
+  title: Steins & Vines Middleware API
+  description: |
+    Backend middleware for the Steins & Vines fermentation supply store.
+    Bridges the frontend (GitHub Pages) with Zoho Inventory, Zoho Books,
+    Zoho Bookings, and Global Payments.
+
+    **Authentication model:**
+    - Most `GET` endpoints are public (no key required).
+    - Most `POST`/`PUT` endpoints require `X-Api-Key: <API_SECRET_KEY>`.
+    - `POST /api/checkout` is public — protected by reCAPTCHA + rate limiting instead.
+    - `POST /product-requests` and `POST /api/contact` are fully public.
+    - Auth routes (`/auth/*`) are pre-auth and never require a key.
+
+    **CORS:** Requests must originate from `steinsandvines.ca`,
+    `staging.steinsandvines.ca`, `localhost:3001`, or `localhost:8080`.
+
+    **Rate limits:** `/api/*` endpoints are limited to 60 req/min per IP.
+    Payment endpoints (`/api/checkout`, `/api/payment/*`, `/api/pos/sale`,
+    `/api/kiosk/sale`) share a stricter 10 req/min limiter.
+  version: "1.0.0"
+  contact:
+    name: Steins & Vines IT
+    email: hello@steinsandvines.ca
+
+servers:
+  - url: https://steinsandvines-middleware.railway.app
+    description: Production (Railway)
+  - url: http://localhost:3001
+    description: Local development
+
+tags:
+  - name: health
+    description: Server health and uptime
+  - name: auth
+    description: Zoho OAuth flow and session status
+  - name: catalog
+    description: Product, ingredient, and service listings from Zoho Inventory
+  - name: checkout
+    description: Ferment-in-store reservation / sales order creation
+  - name: bookings
+    description: Appointment scheduling via Zoho Bookings
+  - name: contacts
+    description: Zoho Books customer contact lookup / creation
+  - name: payments
+    description: Global Payments card tokenization, charging, and voiding
+  - name: pos
+    description: In-store POS terminal (Global Payments UPA / Meet in the Cloud)
+  - name: taxes
+    description: Tax configuration and bulk tax-assignment utilities
+  - name: items
+    description: Zoho Inventory item inspection and migration utilities
+  - name: purchase-orders
+    description: Purchase order management (Zoho Inventory)
+  - name: requests
+    description: Customer product request form
+  - name: contact-form
+    description: Public website contact form
+
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: Must equal the `API_SECRET_KEY` Railway env var.
+
+  schemas:
+    # -------------------------------------------------------------------------
+    # Shared primitives
+    # -------------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: "Cart is empty"
+
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          example: true
+
+    # -------------------------------------------------------------------------
+    # Products / Catalog
+    # -------------------------------------------------------------------------
+    CustomField:
+      type: object
+      description: Zoho Inventory custom field attached to an item.
+      properties:
+        api_name:
+          type: string
+          example: "cf_type"
+        label:
+          type: string
+          example: "Type"
+        data_type:
+          type: string
+          example: "dropdown"
+        value:
+          type: string
+          nullable: true
+          example: "Wine"
+
+    CatalogItem:
+      type: object
+      description: >
+        An enriched Zoho Inventory item (kit, ingredient, service, or kiosk product).
+        Fields common to all catalog endpoints.
+      required: [item_id, name, rate]
+      properties:
+        item_id:
+          type: string
+          example: "109900000000123456"
+        name:
+          type: string
+          example: "Chilliwack Chardonnay Wine Kit"
+        sku:
+          type: string
+          example: "WK-CHARD-001"
+        rate:
+          type: number
+          format: double
+          example: 149.99
+        stock_on_hand:
+          type: number
+          example: 12
+        category_name:
+          type: string
+          example: "Wine Kits"
+        product_type:
+          type: string
+          enum: [goods, service]
+          example: "goods"
+        image_name:
+          type: string
+          example: "WK-CHARD-001.jpg"
+        brand:
+          type: string
+          example: "Winexpert"
+        tax_id:
+          type: string
+          example: "109900000000014433"
+        tax_name:
+          type: string
+          example: "Zero Rate"
+        tax_percentage:
+          type: number
+          format: double
+          example: 0
+        custom_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomField'
+
+    CatalogResponse:
+      type: object
+      required: [source, items]
+      properties:
+        source:
+          type: string
+          enum: [cache, file-cache, snapshot, zoho]
+          description: Where the data was served from.
+          example: "cache"
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogItem'
+
+    SnapshotItem:
+      type: object
+      description: A shaped item from the static snapshot (GET /api/snapshot).
+      properties:
+        name:
+          type: string
+        sku:
+          type: string
+        item_id:
+          type: string
+
+    SnapshotResponse:
+      type: object
+      required: [generated_at, products, ingredients, services]
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          example: "2026-03-12T15:00:00.000Z"
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotItem'
+        ingredients:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotItem'
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotItem'
+
+    # -------------------------------------------------------------------------
+    # Cart / Line items
+    # -------------------------------------------------------------------------
+    CartItem:
+      type: object
+      required: [item_id, quantity]
+      description: A single item in a customer's cart.
+      properties:
+        item_id:
+          type: string
+          description: Zoho Inventory item ID.
+          example: "109900000000123456"
+        name:
+          type: string
+          description: Display name (informational; price comes from server catalog).
+          example: "Chilliwack Chardonnay Wine Kit"
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 1
+        rate:
+          type: number
+          format: double
+          description: >
+            Client-supplied price hint — ignored in production (server anchors
+            to catalog). Accepted only in tests when the catalog cache is empty.
+          example: 149.99
+
+    LineItem:
+      type: object
+      description: A Zoho Books line item returned in order/invoice responses.
+      required: [item_id, name, quantity, rate]
+      properties:
+        item_id:
+          type: string
+          example: "109900000000123456"
+        name:
+          type: string
+          example: "Chilliwack Chardonnay Wine Kit"
+        quantity:
+          type: integer
+          example: 1
+        rate:
+          type: number
+          format: double
+          example: 149.99
+        description:
+          type: string
+
+    # -------------------------------------------------------------------------
+    # Customer
+    # -------------------------------------------------------------------------
+    Customer:
+      type: object
+      required: [email]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: "Jane Smith"
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          example: "jane@example.com"
+        phone:
+          type: string
+          maxLength: 30
+          example: "604-555-0100"
+
+    # -------------------------------------------------------------------------
+    # Checkout
+    # -------------------------------------------------------------------------
+    CheckoutRequest:
+      type: object
+      required: [customer, items]
+      properties:
+        customer:
+          $ref: '#/components/schemas/Customer'
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/CartItem'
+        notes:
+          type: string
+          maxLength: 1000
+          example: "Please call before my appointment."
+        timeslot:
+          type: string
+          description: Human-readable appointment slot, stored as a Zoho custom field.
+          example: "2026-03-20 10:00 AM"
+        appointment_id:
+          type: string
+          description: Zoho Bookings appointment ID (from POST /api/bookings).
+          example: "109900000000789012"
+        transaction_id:
+          type: string
+          maxLength: 64
+          description: GP transaction ID from a completed client-side charge (legacy path).
+          example: "gp-txn-abc123"
+        payment_token:
+          type: string
+          maxLength: 500
+          description: >
+            Single-use token from Global Payments JS (preferred path).
+            Server charges the card server-side; prevents ghost charges.
+          example: "supt_aBcDeFgH..."
+        recaptcha_token:
+          type: string
+          description: reCAPTCHA v3 token. Fail-open when RECAPTCHA_SECRET_KEY is unset.
+        idempotency_key:
+          type: string
+          maxLength: 128
+          description: Client-generated UUID for duplicate-submission protection (10 min TTL).
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+    CheckoutResponse:
+      type: object
+      required: [ok, salesorder_number, deposit_amount, balance_due]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        salesorder_id:
+          type: string
+          nullable: true
+          example: "109900000000345678"
+        salesorder_number:
+          type: string
+          example: "SO-00042"
+        deposit_amount:
+          type: number
+          format: double
+          example: 50.00
+        balance_due:
+          type: number
+          format: double
+          example: 99.99
+
+    # -------------------------------------------------------------------------
+    # Bookings
+    # -------------------------------------------------------------------------
+    BookingRequest:
+      type: object
+      required: [date, time, customer]
+      properties:
+        date:
+          type: string
+          format: date
+          example: "2026-03-20"
+        time:
+          type: string
+          description: Time in 12-hour or 24-hour format.
+          example: "10:00 AM"
+        customer:
+          $ref: '#/components/schemas/Customer'
+        notes:
+          type: string
+          maxLength: 1000
+          example: "Interested in a red wine kit."
+
+    BookingResponse:
+      type: object
+      required: [ok, booking_id, timeslot]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        booking_id:
+          type: string
+          nullable: true
+          example: "109900000000789012"
+        timeslot:
+          type: string
+          example: "2026-03-20 10:00 AM"
+
+    AvailabilityDate:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          example: "2026-03-20"
+        available:
+          type: boolean
+          example: true
+        slots_count:
+          type: integer
+          example: 3
+
+    # -------------------------------------------------------------------------
+    # Contacts
+    # -------------------------------------------------------------------------
+    ContactRequest:
+      type: object
+      required: [email]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+          example: "Jane Smith"
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          example: "jane@example.com"
+        phone:
+          type: string
+          maxLength: 30
+          example: "604-555-0100"
+
+    ContactResponse:
+      type: object
+      required: [contact_id, created]
+      properties:
+        contact_id:
+          type: string
+          example: "109900000000112233"
+        created:
+          type: boolean
+          example: false
+        offline:
+          type: boolean
+          description: True when Zoho is unavailable and a placeholder ID was returned.
+          example: false
+
+    # -------------------------------------------------------------------------
+    # Payments
+    # -------------------------------------------------------------------------
+    PaymentConfigResponse:
+      type: object
+      required: [enabled, depositAmount]
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        accessToken:
+          type: string
+          description: Short-lived restricted GP access token for client-side tokenization.
+          example: "eyJhbGciOiJ..."
+        env:
+          type: string
+          enum: [production, sandbox]
+          example: "sandbox"
+        depositAmount:
+          type: number
+          format: double
+          example: 50.00
+
+    PaymentChargeRequest:
+      type: object
+      required: [token, amount]
+      properties:
+        token:
+          type: string
+          description: Single-use GP tokenization token.
+          example: "supt_aBcDeFgH..."
+        amount:
+          type: number
+          format: double
+          description: Must exactly equal the server-configured deposit amount (GP_DEPOSIT_AMOUNT).
+          example: 50.00
+        customer:
+          $ref: '#/components/schemas/Customer'
+
+    PaymentChargeResponse:
+      type: object
+      required: [transaction_id, status, amount]
+      properties:
+        transaction_id:
+          type: string
+          example: "gp-txn-abc123"
+        auth_code:
+          type: string
+          example: "123456"
+        status:
+          type: string
+          enum: [approved]
+          example: "approved"
+        amount:
+          type: number
+          format: double
+          example: 50.00
+
+    PaymentVoidRequest:
+      type: object
+      required: [transaction_id]
+      properties:
+        transaction_id:
+          type: string
+          maxLength: 64
+          example: "gp-txn-abc123"
+
+    PaymentRefundRequest:
+      type: object
+      required: [transaction_id, amount]
+      properties:
+        transaction_id:
+          type: string
+          maxLength: 64
+          example: "gp-txn-abc123"
+        amount:
+          type: number
+          format: double
+          description: Must exactly equal the server-configured deposit amount.
+          example: 50.00
+
+    # -------------------------------------------------------------------------
+    # POS / Kiosk
+    # -------------------------------------------------------------------------
+    KioskSaleRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/CartItem'
+        tax_total:
+          type: number
+          format: double
+          description: Ignored — computed server-side from KIOSK_TAX_RATE.
+          example: 7.50
+        reference_number:
+          type: string
+          maxLength: 64
+          description: Optional invoice reference (defaults to KIOSK-{timestamp}).
+          example: "KIOSK-001"
+        idempotency_key:
+          type: string
+          maxLength: 128
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+    KioskSaleResponse:
+      type: object
+      required: [ok, transaction_id, invoice_number, subtotal, tax_total, total, date]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        transaction_id:
+          type: string
+          example: "gp-txn-abc123"
+        auth_code:
+          type: string
+          example: "123456"
+        invoice_id:
+          type: string
+          example: "109900000000567890"
+        invoice_number:
+          type: string
+          example: "INV-00123"
+        reference_number:
+          type: string
+          example: "KIOSK-001"
+        subtotal:
+          type: number
+          format: double
+          example: 149.99
+        tax_total:
+          type: number
+          format: double
+          example: 7.50
+        total:
+          type: number
+          format: double
+          example: 157.49
+        date:
+          type: string
+          format: date
+          example: "2026-03-12"
+
+    PosSaleRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          format: double
+          minimum: 0.01
+          maximum: 10000
+          example: 99.99
+        salesorder_number:
+          type: string
+          example: "SO-00042"
+        items:
+          type: array
+          description: Display-only line items (informational, not used for pricing).
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              price:
+                type: string
+              qty:
+                type: integer
+        customer_name:
+          type: string
+          example: "Jane Smith"
+
+    PosSaleResponse:
+      type: object
+      required: [ok, transaction_id, status, auth_code, amount]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        transaction_id:
+          type: string
+          example: "gp-txn-abc123"
+        status:
+          type: string
+          enum: [approved]
+          example: "approved"
+        auth_code:
+          type: string
+          example: "123456"
+        amount:
+          type: number
+          format: double
+          example: 99.99
+
+    PosStatusResponse:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        terminal_type:
+          type: string
+          example: "UPA (Meet in the Cloud)"
+        diagnostics:
+          type: object
+          additionalProperties: true
+        gp_vars_present:
+          type: array
+          items:
+            type: string
+
+    # -------------------------------------------------------------------------
+    # Purchase orders
+    # -------------------------------------------------------------------------
+    POLineItem:
+      type: object
+      required: [item_id, quantity]
+      properties:
+        item_id:
+          type: string
+          example: "109900000000123456"
+        quantity:
+          type: integer
+          minimum: 1
+          example: 10
+        rate:
+          type: number
+          format: double
+          example: 5.99
+
+    PurchaseOrderRequest:
+      type: object
+      required: [vendor_id, line_items]
+      properties:
+        vendor_id:
+          type: string
+          example: "109900000000099001"
+        date:
+          type: string
+          format: date
+          example: "2026-03-12"
+        line_items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/POLineItem'
+        notes:
+          type: string
+          maxLength: 500
+
+    AddItemRequest:
+      type: object
+      required: [item_id, quantity, rate]
+      properties:
+        item_id:
+          type: string
+          example: "109900000000123456"
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 9999
+          example: 5
+        rate:
+          type: number
+          format: double
+          minimum: 0
+          example: 5.99
+
+    # -------------------------------------------------------------------------
+    # Tax
+    # -------------------------------------------------------------------------
+    TaxApplyRequest:
+      type: object
+      properties:
+        apply:
+          type: boolean
+          description: >
+            Set to `true` to execute the tax assignment. Omit or set to `false`
+            for a dry-run preview.
+          example: false
+
+    TaxTestUpdateRequest:
+      type: object
+      required: [item_id, tax_id]
+      properties:
+        item_id:
+          type: string
+          example: "109900000000123456"
+        tax_id:
+          type: string
+          example: "109900000000014433"
+        mode:
+          type: string
+          enum: [json, inventory, sales_rule]
+          default: json
+          description: Which Zoho API endpoint to use for the update.
+
+    # -------------------------------------------------------------------------
+    # Items
+    # -------------------------------------------------------------------------
+    ItemsMigrateRequest:
+      type: object
+      required: [csv_url]
+      properties:
+        csv_url:
+          type: string
+          format: uri
+          example: "https://docs.google.com/spreadsheets/d/xxx/export?format=csv"
+        apply:
+          type: boolean
+          description: Set to `true` to apply changes. Default is dry-run.
+          default: false
+        match_by:
+          type: string
+          enum: [sku, name]
+          default: sku
+
+    ItemsTestCFRequest:
+      type: object
+      required: [item_id, label]
+      properties:
+        item_id:
+          type: string
+          example: "109900000000123456"
+        label:
+          type: string
+          example: "Type"
+        value:
+          type: string
+          example: "Wine"
+
+    # -------------------------------------------------------------------------
+    # Product requests
+    # -------------------------------------------------------------------------
+    ProductRequestSubmit:
+      type: object
+      required: [name, email, items]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: "Jane Smith"
+        email:
+          type: string
+          format: email
+          maxLength: 200
+          example: "jane@example.com"
+        items:
+          type: string
+          maxLength: 1000
+          description: Free-text description of the requested products.
+          example: "I'd love to see more German Riesling kits."
+
+    # -------------------------------------------------------------------------
+    # Admin upload
+    # -------------------------------------------------------------------------
+    UploadCatalogRequest:
+      type: object
+      required: [products, ingredients, services]
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotItem'
+        ingredients:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotItem'
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotItem'
+
+paths:
+  # ===========================================================================
+  # Health
+  # ===========================================================================
+  /health:
+    get:
+      tags: [health]
+      summary: Server health check
+      description: >
+        Returns server status, Zoho authentication state, Redis connectivity,
+        and process uptime. Used by Railway for health monitoring.
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server is running (always 200 — check `redis` field for connectivity)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, authenticated, redis, uptime]
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  authenticated:
+                    type: boolean
+                    description: Whether a valid Zoho OAuth token is in memory.
+                    example: true
+                  redis:
+                    type: boolean
+                    description: Whether Redis responded to PING.
+                    example: true
+                  uptime:
+                    type: number
+                    description: Process uptime in seconds.
+                    example: 3600.5
+
+  # ===========================================================================
+  # Auth
+  # ===========================================================================
+  /auth/status:
+    get:
+      tags: [auth]
+      summary: Check Zoho authentication status
+      description: Returns whether the server currently holds a valid Zoho OAuth token.
+      operationId: getAuthStatus
+      responses:
+        "200":
+          description: Authentication status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authenticated]
+                properties:
+                  authenticated:
+                    type: boolean
+                    example: true
+
+  /auth/zoho:
+    get:
+      tags: [auth]
+      summary: Initiate Zoho OAuth flow
+      description: >
+        Redirects to Zoho's OAuth consent screen. After the user grants access,
+        Zoho redirects back to `/auth/zoho/callback`. Generates and stores a
+        CSRF state token in Redis (10 min TTL).
+      operationId: initiateZohoAuth
+      responses:
+        "302":
+          description: Redirect to Zoho authorization URL.
+
+  /auth/zoho/callback:
+    get:
+      tags: [auth]
+      summary: Zoho OAuth callback
+      description: >
+        Zoho redirects here after the user grants access. Validates the CSRF
+        state, exchanges the authorization code for tokens, and stores them
+        for subsequent API calls.
+      operationId: zohoAuthCallback
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Authorization code from Zoho.
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: CSRF state token (must match value stored in Redis).
+      responses:
+        "200":
+          description: Authentication successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Zoho authentication successful"
+        "400":
+          description: Missing authorization code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid state parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Token exchange failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Catalog
+  # ===========================================================================
+  /api/products:
+    get:
+      tags: [catalog]
+      summary: List fermentation kit products
+      description: >
+        Returns active kit items (wine, beer, cider, seltzer) from Zoho
+        Inventory, enriched with custom fields. Cached in Redis for 1 hour
+        with stale-while-revalidate at 10 minutes. Falls back to a file cache
+        or static snapshot when Redis is cold.
+      operationId: getProducts
+      responses:
+        "200":
+          description: List of kit products.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogResponse'
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Zoho rate-limit cooldown active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/ingredients:
+    get:
+      tags: [catalog]
+      summary: List ingredient and supply items
+      description: >
+        Returns active non-kit goods (ingredients, supplies, equipment) from
+        Zoho Inventory. Items with rate ≤ 0 and items classified as kit types
+        are excluded. Cached in Redis for 1 hour.
+      operationId: getIngredients
+      responses:
+        "200":
+          description: List of ingredient/supply items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogResponse'
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/services:
+    get:
+      tags: [catalog]
+      summary: List service items
+      description: >
+        Returns active service-type items (e.g. Makers Fee, milling, racking).
+        Enriched with tax data. Cached for 30 minutes.
+      operationId: getServices
+      responses:
+        "200":
+          description: List of service items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogResponse'
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/kiosk/products:
+    get:
+      tags: [catalog, pos]
+      summary: List all sellable kiosk products
+      description: >
+        Returns all active items with price > 0, including item_id, name, sku,
+        rate, stock_on_hand, tax fields, and custom_fields. Intended for the
+        in-store kiosk POS. Cached for 30 minutes. Separate Redis key from
+        `/api/products` to avoid cross-contamination.
+      operationId: getKioskProducts
+      responses:
+        "200":
+          description: List of sellable kiosk products.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogResponse'
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho or cache error.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  detail:
+                    type: string
+                  zoho_status:
+                    type: integer
+
+  /api/snapshot:
+    get:
+      tags: [catalog]
+      summary: Export a full catalog snapshot
+      description: >
+        Returns a pre-shaped snapshot of all three catalogs (products,
+        ingredients, services) suitable for use as a static fallback file.
+        Reads from Redis when warm; triggers a fresh Zoho fetch for cold caches.
+        Intended to be called by `scripts/export-snapshot.js` before deploys.
+      operationId: getSnapshot
+      responses:
+        "200":
+          description: Full catalog snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResponse'
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Snapshot generation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/admin/upload-catalog:
+    post:
+      tags: [catalog]
+      summary: Override catalog from an admin CSV upload
+      description: >
+        Accepts a pre-shaped catalog (products/ingredients/services arrays,
+        identical in structure to `/api/snapshot`) and stores them in Redis
+        for 24 hours, overriding any Zoho-fetched data. Used when the Zoho
+        API is down or quota-exhausted.
+      operationId: uploadCatalog
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadCatalogRequest'
+            example:
+              products: []
+              ingredients: []
+              services: []
+      responses:
+        "200":
+          description: Catalog successfully overridden.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  products:
+                    type: integer
+                  ingredients:
+                    type: integer
+                  services:
+                    type: integer
+        "400":
+          description: Invalid payload or empty catalog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Redis write failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Checkout
+  # ===========================================================================
+  /api/checkout:
+    post:
+      tags: [checkout]
+      summary: Submit a ferment-in-store reservation
+      description: |
+        Creates a Zoho Books Sales Order from a cart. The Zoho contact is
+        always resolved server-side from the supplied email (lookup or create);
+        a client-supplied `customer_id` is intentionally ignored.
+
+        Prices are anchored to the authoritative catalog cache — client-supplied
+        `rate` values are never used. The Makers Fee service item must be present
+        in the cart alongside kit items.
+
+        **Payment flow (v1.4.0+):**
+        1. Supply `payment_token` — server charges the card server-side inside
+           this endpoint, then creates the Zoho Sales Order.
+        2. Supply `transaction_id` — legacy path where the frontend pre-charged.
+
+        On Zoho failure after a successful charge, the transaction is
+        automatically voided.
+
+        This endpoint is **public** — not API-key protected. Instead it is
+        protected by reCAPTCHA v3 (fail-open when unconfigured) and a rate
+        limiter (10 req/min per IP).
+      operationId: postCheckout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+            example:
+              customer:
+                name: "Jane Smith"
+                email: "jane@example.com"
+                phone: "604-555-0100"
+              items:
+                - item_id: "109900000000123456"
+                  name: "Chilliwack Chardonnay Wine Kit"
+                  quantity: 1
+                  rate: 149.99
+                - item_id: "109900000000654321"
+                  name: "Makers Fee"
+                  quantity: 1
+                  rate: 10.00
+              notes: "First time making wine — please provide guidance."
+              timeslot: "2026-03-20 10:00 AM"
+              idempotency_key: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+      responses:
+        "201":
+          description: Sales order created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResponse'
+              example:
+                ok: true
+                salesorder_id: "109900000000345678"
+                salesorder_number: "SO-00042"
+                deposit_amount: 0
+                balance_due: 159.99
+        "400":
+          description: Validation error (missing fields, unknown item, Makers Fee missing, etc.).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Zoho not authenticated (and route is not in offline-capable list).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "402":
+          description: Card declined during server-side charge.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Payment already processed (duplicate transaction_id replay detected).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limit exceeded (10 req/min per IP).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream error (Zoho or payment gateway).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Pricing temporarily unavailable (catalog cache empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Bookings
+  # ===========================================================================
+  /api/bookings/services:
+    get:
+      tags: [bookings]
+      summary: List Zoho Bookings services and staff
+      description: >
+        Returns all services and staff members configured in Zoho Bookings.
+        Useful for setup and debugging. Cached for 24 hours.
+      operationId: getBookingServices
+      responses:
+        "200":
+          description: Services and staff.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  services:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  staff:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho Bookings error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/bookings/availability:
+    get:
+      tags: [bookings]
+      summary: Check monthly availability
+      description: >
+        Returns which dates in a given month have at least one available
+        appointment slot. Checks each date in parallel (batches of 5).
+        Cached per year-month in Redis for 5 minutes.
+      operationId: getBookingAvailability
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+          example: 2026
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          example: 3
+      responses:
+        "200":
+          description: Available dates in the requested month.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [source, dates]
+                properties:
+                  source:
+                    type: string
+                    enum: [cache, zoho]
+                  dates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailabilityDate'
+        "400":
+          description: Missing year or month query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho Bookings error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/bookings/slots:
+    get:
+      tags: [bookings]
+      summary: List available time slots for a date
+      description: >
+        Returns all available appointment slots for a specific date.
+        Cached per date in Redis for 5 minutes.
+      operationId: getBookingSlots
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: "2026-03-20"
+      responses:
+        "200":
+          description: Available time slots for the date.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [date, slots]
+                properties:
+                  date:
+                    type: string
+                    format: date
+                    example: "2026-03-20"
+                  slots:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                    description: Raw slot objects from Zoho Bookings.
+        "400":
+          description: Missing date query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho Bookings error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/bookings:
+    post:
+      tags: [bookings]
+      summary: Create an appointment
+      description: >
+        Creates an appointment in Zoho Bookings. Returns `booking_id` and
+        the formatted `timeslot` string for use as a Zoho Books custom field.
+
+        If Zoho is offline, returns a placeholder booking_id prefixed with
+        `PENDING-` so the checkout flow can continue; the full order notification
+        is sent by `/api/checkout`.
+      operationId: postBooking
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+            example:
+              date: "2026-03-20"
+              time: "10:00 AM"
+              customer:
+                name: "Jane Smith"
+                email: "jane@example.com"
+                phone: "604-555-0100"
+              notes: "First time — interested in a wine kit."
+      responses:
+        "201":
+          description: Appointment created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+              example:
+                ok: true
+                booking_id: "109900000000789012"
+                timeslot: "2026-03-20 10:00 AM"
+        "400":
+          description: Validation error (missing date/time, invalid email, etc.).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho Bookings error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Contacts
+  # ===========================================================================
+  /api/contacts:
+    post:
+      tags: [contacts]
+      summary: Find or create a Zoho Books contact
+      description: >
+        Searches Zoho Books for an existing contact by email. If not found,
+        creates a new customer contact. Returns the `contact_id` for use in
+        downstream Sales Order creation.
+
+        When Zoho is offline, returns `{ contact_id: "offline", offline: true }`
+        so the checkout flow can continue.
+      operationId: postContact
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactRequest'
+            example:
+              name: "Jane Smith"
+              email: "jane@example.com"
+              phone: "604-555-0100"
+      responses:
+        "200":
+          description: Existing contact found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactResponse'
+        "201":
+          description: New contact created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactResponse'
+              example:
+                contact_id: "109900000000112233"
+                created: true
+        "400":
+          description: Missing or invalid email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Payments
+  # ===========================================================================
+  /api/payment/config:
+    get:
+      tags: [payments]
+      summary: Get Global Payments client-side config
+      description: >
+        Returns a restricted GP access token for client-side card tokenization
+        and the configured deposit amount. The token expires in 10 minutes.
+        Card data never touches this server — it is tokenized client-side by
+        `@globalpayments/js`.
+
+        Returns `{ enabled: false }` when `GP_APP_KEY` is not configured.
+      operationId: getPaymentConfig
+      responses:
+        "200":
+          description: Payment configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentConfigResponse'
+        "502":
+          description: GP access token request failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/payment/charge:
+    post:
+      tags: [payments]
+      summary: Charge a deposit using a GP token (legacy)
+      description: >
+        Charges a deposit against a single-use tokenization token from
+        `@globalpayments/js`. The `amount` must exactly equal the server-
+        configured deposit (`GP_DEPOSIT_AMOUNT`); any mismatch returns 400.
+
+        **Note:** This is the legacy standalone charge endpoint. The preferred
+        flow (v1.4.0+) is to pass `payment_token` directly to `POST /api/checkout`,
+        which charges server-side as part of the checkout transaction.
+      operationId: postPaymentCharge
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentChargeRequest'
+            example:
+              token: "supt_aBcDeFgH..."
+              amount: 50.00
+              customer:
+                name: "Jane Smith"
+                email: "jane@example.com"
+      responses:
+        "200":
+          description: Payment approved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentChargeResponse'
+        "400":
+          description: Missing token or invalid amount.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "402":
+          description: Card declined.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Payment gateway not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: GP API error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/payment/void:
+    post:
+      tags: [payments]
+      summary: Void a GP transaction
+      description: >
+        Voids a pending or completed GP transaction. Used when Zoho order
+        creation fails after a charge. The `transaction_id` must be a valid
+        GP transaction ID (max 64 chars).
+      operationId: postPaymentVoid
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentVoidRequest'
+            example:
+              transaction_id: "gp-txn-abc123"
+      responses:
+        "200":
+          description: Transaction voided.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  transaction_id:
+                    type: string
+                    example: "gp-txn-abc123"
+                  status:
+                    type: string
+                    enum: [voided]
+                    example: "voided"
+        "400":
+          description: Invalid transaction_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: GP void failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/payment/refund:
+    post:
+      tags: [payments]
+      summary: Refund a GP deposit
+      description: >
+        Refunds a deposit. The `amount` must exactly equal the server-configured
+        deposit amount (`GP_DEPOSIT_AMOUNT`). Used for reservation cancellations.
+      operationId: postPaymentRefund
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRefundRequest'
+            example:
+              transaction_id: "gp-txn-abc123"
+              amount: 50.00
+      responses:
+        "200":
+          description: Refund issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  transaction_id:
+                    type: string
+                    example: "gp-txn-refund456"
+                  original_transaction_id:
+                    type: string
+                    example: "gp-txn-abc123"
+                  amount:
+                    type: number
+                    format: double
+                    example: 50.00
+                  status:
+                    type: string
+                    enum: [refunded]
+                    example: "refunded"
+        "400":
+          description: Missing/invalid transaction_id or amount mismatch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: GP refund failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # POS / Kiosk
+  # ===========================================================================
+  /api/pos/status:
+    get:
+      tags: [pos]
+      summary: Check POS terminal configuration
+      description: >
+        Returns whether the GP UPA terminal is enabled and configured, along
+        with diagnostic info and which GP_ env vars are present.
+      operationId: getPosStatus
+      responses:
+        "200":
+          description: POS status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosStatusResponse'
+
+  /api/pos/sale:
+    post:
+      tags: [pos]
+      summary: Push a legacy POS sale to the terminal
+      description: >
+        Sends a sale request to the GP UPA terminal via Meet in the Cloud.
+        The terminal displays the amount and waits for card tap/insert/swipe.
+        On success, creates a Zoho Books Invoice and payment record as a
+        background operation (non-fatal). Returns immediately after terminal
+        approval.
+
+        Rate limit: 10 req/min per IP.
+      operationId: postPosSale
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PosSaleRequest'
+            example:
+              amount: 99.99
+              salesorder_number: "SO-00042"
+              customer_name: "Jane Smith"
+      responses:
+        "200":
+          description: Terminal approved the payment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PosSaleResponse'
+        "400":
+          description: Missing or invalid amount.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "402":
+          description: Terminal declined the payment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Terminal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: POS terminal not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/kiosk/sale:
+    post:
+      tags: [pos]
+      summary: Process a full kiosk sale
+      description: |
+        Processes a complete kiosk sale:
+        1. Validates cart items against the kiosk products cache (price anchoring).
+        2. Computes tax server-side from `KIOSK_TAX_RATE` (default 5%).
+        3. Sends payment to the GP POS terminal.
+        4. On success: creates a Zoho Books Invoice and records a payment.
+        5. Invalidates the kiosk products cache.
+        6. Returns receipt data.
+
+        If invoice creation fails after payment, the terminal transaction is
+        automatically voided.
+
+        Client-supplied `rate` and `tax_total` are both **ignored**.
+
+        Rate limit: 10 req/min per IP.
+      operationId: postKioskSale
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskSaleRequest'
+            example:
+              items:
+                - item_id: "109900000000123456"
+                  name: "Chilliwack Chardonnay Wine Kit"
+                  quantity: 1
+              reference_number: "KIOSK-001"
+              idempotency_key: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+      responses:
+        "201":
+          description: Sale completed and invoice created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskSaleResponse'
+              example:
+                ok: true
+                transaction_id: "gp-txn-abc123"
+                auth_code: "123456"
+                invoice_id: "109900000000567890"
+                invoice_number: "INV-00123"
+                reference_number: "KIOSK-001"
+                subtotal: 149.99
+                tax_total: 7.50
+                total: 157.49
+                date: "2026-03-12"
+        "400":
+          description: Validation error (empty cart, unknown item_id, etc.).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "402":
+          description: Terminal declined the payment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Invoice creation failed after payment (transaction voided).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  payment_voided:
+                    type: boolean
+                  voided_transaction_id:
+                    type: string
+        "503":
+          description: POS terminal not configured or catalog cache unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "504":
+          description: Terminal timed out (no transaction created).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/orders/recent:
+    get:
+      tags: [pos]
+      summary: List recent sales orders
+      description: >
+        Returns the most recent sales orders from Zoho Books (default 20, max 50).
+        Used by the admin panel. Requires API key even for GET (overrides the
+        global GET exemption). Cached for 60 seconds.
+      operationId: getRecentOrders
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          example: 20
+      responses:
+        "200":
+          description: Recent orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        salesorder_number:
+                          type: string
+                        customer_name:
+                          type: string
+                        total:
+                          type: number
+                        status:
+                          type: string
+                        timeslot:
+                          type: string
+                        deposit:
+                          type: string
+                        transaction_id:
+                          type: string
+                        date:
+                          type: string
+                        items:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/LineItem'
+                  cached:
+                    type: boolean
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/admin/inventory-ledger:
+    get:
+      tags: [pos]
+      summary: Inspect the inventory ledger
+      description: >
+        Returns the current inventory ledger version counter and the last 50
+        stock adjustments. Used for debugging stock discrepancies.
+        Requires API key.
+      operationId: getInventoryLedger
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Ledger state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                    example: 42
+                  recent_adjustments:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal error reading ledger.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Taxes
+  # ===========================================================================
+  /api/taxes:
+    get:
+      tags: [taxes]
+      summary: List Zoho Books taxes
+      description: Returns all taxes configured in Zoho Books settings.
+      operationId: getTaxes
+      responses:
+        "200":
+          description: Tax list from Zoho Books.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/taxes/rules:
+    get:
+      tags: [taxes]
+      summary: List tax rules and exemptions
+      description: >
+        Returns tax rules, tax exemptions, and tax authorities from Zoho Books.
+        Each sub-request is independent; partial failures are included in the
+        response without failing the whole request.
+      operationId: getTaxRules
+      responses:
+        "200":
+          description: Tax rules, exemptions, and authorities.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tax_rules:
+                    type: object
+                    additionalProperties: true
+                  tax_exemptions:
+                    type: object
+                    additionalProperties: true
+                  tax_authorities:
+                    type: object
+                    additionalProperties: true
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [taxes]
+      summary: Create a tax rule
+      description: Forwards the request body to the Zoho Books tax rules API.
+      operationId: postTaxRule
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "201":
+          description: Tax rule created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/taxes/setup:
+    post:
+      tags: [taxes]
+      summary: One-time BC tax setup
+      description: >
+        Creates BC PST Liquor (10%) and GST + BC PST Liquor (15%) tax entries
+        in Zoho Books if they don't already exist. Idempotent — skips existing
+        entries.
+      operationId: postTaxSetup
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Setup result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  results:
+                    type: object
+                    properties:
+                      created:
+                        type: array
+                        items:
+                          type: string
+                      skipped:
+                        type: array
+                        items:
+                          type: string
+                      errors:
+                        type: array
+                        items:
+                          type: string
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/taxes/apply:
+    post:
+      tags: [taxes]
+      summary: Bulk-assign tax groups to Zoho Inventory items
+      description: |
+        Classifies all active Zoho Inventory items by tax category using
+        keyword matching on name, category, and description, then assigns the
+        appropriate BC tax group.
+
+        Tax categories (BC Food of the Ferment rules):
+        - **ingredients** (zero-rated 0%): juice, malt, yeast, hops, etc.
+        - **services** (GST only 5%): racking, filtering, Makers Fee, etc.
+        - **packaging / hardware** (GST + BC PST 12%): bottles, airlock, etc.
+        - **capital_equipment** (GST + BC PST 12%): buckets, carboys, etc.
+        - **liquor** (GST + BC PST Liquor 15%): commercial wine/beer.
+
+        Default (unmatched) items are assigned zero-rated ingredients.
+
+        Send `{ "apply": false }` (or omit body) for a dry-run preview.
+        Send `{ "apply": true }` to execute. Updates are batched (25 items,
+        2s between items, 60s between batches) to respect Zoho rate limits.
+      operationId: postTaxApply
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxApplyRequest'
+            example:
+              apply: false
+      responses:
+        "200":
+          description: Dry-run preview or applied results.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode:
+                    type: string
+                    enum: [dry-run, applied]
+                  note:
+                    type: string
+                  assignments:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  applied:
+                    type: array
+                    items:
+                      type: string
+                  skipped:
+                    type: integer
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                  summary:
+                    type: object
+                    additionalProperties: true
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/taxes/test-update:
+    post:
+      tags: [taxes]
+      summary: Debug single-item tax update
+      description: >
+        Updates the tax assignment on a single Zoho Inventory item and returns
+        the full Zoho response for debugging. The `mode` parameter selects
+        which Zoho API field to update.
+      operationId: postTaxTestUpdate
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxTestUpdateRequest'
+            example:
+              item_id: "109900000000123456"
+              tax_id: "109900000000014433"
+              mode: "json"
+      responses:
+        "200":
+          description: Tax fields after update.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  mode:
+                    type: string
+                  result:
+                    type: object
+                    additionalProperties: true
+        "400":
+          description: Missing item_id or tax_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Items
+  # ===========================================================================
+  /api/items/inspect:
+    get:
+      tags: [items]
+      summary: Inspect a single Zoho Inventory item
+      description: >
+        Fetches a single item's full detail to discover available custom fields.
+        Defaults to the first active item when `item_id` is omitted.
+      operationId: getItemInspect
+      parameters:
+        - name: item_id
+          in: query
+          schema:
+            type: string
+          example: "109900000000123456"
+      responses:
+        "200":
+          description: Item detail with custom field discovery.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_id:
+                    type: string
+                  name:
+                    type: string
+                  sku:
+                    type: string
+                  rate:
+                    type: number
+                  standard_fields:
+                    type: object
+                    additionalProperties: true
+                  custom_fields:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomField'
+                  custom_field_count:
+                    type: integer
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/items/test-cf:
+    post:
+      tags: [items]
+      summary: Test updating a custom field on a single item
+      description: >
+        Updates a custom field (by label) on a single Zoho Inventory item and
+        returns the updated custom_fields array for verification.
+      operationId: postItemTestCF
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemsTestCFRequest'
+            example:
+              item_id: "109900000000123456"
+              label: "Type"
+              value: "Wine"
+      responses:
+        "200":
+          description: Updated custom fields.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  custom_fields:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomField'
+                  custom_field_hash:
+                    type: string
+        "400":
+          description: Missing item_id or label.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/items/migrate:
+    post:
+      tags: [items]
+      summary: Bulk-migrate item data from a CSV
+      description: |
+        Fetches a CSV from `csv_url`, matches rows to Zoho Inventory items by
+        SKU (or name as fallback), and updates standard fields (rate, brand) and
+        custom fields (Type, Subcategory, ABV, etc.).
+
+        Send `{ "apply": false }` for a dry-run preview.
+        Send `{ "apply": true }` to execute.
+
+        Updates are batched (25 items, 2s/item, 60s between batches).
+        Invalidates the products cache after a successful apply.
+
+        **Supported CSV columns:** sku, name, retail_instore, brand, type,
+        subcategory, time, tasting_notes, favorite, body, oak, sweetness,
+        abv, batch_size_liters.
+      operationId: postItemsMigrate
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemsMigrateRequest'
+            example:
+              csv_url: "https://docs.google.com/spreadsheets/d/xxx/export?format=csv"
+              apply: false
+              match_by: "sku"
+      responses:
+        "200":
+          description: Dry-run or apply result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode:
+                    type: string
+                    enum: [dry-run, applied]
+                  matched:
+                    type: integer
+                  unmatched:
+                    type: integer
+                  unmatched_items:
+                    type: array
+                    items:
+                      type: string
+                  updates:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  applied:
+                    type: integer
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                  summary:
+                    type: object
+                    additionalProperties: true
+        "400":
+          description: Missing csv_url.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: CSV fetch or Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Purchase Orders
+  # ===========================================================================
+  /api/purchase-orders:
+    get:
+      tags: [purchase-orders]
+      summary: List purchase orders
+      description: >
+        Returns purchase orders from Zoho Inventory.
+        Filter by `status` query parameter.
+      operationId: getPurchaseOrders
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, draft, billed, closed, cancelled, void, all]
+            default: open
+          example: "open"
+      responses:
+        "200":
+          description: Purchase orders from Zoho Inventory.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Invalid status value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [purchase-orders]
+      summary: Create a purchase order
+      description: Creates a new purchase order in Zoho Inventory.
+      operationId: postPurchaseOrder
+      security:
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderRequest'
+            example:
+              vendor_id: "109900000000099001"
+              date: "2026-03-12"
+              line_items:
+                - item_id: "109900000000123456"
+                  quantity: 10
+                  rate: 5.99
+              notes: "Quarterly ingredients order"
+      responses:
+        "201":
+          description: Purchase order created.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/purchase-orders/{id}:
+    get:
+      tags: [purchase-orders]
+      summary: Get a single purchase order
+      operationId: getPurchaseOrderById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d+$'
+          example: "109900000000777001"
+      responses:
+        "200":
+          description: Purchase order detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Invalid purchase order ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Zoho not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [purchase-orders]
+      summary: Replace a purchase order's line items
+      operationId: putPurchaseOrder
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d+$'
+          example: "109900000000777001"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderRequest'
+      responses:
+        "200":
+          description: Purchase order updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/purchase-orders/{id}/add-item:
+    post:
+      tags: [purchase-orders]
+      summary: Atomically add or increment a line item on a PO
+      description: >
+        Performs a server-side GET → merge → PUT to add a new line item or
+        increment an existing item's quantity on an existing purchase order.
+        Prevents client-side race conditions.
+      operationId: addItemToPurchaseOrder
+      security:
+        - ApiKeyHeader: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d+$'
+          example: "109900000000777001"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddItemRequest'
+            example:
+              item_id: "109900000000123456"
+              quantity: 5
+              rate: 5.99
+      responses:
+        "200":
+          description: Purchase order updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Upstream Zoho error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Product requests
+  # ===========================================================================
+  /product-requests:
+    post:
+      tags: [requests]
+      summary: Submit a product request
+      description: >
+        Public endpoint — no auth required. Stores the request in Redis
+        (up to 500 entries, 1-year TTL). Rate limited to 10 req/min per IP.
+        Always returns `{ ok: true }` even on Redis failure to avoid
+        silently losing submissions.
+      operationId: postProductRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductRequestSubmit'
+            example:
+              name: "Jane Smith"
+              email: "jane@example.com"
+              items: "I'd love to see more German Riesling kits."
+      responses:
+        "200":
+          description: Request received.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        "400":
+          description: Missing required fields or invalid email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [requests]
+      summary: List submitted product requests (admin)
+      description: >
+        Returns all stored product requests. Requires API key.
+        Returns newest-first, up to 500 entries.
+      operationId: getProductRequests
+      security:
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Product request list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  requests:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        email:
+                          type: string
+                        items:
+                          type: string
+                        submitted_at:
+                          type: string
+                          format: date-time
+        "403":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Contact form
+  # ===========================================================================
+  /api/contact:
+    post:
+      tags: [contact-form]
+      summary: Submit the website contact form
+      description: >
+        Public endpoint — no auth required. Sends an email via SMTP to the
+        configured `CONTACT_TO` address. Rate limited to 5 req/min per IP.
+        CRLF characters are stripped from the `name` field before use in the
+        email subject to prevent header injection.
+      operationId: postContactForm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, message]
+              properties:
+                name:
+                  type: string
+                  example: "Jane Smith"
+                email:
+                  type: string
+                  format: email
+                  example: "jane@example.com"
+                message:
+                  type: string
+                  example: "I'd like more information about your wine kits."
+            example:
+              name: "Jane Smith"
+              email: "jane@example.com"
+              message: "I'd like more information about your wine kits."
+      responses:
+        "200":
+          description: Email sent successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "400":
+          description: Missing or invalid fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Rate limit exceeded (5 req/min).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Email delivery failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

@@ -1,5 +1,5 @@
 /* Service Worker — Steins & Vines */
-var CACHE_VERSION = '20260312T143252548';
+var CACHE_VERSION = '20260312T214623378';
 var STATIC_CACHE = 'sv-static-' + CACHE_VERSION;
 var IMAGES_CACHE = 'sv-images-' + CACHE_VERSION;
 var FONTS_CACHE  = 'sv-fonts-' + CACHE_VERSION;
