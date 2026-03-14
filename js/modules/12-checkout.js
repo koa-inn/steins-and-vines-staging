@@ -739,7 +739,7 @@ function setupReservationForm() {
   if (!document.body.classList.contains('kiosk-mode') && sec && (typeof PAYMENT_DISABLED === 'undefined' || !PAYMENT_DISABLED)) {
     fetch(mw + '/api/payment/initialize', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY },
       body: JSON.stringify({})
     }).then(function (r) { return r.json(); }).then(function (cfg) {
       if (!cfg || !cfg.checkoutToken) return;
