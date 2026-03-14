@@ -6785,10 +6785,15 @@ function setupReservationForm() {
       if (!cfg || !cfg.checkoutToken) return;
       _paymentConfig = { enabled: true, depositAmount: cfg.depositAmount || 0, env: 'helcim' };
 
-      // Render HelcimPay.js iframe
+      // Render HelcimPay.js iframe (function provided by Helcim SDK script)
       if (typeof appendHelcimPayIframe === 'function') {
         appendHelcimPayIframe(cfg.checkoutToken);
       }
+
+      // Show payment section, hide offline notice
+      sec.classList.remove('hidden');
+      var offlineNotice = document.getElementById('payment-offline-notice');
+      if (offlineNotice) offlineNotice.classList.add('hidden');
 
       // Listen for payment result via postMessage from Helcim iframe
       window.addEventListener('message', function (event) {
