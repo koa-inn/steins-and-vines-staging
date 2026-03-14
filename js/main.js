@@ -3168,17 +3168,14 @@ function buildIngredientFilterRow(containerId, field, label, values) {
 
 function buildIngredientFilters() {
   // Capture stable section order once on first load.
-  // "Ingredient" always comes first; remaining types sorted alphabetically.
+  // Groups by category_name; sorted alphabetically.
   if (!_ingredientTypeOrder) {
-    var typesSeen = [];
+    var catsSeen = [];
     _allIngredients.forEach(function (r) {
-      var t = (r.type || '').trim() || 'Other';
-      if (typesSeen.indexOf(t) === -1) typesSeen.push(t);
+      var c = (r.category || '').trim() || 'Other';
+      if (catsSeen.indexOf(c) === -1) catsSeen.push(c);
     });
-    var FIRST_TYPES = ['Ingredient'];
-    var pinned = FIRST_TYPES.filter(function (t) { return typesSeen.indexOf(t) !== -1; });
-    var rest = typesSeen.filter(function (t) { return FIRST_TYPES.indexOf(t) === -1; }).sort();
-    _ingredientTypeOrder = pinned.concat(rest);
+    _ingredientTypeOrder = catsSeen.sort();
   }
 
   // Category filter
@@ -3317,22 +3314,22 @@ function renderIngredients() {
     return;
   }
 
-  // Group by Zoho Type field, using the stable section order from first load
-  var typeGroups = {};
+  // Group by Zoho category, using the stable section order from first load
+  var catGroups = {};
   inStock.forEach(function (r) {
-    var t = (r.type || '').trim() || 'Other';
-    if (!typeGroups[t]) typeGroups[t] = [];
-    typeGroups[t].push(r);
+    var c = (r.category || '').trim() || 'Other';
+    if (!catGroups[c]) catGroups[c] = [];
+    catGroups[c].push(r);
   });
 
   // Use stable order; fall back to alphabetical if somehow not set yet
-  var typeOrder = (_ingredientTypeOrder || Object.keys(typeGroups).sort()).filter(function (t) {
-    return typeGroups[t] && typeGroups[t].length > 0;
+  var catOrder = (_ingredientTypeOrder || Object.keys(catGroups).sort()).filter(function (c) {
+    return catGroups[c] && catGroups[c].length > 0;
   });
 
-  var showTitles = typeOrder.length > 1;
-  typeOrder.forEach(function (t) {
-    renderIngredientSection(catalog, showTitles ? t : null, typeGroups[t]);
+  var showTitles = catOrder.length > 1;
+  catOrder.forEach(function (c) {
+    renderIngredientSection(catalog, showTitles ? c : null, catGroups[c]);
   });
   equalizeCardHeights();
   buildProductRequestForm();
