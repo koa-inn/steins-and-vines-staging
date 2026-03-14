@@ -16,7 +16,7 @@ var CACHE_KEYS = {
   PRODUCTS:            'zoho:products',
   PRODUCTS_TS:         'zoho:products:ts',       // timestamp of last enrichment
   PRODUCT_IMAGE_HASHES:'zoho:product-image-hashes',
-  SERVICES:            'zoho:services',
+  SERVICES:            'zoho:services:v2',
   INGREDIENTS:         'zoho:ingredients',
   INGREDIENTS_TS:      'zoho:ingredients:ts',
   KIOSK_PRODUCTS:      'zoho:kiosk-products',
