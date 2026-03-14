@@ -3206,15 +3206,17 @@
       "description": "Ferment-on-premise Makers Fee",
       "sku": "MAKERS-FEE",
       "stock": "0",
-      "discount": "0"
+      "discount": "0",
+      "item_id": "109900000000046478"
     },
     {
       "name": "Milling Fee",
       "price": "10",
       "description": "",
-      "sku": "",
+      "sku": "MILLED",
       "stock": "0",
-      "discount": "0"
+      "discount": "0",
+      "item_id": "109900000000076701"
     },
     {
       "name": "Wine Carbonation",
@@ -3222,7 +3224,8 @@
       "description": "",
       "sku": "CARB-WINE",
       "stock": "0",
-      "discount": "0"
+      "discount": "0",
+      "item_id": "109900000000131013"
     }
   ]
 }
