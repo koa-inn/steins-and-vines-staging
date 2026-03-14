@@ -460,7 +460,11 @@ router.get('/api/services', function (req, res) {
     })
     .catch(function (err) {
       log.error('[api/services] ' + err.message);
-      // Snapshot fallback — use SKU as temporary item_id so checkout validation passes
+      // Snapshot fallback — for display only.
+      // IMPORTANT: snapshot services have no real Zoho item_id (only SKUs).
+      // We cache with a short TTL (30s) so Zoho is retried quickly.
+      // Checkout validates that item_ids are numeric before submitting to Zoho
+      // and will return a 503 retry if snapshot SKUs are present.
       try {
         var snapSvc = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'content', 'zoho-snapshot.json'), 'utf8'));
         if (snapSvc && Array.isArray(snapSvc.services) && snapSvc.services.length > 0) {
@@ -474,7 +478,8 @@ router.get('/api/services', function (req, res) {
             });
           });
           log.info('[api/services] Snapshot fallback hit (' + svcItems.length + ' items)');
-          cache.set(SERVICES_CACHE_KEY, svcItems, SERVICES_CACHE_TTL);
+          // Short TTL: 30s so Zoho is retried quickly once rate-limit window passes
+          cache.set(SERVICES_CACHE_KEY, svcItems, 30);
           return res.json({ source: 'snapshot', items: svcItems });
         }
       } catch (snapErr) {}

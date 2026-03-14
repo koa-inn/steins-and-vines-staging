@@ -545,6 +545,18 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
         });
       }
 
+      // Guard: Zoho requires numeric item_ids. If snapshot fallback was used
+      // (item_ids are SKU strings like "MAKERS-FEE"), Zoho will reject the order.
+      // Throw so the catch block can void any charged payment before sending 503.
+      for (var sgi = 0; sgi < lineItems.length; sgi++) {
+        if (!/^\d+$/.test(String(lineItems[sgi].item_id || ''))) {
+          log.warn('[checkout] Non-numeric item_id — likely snapshot fallback, item_id=' + lineItems[sgi].item_id);
+          var snapshotErr = new Error('Pricing temporarily unavailable. Please try again in a moment.');
+          snapshotErr.isSnapshotFallback = true;
+          throw snapshotErr;
+        }
+      }
+
       var data;
       try {
         data = await zohoPost('/salesorders', salesOrder);
@@ -643,6 +655,11 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
       var status = 502;
       var internalMessage = err.message;
 
+      // Snapshot fallback guard: non-numeric item_ids can't be submitted to Zoho
+      if (err.isSnapshotFallback) {
+        status = 503;
+      }
+
       // M9: Extract Zoho error details for server-side logging only — never send raw Zoho messages to client
       if (err.response && err.response.data) {
         internalMessage = err.response.data.message || err.response.data.error || internalMessage;
@@ -654,7 +671,9 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
 
       // M9: Log the actual Zoho error server-side; send only generic message to client
       log.error('[checkout] Order creation failed: ' + internalMessage);
-      var clientMsg = 'Order creation failed. Please try again.';
+      var clientMsg = err.isSnapshotFallback
+        ? err.message
+        : 'Order creation failed. Please try again.';
 
       // If payment was already charged but Zoho failed, void the transaction
       // H5: Only attempt void when a real transaction_id is present (not offline mode)
@@ -782,6 +801,14 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
           log.error('[checkout/pre-validate] Void after unknown item failed: ' + vErr.message);
         });
         return res.status(400).json({ error: 'One or more items could not be priced. Please refresh and try again.' });
+      }
+      // Guard: non-numeric item_ids are snapshot SKUs — Zoho will reject them
+      if (!/^\d+$/.test(String(body.items[pi].item_id || ''))) {
+        log.warn('[checkout/pre-validate] Non-numeric item_id (snapshot fallback?) — voiding txn=' + transactionId + ' item_id=' + body.items[pi].item_id);
+        helcimLib.voidTransaction(transactionId).catch(function (vErr) {
+          log.error('[checkout/pre-validate] Void after snapshot item_id failed: ' + vErr.message);
+        });
+        return res.status(503).json({ error: 'Pricing temporarily unavailable. Please try again in a moment.' });
       }
     }
 
