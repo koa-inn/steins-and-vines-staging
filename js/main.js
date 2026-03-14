@@ -2943,18 +2943,10 @@ var _ingredientsFuse = null;
 var _ingredientFilters = { unit: [], category: [], subcategory: [], price: [] };
 var _ingredientTypeOrder = null; // stable section order, set once on first load
 
-var PRICE_PER_100G_THRESHOLD = 15; // kg items priced above this show price per 100g
-
 // Returns the display price and unit for an ingredient.
-// kg items priced above the threshold are shown as price per 100g instead.
 function ingDisplayPrice(item) {
   var unit = (item.unit || '').trim();
-  var unitLower = unit.toLowerCase();
   var price = parseFloat((item.price_per_unit || '0').replace(/[^0-9.]/g, '')) || 0;
-  var isKg = unitLower === 'kg' || unitLower.indexOf('kg') !== -1;
-  if (isKg && price > PRICE_PER_100G_THRESHOLD) {
-    return { price: price / 10, unit: '100g' };
-  }
   return { price: price, unit: unit };
 }
 
