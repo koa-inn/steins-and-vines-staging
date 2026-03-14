@@ -754,24 +754,26 @@ function setupReservationForm() {
       if (offlineNotice) offlineNotice.classList.add('hidden');
 
       // Listen for payment result via postMessage from Helcim iframe
+      // eventName is "helcim-pay-js-{checkoutToken}", eventStatus is "SUCCESS" | "ABORTED" | "HIDE"
+      var helcimEventKey = 'helcim-pay-js-' + cfg.checkoutToken;
       window.addEventListener('message', function (event) {
-        if (event.origin !== 'https://secure.helcim.app') return;
         var data = event.data || {};
-        if (data.eventName === 'HELCIM_PAY_JS_INIT_COMPLETE') return;
-        if (data.eventName === 'HELCIM_PAY_JS_PAYMENT_SUCCESS' || (data.status && data.status.toUpperCase() === 'APPROVED')) {
-          _helcimTransactionId = data.transactionId || '';
-          // Auto-continue reservation submission after successful payment
+        if (data.eventName !== helcimEventKey) return;
+        if (data.eventStatus === 'SUCCESS') {
+          var txn = data.eventMessage && data.eventMessage.data && data.eventMessage.data.data;
+          _helcimTransactionId = (txn && txn.transactionId) ? String(txn.transactionId) : '';
+          if (typeof removeHelcimPayIframe === 'function') removeHelcimPayIframe();
           if (_awaitingPaymentSubmit) {
             _awaitingPaymentSubmit = false;
             f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
           }
-        } else if (data.eventName === 'HELCIM_PAY_JS_PAYMENT_FAILED' || (data.status && data.status.toUpperCase() === 'DECLINED')) {
+        } else if (data.eventStatus === 'ABORTED') {
           _helcimTransactionId = null;
           _awaitingPaymentSubmit = false;
           var sub2 = f.querySelector('button[type="submit"]');
           if (sub2) { sub2.disabled = false; sub2.textContent = 'Submit Reservation'; }
           _checkoutSubmitting = false;
-          showToast('Payment declined — please try again.', 'error');
+          showToast('Payment cancelled — please try again.', 'error');
         }
       });
     }).catch(function (err) {
