@@ -4,5 +4,8 @@
 // Rotate via: openssl rand -base64 32, then update Railway API_SECRET_KEY + sheets-config.js.
 var MW_API_KEY = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MW_API_KEY) ? SHEETS_CONFIG.MW_API_KEY : '';
 
+// ===== reCAPTCHA site key =====
+window.RECAPTCHA_SITE_KEY = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.RECAPTCHA_SITE_KEY) ? SHEETS_CONFIG.RECAPTCHA_SITE_KEY : '';
+
 // ===== Payment flag =====
 var PAYMENT_DISABLED = false;
