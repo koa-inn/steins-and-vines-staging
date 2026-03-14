@@ -478,8 +478,8 @@ router.get('/api/services', function (req, res) {
             });
           });
           log.info('[api/services] Snapshot fallback hit (' + svcItems.length + ' items)');
-          // Short TTL: 30s so Zoho is retried quickly once rate-limit window passes
-          cache.set(SERVICES_CACHE_KEY, svcItems, 30);
+          // Short TTL: 5min so Zoho is retried reasonably quickly once rate-limit clears
+          cache.set(SERVICES_CACHE_KEY, svcItems, 300);
           return res.json({ source: 'snapshot', items: svcItems });
         }
       } catch (snapErr) {}

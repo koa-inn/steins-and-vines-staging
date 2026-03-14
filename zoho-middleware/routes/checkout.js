@@ -1,5 +1,7 @@
 var express = require('express');
 var https = require('https');
+var fs = require('fs');
+var path = require('path');
 var querystring = require('querystring');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
@@ -9,6 +11,27 @@ var helcimLib = require('../lib/helcim');
 var ledger = require('../lib/inventory-ledger');
 var pricing = require('../lib/pricing');
 var C = require('../lib/constants');
+
+/**
+ * Read services directly from the snapshot file.
+ * Used as a fallback when the services Redis cache is empty.
+ */
+function readServicesSnapshot() {
+  try {
+    var snap = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', '..', 'content', 'zoho-snapshot.json'), 'utf8'
+    ));
+    if (snap && Array.isArray(snap.services)) {
+      return snap.services.map(function (s) {
+        return Object.assign({}, s, {
+          item_id: s.item_id || '',
+          rate: parseFloat(String(s.price || s.rate || '0').replace(/[^0-9.]/g, '')) || 0
+        });
+      });
+    }
+  } catch (e) {}
+  return [];
+}
 
 /**
  * Race a promise against a timeout.
@@ -423,6 +446,11 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
 
     var catalog = results[0];
     var services = results[1];
+    // If services cache is empty, fall back to snapshot directly
+    if (!Array.isArray(services) || services.length === 0) {
+      log.warn('[checkout] Services cache empty — using snapshot fallback');
+      services = readServicesSnapshot();
+    }
     // Build item_id → rate lookup from the authoritative catalog (products + services)
     var catalogMap = {};
     var catalogAvailable = Array.isArray(catalog) && catalog.length > 0;
@@ -779,6 +807,11 @@ async function processCheckout(body, idempotencyKey, res, zohoOffline) {
 
     var preCatalog = preResults[0];
     var preServices = preResults[1];
+    // If services cache is empty, fall back to snapshot directly
+    if (!Array.isArray(preServices) || preServices.length === 0) {
+      log.warn('[checkout/pre-validate] Services cache empty — using snapshot fallback');
+      preServices = readServicesSnapshot();
+    }
 
     if (!Array.isArray(preCatalog) || preCatalog.length === 0) {
       log.warn('[checkout/pre-validate] Catalog unavailable — voiding txn=' + transactionId);
