@@ -822,14 +822,19 @@ function setupReservationForm() {
     // If payment is required and not yet completed, open Helcim iframe and wait
     if (_paymentConfig && _paymentConfig.enabled && charge > 0) {
       if (!_helcimTransactionId || typeof _helcimTransactionId !== 'string' || _helcimTransactionId.length === 0) {
-        if (!_helcimCheckoutToken || typeof appendHelcimPayIframe !== 'function') {
-          showToast('Payment not ready — please refresh and try again.', 'error');
-          sub.disabled = false; sub.textContent = originalBtnText; _checkoutSubmitting = false; return;
+        // Staging mock: ?mock_payment=1 bypasses Helcim iframe for flow testing
+        if (new URLSearchParams(window.location.search).get('mock_payment') === '1') {
+          _helcimTransactionId = 'mock-test-' + Date.now();
+        } else {
+          if (!_helcimCheckoutToken || typeof appendHelcimPayIframe !== 'function') {
+            showToast('Payment not ready — please refresh and try again.', 'error');
+            sub.disabled = false; sub.textContent = originalBtnText; _checkoutSubmitting = false; return;
+          }
+          _awaitingPaymentSubmit = true;
+          sub.textContent = 'Waiting for payment...';
+          appendHelcimPayIframe(_helcimCheckoutToken);
+          return; // resume automatically after HELCIM_PAY_JS_PAYMENT_SUCCESS
         }
-        _awaitingPaymentSubmit = true;
-        sub.textContent = 'Waiting for payment...';
-        appendHelcimPayIframe(_helcimCheckoutToken);
-        return; // resume automatically after HELCIM_PAY_JS_PAYMENT_SUCCESS
       }
     }
 
