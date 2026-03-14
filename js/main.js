@@ -6918,7 +6918,7 @@ function setupReservationForm() {
         });
       }).then(function (oR) {
         // M6: Validate response before showing success
-        if (!oR || !oR.success) {
+        if (!oR || (!oR.ok && !oR.success)) {
           throw new Error(oR && oR.error ? oR.error : 'Checkout failed. Please try again or call us.');
         }
 
