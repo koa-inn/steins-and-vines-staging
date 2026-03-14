@@ -6050,6 +6050,8 @@ var _prevHasKits = null;       // tracks previous hasKits state to avoid redunda
 // Payment state
 var _paymentConfig = null;
 var _helcimTransactionId = null;
+var _helcimCheckoutToken = null;
+var _awaitingPaymentSubmit = false;
 var _checkoutSubmitting = false;
 
 // Form validation functions defined in 12a-checkout-validation.js:
@@ -6783,35 +6785,33 @@ function setupReservationForm() {
       body: JSON.stringify({})
     }).then(function (r) { return r.json(); }).then(function (cfg) {
       if (!cfg || !cfg.checkoutToken) return;
+      _helcimCheckoutToken = cfg.checkoutToken;
       _paymentConfig = { enabled: true, depositAmount: cfg.depositAmount || 0, env: 'helcim' };
 
-      // Show payment section, hide offline notice
+      // Show deposit info, hide offline notice
       sec.classList.remove('hidden');
       var offlineNotice = document.getElementById('payment-offline-notice');
       if (offlineNotice) offlineNotice.classList.add('hidden');
-
-      // Wire "Pay Deposit" button — opens Helcim iframe on click
-      var payBtn = document.getElementById('helcim-pay-btn');
-      if (payBtn) {
-        payBtn.addEventListener('click', function () {
-          if (typeof appendHelcimPayIframe === 'function') {
-            appendHelcimPayIframe(cfg.checkoutToken);
-          }
-        });
-      }
 
       // Listen for payment result via postMessage from Helcim iframe
       window.addEventListener('message', function (event) {
         if (event.origin !== 'https://secure.helcim.app') return;
         var data = event.data || {};
-        if (data.eventName === 'HELCIM_PAY_JS_INIT_COMPLETE') return; // ignore init event
+        if (data.eventName === 'HELCIM_PAY_JS_INIT_COMPLETE') return;
         if (data.eventName === 'HELCIM_PAY_JS_PAYMENT_SUCCESS' || (data.status && data.status.toUpperCase() === 'APPROVED')) {
           _helcimTransactionId = data.transactionId || '';
-          if (payBtn) payBtn.classList.add('hidden');
-          var verifiedMsg = document.getElementById('payment-verified-msg');
-          if (verifiedMsg) verifiedMsg.classList.remove('hidden');
+          // Auto-continue reservation submission after successful payment
+          if (_awaitingPaymentSubmit) {
+            _awaitingPaymentSubmit = false;
+            f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
         } else if (data.eventName === 'HELCIM_PAY_JS_PAYMENT_FAILED' || (data.status && data.status.toUpperCase() === 'DECLINED')) {
           _helcimTransactionId = null;
+          _awaitingPaymentSubmit = false;
+          var sub2 = f.querySelector('button[type="submit"]');
+          if (sub2) { sub2.disabled = false; sub2.textContent = 'Submit Reservation'; }
+          _checkoutSubmitting = false;
+          showToast('Payment declined — please try again.', 'error');
         }
       });
     }).catch(function (err) {
@@ -6857,11 +6857,17 @@ function setupReservationForm() {
     var tax = 0; if (!hasK || payFull) { items.forEach(function (i) { var p = parseFloat(String(i.price || '0').replace(/[^0-9.]/g, '')) || 0; var d = parseFloat(i.discount) || 0; if (d > 0) p *= (1 - d / 100); tax += p * (i.qty || 1) * ((parseFloat(i.tax_percentage) || 0) / 100); }); }
     var charge = orderTot + tax; var depAmt = (!hasK || payFull) ? charge : Math.min(_paymentConfig && _paymentConfig.depositAmount ? _paymentConfig.depositAmount : charge, orderTot);
 
-    // C2: Re-check GP token now that charge is computed
+    // If payment is required and not yet completed, open Helcim iframe and wait
     if (_paymentConfig && _paymentConfig.enabled && charge > 0) {
       if (!_helcimTransactionId || typeof _helcimTransactionId !== 'string' || _helcimTransactionId.length === 0) {
-        showToast('Payment card not verified. Please complete the card verification step above.', 'error');
-        sub.disabled = false; sub.textContent = originalBtnText; _checkoutSubmitting = false; return;
+        if (!_helcimCheckoutToken || typeof appendHelcimPayIframe !== 'function') {
+          showToast('Payment not ready — please refresh and try again.', 'error');
+          sub.disabled = false; sub.textContent = originalBtnText; _checkoutSubmitting = false; return;
+        }
+        _awaitingPaymentSubmit = true;
+        sub.textContent = 'Waiting for payment...';
+        appendHelcimPayIframe(_helcimCheckoutToken);
+        return; // resume automatically after HELCIM_PAY_JS_PAYMENT_SUCCESS
       }
     }
 
