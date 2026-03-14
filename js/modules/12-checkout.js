@@ -745,15 +745,20 @@ function setupReservationForm() {
       if (!cfg || !cfg.checkoutToken) return;
       _paymentConfig = { enabled: true, depositAmount: cfg.depositAmount || 0, env: 'helcim' };
 
-      // Render HelcimPay.js iframe (function provided by Helcim SDK script)
-      if (typeof appendHelcimPayIframe === 'function') {
-        appendHelcimPayIframe(cfg.checkoutToken);
-      }
-
       // Show payment section, hide offline notice
       sec.classList.remove('hidden');
       var offlineNotice = document.getElementById('payment-offline-notice');
       if (offlineNotice) offlineNotice.classList.add('hidden');
+
+      // Wire "Pay Deposit" button — opens Helcim iframe on click
+      var payBtn = document.getElementById('helcim-pay-btn');
+      if (payBtn) {
+        payBtn.addEventListener('click', function () {
+          if (typeof appendHelcimPayIframe === 'function') {
+            appendHelcimPayIframe(cfg.checkoutToken);
+          }
+        });
+      }
 
       // Listen for payment result via postMessage from Helcim iframe
       window.addEventListener('message', function (event) {
@@ -762,10 +767,11 @@ function setupReservationForm() {
         if (data.eventName === 'HELCIM_PAY_JS_INIT_COMPLETE') return; // ignore init event
         if (data.eventName === 'HELCIM_PAY_JS_PAYMENT_SUCCESS' || (data.status && data.status.toUpperCase() === 'APPROVED')) {
           _helcimTransactionId = data.transactionId || '';
-          if (sec) sec.classList.remove('payment-pending');
+          if (payBtn) payBtn.classList.add('hidden');
+          var verifiedMsg = document.getElementById('payment-verified-msg');
+          if (verifiedMsg) verifiedMsg.classList.remove('hidden');
         } else if (data.eventName === 'HELCIM_PAY_JS_PAYMENT_FAILED' || (data.status && data.status.toUpperCase() === 'DECLINED')) {
           _helcimTransactionId = null;
-          if (sec) sec.classList.add('payment-pending');
         }
       });
     }).catch(function (err) {
