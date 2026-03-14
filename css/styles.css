@@ -3007,6 +3007,87 @@ behold-widget {
   margin-bottom: 1rem;
 }
 
+/* ===== Dual-Cart Layout ===== */
+.dual-cart-banner {
+  background: var(--color-green, #4a6f4b);
+  color: var(--color-white, #fff);
+  text-align: center;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm, 4px);
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.dual-cart-divider {
+  border: none;
+  border-top: 2px solid var(--color-brown, #77462d);
+  margin: 3rem 0 2rem;
+  position: relative;
+}
+
+.dual-cart-divider::after {
+  content: '';
+  display: block;
+  width: 32px;
+  height: 4px;
+  background: var(--color-brown, #77462d);
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.dual-cart-section-header {
+  margin-bottom: 1.5rem;
+}
+
+.dual-cart-section-label {
+  display: inline-block;
+  background: var(--color-brown, #77462d);
+  color: var(--color-white, #fff);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-xs, 2px);
+  margin-bottom: 0.4rem;
+}
+
+.dual-cart-section-header h2 {
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.dual-cart-section-note {
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #666);
+  margin-bottom: 0;
+}
+
+.ingredient-order-section {
+  margin-top: 0.5rem;
+}
+
+.ingredient-order-contact-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-cream, #f5f0dc);
+  border-left: 3px solid var(--color-green, #4a6f4b);
+  padding: 0.6rem 0.85rem;
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  font-size: 0.85rem;
+  color: var(--color-green, #4a6f4b);
+  margin-top: 1rem;
+}
+
+.ingredient-order-contact-note svg {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
 .cal-slots-heading {
   margin-bottom: 0.75rem;
   color: var(--color-burgundy);

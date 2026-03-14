@@ -14,6 +14,10 @@ var _helcimCheckoutToken = null;
 var _awaitingPaymentSubmit = false;
 var _checkoutSubmitting = false;
 
+// Dual-cart state — set true when both ferment and ingredient carts have items
+// and the page is loaded without a ?cart= param (or with no specific single-cart intent)
+var _isDualCart = false;
+
 // Form validation functions defined in 12a-checkout-validation.js:
 //   getRecaptchaToken, validateCheckoutForm, renumberVisibleSteps,
 //   formatPhoneInput, isValidEmail, isValidPhone,
@@ -65,6 +69,13 @@ function initReservationPage() {
   }
   if (initialItems.length === 0) {
     setTimeout(function () { window.location.href = '/products.html'; }, 1500);
+  }
+
+  // Dual-cart detection: both carts have items AND no specific ?cart= param forces a single cart
+  var _dualFermentItems = getReservation(FERMENT_CART_KEY);
+  var _dualIngredientItems = getReservation(INGREDIENT_CART_KEY);
+  if (!_checkoutCartKey && _dualFermentItems.length > 0 && _dualIngredientItems.length > 0) {
+    _isDualCart = true;
   }
 
   initCheckoutStepper();
@@ -173,8 +184,31 @@ function initReservationPage() {
     if (formNote) formNote.textContent = 'A confirmation email will be sent to the address provided above. All orders are in-store pickup only.';
   }
 
+  // Dual-cart: customise labels and submit button before setup
+  if (_isDualCart) {
+    var dualPageTitle = document.querySelector('[data-content="page-title"]');
+    if (dualPageTitle) dualPageTitle.textContent = 'Complete Your Orders';
+    document.title = 'Checkout | Steins & Vines';
+    var dualSubmitBtn = document.querySelector('[data-content="submit-btn"]');
+    if (dualSubmitBtn) dualSubmitBtn.textContent = 'Complete Both Orders';
+    // Prefix the ferment section with a "Section A" label
+    var reservationList = document.getElementById('reservation-list');
+    if (reservationList) {
+      var sectionALabel = document.createElement('div');
+      sectionALabel.className = 'dual-cart-section-header';
+      sectionALabel.innerHTML = '<span class="dual-cart-section-label">Section A</span>';
+      reservationList.insertBefore(sectionALabel, reservationList.firstChild);
+    }
+  }
+
   setupReservationForm();
   setupPaymentToggle();
+
+  // Dual-cart: render the banner and ingredient section after main form is set up
+  if (_isDualCart) {
+    renderDualCartBanner();
+    renderCheckoutIngredientSection();
+  }
 }
 
 function initCheckoutStepper() {
@@ -248,10 +282,16 @@ function renderReservationItems() {
   if (!container) return;
 
   // H4: Only show items from the active checkout cart (based on ?cart= URL param)
+  // In dual-cart mode, Section A shows only ferment items; ingredient items are in Section B.
   // Fall back to all items if the specific cart is empty (prevents silent loss of kit items)
   var _renderCartKey = getActiveCheckoutCart();
-  var items = _renderCartKey ? getReservation(_renderCartKey) : getAllCartItems();
-  if (items.length === 0 && _renderCartKey) items = getAllCartItems();
+  var items;
+  if (_isDualCart) {
+    items = getReservation(FERMENT_CART_KEY);
+  } else {
+    items = _renderCartKey ? getReservation(_renderCartKey) : getAllCartItems();
+    if (items.length === 0 && _renderCartKey) items = getAllCartItems();
+  }
   var hasKits = items.some(function (i) { return (i.item_type || 'kit') === 'kit'; });
   applyKitSpecificVisibility(hasKits);
   container.innerHTML = '';
@@ -724,6 +764,329 @@ function renderReservationItems() {
   window.dispatchEvent(new Event('reservation-changed'));
 }
 
+// =============================================================================
+// Dual-cart functions — only active when _isDualCart is true
+// =============================================================================
+
+function renderDualCartBanner() {
+  var banner = document.getElementById('dual-cart-banner');
+  if (!banner) return;
+  banner.textContent = 'You have items in 2 orders \u2014 complete both below.';
+  banner.classList.remove('hidden');
+}
+
+function renderCheckoutIngredientSection() {
+  var section = document.getElementById('ingredient-order-section');
+  if (!section) return;
+
+  var items = getReservation(INGREDIENT_CART_KEY);
+  if (items.length === 0) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  var itemsContainer = document.getElementById('ingredient-order-items');
+  if (!itemsContainer) return;
+  itemsContainer.innerHTML = '';
+
+  var table = document.createElement('table');
+  table.className = 'catalog-table reservation-table';
+  var thead = document.createElement('thead');
+  var tr = document.createElement('tr');
+  ['Name', 'Price', 'Qty', 'Subtotal'].forEach(function (label) {
+    var th = document.createElement('th');
+    th.textContent = label;
+    if (label !== 'Name') th.style.textAlign = 'right';
+    tr.appendChild(th);
+  });
+  thead.appendChild(tr);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  var subtotal = 0;
+  var taxTotal = 0;
+
+  items.forEach(function (item) {
+    var row = document.createElement('tr');
+    var price = parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0;
+    var disc = parseFloat(item.discount) || 0;
+    if (disc > 0) price = price * (1 - disc / 100);
+    var qty = parseFloat(item.qty) || 1;
+    var lineTotal = price * qty;
+    subtotal += lineTotal;
+    var taxPct = parseFloat(item.tax_percentage) || 0;
+    taxTotal += lineTotal * (taxPct / 100);
+
+    var tdName = document.createElement('td');
+    tdName.setAttribute('data-label', 'Name');
+    tdName.textContent = item.name;
+    if (item.discount && parseFloat(item.discount) > 0) {
+      var badge = document.createElement('span');
+      badge.className = 'discount-badge-sm';
+      badge.textContent = Math.round(parseFloat(item.discount)) + '% OFF';
+      tdName.appendChild(badge);
+    }
+
+    var tdPrice = document.createElement('td');
+    tdPrice.setAttribute('data-label', 'Price');
+    tdPrice.style.textAlign = 'right';
+    tdPrice.textContent = formatCurrency(price);
+
+    var tdQty = document.createElement('td');
+    tdQty.setAttribute('data-label', 'Qty');
+    tdQty.style.textAlign = 'right';
+    // Show unit label for weight items
+    if (item.unit && (item.unit.toLowerCase() === 'kg' || item.unit.toLowerCase() === 'g')) {
+      tdQty.textContent = qty + ' ' + item.unit;
+    } else {
+      tdQty.textContent = qty;
+    }
+
+    var tdSub = document.createElement('td');
+    tdSub.setAttribute('data-label', 'Subtotal');
+    tdSub.style.textAlign = 'right';
+    tdSub.textContent = formatCurrency(lineTotal);
+
+    row.appendChild(tdName);
+    row.appendChild(tdPrice);
+    row.appendChild(tdQty);
+    row.appendChild(tdSub);
+    tbody.appendChild(row);
+  });
+
+  table.appendChild(tbody);
+  itemsContainer.appendChild(table);
+
+  // Totals summary
+  var sWrap = document.createElement('div');
+  sWrap.className = 'reservation-subtotals';
+
+  var subRow = document.createElement('div');
+  subRow.className = 'reservation-subtotal';
+  subRow.innerHTML = '<span>Subtotal</span><span>' + formatCurrency(subtotal) + '</span>';
+  sWrap.appendChild(subRow);
+
+  if (taxTotal > 0) {
+    var taxRow = document.createElement('div');
+    taxRow.className = 'reservation-subtotal';
+    taxRow.innerHTML = '<span>Est. Tax</span><span>' + formatCurrency(taxTotal) + '</span>';
+    sWrap.appendChild(taxRow);
+  }
+
+  var totalRow = document.createElement('div');
+  totalRow.className = 'reservation-subtotal reservation-subtotal--total';
+  totalRow.innerHTML = '<span>Total</span><span>' + formatCurrency(subtotal + taxTotal) + '</span>';
+  sWrap.appendChild(totalRow);
+
+  itemsContainer.appendChild(sWrap);
+
+  // Update the submit button text in the ingredient section
+  var ingSubmitBtn = document.getElementById('ingredient-submit-btn');
+  if (ingSubmitBtn) {
+    ingSubmitBtn.textContent = 'Complete Both Orders';
+  }
+}
+
+function submitDualCart(contactData, recaptchaToken, onDone, onError) {
+  var mw = (typeof SHEETS_CONFIG !== 'undefined') ? (SHEETS_CONFIG.MIDDLEWARE_URL || '') : '';
+  var fermentItems = getReservation(FERMENT_CART_KEY);
+  var ingredientItems = getReservation(INGREDIENT_CART_KEY);
+  var fermentResult = null;
+  var ingredientResult = null;
+  var fermentError = null;
+  var ingredientError = null;
+
+  // Helper: build line items array from cart items
+  function buildLines(items) {
+    return items.map(function (i) {
+      return {
+        name: i.name,
+        quantity: i.qty || 1,
+        rate: parseFloat(String(i.price || '0').replace(/[^0-9.]/g, '')) || 0,
+        item_id: i.zoho_item_id,
+        discount: i.discount
+      };
+    });
+  }
+
+  // Step 1: POST ferment cart
+  var fermentLines = buildLines(fermentItems);
+
+  // Add maker's fee lines for ferment order if applicable
+  if (_makersFeeItem) {
+    var kitQty = 0;
+    fermentItems.forEach(function (i) {
+      if ((i.item_type || 'kit') === 'kit') kitQty += (parseFloat(i.qty) || 1);
+    });
+    if (kitQty > 0) {
+      fermentLines.push({
+        name: _makersFeeItem.name,
+        quantity: kitQty,
+        rate: parseFloat(_makersFeeItem.rate) || 0,
+        item_id: _makersFeeItem.item_id
+      });
+    }
+  }
+
+  // Add milling if applicable
+  if (Object.keys(_milledItemKeys).length > 0 && _millingServiceItem && _millingServiceItem.item_id) {
+    fermentLines.push({ name: 'Milling Service', quantity: 1, rate: _millingServiceItem.rate, item_id: _millingServiceItem.item_id });
+  }
+
+  // Get the selected timeslot (required for ferment order)
+  var sel = document.querySelector('input[name="timeslot"]:checked');
+  var slot = sel ? sel.value : '';
+  var parts = slot ? slot.split(' ') : [];
+  var honeypotVal = document.getElementById('res-website') ? document.getElementById('res-website').value : '';
+
+  // Book timeslot for ferment order first, then POST both checkouts sequentially
+  var bookingProm = (slot && slot !== 'Walk-in \u2014 Immediate')
+    ? fetch(mw + '/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY },
+        body: JSON.stringify({
+          date: parts[0],
+          time: parts.slice(1).join(' '),
+          customer: { name: contactData.name, email: contactData.email },
+          notes: fermentItems.map(function (i) { return i.name; }).join(', ')
+        })
+      }).then(function (r) { return r.json(); })
+    : Promise.resolve({ booking_id: null, timeslot: slot || 'In-store pickup' });
+
+  bookingProm.then(function (bD) {
+    var resolvedTimeslot = bD.timeslot || slot;
+
+    // POST ferment order
+    return fetch(mw + '/api/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer: contactData,
+        items: fermentLines,
+        payment_token: '',
+        timeslot: resolvedTimeslot,
+        honeypot: honeypotVal,
+        recaptcha_token: recaptchaToken,
+        cart_key: FERMENT_CART_KEY
+      })
+    }).then(function (r) { return r.json(); })
+    .then(function (fR) {
+      if (!fR || (!fR.ok && !fR.success)) {
+        // Ferment order failed — surface as error, do not continue to ingredient order
+        throw new Error(fR && fR.error ? fR.error : 'Ferment booking could not be processed. Please try again or call us.');
+      }
+      fermentResult = fR;
+
+      // Step 2: POST ingredient order (reuse same contact, no timeslot needed)
+      var ingLines = buildLines(ingredientItems);
+      return fetch(mw + '/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: contactData,
+          items: ingLines,
+          payment_token: '',
+          timeslot: '',
+          honeypot: honeypotVal,
+          recaptcha_token: recaptchaToken,
+          cart_key: INGREDIENT_CART_KEY
+        })
+      }).then(function (r) { return r.json(); });
+    })
+    .then(function (iR) {
+      ingredientResult = iR;
+      var ingSuccess = iR && (iR.ok || iR.success);
+      onDone({ ferment: fermentResult, ingredient: ingredientResult, ingredientFailed: !ingSuccess });
+    });
+  }).catch(function (err) {
+    onError(err, fermentResult);
+  });
+}
+
+function showDualCartConfirmation(results) {
+  ['reservation-list', 'timeslot-picker', 'reservation-form-section',
+    'ingredient-order-section', 'dual-cart-banner'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+
+  var stepper = document.getElementById('checkout-stepper');
+  if (stepper) stepper.classList.add('hidden');
+
+  updateStepper(4);
+  var conf = document.getElementById('reservation-confirm');
+  if (conf) conf.classList.remove('hidden');
+
+  var fermentNum = results.ferment && (results.ferment.salesorder_number || results.ferment.order_number) || null;
+  var ingNum = results.ingredient && (results.ingredient.salesorder_number || results.ingredient.order_number) || null;
+
+  if (document.getElementById('confirm-order-number')) {
+    var numHtml = '';
+    if (fermentNum) numHtml += 'Ferment Booking: ' + fermentNum;
+    if (!results.ingredientFailed && ingNum) {
+      numHtml += (numHtml ? '<br>' : '') + 'Ingredient Order: ' + ingNum;
+    }
+    document.getElementById('confirm-order-number').innerHTML = numHtml;
+  }
+
+  var summaryEl = document.getElementById('confirm-summary');
+  if (summaryEl) {
+    var fermentItems = getReservation(FERMENT_CART_KEY);
+    var ingItems = getReservation(INGREDIENT_CART_KEY);
+    var html = '';
+    if (fermentItems.length > 0) {
+      html += '<p><strong>Ferment Booking</strong></p>';
+      fermentItems.forEach(function (i) {
+        html += '<p>' + (i.name || 'Item') + ' \u00D7' + (i.qty || 1) + '</p>';
+      });
+    }
+    if (!results.ingredientFailed && ingItems.length > 0) {
+      html += '<p><strong>Ingredient Order</strong></p>';
+      ingItems.forEach(function (i) {
+        html += '<p>' + (i.name || 'Item') + ' \u00D7' + (i.qty || 1) + '</p>';
+      });
+    }
+    summaryEl.innerHTML = html;
+  }
+
+  // Clear carts that succeeded
+  localStorage.removeItem(FERMENT_CART_KEY);
+  if (!results.ingredientFailed) {
+    localStorage.removeItem(INGREDIENT_CART_KEY);
+  }
+
+  if (results.ingredientFailed) {
+    // Partial success — show a notice inside the confirmation
+    var noPayNotice = document.querySelector('.confirm-no-payment-notice');
+    if (noPayNotice) {
+      noPayNotice.classList.remove('hidden');
+      noPayNotice.textContent = 'Your ferment booking is confirmed'
+        + (fermentNum ? ' (' + fermentNum + ')' : '')
+        + '. Your ingredient order could not be processed \u2014 please try again or call us at (604)\u00A0567-4565.';
+    }
+    // Update the confirmation heading to reflect partial success
+    var confTitle = document.querySelector('[data-content="confirm-title"]');
+    if (confTitle) confTitle.textContent = 'Ferment Booking Confirmed';
+    var confText = document.querySelector('[data-content="confirm-text"]');
+    if (confText) confText.textContent = 'Your ferment booking is confirmed. Unfortunately your ingredient order could not be submitted automatically. Please call us or visit the store to complete that order.';
+  } else {
+    var noPayNotice = document.querySelector('.confirm-no-payment-notice');
+    if (noPayNotice) {
+      if (typeof PAYMENT_DISABLED !== 'undefined' && PAYMENT_DISABLED) {
+        noPayNotice.classList.remove('hidden');
+        noPayNotice.textContent = 'No payment has been taken \u2014 we\u2019ll contact you to arrange payment.';
+      } else {
+        noPayNotice.classList.add('hidden');
+      }
+    }
+    var confTitle = document.querySelector('[data-content="confirm-title"]');
+    if (confTitle) confTitle.textContent = 'Both Orders Submitted';
+    var confText = document.querySelector('[data-content="confirm-text"]');
+    if (confText) confText.textContent = "Thank you! Both orders have been received. We\u2019ll be in touch to confirm your ferment appointment and your ingredient order details.";
+  }
+}
+
 function setupBeerWaitlistForm() {
   var f = document.getElementById('beer-waitlist-form'); if (!f) return;
   f.addEventListener('submit', function (e) {
@@ -797,6 +1160,46 @@ function setupReservationForm() {
     }
 
     _checkoutSubmitting = true;
+
+    // Dual-cart path: both carts have items and no specific ?cart= was supplied
+    if (_isDualCart) {
+      var _dualSub = f.querySelector('button[type="submit"]');
+      var _dualOriginalText = _dualSub ? _dualSub.textContent : '';
+      if (_dualSub) { _dualSub.disabled = true; _dualSub.textContent = 'Processing...'; }
+
+      // Require timeslot for the ferment booking
+      var _dualSel = document.querySelector('input[name="timeslot"]:checked');
+      if (!_dualSel) { showToast('Please select a timeslot for your ferment booking.', 'error'); _checkoutSubmitting = false; if (_dualSub) { _dualSub.disabled = false; _dualSub.textContent = _dualOriginalText; } return; }
+
+      getRecaptchaToken('checkout', function (dualToken) {
+        var contactData = {
+          name: document.getElementById('res-name').value,
+          email: document.getElementById('res-email').value,
+          phone: document.getElementById('res-phone').value
+        };
+        // First upsert the contact record, then run sequential cart submissions
+        var mwForDual = (typeof SHEETS_CONFIG !== 'undefined') ? (SHEETS_CONFIG.MIDDLEWARE_URL || '') : '';
+        fetch(mwForDual + '/api/contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': MW_API_KEY },
+          body: JSON.stringify(contactData)
+        }).catch(function () {}).then(function () {
+          submitDualCart(contactData, dualToken,
+            function (results) {
+              _checkoutSubmitting = false;
+              showDualCartConfirmation(results);
+            },
+            function (err, partialFermentResult) {
+              _checkoutSubmitting = false;
+              if (_dualSub) { _dualSub.disabled = false; _dualSub.textContent = _dualOriginalText; }
+              showToast(err.message || 'An error occurred. Please try again or call us.', 'error');
+            }
+          );
+        });
+      });
+      return; // dual-cart path handled; prevent fall-through to single-cart logic
+    }
+
     // H4: Only submit items from the active checkout cart
     var _submitCartKey = getActiveCheckoutCart();
     var items = _submitCartKey ? getReservation(_submitCartKey) : getAllCartItems();

@@ -24,7 +24,7 @@
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap">
   <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <link rel="icon" href="images/Icon_green.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.min.css?v=mmqf9gmb">
+  <link rel="stylesheet" href="css/styles.min.css?v=mmqgwl7i">
 </head>
 <body data-page="reservation">
   <a href="#main" class="skip-to-content">Skip to content</a>
@@ -59,6 +59,9 @@
 
     <section class="content">
       <div class="container">
+
+        <!-- Dual-cart banner: shown by JS when both carts have items -->
+        <div id="dual-cart-banner" class="dual-cart-banner hidden" role="status" aria-live="polite"></div>
 
         <!-- Checkout Stepper -->
         <nav class="checkout-stepper" id="checkout-stepper" aria-label="Checkout progress">
@@ -180,6 +183,21 @@
           </form>
         </div>
 
+        <!-- Section B: Ingredient Order (dual-cart only — rendered by JS when _isDualCart) -->
+        <div id="ingredient-order-section" class="ingredient-order-section hidden">
+          <div class="dual-cart-divider" aria-hidden="true"></div>
+          <div class="dual-cart-section-header">
+            <span class="dual-cart-section-label">Section B</span>
+            <h2>Ingredient Order</h2>
+            <p class="dual-cart-section-note">Your ingredients and supplies will be set aside for in-store pickup. No timeslot required.</p>
+          </div>
+          <div id="ingredient-order-items"></div>
+          <div class="ingredient-order-contact-note">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+            Contact details from Section A will be used for this order.
+          </div>
+        </div>
+
         <!-- Step 4: Confirmation -->
         <div class="reservation-confirm hidden" id="reservation-confirm" data-checkout-step="4">
           <div class="confirm-checkmark" aria-hidden="true">
@@ -247,7 +265,7 @@
   <script src="https://secure.helcim.app/helcim-pay/services/start.js"></script>
   <script src="https://www.google.com/recaptcha/api.js?render=6LerSH0sAAAAAGKtltFqN5fu2w8opPV5BStdzNDu" async></script>
   <script src="js/sheets-config.js" defer></script>
-  <script src="js/main.min.js?v=mmqf9gmb" defer></script>
+  <script src="js/main.min.js?v=mmqgwl7i" defer></script>
   <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js')})}</script>
 </body>
 </html>
