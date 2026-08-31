@@ -536,5 +536,10 @@ function recordCollectReconcileFailure(ctx, transactionId, err) {
 module.exports = {
   reconcilePendingCharge:        reconcilePendingCharge,
   sweepPendingCharges:           sweepPendingCharges,
-  recordCollectReconcileFailure: recordCollectReconcileFailure
+  recordCollectReconcileFailure: recordCollectReconcileFailure,
+  // Exported for direct testing of the D-50-02b cross-module guard: an
+  // unconfirmed-void error's message must not collide with the substrings
+  // this function treats as an already-voided SUCCESS signal (see
+  // helcim-void-status.test.js case 9).
+  isAlreadyVoidedError:          isAlreadyVoidedError
 };
