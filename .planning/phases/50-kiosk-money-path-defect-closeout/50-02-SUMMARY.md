@@ -21,6 +21,7 @@ provides:
   - "D-50-01b unique terminal reference per attempt: soNumber + '-' + first-6-chars-of-helcimIdemKey, used identically in terminalPurchase, pollTerminalResult, and the pending-charge key"
   - "Pending-charge record (SC#4) written after a successful terminal push, salesorder_id included (load-bearing for plan 50-05's D-50-08), deleted on success"
   - "Void routed through moneyPath.voidWithTimeout via a _voidFailed-tracking shim; payment_voided reported honestly instead of hardcoded true"
+  - "Both pending-charge write sites (success path, 90s-timeout path) now agree: idempotency_key stores effectiveKey (the attempt's key) consistently, never the derived Helcim key — reconciled after coordinator review, see Deviations"
 affects: [50-kiosk-money-path-defect-closeout, 50-05, phase-53-money-path-observability-and-ci-gates]
 
 # Tech tracking
@@ -41,10 +42,11 @@ key-decisions:
   - "D-50-01/01a/01b implemented exactly as locked in the plan; no design deviation"
   - "Lock is released ONLY on the two pre-charge failure paths the plan explicitly named (terminal-push failure, SO-fetch failure) — NOT on the balance-zero/closed-order guards or the declined-payment branch, even though those are also pre-charge. This was a deliberate pull-back from an initial broader Rule-2 addition, made specifically to avoid breaking kiosk-salesorders.test.js's cache mock (which has no releaseLock at all) — see Deviations."
   - "pos-giftcard.test.js T6/T7 (Phase 45-07) were updated — the ONLY pre-existing test file touched — because they hardcoded the exact bare-soNumber collision (T-50-08) this plan exists to close; keeping them passing unmodified and satisfying D-50-01b's explicit 'MUST be the identical string' requirement are mutually exclusive. See Deviations."
+  - "Coordinator review (post-Task-3) caught a field-meaning inconsistency: the timeout-path pending-charge write stored the derived Helcim key in idempotency_key while the success-path write stored effectiveKey. Fixed to store effectiveKey in both — grep-verified the only reader (lib/reconcile.js hasMatchingZohoOrder) never matches either value for salesorder-pay today (it looks up a kiosk:idem:confirm: namespace salesorder-pay never writes), so this was safe to fix without any other code changes. See Deviations."
 requirements-completed: []
 
 # Metrics
-duration: ~55min
+duration: ~65min
 completed: 2026-08-31
 ---
 
@@ -62,7 +64,7 @@ promote this code past staging without Task 4's live double-tap verification
 
 ## Performance
 
-- **Duration:** ~55 min (Tasks 1-3 only)
+- **Duration:** ~65 min (Tasks 1-3 plus a post-Task-3 coordinator-review fix)
 - **Started:** 2026-08-31 (session start)
 - **Tasks completed:** 3 of 4 (Task 4 = live checkpoint, pending)
 - **Files modified:** 3 (1 created, 2 modified)
@@ -103,16 +105,18 @@ promote this code past staging without Task 4's live double-tap verification
 4. **Task 3 commit 1: unique terminal reference** - `4e849234` (fix) — case 7 green
 5. **Deviation fix: pos-giftcard.test.js T6/T7 updated for the new reference format** - `2313fee8` (fix) — see Deviations
 6. **Task 3 commit 2: pending-charge record persist/clear** - `29e3c2bd` (fix) — case 8 green
-7. **Task 3 commit 3: hardened void + honest reporting** - `8fde749f` (fix) — cases 9-10 green, 10/10 (11/11) total
+7. **Task 3 commit 3: hardened void + honest reporting** - `8fde749f` (fix) — cases 9-10 green, 10/10 (12/12 incl. extras) total
+8. **Checkpoint summary (pre-review)** - `aa414fd3` (docs) — superseded in content by this revision
+9. **Coordinator-review fix: reconcile idempotency_key across both pending-charge write sites** - `143be9a3` (fix) — adds a 12th regression case; 97/97 middleware suites, 1488/1488 tests green
 
-**Plan metadata:** this commit (SUMMARY only — plan is NOT complete, see below)
+**Plan metadata:** this revision of the SUMMARY (plan is still NOT complete — see below)
 
-_All 7 commits are on `worktree-agent-a47fe9f4a5b2a1403`, based on `867c84c1` (post
+_All commits are on `worktree-agent-a47fe9f4a5b2a1403`, based on `867c84c1` (post
 wave-1-merge tracking commit)._
 
 ## Files Created/Modified
 
-- `zoho-middleware/__tests__/pos-salesorder-pay-idempotency.test.js` — new, 11 cases covering the double-charge lock gate, client/fallback key contract, deterministic Helcim key, unique reference, pending-charge lifecycle, and honest void reporting
+- `zoho-middleware/__tests__/pos-salesorder-pay-idempotency.test.js` — new, 12 cases covering the double-charge lock gate, client/fallback key contract, deterministic Helcim key, unique-reference format pin, pending-charge lifecycle, cross-branch `idempotency_key` consistency, and honest void reporting
 - `zoho-middleware/routes/pos.js` — `/api/kiosk/salesorder-pay` rewritten: router callback (validation + lock gate) split from `processSalesOrderPay` (the work), mirroring the `/api/kiosk/sale` / `processSale` split
 - `zoho-middleware/__tests__/pos-giftcard.test.js` — T6/T7 (Phase 45-07) updated to expect the new unique reference format instead of the bare soNumber they previously hardcoded (see Deviations)
 
@@ -157,17 +161,29 @@ explicit requirements).
 - **Files modified:** `zoho-middleware/__tests__/pos-giftcard.test.js`
 - **Verification:** 9/9 `pos-giftcard.test.js` pass; full middleware suite re-run confirmed no further collisions (1487/1487 after Task 3 commit 3).
 - **Committed in:** `2313fee8`, as its own separate, clearly-labeled commit (not folded into the reference-uniqueness commit) so it is auditable independently.
+- **Caveat (flagged by coordinator review, addressed in Deviation 5):** because `expectedSoPayRefNumber` reimplements the SAME sha256 derivation `routes/pos.js` uses, T6/T7 can prove a pending record is written but CANNOT catch a regression in the reference format itself (a bug in both places at once would still pass). The format is now pinned independently in `pos-salesorder-pay-idempotency.test.js` via a direct regex (`^SO-001-[0-9a-f]{6}$`) that does not mirror the implementation.
+
+**5. [Coordinator review - Rule 1 bug] Two pending-charge write sites disagreed on what `idempotency_key` means**
+- **Found during:** Post-Task-3 coordinator review of the merge candidate
+- **Issue:** The success-path pending-charge write (`processSalesOrderPay`, after a successful terminal push) stored `idempotency_key: effectiveKey`. The 90s-timeout-path write (pre-existing 45-07 code, updated in Task 3 commit 1 for the new `refNumber`) stored `idempotency_key: helcimIdemKey` — the derived Helcim API key, not the attempt's own idempotency key. Both write to the same `KIOSK_PENDING_CHARGE_PREFIX + refNumber` namespace, so the same field meant two different things depending on which branch fired — a trap for plan 50-05, which is about to read these records via a `salesorder_id` discriminator (D-50-08).
+- **Investigation (as directed):** `grep -rn "KIOSK_PENDING_CHARGE_PREFIX|pending-charge" routes/ lib/` showed the only reader of `ctx.idempotency_key` on a pending-charge record is `lib/reconcile.js:102` (`hasMatchingZohoOrder`), which builds `KIOSK_IDEM_PREFIX + 'confirm:' + ctx.idempotency_key` — a namespace written ONLY by `/api/kiosk/sale/confirm`. `salesorder-pay` has no confirm leg, so this lookup never matches for either the old or new value today. The inconsistency was real but currently inert — safe to fix without touching `lib/reconcile.js` or any other reader.
+- **Fix:** Both write sites now store `effectiveKey`. `helcimIdemKey` remains one-line-recoverable from `effectiveKey` via the same sha256 derivation already in the route, so nothing is lost.
+- **Files modified:** `zoho-middleware/routes/pos.js`, `zoho-middleware/__tests__/pos-salesorder-pay-idempotency.test.js`
+- **Test added:** a 12th case that runs one attempt down the success path and a second (same `effectiveKey`) down the timeout path, and asserts both pending records carry the identical `idempotency_key` value — and explicitly asserts it is NOT the sha256-derived Helcim key (the pre-fix timeout-branch value), so a regression back to the old behavior would be caught. This directly covers the shape the coordinator flagged T7 as unable to catch (T7 only asserts `typeof === 'string'`, which passes for either value).
+- **Verification:** `zoho-middleware`: 97/97 suites, 1488/1488 tests green, `routes/pos.js` coverage 84.83% (floor 80%), lint clean. Root: 88/88 suites, 1166/1166 tests green (untouched), lint clean.
+- **Committed in:** `143be9a3`
 
 ---
 
-**Total deviations:** 4 (1 environment gap, 1 self-caught scoping bug, 1 scope pull-back to avoid breaking a pre-existing test, 1 explicitly-mandated pre-existing test fixture update)
-**Impact on plan:** All four were necessary to deliver exactly what the plan specifies against the real state of the repo and its other test files. Deviation 4 is the only pre-existing-test edit, is narrowly scoped to 2 assertions, and is directly traceable to an unambiguous plan requirement — flagged here for explicit review per CLAUDE.md rule 10, since the plan's own Task 2 acceptance criteria said to STOP and surface rather than silently edit a fixture. I judged the plan's Task 3 step 1 language ("MUST be the identical string... or lib/reconcile.js will never locate the record") to be the "explicitly asked" carve-out that rule anticipates, but this judgment call should be confirmed by the orchestrator/user before merge.
+**Total deviations:** 5 (1 environment gap, 1 self-caught scoping bug, 1 scope pull-back to avoid breaking a pre-existing test, 1 explicitly-mandated pre-existing test fixture update, 1 coordinator-review consistency fix)
+**Impact on plan:** All five were necessary to deliver exactly what the plan specifies against the real state of the repo, its other test files, and cross-plan consumers (50-05). Deviation 4 is the only pre-existing-test edit, is narrowly scoped to 2 assertions, and is directly traceable to an unambiguous plan requirement — flagged here for explicit review per CLAUDE.md rule 10, since the plan's own Task 2 acceptance criteria said to STOP and surface rather than silently edit a fixture. I judged the plan's Task 3 step 1 language ("MUST be the identical string... or lib/reconcile.js will never locate the record") to be the "explicitly asked" carve-out that rule anticipates, but this judgment call should be confirmed by the orchestrator/user before merge. Deviation 5 was raised and directed by the coordinator, not self-initiated.
 
 ## Issues Encountered
 
-- None beyond the deviations above. Full middleware suite (1487/1487) and full
-  frontend suite (1166/1166) both green; both linters (`zoho-middleware` and
-  root) clean at the point this SUMMARY was written.
+- None beyond the deviations above. Full middleware suite (97/97 suites,
+  1488/1488 tests) and full frontend suite (88/88 suites, 1166/1166 tests)
+  both green; both linters (`zoho-middleware` and root) clean at the point
+  this SUMMARY was last revised.
 
 ## User Setup Required
 
@@ -195,7 +211,7 @@ verification gate itself.
 ## Self-Check: PASSED
 
 - FOUND: `zoho-middleware/__tests__/pos-salesorder-pay-idempotency.test.js`
-- FOUND: `zoho-middleware/routes/pos.js` (modified, `moneyPath.acquireIdempotencyLock` x3, `moneyPath.voidWithTimeout` present in salesorder-pay handler)
+- FOUND: `zoho-middleware/routes/pos.js` (modified, `moneyPath.acquireIdempotencyLock` x3, `moneyPath.voidWithTimeout` present in salesorder-pay handler, both pending-charge writes store `effectiveKey`)
 - FOUND: `zoho-middleware/__tests__/pos-giftcard.test.js` (modified)
 - FOUND commit: `ab9e2655` (test)
 - FOUND commit: `1de5371b` (fix)
@@ -204,3 +220,5 @@ verification gate itself.
 - FOUND commit: `2313fee8` (fix)
 - FOUND commit: `29e3c2bd` (fix)
 - FOUND commit: `8fde749f` (fix)
+- FOUND commit: `aa414fd3` (docs)
+- FOUND commit: `143be9a3` (fix)
