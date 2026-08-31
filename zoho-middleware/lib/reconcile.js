@@ -148,6 +148,16 @@ function isOldEnough(ctx) {
  */
 function isAlreadyVoidedError(err) {
   if (!err) return false;
+  // D-50-02b structural guard: an unconfirmed void (lib/helcim.js
+  // voidTransaction rejection with isUnconfirmedVoid===true) is definitionally
+  // NOT an already-voided success, regardless of what Helcim's raw status
+  // string says. The static error wording avoids the collision substrings
+  // below, but interpolates Helcim's status verbatim — a real status like
+  // 'reversal_pending' or 'already_processed' would otherwise smuggle a
+  // collision substring back into err.message and cause reconcile to
+  // silently clear the pending sentinel with no sv:void-failure record and
+  // no staff alert (see reconcile-unconfirmed-void.test.js).
+  if (err.isUnconfirmedVoid === true) return false;
   var msg = (err.message || '').toLowerCase();
   // Check error message text
   if (msg.indexOf('already') !== -1 || msg.indexOf('reversal') !== -1 ||
