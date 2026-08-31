@@ -1,5 +1,7 @@
 'use strict';
 
+var crypto = require('crypto');
+
 // ---------------------------------------------------------------------------
 // pos-giftcard.test.js — Phase 45-07 gift-card security hardening
 //
@@ -461,7 +463,22 @@ describe('pos routes — gift-card hardening Phase 45-07', function () {
         };
       }
 
-      test('T6: salesorder-pay timeout → cache.set called with KIOSK_PENDING_CHARGE_PREFIX + soNumber', function (done) {
+      // D-50-01b (50-02): salesorder-pay now gives each attempt a UNIQUE
+      // terminal reference (soNumber + '-' + a 6-char slice of the
+      // deterministic Helcim idempotency key) instead of reusing the bare
+      // soNumber — two attempts against the same order previously collided
+      // on this exact string (T-50-08), which is the defect these two
+      // assertions used to encode as correct. No idempotency_key is sent in
+      // makeSoPayReq, so the route falls back to the SO-id-scoped key
+      // ('so:' + soId) per D-50-01 — replicated here to compute the expected
+      // reference the same way routes/pos.js does.
+      function expectedSoPayRefNumber(soId, soNumber) {
+        var effectiveKey = 'so:' + soId;
+        var helcimIdemKey = crypto.createHash('sha256').update(effectiveKey).digest('hex').substring(0, 25);
+        return (soNumber + '-' + helcimIdemKey.substring(0, 6)).slice(0, 64);
+      }
+
+      test('T6: salesorder-pay timeout → cache.set called with KIOSK_PENDING_CHARGE_PREFIX + refNumber (D-50-01b unique reference)', function (done) {
         zohoApi.zohoGet.mockResolvedValue(
           makeSoGetMock('SO-D13-001', 'SO-00D13', 80.00)
         );
@@ -469,6 +486,7 @@ describe('pos routes — gift-card hardening Phase 45-07', function () {
 
         var req = makeSoPayReq('SO-D13-001');
         var res = mockRes();
+        var expectedRef = expectedSoPayRefNumber('SO-D13-001', 'SO-00D13');
 
         res.status.mockImplementation(function (code) {
           return {
@@ -481,7 +499,7 @@ describe('pos routes — gift-card hardening Phase 45-07', function () {
                          c[0].indexOf('test:kiosk:pending-charge:') === 0;
                 });
                 expect(pendingCall).toBeTruthy();
-                expect(pendingCall[0]).toBe('test:kiosk:pending-charge:SO-00D13');
+                expect(pendingCall[0]).toBe('test:kiosk:pending-charge:' + expectedRef);
                 done();
               } catch (e) { done(e); }
             }
@@ -499,6 +517,7 @@ describe('pos routes — gift-card hardening Phase 45-07', function () {
 
         var req = makeSoPayReq('SO-D13-002');
         var res = mockRes();
+        var expectedRef = expectedSoPayRefNumber('SO-D13-002', 'SO-00D14');
 
         res.status.mockImplementation(function (code) {
           return {
@@ -512,7 +531,7 @@ describe('pos routes — gift-card hardening Phase 45-07', function () {
                 expect(pendingCall).toBeTruthy();
                 var record = pendingCall[1];
                 expect(record.salesorder_id).toBe('SO-D13-002');
-                expect(record.reference_number).toBe('SO-00D14');
+                expect(record.reference_number).toBe(expectedRef);
                 expect(record.amount).toBeCloseTo(120.00, 2);
                 expect(typeof record.idempotency_key).toBe('string');
                 expect(record.idempotency_key.length).toBeGreaterThan(0);
