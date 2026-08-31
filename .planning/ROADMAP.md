@@ -738,7 +738,7 @@ Plans:
 | 47. Purge Publicly-Served Internal Docs | v4.5 | 1/1 | ✅ Closed on staging (verified 2026-07-03); prod audit-doc at next prod deploy | 2026-07-03 |
 | 48. Kiosk POS De-Fork (kiosk-core.js) | v4.5 | 5/6 | Complete    | 2026-07-10 |
 | 49. Online Captured-Amount Verification | v4.5 | 1/2 | 49-01 done (H2 fix + 13-test regression, suite green); 49-02 live-card UAT pending deploy | - |
-| 50. Kiosk Money-Path Defect Closeout | v4.5 | 0/? | Not started | - |
+| 50. Kiosk Money-Path Defect Closeout | v4.5 | 1/5 | In Progress|  |
 | 51. Gift-Card Ledger Integrity | v4.5 | 0/? | Not started | - |
 | 52. Fail-Closed Sweep | v4.5 | 5/5 | Complete    | 2026-07-03 |
 | 53. Money-Path Observability & CI Gates | v4.5 | 6/6 | Complete    | 2026-07-03 |
@@ -1325,7 +1325,7 @@ Plans:
 **Wave 1**
 
 - [ ] 50-01-PLAN.md — `voidTransaction` inspects the actual reversal status instead of trusting any 2xx (M-A2/H5, SC#3) + blocking live-void checkpoint
-- [ ] 50-04-PLAN.md — Client: one stable idempotency key per payment attempt + disable-on-click on the sale and SO-pay buttons (M-B1; both kiosk.html and admin.html via the shared `kiosk-core.js`)
+- [x] 50-04-PLAN.md — Client: one stable idempotency key per payment attempt + disable-on-click on the sale and SO-pay buttons (M-B1; both kiosk.html and admin.html via the shared `kiosk-core.js`)
 
 **Wave 2**
 
