@@ -2443,9 +2443,15 @@ function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
       // Push payment to terminal
       var TERMINAL_TIMEOUT_MS = 90000;
       var POLL_INTERVAL_MS = 5000;
-      var idempotencyKey = helcimLib.generateIdempotencyKey();
+      // D-50-01a: derive the Helcim terminal idempotency key deterministically
+      // from the effective lock key (mirrors /api/kiosk/sale) instead of
+      // minting a fresh random key per call. Same effectiveKey -> same Helcim
+      // key -> Helcim itself refuses a duplicate terminal charge even if the
+      // Redis lock is bypassed (Redis outage, two Railway instances racing a
+      // lock release).
+      var helcimIdemKey = crypto.createHash('sha256').update(effectiveKey).digest('hex').substring(0, 25);
 
-      helcimLib.terminalPurchase(balance, soNumber, idempotencyKey)
+      helcimLib.terminalPurchase(balance, soNumber, helcimIdemKey)
         .then(function () {
           log.info('[kiosk/so-pay] Terminal push sent: soNumber=' + soNumber);
 
@@ -2608,7 +2614,7 @@ function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
               reference_number: soNumber,
               amount:           balance,
               salesorder_id:    soId,
-              idempotency_key:  idempotencyKey,
+              idempotency_key:  helcimIdemKey,
               created_at:       new Date().toISOString()
             };
             cache.set(_pendingKey, _pendingCtx, KIOSK_PENDING_CHARGE_TTL).catch(function () {});
