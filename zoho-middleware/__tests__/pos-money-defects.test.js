@@ -45,7 +45,11 @@ jest.mock('../lib/helcim', function () {
     voidTransaction: jest.fn().mockResolvedValue({}),
     getTerminalDiagnostics: jest.fn().mockReturnValue({}),
     generateIdempotencyKey: jest.fn().mockReturnValue('idem-def-so-1'),
-    cancelTerminal: jest.fn().mockResolvedValue({})
+    cancelTerminal: jest.fn().mockResolvedValue({}),
+    // 50-03 (M-A3): captured-amount readback, added by plan 50-03 to the
+    // plain-terminal confirm path. No default — set where needed (F2 describe
+    // block below) with the SAME total the test's own cart/catalog establishes.
+    getCardTransactionById: jest.fn()
   };
 });
 
@@ -608,6 +612,9 @@ describe('F2 — manual-confirm verifies terminal charge before booking', functi
     });
     moneyPath.acquireIdempotencyLock.mockResolvedValue({ status: 'acquired' });
     zohoApi.zohoPost.mockResolvedValue({ invoice: { invoice_id: 'inv-f2', invoice_number: 'INV-F2-001' } });
+    // 50-03 (M-A3): CATALOG_EXEMPT item-gc-def rate=100, tax 0% -> grandTotal=100
+    // for every F2 test that reaches the invoice chain (F2-A, F2-D).
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 100.00 });
   });
 
   afterEach(function () {

@@ -29,7 +29,11 @@ jest.mock('../lib/helcim', function () {
     }),
     voidTransaction: jest.fn().mockResolvedValue({}),
     getTerminalDiagnostics: jest.fn().mockReturnValue({}),
-    generateIdempotencyKey: jest.fn().mockReturnValue('idem-gc-so-1')
+    generateIdempotencyKey: jest.fn().mockReturnValue('idem-gc-so-1'),
+    // 50-03 (M-A3): captured-amount readback, added by plan 50-03 to the
+    // plain-terminal confirm path. No default — set per-test below with the
+    // SAME total the test's own cart already establishes.
+    getCardTransactionById: jest.fn()
   };
 });
 
@@ -271,6 +275,8 @@ describe('pos routes — gift card split-tender (Phase 44)', function () {
         return Promise.resolve({});
       });
       axiosMock.post.mockResolvedValue({ data: { ok: true } });
+      // 50-03 (M-A3): rate=100, tax0, gift $40 applied -> terminalApplied=60
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 60.00 });
 
       var req = {
         body: {
@@ -388,6 +394,8 @@ describe('pos routes — gift card split-tender (Phase 44)', function () {
         callOrder.push('axiosPost:' + (parsed && parsed.action));
         return Promise.resolve({ data: { ok: true } });
       });
+      // 50-03 (M-A3): rate=100, tax0, gift $40 applied -> terminalApplied=60
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 60.00 });
 
       var req = {
         body: {
@@ -486,6 +494,8 @@ describe('pos routes — gift card split-tender (Phase 44)', function () {
       });
       // Apps Script call fails
       axiosMock.post.mockRejectedValue(new Error('Apps Script unreachable'));
+      // 50-03 (M-A3): rate=100, tax0, gift $40 applied -> terminalApplied=60
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 60.00 });
 
       var req = {
         body: {
@@ -529,6 +539,8 @@ describe('pos routes — gift card split-tender (Phase 44)', function () {
       });
       // Apps Script returns non-ok (e.g., balance not found)
       axiosMock.post.mockResolvedValue({ data: { ok: false, error: 'not_found' } });
+      // 50-03 (M-A3): rate=100, tax0, gift $40 applied -> terminalApplied=60
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 60.00 });
 
       var req = {
         body: {
@@ -608,6 +620,8 @@ describe('pos routes — gift card split-tender (Phase 44)', function () {
         return Promise.resolve({});
       });
       axiosMock.post.mockResolvedValue({ data: { ok: true } });
+      // 50-03 (M-A3): rate=100, no gift card -> terminalApplied=100
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 100.00 });
 
       var req = {
         body: {
@@ -949,6 +963,8 @@ describe('pos routes — gift_cert line pricing (Phase 44-09)', function () {
       return Promise.resolve({});
     });
     require('axios').post.mockResolvedValue({ data: { ok: true } });
+    // 50-03 (M-A3): gift_cert rate=50, no catalog items -> grandTotal=50
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 50.00 });
 
     var req = {
       body: {
@@ -998,6 +1014,8 @@ describe('pos routes — gift_cert line pricing (Phase 44-09)', function () {
       return Promise.resolve({});
     });
     require('axios').post.mockResolvedValue({ data: { ok: true } });
+    // 50-03 (M-A3): gift_cert rate=50, no catalog items -> grandTotal=50
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 50.00 });
 
     var req = {
       body: {
@@ -1098,6 +1116,8 @@ describe('pos routes — gift_cert activation + confirm idempotency (Phase 44-09
       callOrder.push('axiosPost:' + (parsed && parsed.action));
       return Promise.resolve({ data: { ok: true } });
     });
+    // 50-03 (M-A3): gift_cert rate=50, no catalog items -> grandTotal=50
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 50.00 });
 
     var req = {
       body: {
@@ -1154,6 +1174,8 @@ describe('pos routes — gift_cert activation + confirm idempotency (Phase 44-09
       var parsed = typeof body === 'string' ? JSON.parse(body) : body;
       return Promise.resolve({ data: { ok: true, action: parsed.action } });
     });
+    // 50-03 (M-A3): gift_cert rate=75, no catalog items -> grandTotal=75
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 75.00 });
 
     var req = {
       body: {
@@ -1208,6 +1230,8 @@ describe('pos routes — gift_cert activation + confirm idempotency (Phase 44-09
       }
       return Promise.resolve({ data: { ok: true } });
     });
+    // 50-03 (M-A3): gift_cert rate=50, no catalog items -> grandTotal=50
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 50.00 });
 
     var req = {
       body: {
@@ -1257,6 +1281,8 @@ describe('pos routes — gift_cert activation + confirm idempotency (Phase 44-09
     });
     // issue_gift_card fails (Apps Script error)
     axiosMock.post.mockRejectedValue(new Error('Apps Script unreachable'));
+    // 50-03 (M-A3): gift_cert rate=50, no catalog items -> grandTotal=50
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 50.00 });
 
     var req = {
       body: {
@@ -1310,6 +1336,8 @@ describe('pos routes — gift_cert activation + confirm idempotency (Phase 44-09
       callOrder.push('axiosPost:' + (parsed && parsed.action));
       return Promise.resolve({ data: { ok: true, new_balance: 150 } });
     });
+    // 50-03 (M-A3): gift_cert rate=50, no catalog items -> grandTotal=50
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 50.00 });
 
     var req = {
       body: {
@@ -1358,6 +1386,8 @@ describe('pos routes — gift_cert activation + confirm idempotency (Phase 44-09
       return Promise.resolve({});
     });
     axiosMock.post.mockResolvedValue({ data: { ok: false, error: 'not_found' } });
+    // 50-03 (M-A3): gift_cert rate=50, no catalog items -> grandTotal=50
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 50.00 });
 
     var req = {
       body: {
@@ -1491,6 +1521,9 @@ describe('pos routes — gift_cert activation + confirm idempotency (Phase 44-09
       axiosCalls.push(parsed.action);
       return Promise.resolve({ data: { ok: true } });
     });
+    // 50-03 (M-A3): catalog item rate=100 (tax0) + gift_cert rate=50 = 150 subtotal;
+    // gift card $40 redeemed -> terminalApplied=110
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 110.00 });
 
     var req = {
       body: {
