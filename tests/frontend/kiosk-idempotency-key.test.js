@@ -350,4 +350,48 @@ describe('kiosk idempotency key -- salesorder-pay double-tap', function () {
       nowSpy.mockRestore();
     });
   });
+
+  // Task 3 acceptance criteria: the retry path in kioskShowSoError re-enters
+  // kioskCollectPayment(_kioskSoPayingId) directly. If the in-flight guard
+  // isn't cleared BEFORE kioskShowSoError fires, this retry is silently
+  // swallowed by the new guard and the Pay button appears dead.
+  test('the SO-pay retry path clears the in-flight guard so a retry after a decline actually sends a second request', function () {
+    var surface = loadSurface('../../js/kiosk.js');
+    localStorage.setItem(DEVICE_TOKEN_KEY, 'idem-test-token');
+    surface.core.setTerminalStatus(true, 'Terminal ready');
+
+    return seedSalesOrders(surface, [
+      { salesorder_id: 'SO-RETRY', salesorder_number: 'SO-9001', balance: 15, customer_name: 'Retry Test', line_items: [] }
+    ]).then(function () {
+      injectEl('kiosk-error-title');
+      injectEl('kiosk-error-msg');
+      injectEl('kiosk-retry-btn', 'button');
+      injectEl('kiosk-back-btn', 'button');
+      injectEl('kiosk-error-detail');
+
+      global.fetch.mockClear();
+      global.fetch.mockImplementationOnce(function () {
+        return Promise.resolve({ status: 402, json: function () { return Promise.resolve({ error: 'Declined' }); } });
+      });
+      surface.core.collectPayment('SO-RETRY');
+
+      return flushPromises().then(function () {
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        var retryBtn = document.getElementById('kiosk-retry-btn');
+        expect(retryBtn).not.toBeNull();
+        expect(retryBtn.style.display).not.toBe('none');
+
+        global.fetch.mockClear();
+        global.fetch.mockResolvedValueOnce({
+          status: 200,
+          json: function () { return Promise.resolve({ ok: true, salesorder_number: 'SO-9001', amount: 15 }); }
+        });
+        retryBtn.click();
+
+        // A bricked retry (in-flight guard still set to 'SO-RETRY' when this
+        // fires) would leave fetch uncalled here.
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
 });

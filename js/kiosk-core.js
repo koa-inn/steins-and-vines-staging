@@ -391,6 +391,11 @@
   var _kioskSoItems = [];       // items for new SO creation
   var _kioskSoCustomer = null;  // { contact_id, name, email }
   var _kioskSoPayingId = null;  // tracks SO being paid (for retry)
+  // 50-04 (D-50-05, T-50-20/T-50-21): salesorder-pay's own key + guard,
+  // separate from the sale-path ones above — kioskCollectPayment is
+  // reachable from four call sites, only one of which is a button click.
+  var _kioskSoPayKey = null;
+  var _kioskSoPayInFlightId = null;
   var _kioskSoActiveChips = ['open', 'draft'];  // default active chip filter (D-10)
   var _kioskImportedSoId = null;        // SO ID when cart was imported from an SO
   var _kioskImportedSoNumber = null;    // SO number for display (e.g., "SO-001234")
@@ -4050,6 +4055,11 @@
     Array.prototype.forEach.call(list.querySelectorAll('.kiosk-so-pay-btn'), function (btn) {
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
+        // 50-04 (D-50-05, T-50-21): disable-on-click primary guard. The
+        // in-flight guard inside kioskCollectPayment (_kioskSoPayInFlightId)
+        // is the real backstop — this function is reachable from three other
+        // non-button call sites too.
+        btn.disabled = true;
         kioskCollectPayment(btn.getAttribute('data-so-id'));
       });
     });
@@ -4302,6 +4312,13 @@
       return;
     }
 
+    // 50-04 (D-50-05, T-50-21): re-entrancy guard — a double-tap on the SAME
+    // order while it is already in flight is a no-op. This function is
+    // reachable from four call sites (the imported-SO update/retry forks in
+    // kioskProceedToPayment, the .kiosk-so-pay-btn click, the post-SO-create
+    // "Save & Pay" flow) — only one of which is covered by a disabled button.
+    if (_kioskSoPayInFlightId === soId) return;
+
     _kioskSoPayingId = soId;
     var balance = parseFloat(so.balance) || 0;
     var mwUrl = _kcEnv.mwUrl;
@@ -4314,6 +4331,11 @@
       showToast('POS terminal is not ready. Check terminal status below.', 'error');
       return;
     }
+
+    // Mint the key for THIS order's payment attempt now that it is actually
+    // proceeding.
+    _kioskSoPayInFlightId = soId;
+    _kioskSoPayKey = 'SOPAY-' + soId + '-' + Date.now();
 
     // Show payment view
     kioskShowView('payment');
@@ -4346,6 +4368,10 @@
       cancelBtn.disabled = false;
       cancelBtn.onclick = function () {
         cancelled = true;
+        // 50-04 (T-50-22): cancel is a terminal outcome — clear the guard so
+        // a legitimate retry (or a different order) isn't silently swallowed.
+        _kioskSoPayInFlightId = null;
+        _kioskSoPayKey = null;
         kioskShowCollect();
       };
     }
@@ -4353,11 +4379,19 @@
     fetch(mwUrl + '/api/kiosk/salesorder-pay', _kcMergeAuth({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ salesorder_id: soId })
+      body: JSON.stringify({ salesorder_id: soId, idempotency_key: _kioskSoPayKey })
     }))
     .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
     .then(function (result) {
       if (cancelled) return;
+      // 50-04 (T-50-22): every branch below — success and every failure
+      // routed through kioskShowSoError — is a terminal outcome for THIS
+      // order's attempt. Clear FIRST: the retry path in kioskShowSoError
+      // re-enters kioskCollectPayment(_kioskSoPayingId) synchronously, so if
+      // this guard is still set the retry is silently swallowed and the Pay
+      // button appears dead.
+      _kioskSoPayInFlightId = null;
+      _kioskSoPayKey = null;
       if (spinnerEl) spinnerEl.style.display = 'none';
 
       if (result.data && result.data.ok) {
@@ -4409,17 +4443,25 @@
     })
     .catch(function () {
       if (cancelled) return;
+      // 50-04 (T-50-22): network failure never reaches the .then() clear
+      // above — clear here too, or a connection error bricks SO-pay retries.
+      _kioskSoPayInFlightId = null;
+      _kioskSoPayKey = null;
       if (spinnerEl) spinnerEl.style.display = 'none';
       kioskShowSoError('Connection Error', 'Could not reach the payment server. Please try again.', true);
     });
   }
 
   function kioskShowSoError(title, msg, canRetry, extra) {
-    // 50-04 (T-50-22): the imported-SO update/retry forks in
-    // kioskProceedToPayment call kioskShowSoError BEFORE kioskCollectPayment
-    // is ever entered — only the sale-path flag was set at that point, so it
-    // must be released here too. Harmless no-op when already clear.
+    // 50-04 (T-50-22): belt-and-suspenders — also release the sale-path
+    // guard here. kioskShowSoError is reached both from inside
+    // kioskCollectPayment (already cleared above) AND from the imported-SO
+    // update/retry forks in kioskProceedToPayment BEFORE kioskCollectPayment
+    // is ever entered, where only the sale-path flag was set. Harmless no-op
+    // when either guard is already clear.
     _kioskEndPaymentAttempt();
+    _kioskSoPayInFlightId = null;
+    _kioskSoPayKey = null;
     kioskShowView('error');
 
     var titleEl = document.getElementById('kiosk-error-title');
