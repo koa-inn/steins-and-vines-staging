@@ -47,7 +47,11 @@ jest.mock('../lib/helcim', function () {
     voidTransaction: jest.fn().mockResolvedValue({}),
     getTerminalDiagnostics: jest.fn().mockReturnValue({}),
     generateIdempotencyKey: jest.fn().mockReturnValue('idem-m3-so-1'),
-    cancelTerminal: jest.fn().mockResolvedValue({})
+    cancelTerminal: jest.fn().mockResolvedValue({}),
+    // 50-03 (M-A3): captured-amount readback, added by plan 50-03 to the
+    // plain-terminal confirm path. No default — set where needed (below) with
+    // the SAME total the test's own cart/catalog establishes.
+    getCardTransactionById: jest.fn()
   };
 });
 
@@ -240,6 +244,8 @@ describe('gift-card clearing account — fails closed when env unset (52-03 M3)'
 
   test('env SET: clearing payment still posts with the real env account_id (preserved behavior)', function (done) {
     process.env.ZOHO_GIFT_CARD_CLEARING_ACCOUNT_ID = '109900000000873209';
+    // 50-03 (M-A3): rate=100, tax 0%, gift card $40 applied -> terminalApplied=60
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 60.00 });
 
     var req = confirmReq();
     var res = mockRes();

@@ -20,7 +20,11 @@ jest.mock('../lib/helcim', function () {
     }),
     voidTransaction: jest.fn().mockResolvedValue({}),
     getTerminalDiagnostics: jest.fn().mockReturnValue({}),
-    generateIdempotencyKey: jest.fn().mockReturnValue('idem-so-1')
+    generateIdempotencyKey: jest.fn().mockReturnValue('idem-so-1'),
+    // 50-03 (M-A3): captured-amount readback, added by plan 50-03 to the
+    // plain-terminal confirm path. No default — set per-test below with the
+    // SAME total the test's own cart already establishes.
+    getCardTransactionById: jest.fn()
   };
 });
 jest.mock('../lib/zoho-api', function () {
@@ -309,6 +313,8 @@ describe('pos routes — custom line items', function () {
       cache.get.mockResolvedValue(CATALOG_WITH_GST);
       delete process.env.KIOSK_GST_TAX_ID;
       zohoApi.zohoPost.mockResolvedValue({ invoice: { invoice_id: 'inv-2', invoice_number: 'INV-002' } });
+      // 50-03 (M-A3): rate=100, taxable:true, 5% GST -> grandTotal=105
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 105.00 });
 
       var req = {
         body: {
@@ -352,6 +358,8 @@ describe('pos routes — custom line items', function () {
       cache.get.mockResolvedValue(CATALOG_NO_GST);
       process.env.KIOSK_GST_TAX_ID = 'tax-gst-env-override';
       zohoApi.zohoPost.mockResolvedValue({ invoice: { invoice_id: 'inv-3', invoice_number: 'INV-003' } });
+      // 50-03 (M-A3): rate=75, taxable:true, 5% GST -> grandTotal=78.75
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 78.75 });
 
       var req = {
         body: {
@@ -392,6 +400,8 @@ describe('pos routes — custom line items', function () {
     test('tax-exempt custom line: Zoho invoice line has no tax_id', function (done) {
       cache.get.mockResolvedValue(CATALOG_WITH_GST);
       zohoApi.zohoPost.mockResolvedValue({ invoice: { invoice_id: 'inv-4', invoice_number: 'INV-004' } });
+      // 50-03 (M-A3): rate=50, taxable:false -> grandTotal=50
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 50.00 });
 
       var req = {
         body: {
@@ -440,6 +450,8 @@ describe('pos routes — custom line items', function () {
     test('description + note => Zoho line description is "Description — Note"', function (done) {
       cache.get.mockResolvedValue(CATALOG_WITH_GST);
       zohoApi.zohoPost.mockResolvedValue({ invoice: { invoice_id: 'inv-5', invoice_number: 'INV-005' } });
+      // 50-03 (M-A3): rate=100, taxable:true, 5% GST -> grandTotal=105
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 105.00 });
 
       var req = {
         body: {
@@ -475,6 +487,8 @@ describe('pos routes — custom line items', function () {
     test('blank note => Zoho line description is just the description', function (done) {
       cache.get.mockResolvedValue(CATALOG_WITH_GST);
       zohoApi.zohoPost.mockResolvedValue({ invoice: { invoice_id: 'inv-6', invoice_number: 'INV-006' } });
+      // 50-03 (M-A3): rate=60, taxable:true, 5% GST -> grandTotal=63
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 63.00 });
 
       var req = {
         body: {

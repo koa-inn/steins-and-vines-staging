@@ -421,6 +421,23 @@ function findMissingCatalogItem(items, catalogMap) {
 }
 
 function processSale(body, idempotencyKey, req, res, stageStart) {
+  // D-50-03 (50-03 / H4 / SC#2): mirrors the confirm-path hook above — release
+  // the sale idempotency lock on EVERY failure return in processSale AND
+  // processSaleWithPrices (same res object, so one hook here covers both).
+  // As of plan 50-04 the kiosk client sends a STABLE idempotency key across a
+  // double-tap; a keyed request that 400s on a pre-charge validation guard
+  // (catalog miss, gift-card lookup 503, etc.) and is then legitimately
+  // retried with the SAME key would otherwise hit contention -> 409 and
+  // strand the sale. Never release on a path where a terminal charge may
+  // have succeeded — statusCode >= 400 satisfies that: the successful
+  // terminal-push path responds 202.
+  if (idempotencyKey && res && typeof res.on === 'function') {
+    res.on('finish', function () {
+      if (res.statusCode >= 400 && !(res.locals && res.locals.__keepIdemLock)) {
+        cache.releaseLock(idempotencyKey).catch(function () {});
+      }
+    });
+  }
   // Validate required fields
   if (!body || !Array.isArray(body.items) || body.items.length === 0) {
     return res.status(400).json({ error: 'Cart is empty' });
@@ -1158,6 +1175,24 @@ router.post('/api/kiosk/sale/confirm', function (req, res) {
 });
 
 function runConfirm(body, confirmIdemKey, req, res) {
+  // D-50-03 (50-03 / H4 / SC#2): release the confirm idempotency lock on
+  // EVERY failure return in this function — the ~10 existing ones and any
+  // future one — via a single response-finish hook instead of editing each
+  // return res.status(4xx) site (that per-site approach is exactly how the
+  // bug happened: a failure path was added without a release). The
+  // exception is load-bearing: when an unvoided charge is still in play
+  // (res.locals.__keepIdemLock === true, set by the void-failure branch
+  // below), the lock stays held so a retry cannot double-charge.
+  // Guarded on typeof res.on === 'function': real Express responses are
+  // EventEmitters and always have it; a handful of pre-existing test files
+  // pass a plain mock res object without .on, and must not crash here.
+  if (confirmIdemKey && res && typeof res.on === 'function') {
+    res.on('finish', function () {
+      if (res.statusCode >= 400 && !(res.locals && res.locals.__keepIdemLock)) {
+        cache.releaseLock(confirmIdemKey).catch(function () {});
+      }
+    });
+  }
   cache.get(KIOSK_PRODUCTS_CACHE_KEY).then(function (catalog) {
     var catalogMap = {};
     if (Array.isArray(catalog)) {
@@ -1548,6 +1583,52 @@ function runConfirm(body, confirmIdemKey, req, res) {
       : Promise.resolve();
 
     return Promise.all([verifyManualCharge, verifyMotoCharge]).then(function () {
+    // M-A3 / SC#1 (50-03): verify the amount ACTUALLY captured on the card
+    // covers terminalApplied, BEFORE any Zoho side-effect. Mirrors
+    // checkout.js's MONEY-01/H2 pattern (readback -> NaN-on-throw -> tagged
+    // throw -> EXISTING catch's void-on-failure — no second void path,
+    // audit H5/L18), but is strict in BOTH directions (D-50-04): the kiosk
+    // sets its own charge amount, so an over-capture means OUR OWN catalog
+    // moved between the sale and confirm legs and overcharged the
+    // customer — not a customer's choice to overpay, unlike checkout.js.
+    // Skipped for tender:'cash' (no Helcim charge exists to verify, T-70-03)
+    // and tender:'moto' (already verified above by verifyMotoCharge — a
+    // second readback here would be redundant, not incorrect).
+    var CAPTURED_AMOUNT_TOLERANCE = 0.01;
+    var captureVerify = Promise.resolve();
+    if (terminalApplied > 0 && body.tender !== 'cash' && body.tender !== 'moto') {
+      captureVerify = helcimLib.getCardTransactionById(txnId)
+        .then(function (txn) {
+          return parseFloat(txn && txn.amount);
+        })
+        .catch(function (captureReadErr) {
+          log.error('[pos/kiosk/sale/confirm] M-A3: captured-amount readback failed for txn=' +
+            txnId + ': ' + captureReadErr.message);
+          captureExceptionSafe(captureReadErr, {
+            level: 'error',
+            tags: { reqId: req.id, txnId: txnId, salesOrderId: null }
+          });
+          return NaN; // unverifiable is treated as a mismatch — fail closed
+        })
+        .then(function (captured) {
+          if (!isFinite(captured) || captured <= 0 ||
+              Math.abs(captured - terminalApplied) > CAPTURED_AMOUNT_TOLERANCE) {
+            log.error('[pos/kiosk/sale/confirm] M-A3: captured amount mismatch — txn=' + txnId +
+              ' captured=' + captured + ' terminalApplied=' + terminalApplied);
+            var mismatchErr = new Error('Captured amount could not be verified against the sale total');
+            mismatchErr.isCapturedAmountMismatch = true;
+            // Carries the REAL resolved txn id (may differ from body.transaction_id
+            // for a manual-confirm sale, where body.transaction_id is still the
+            // literal 'manual-confirm' string sent by the client — txnId here is
+            // the actual Helcim id resolved by verifyManualCharge above). The
+            // outer catch's void logic otherwise only has body.transaction_id
+            // available and would try to void a non-existent 'manual-confirm' id.
+            mismatchErr.__capturedTxnId = txnId;
+            throw mismatchErr;
+          }
+        });
+    }
+    return captureVerify.then(function () {
     return zohoPost('/invoices', invoicePayload).then(function (invoiceData) {
       var invoice = invoiceData.invoice || {};
       var invoiceId = invoice.invoice_id || '';
@@ -1787,6 +1868,7 @@ function runConfirm(body, confirmIdemKey, req, res) {
         });
       });
     }); // end zohoPost.then (inside gcConfirmBalanceLookup.then)
+    }); // end captureVerify.then (M-A3 / 50-03 captured-amount verification)
     }); // end Promise.all([verifyManualCharge, verifyMotoCharge]).then (F2 45-09 / 70-02 MONEY-01/H2 verification)
     }); // end gcConfirmBalanceLookup.then (D-12 balance validation)
     }); // end resolveDiscount.then
@@ -1823,16 +1905,31 @@ function runConfirm(body, confirmIdemKey, req, res) {
       return res.status(400).json({ error: err.message });
     }
     log.error('[pos/kiosk/sale/confirm] Error: ' + err.message);
-    var _txnIdForVoidCapture = (body && body.transaction_id) ? String(body.transaction_id) : null;
+    // M-A3 / SC#1 (50-03): a captured-amount mismatch is a 402 (payment
+    // rejected), not the generic "something broke" 502 — and the message
+    // tells staff explicitly that the card was already voided.
+    var _statusForFailure = (err && err.isCapturedAmountMismatch) ? 402 : 502;
+    var _errorMsgForFailure = (err && err.isCapturedAmountMismatch)
+      ? 'The amount charged does not match the sale total. The card charge has been voided — please re-ring the sale.'
+      : 'Payment was taken but could not be recorded. Please contact support.';
+    var _txnIdForVoidCapture = (err && err.__capturedTxnId)
+      ? String(err.__capturedTxnId)
+      : ((body && body.transaction_id) ? String(body.transaction_id) : null);
     captureExceptionSafe(err, {
       level: 'error',
       tags: { reqId: req.id, txnId: _txnIdForVoidCapture, salesOrderId: null }
     });
-    // Void-on-failure: if a terminal charge was made (body.transaction_id set) and the
-    // Zoho invoice/payment step (or payment recording step — D-12 propagated) failed,
-    // void the terminal charge to prevent an orphan charge.
-    // For gift-card-only sales (no terminal), body.transaction_id is absent — no void needed.
-    var _txnIdForVoid = (body && body.transaction_id) ? String(body.transaction_id) : null;
+    // Void-on-failure: if a terminal charge was made and the Zoho invoice/payment
+    // step (or payment recording step — D-12 propagated) failed, void the terminal
+    // charge to prevent an orphan charge. Prefers the REAL resolved txn id carried
+    // on a tagged mismatch error (err.__capturedTxnId) over body.transaction_id —
+    // for a manual-confirm sale, body.transaction_id is still the literal
+    // 'manual-confirm' string; the actual Helcim id only exists in the confirm
+    // continuation's local scope and must be threaded through the tagged throw.
+    // For gift-card-only sales (no terminal), neither is set — no void needed.
+    var _txnIdForVoid = (err && err.__capturedTxnId)
+      ? String(err.__capturedTxnId)
+      : ((body && body.transaction_id) ? String(body.transaction_id) : null);
     if (_txnIdForVoid) {
       // D-12: track void failure via a thin wrapper so the response body can include
       // needs_manual_review and the sv:void-failure record is persisted for reconciliation.
@@ -1861,12 +1958,21 @@ function runConfirm(body, confirmIdemKey, req, res) {
       }).then(function () {
         if (res.headersSent) return;
         var responseBody = {
-          error: 'Payment was taken but could not be recorded. Please contact support.',
+          error: _errorMsgForFailure,
           payment_voided: !_voidFailed,
           voided_transaction_id: _txnIdForVoid
         };
-        if (_voidFailed) responseBody.needs_manual_review = true;
-        res.status(502).json(responseBody);
+        if (_voidFailed) {
+          responseBody.needs_manual_review = true;
+          // D-50-03: the void itself failed — the customer is STILL charged.
+          // Keep the lock held so a retry cannot charge a second time on top
+          // of a live, unvoided first charge. Must be set BEFORE res.json()
+          // below: the response-finish hook fires after the response is
+          // sent, so res.locals has to already carry the flag by then.
+          res.locals = res.locals || {};
+          res.locals.__keepIdemLock = true;
+        }
+        res.status(_statusForFailure).json(responseBody);
       });
     } else {
       res.status(502).json({ error: 'Failed to create invoice. Please try again.' });

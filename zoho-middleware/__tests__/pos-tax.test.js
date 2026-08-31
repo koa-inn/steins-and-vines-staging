@@ -20,7 +20,11 @@ jest.mock('../lib/helcim', function () {
     }),
     voidTransaction: jest.fn().mockResolvedValue({}),
     getTerminalDiagnostics: jest.fn().mockReturnValue({}),
-    generateIdempotencyKey: jest.fn().mockReturnValue('idem-so-1')
+    generateIdempotencyKey: jest.fn().mockReturnValue('idem-so-1'),
+    // 50-03 (M-A3): captured-amount readback, added by plan 50-03 to the
+    // plain-terminal confirm path. No default — set per-test below with the
+    // SAME total the test's own cart/catalog already establishes.
+    getCardTransactionById: jest.fn()
   };
 });
 jest.mock('../lib/zoho-api', function () {
@@ -366,6 +370,8 @@ describe('pos routes — per-item tax on line items', function () {
       zohoApi.zohoPost.mockResolvedValue({
         invoice: { invoice_id: 'inv-5', invoice_number: 'INV-005' }
       });
+      // 50-03 (M-A3): item-gst qty2 (100*2 + 5%=10) + item-pst qty1 (80 + 12%=9.60) = 299.60
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 299.60 });
 
       var req = {
         body: {
@@ -414,6 +420,8 @@ describe('pos routes — per-item tax on line items', function () {
       zohoApi.zohoPost.mockResolvedValue({
         invoice: { invoice_id: 'inv-f3', invoice_number: 'INV-F3' }
       });
+      // 50-03 (M-A3): custom line rate=10, taxable:false -> grandTotal=10
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 10.00 });
 
       var req = {
         body: {
@@ -453,6 +461,8 @@ describe('pos routes — per-item tax on line items', function () {
       zohoApi.zohoPost.mockResolvedValue({
         invoice: { invoice_id: 'inv-6', invoice_number: 'INV-006' }
       });
+      // 50-03 (M-A3): grandTotal = 194.60 (see comment below)
+      helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 194.60 });
 
       // item-gst: rate=100, qty=1, tax=5% => subtotal=100, tax=5
       // item-pst: rate=80, qty=1, tax=12% => subtotal=80, tax=9.60

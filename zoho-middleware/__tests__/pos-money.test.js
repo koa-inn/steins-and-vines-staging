@@ -30,7 +30,13 @@ jest.mock('../lib/helcim', function () {
     voidTransaction: jest.fn().mockResolvedValue({}),
     getTerminalDiagnostics: jest.fn().mockReturnValue({}),
     generateIdempotencyKey: jest.fn().mockReturnValue('idem-pos-1'),
-    cancelTerminal: jest.fn().mockResolvedValue({})
+    cancelTerminal: jest.fn().mockResolvedValue({}),
+    // 50-03 (M-A3): captured-amount readback, added by plan 50-03 to the
+    // plain-terminal confirm path. No default — configured per-test/describe
+    // block below with the SAME total the test's own cart/catalog already
+    // establishes, so the new verification step is transparent (no drift)
+    // to every pre-existing scenario in this file.
+    getCardTransactionById: jest.fn()
   };
 });
 
@@ -320,6 +326,10 @@ describe('pos — D-12 Task 1: atomic idempotency + required key (confirm)', fun
     cache.acquireLock.mockResolvedValue(true);
     moneyPath.acquireIdempotencyLock.mockResolvedValue({ status: 'acquired' });
     zohoApi.zohoPost.mockResolvedValue({ invoice: { invoice_id: 'inv-1', invoice_number: 'INV-001' } });
+    // 50-03 (M-A3): captured-amount readback now runs on every plain-terminal
+    // confirm. SIMPLE_CATALOG rate=100, qty=1, KIOSK_TAX_RATE=0 -> grandTotal=100
+    // for every test in this describe block — matching capture, no drift.
+    helcimLib.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: 100.00 });
   });
 
   afterEach(function () {
