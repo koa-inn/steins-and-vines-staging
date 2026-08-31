@@ -2364,8 +2364,19 @@ router.post('/api/kiosk/salesorder-create', function (req, res) {
  *
  * Expected body:
  * {
- *   salesorder_id: "zoho_salesorder_id"
+ *   salesorder_id: "zoho_salesorder_id",
+ *   idempotency_key: "optional client-minted key — see D-50-01"
  * }
+ *
+ * D-50-01 (50-02): idempotency lock gate — the SAME money-path primitive
+ * /api/kiosk/sale uses. Hybrid contract: an explicit client idempotency_key
+ * is honoured verbatim (lock key `kiosk:idem:sopay:<key>`, replayable); with
+ * no key, a salesorder-scoped fallback (`kiosk:idem:sopay:so:<salesorder_id>`)
+ * still locks but NEVER replays a cached receipt — it is not a statement of
+ * client intent, only a same-attempt duplicate guard. This route deploys
+ * straight to the production Railway instance (no staging middleware), so a
+ * stale cached kiosk client that predates the idempotency_key contract must
+ * still be hardened against a double-tap on day one.
  *
  * Response: { ok, transaction_id, salesorder_number, amount, card_type }
  */
@@ -2383,6 +2394,30 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
     return res.status(503).json({ error: 'POS terminal not configured' });
   }
 
+  var clientSuppliedKey = (typeof body.idempotency_key === 'string' && body.idempotency_key.length > 0);
+  var effectiveKey = clientSuppliedKey ? body.idempotency_key.slice(0, 128) : ('so:' + soId);
+  var lockKey = C.CACHE_KEYS.KIOSK_IDEM_PREFIX + 'sopay:' + effectiveKey;
+
+  return moneyPath.acquireIdempotencyLock(cache, lockKey, IDEMPOTENCY_KEY_TTL)
+    .then(function (lockResult) {
+      if (lockResult.status === 'replay') {
+        if (clientSuppliedKey && lockResult.cached && lockResult.cached.ok === true) {
+          log.info('[kiosk/so-pay] Idempotent replay: ' + lockKey);
+          return res.status(200).json(lockResult.cached);
+        }
+        // D-50-01: the SO-id-scoped fallback key never serves a cached
+        // receipt — it may be a genuinely new payment attempt.
+        return res.status(409).json({ error: 'Payment already in progress for this order — please wait and check the order before retrying' });
+      }
+      if (lockResult.status === 'contention' || lockResult.status === 'failclosed') {
+        return res.status(409).json({ error: 'Payment already in progress for this order — please wait and check the order before retrying' });
+      }
+      // status === 'acquired' — proceed
+      return processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res);
+    });
+});
+
+function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
   // Fetch the Sales Order from Zoho
   zohoGet('/salesorders/' + soId)
     .then(function (data) {
@@ -2408,16 +2443,53 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
       // Push payment to terminal
       var TERMINAL_TIMEOUT_MS = 90000;
       var POLL_INTERVAL_MS = 5000;
-      var idempotencyKey = helcimLib.generateIdempotencyKey();
+      // D-50-01a: derive the Helcim terminal idempotency key deterministically
+      // from the effective lock key (mirrors /api/kiosk/sale) instead of
+      // minting a fresh random key per call. Same effectiveKey -> same Helcim
+      // key -> Helcim itself refuses a duplicate terminal charge even if the
+      // Redis lock is bypassed (Redis outage, two Railway instances racing a
+      // lock release).
+      var helcimIdemKey = crypto.createHash('sha256').update(effectiveKey).digest('hex').substring(0, 25);
+      // D-50-01b: unique reference per attempt. The bare soNumber was reused
+      // on every attempt against the same order, so two attempts collided on
+      // Helcim's invoiceNumber, the pollTerminalResult key, AND the
+      // pending-charge key — attempt 2 could read attempt 1's approval and
+      // neither could be attributed (T-50-08). Must be the SAME string
+      // everywhere below or lib/reconcile.js will never find the record.
+      var refNumber = (soNumber + '-' + helcimIdemKey.substring(0, 6)).slice(0, 64);
+      // Declared here (not inside the terminal-push .then below) so the
+      // success-path .then further down the SAME chain can also delete it —
+      // a var declared inside a sibling .then callback is out of scope there.
+      var pendingCacheKey = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + refNumber;
 
-      helcimLib.terminalPurchase(balance, soNumber, idempotencyKey)
+      helcimLib.terminalPurchase(balance, refNumber, helcimIdemKey)
         .then(function () {
-          log.info('[kiosk/so-pay] Terminal push sent: soNumber=' + soNumber);
+          log.info('[kiosk/so-pay] Terminal push sent: soNumber=' + soNumber + ' ref=' + refNumber);
+
+          // SC#4 / T-50-10: persist pending-charge context immediately after a
+          // successful terminal push — the only safe placement (writing it
+          // before the push would leave a phantom record for a charge that
+          // never happened). Mirrors /api/kiosk/sale's D-13 write.
+          // salesorder_id is load-bearing — plan 50-05's D-50-08 discriminator
+          // uses it to route this record to the sales-order check instead of
+          // an invoice lookup. Deleted on the success path below.
+          // idempotency_key stores effectiveKey (the attempt's idempotency key),
+          // NOT helcimIdemKey — kept consistent with the 90s-timeout branch's
+          // write below, which persists the same context shape for the same
+          // reference/attempt if the terminal never responds.
+          var pendingContext = {
+            reference_number: refNumber,
+            amount:           balance,
+            salesorder_id:    soId,
+            idempotency_key:  effectiveKey,
+            created_at:       new Date().toISOString()
+          };
+          cache.set(pendingCacheKey, pendingContext, KIOSK_PENDING_CHARGE_TTL).catch(function () {});
 
           // Poll for result — same pattern as /api/kiosk/sale
           var pollStart = Date.now();
           function poll() {
-            return helcimLib.pollTerminalResult(soNumber).then(function (result) {
+            return helcimLib.pollTerminalResult(refNumber).then(function (result) {
               if (result.approved) {
                 return result;
               }
@@ -2482,6 +2554,10 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
               // Invalidate caches (SO list + products stock)
               cache.del(KIOSK_SO_CACHE_KEY).catch(function () {});
               cache.del(KIOSK_PRODUCTS_CACHE_KEY).catch(function () {});
+              // SC#4: clear the pending-charge sentinel — the charge is now
+              // reconciled against a real Zoho payment, so it must no longer
+              // be flagged as a potential orphan by the reconcile backstop.
+              cache.del(pendingCacheKey).catch(function () {});
 
               eventLog.logEvent('kiosk.salesorder_payment', {
                 soId: soId,
@@ -2497,13 +2573,19 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
               });
               brewpadIntegration.createBatchesFromSale(soLineItems, soNumber, so.customer_name || '', customerId, null, invoiceId);
 
-              res.json({
+              var responseBody = {
                 ok: true,
                 transaction_id: txnId,
                 salesorder_number: soNumber,
                 amount: balance,
                 card_type: paymentMode
-              });
+              };
+
+              // D-50-01: cache the success receipt under lockKey so a
+              // client-keyed retry replays instead of re-charging.
+              cache.set(lockKey, responseBody, IDEMPOTENCY_KEY_TTL).catch(function () {});
+
+              res.json(responseBody);
             })
             .catch(function (payErr) {
               // Zoho payment recording failed after terminal approval — void
@@ -2520,40 +2602,48 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
                 amount: balance
               });
 
-              helcimLib.voidTransaction(txnId)
-                .then(function () {
-                  log.info('[kiosk/so-pay] Voided txn=' + txnId + ' after payment recording failure');
-                })
-                .catch(function (voidErr) {
-                  log.error('[kiosk/so-pay] CRITICAL: Void failed for txn=' + txnId + ': ' + voidErr.message);
-                  var failRecord = {
-                    txnId: txnId,
-                    amount: balance,
-                    timestamp: new Date().toISOString(),
-                    error: voidErr.message,
-                    needs_manual_review: true
-                  };
-                  cache.set('sv:void-failure:' + Date.now(), failRecord, 60 * 60 * 24 * 30)
-                    .catch(function (redisErr) {
-                      log.error('[kiosk/so-pay] CRITICAL: Failed to persist void-failure record: ' + redisErr.message);
-                    });
-                  mailer.sendVoidFailureAlert({
-                    txnId: txnId,
-                    amount: balance,
-                    error: voidErr.message,
-                    timestamp: failRecord.timestamp
-                  }).catch(function (mailErr) {
-                    log.error('[kiosk/so-pay] Void failure alert email failed: ' + mailErr.message);
+              // T-50-09/D-50-02: track void failure (INCLUDING an unconfirmed
+              // void — 50-01 made helcimLib.voidTransaction REJECT with
+              // err.isUnconfirmedVoid when Helcim's /payment/reverse response
+              // carries no positive reversal signal) via a thin wrapper, so
+              // the response body can honestly report payment_voided instead
+              // of the old hardcoded payment_voided:true — a claim made even
+              // when the void had failed or was never confirmed, because it
+              // lived in a .then() that ran AFTER the void's .catch() had
+              // already swallowed the failure. Mirrors the confirm route's
+              // _voidFailed shim (this file, sale/confirm's outer catch).
+              var _voidFailed = false;
+              var _helcimForVoid = {
+                voidTransaction: function (voidTxnId) {
+                  return helcimLib.voidTransaction(voidTxnId).catch(function (voidErr) {
+                    _voidFailed = true;
+                    var failRecord = {
+                      txnId: txnId,
+                      amount: balance,
+                      timestamp: new Date().toISOString(),
+                      error: voidErr.message,
+                      needs_manual_review: true
+                    };
+                    cache.set('sv:void-failure:' + Date.now(), failRecord, 60 * 60 * 24 * 30).catch(function () {});
+                    throw voidErr; // Re-throw so voidWithTimeout's CRITICAL log + mailer alert fires
                   });
-                })
-                .then(function () {
-                  if (res.headersSent) return;
-                  res.status(502).json({
-                    error: 'Payment was taken but could not be recorded against the order. Please contact support.',
-                    payment_voided: true,
-                    voided_transaction_id: txnId
-                  });
-                });
+                }
+              };
+
+              moneyPath.voidWithTimeout(_helcimForVoid, txnId, balance, {
+                mailer: mailer,
+                eventLog: eventLog,
+                reqId: req.id
+              }).then(function () {
+                if (res.headersSent) return;
+                var responseBody = {
+                  error: 'Payment was taken but could not be recorded against the order. Please contact support.',
+                  payment_voided: !_voidFailed,
+                  voided_transaction_id: txnId
+                };
+                if (_voidFailed) responseBody.needs_manual_review = true;
+                res.status(502).json(responseBody);
+              });
             });
         })
         .catch(function (termErr) {
@@ -2562,21 +2652,32 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
             // D-13 (45-07): persist pending-charge context for reconciliation backstop (45-08).
             // The terminal push may have reached Helcim before the timeout; the record lets
             // the daily reconcile job detect any orphaned charges.
-            var _pendingKey = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + soNumber;
+            // idempotency_key stores effectiveKey (the attempt's idempotency key —
+            // what a client retry varies), NOT helcimIdemKey (the derived Helcim
+            // API key) — must match the success-path write below so the field
+            // means the same thing regardless of which branch wrote the record.
+            // helcimIdemKey is trivially recoverable from effectiveKey via the
+            // same one-line sha256 derivation above if a future reader needs it.
+            var _pendingKey = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + refNumber;
             var _pendingCtx = {
-              reference_number: soNumber,
+              reference_number: refNumber,
               amount:           balance,
               salesorder_id:    soId,
-              idempotency_key:  idempotencyKey,
+              idempotency_key:  effectiveKey,
               created_at:       new Date().toISOString()
             };
             cache.set(_pendingKey, _pendingCtx, KIOSK_PENDING_CHARGE_TTL).catch(function () {});
+            // T-50-11: deliberately do NOT release the lock — the terminal may
+            // still approve late; the pending record + reconcile backstop own
+            // that case, not a client retry (a retry here could double-charge).
             return res.status(504).json({ error: 'Terminal did not respond in time. Please try again.' });
           }
           if (termErr.isDeclined) {
             return res.status(402).json({ error: 'Payment declined', code: 'DECLINED' });
           }
           log.error('[kiosk/so-pay] Terminal error: ' + termErr.message);
+          // No charge was taken — safe to release the lock for an immediate retry.
+          cache.releaseLock(lockKey).catch(function () {});
           if (!res.headersSent) {
             res.status(502).json({ error: 'Terminal error — please try again' });
           }
@@ -2584,6 +2685,8 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
     })
     .catch(function (err) {
       var status = err.status || (err.response && err.response.status) || 502;
+      // No terminal charge was ever attempted at this stage — safe to release.
+      cache.releaseLock(lockKey).catch(function () {});
       if (status === 404 || (err.response && err.response.status === 404)) {
         log.error('[kiosk/so-pay] Sales order not found: soId=' + soId);
         return res.status(404).json({ error: 'Sales order not found' });
@@ -2593,7 +2696,7 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
         res.status(502).json({ error: 'Failed to process sales order payment' });
       }
     });
-});
+}
 
 /**
  * PUT /api/kiosk/salesorder-update
