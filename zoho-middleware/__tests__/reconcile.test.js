@@ -19,6 +19,22 @@
 
 jest.mock('../lib/helcim');
 jest.mock('../lib/mailer');
+// D-50-07 (50-05): hasMatchingZohoOrder now makes a real Zoho call once the
+// cache fast path misses. Without this mock the real zoho-api module hits
+// zohoAuth.getAccessToken(), which rejects immediately in this test
+// environment (no Zoho credentials configured) — an "unanswerable" call that
+// the new fail-CLOSED policy correctly refuses to void on. A definitive
+// "no matching order" answer here lets T1/T1b/T5's orphan scenarios remain
+// POSITIVELY PROVEN orphans, exactly as they were designed to test, rather
+// than accidentally exercising the (also-correct, but different) unanswerable
+// branch. No assertion in this file changes — only this precondition.
+jest.mock('../lib/zoho-api', function () {
+  return {
+    zohoGet: jest.fn().mockResolvedValue({ invoices: [] }),
+    zohoPost: jest.fn(),
+    zohoPut: jest.fn()
+  };
+});
 jest.mock('../lib/cache', function () {
   return {
     get: jest.fn().mockResolvedValue(null),

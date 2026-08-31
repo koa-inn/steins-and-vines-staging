@@ -2,6 +2,7 @@
 
 var express = require('express');
 var axios = require('axios');
+var crypto = require('crypto');
 var helcimLib = require('../lib/helcim');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
@@ -16,6 +17,10 @@ var moneyPath = require('../lib/money-path');
 var zohoPost = zohoApi.zohoPost;
 
 var router = express.Router();
+
+// M12 (D-13 parity): 7-day TTL for the recipe-sale pending-charge record —
+// mirrors KIOSK_PENDING_CHARGE_TTL in routes/pos.js.
+var KIOSK_PENDING_CHARGE_TTL = 604800;
 
 // ---------------------------------------------------------------------------
 // Helpers — Apps Script communication (same pattern as routes/recipes.js)
@@ -336,6 +341,39 @@ router.post('/api/kiosk/recipe-sale', function (req, res) {
   var modifiedIngredients = Array.isArray(body.modified_ingredients) ? body.modified_ingredients : undefined;
   var discountReq = (body.discount && body.discount.preset_id) ? body.discount : null;
 
+  // D-50-06 (M12): idempotency gate — a DISTINCT duplicate-charge guard from
+  // the RECIPE_SALE inventory mutex below (D-04/INV-02, unchanged). Acquired
+  // BEFORE computeRecipeQuote so a duplicate fails fast without burning a
+  // Zoho quote call. Required in production (mirrors pos.js:341-349); the
+  // kiosk client has always sent this key on this route, so there is no
+  // stale-client outage risk (unlike salesorder-pay's D-50-01 fallback).
+  var idempotencyKey = (body.idempotency_key && typeof body.idempotency_key === 'string')
+    ? C.CACHE_KEYS.KIOSK_IDEM_PREFIX + body.idempotency_key.slice(0, 128)
+    : null;
+
+  if (!idempotencyKey && process.env.NODE_ENV === 'production') {
+    return res.status(400).json({ error: 'idempotency_key is required' });
+  }
+
+  if (idempotencyKey) {
+    return moneyPath.acquireIdempotencyLock(cache, idempotencyKey, moneyPath.CHECKOUT_IDEMPOTENCY_TTL)
+      .then(function (lockResult) {
+        if (lockResult.status === 'replay') {
+          log.info('[pos-recipe/recipe-sale] Idempotent replay: ' + idempotencyKey);
+          return res.status(202).json(lockResult.cached);
+        }
+        if (lockResult.status === 'contention' || lockResult.status === 'failclosed') {
+          return res.status(409).json({ error: 'Recipe sale already in progress — please wait and check the order before retrying' });
+        }
+        // status === 'acquired' — proceed
+        _runRecipeSale(body, idempotencyKey, millGrain, modifiedIngredients, discountReq, req, res);
+      });
+  }
+
+  _runRecipeSale(body, null, millGrain, modifiedIngredients, discountReq, req, res);
+});
+
+function _runRecipeSale(body, idempotencyKey, millGrain, modifiedIngredients, discountReq, req, res) {
   computeRecipeQuote(body.recipe_id, body.target_volume_l, body.sale_type, millGrain, modifiedIngredients, discountReq)
     .then(function (quote) {
       var grandTotal = quote.grandTotal;
@@ -396,10 +434,17 @@ router.post('/api/kiosk/recipe-sale', function (req, res) {
 
         var refNumber = 'RECIPE-' + Date.now();
 
+        // D-50-06a: derive the Helcim terminal idempotency key deterministically
+        // from the client idempotency_key (mirrors pos.js:870-872) so Helcim
+        // itself refuses a duplicate charge even if the Redis lock is bypassed.
+        var helcimIdemKey = (body.idempotency_key && typeof body.idempotency_key === 'string')
+          ? crypto.createHash('sha256').update(body.idempotency_key).digest('hex').substring(0, 25)
+          : null;
+
         // Push to terminal
-        helcimLib.terminalPurchase(grandTotal, refNumber)
+        helcimLib.terminalPurchase(grandTotal, refNumber, helcimIdemKey)
           .then(function () {
-            res.status(202).json({
+            var responseBody = {
               pending: true,
               reference: refNumber,
               recipe_id: body.recipe_id,
@@ -410,12 +455,36 @@ router.post('/api/kiosk/recipe-sale', function (req, res) {
               discount: quote.discount ? quote.discount.discountApplied : null,
               scale_factor: scaleFactor,
               target_volume_l: targetVolumeL
+            };
+
+            // M12: pending-charge record so an orphaned recipe charge is
+            // reconcilable — mirrors pos.js:881-892 (D-13/SC#4). Fire-and-forget.
+            var pendingCacheKey = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + refNumber;
+            var pendingContext = {
+              reference_number: refNumber,
+              amount: grandTotal,
+              idempotency_key: (body.idempotency_key && typeof body.idempotency_key === 'string')
+                ? body.idempotency_key : null,
+              created_at: new Date().toISOString()
+            };
+            cache.set(pendingCacheKey, pendingContext, KIOSK_PENDING_CHARGE_TTL).catch(function () {});
+
+            var cacheWrite = idempotencyKey
+              ? cache.set(idempotencyKey, responseBody, moneyPath.CHECKOUT_IDEMPOTENCY_TTL).catch(function () {})
+              : Promise.resolve();
+
+            cacheWrite.then(function () {
+              res.status(202).json(responseBody);
             });
           })
           .catch(function (termErr) {
             log.error('[pos-recipe/recipe-sale] Terminal push failed: ' + termErr.message);
-            // Release lock on terminal failure (Pitfall 1)
+            // Release locks on terminal failure (Pitfall 1) — no charge was
+            // taken, so a retry under a fresh idempotency lock is safe.
             cache.releaseLock(C.LOCK_KEYS.RECIPE_SALE).catch(function () {});
+            if (idempotencyKey) {
+              cache.releaseLock(idempotencyKey).catch(function () {});
+            }
             res.status(502).json({ error: 'Terminal error — please try again' });
           });
       }).catch(function (lockErr) {
@@ -430,7 +499,7 @@ router.post('/api/kiosk/recipe-sale', function (req, res) {
       log.error('[pos-recipe/recipe-sale] Error: ' + (err && err.message));
       res.status(502).json({ error: 'Failed to fetch recipe. Please try again.' });
     });
-});
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/kiosk/recipe-quote
@@ -591,6 +660,49 @@ router.post('/api/kiosk/recipe-sale/confirm', function (req, res) {
   _runRecipeConfirm(body, null, req, res);
 });
 
+// T-50-28 (audit H5/L18): shared void-on-failure helper for the recipe
+// confirm leg. Routes EVERY confirm-leg void through moneyPath.voidWithTimeout
+// via a single _voidFailed-tracking shim (mirrors pos.js:1839-1870 /
+// :2615-2646) — BOTH confirm-leg failure branches (unpriceable ingredient
+// line, invoice-creation failure) call this ONE helper, so
+// helcimLib.voidTransaction appears exactly once in this file (inside the
+// shim), never as a raw route-level call outside the primitive. An
+// unconfirmed void (50-01: helcimLib.voidTransaction rejects with
+// err.isUnconfirmedVoid) now alerts staff via the primitive instead of being
+// silently swallowed by a bare .catch.
+//
+// @param {string} txnId  - Helcim transaction ID to void
+// @param {number} amount - order amount for the alert payload (0 when unknown,
+//                          matching pos.js's own confirm-outer-catch precedent)
+// @param {object} req    - Express request (for req.id passthrough)
+// @returns {Promise<{voidFailed: boolean}>}
+function _voidRecipeTxnWithTimeout(txnId, amount, req) {
+  var voidFailed = false;
+  var helcimForVoid = {
+    voidTransaction: function (id) {
+      return helcimLib.voidTransaction(id).catch(function (voidErr) {
+        voidFailed = true;
+        var failRecord = {
+          txnId: txnId,
+          amount: amount,
+          timestamp: new Date().toISOString(),
+          error: voidErr.message,
+          needs_manual_review: true
+        };
+        cache.set('sv:void-failure:' + Date.now(), failRecord, 60 * 60 * 24 * 30).catch(function () {});
+        throw voidErr; // re-throw so voidWithTimeout's CRITICAL log + mailer alert fires
+      });
+    }
+  };
+  return moneyPath.voidWithTimeout(helcimForVoid, txnId, amount, {
+    mailer: mailer,
+    eventLog: eventLog,
+    reqId: req && req.id
+  }).then(function () {
+    return { voidFailed: voidFailed };
+  });
+}
+
 function _runRecipeConfirm(body, confirmIdemKey, req, res) {
   var txnId = body.transaction_id;
   var millGrain = body.mill_grain === true;
@@ -722,34 +834,16 @@ function _runRecipeConfirm(body, confirmIdemKey, req, res) {
             error: unpriceableLine
           });
 
-          return helcimLib.voidTransaction(txnId)
-            .then(function () {
-              log.info('[pos-recipe/confirm] Voided txn=' + txnId + ' after unpriceable line');
-            })
-            .catch(function (voidErr) {
-              log.error('[pos-recipe/confirm] CRITICAL: Void failed for txn=' + txnId + ': ' + voidErr.message);
-              var failRecord = {
-                txnId: txnId,
-                timestamp: new Date().toISOString(),
-                error: voidErr.message,
-                needs_manual_review: true
-              };
-              cache.set('sv:void-failure:' + Date.now(), failRecord, 60 * 60 * 24 * 30).catch(function () {});
-              mailer.sendVoidFailureAlert({
-                txnId: txnId,
-                error: voidErr.message,
-                timestamp: failRecord.timestamp
-              }).catch(function (mailErr) {
-                log.error('[pos-recipe/confirm] Void failure alert email failed: ' + mailErr.message);
-              });
-            })
-            .then(function () {
+          return _voidRecipeTxnWithTimeout(txnId, 0, req)
+            .then(function (voidResult) {
               cache.releaseLock(C.LOCK_KEYS.RECIPE_SALE).catch(function () {});
               if (!res.headersSent) {
-                res.status(502).json({
+                var responseBody = {
                   error: 'Payment was taken but the sale could not be priced. Payment voided.',
-                  payment_voided: true
-                });
+                  payment_voided: !voidResult.voidFailed
+                };
+                if (voidResult.voidFailed) responseBody.needs_manual_review = true;
+                res.status(502).json(responseBody);
               }
             });
         }
@@ -930,6 +1024,18 @@ function _runRecipeConfirm(body, confirmIdemKey, req, res) {
               invoiceNumber: invoiceNumber
             });
 
+            // M12 (mirrors pos.js:1773-1783): clear the pending-charge
+            // sentinel so lib/reconcile.js knows this charge is settled
+            // (no orphan). body.reference is the SAME string recipe-sale
+            // returned as `reference` and used as the KIOSK_PENDING_CHARGE_PREFIX
+            // suffix at push time (D-50-08's confirm-leg invoice payload
+            // already relies on this same identity at :reference_number: body.reference).
+            var pendingRef = (typeof body.reference === 'string' && body.reference)
+              ? body.reference.slice(0, 64) : '';
+            if (pendingRef) {
+              cache.del(C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + pendingRef).catch(function () {});
+            }
+
             // Cache confirm result for CR-01 idempotent replays (T-44-G2 parity)
             var recipeResult = {
               ok: true,
@@ -961,37 +1067,17 @@ function _runRecipeConfirm(body, confirmIdemKey, req, res) {
               amount: grandTotal
             });
 
-            helcimLib.voidTransaction(txnId)
-              .then(function () {
-                log.info('[pos-recipe/confirm] Voided txn=' + txnId + ' after invoice failure');
-              })
-              .catch(function (voidErr) {
-                log.error('[pos-recipe/confirm] CRITICAL: Void failed for txn=' + txnId + ': ' + voidErr.message);
-                var failRecord = {
-                  txnId: txnId,
-                  amount: grandTotal,
-                  timestamp: new Date().toISOString(),
-                  error: voidErr.message,
-                  needs_manual_review: true
-                };
-                cache.set('sv:void-failure:' + Date.now(), failRecord, 60 * 60 * 24 * 30).catch(function () {});
-                mailer.sendVoidFailureAlert({
-                  txnId: txnId,
-                  amount: grandTotal,
-                  error: voidErr.message,
-                  timestamp: failRecord.timestamp
-                }).catch(function (mailErr) {
-                  log.error('[pos-recipe/confirm] Void failure alert email failed: ' + mailErr.message);
-                });
-              })
-              .then(function () {
+            _voidRecipeTxnWithTimeout(txnId, grandTotal, req)
+              .then(function (voidResult) {
                 // Release lock after void attempt (success or failure)
                 cache.releaseLock(C.LOCK_KEYS.RECIPE_SALE).catch(function () {});
                 if (res.headersSent) return;
-                res.status(502).json({
+                var respBody = {
                   error: 'Payment was taken but invoice failed. Payment voided.',
-                  payment_voided: true
-                });
+                  payment_voided: !voidResult.voidFailed
+                };
+                if (voidResult.voidFailed) respBody.needs_manual_review = true;
+                res.status(502).json(respBody);
               });
           });
       }).catch(function (cacheErr) {

@@ -39,6 +39,8 @@ var log      = require('./logger');
 var cache    = require('./cache');
 var C        = require('./constants');
 var eventLog = require('./eventLog');
+var zohoApi  = require('./zoho-api');
+var zohoGet  = zohoApi.zohoGet;
 
 var PENDING_PREFIX                  = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX;
 var TERMINAL_RESULT_PREFIX          = 'helcim:terminal:result:';
@@ -65,10 +67,6 @@ var PENDING_CHARGE_TTL = 7 * 24 * 60 * 60;
 //     the sweep transitions to the "manual review" path (not auto-void) for
 //     stale APPROVED results — avoiding the false-positive-void race entirely
 //   - Genuine orphans (no confirm at all) are still caught after 10 min
-//
-// Future improvement: replace the age guard with an authoritative Zoho API
-// check (GET /invoices?invoice_number=<refNumber>) so the decision is based on
-// "does a Zoho invoice exist?" rather than "is the record old enough?".
 var MIN_ORPHAN_AGE_SECONDS = 600;
 
 // ---------------------------------------------------------------------------
@@ -76,34 +74,97 @@ var MIN_ORPHAN_AGE_SECONDS = 600;
 // ---------------------------------------------------------------------------
 
 /**
- * Return true if the given pending-charge context has a matching Zoho order.
+ * Zoho-authoritative settled check (D-50-07/D-50-08). Answers "was this
+ * charge actually recorded?" by asking Zoho directly, branching on which
+ * surface wrote the pending record — see hasMatchingZohoOrder's own doc for
+ * the full ladder this implements step 2/3 of.
  *
- * Strategy: check the confirm-level idempotency key written by
- * /api/kiosk/sale/confirm on success (KIOSK_IDEM_PREFIX + 'confirm:' + key).
- * If that cache entry is present, confirm ran and the Zoho invoice is recorded.
- *
- * The confirm handler also deletes the pending record on success (Rule 2, 45-08).
- * If the record still exists AND the confirm key is absent → treat as potential orphan.
- *
- * Returns false on any Redis error (fail-safe: treat as potential orphan, staff
- * will investigate the sv:void-failure record if we void incorrectly).
+ * D-50-08: a single invoice-reference lookup does NOT work uniformly.
+ * /api/kiosk/salesorder-pay creates its invoice via an EMPTY-body
+ * zohoPost('/invoices/fromsalesorder?...') (pos.js) that never sets
+ * reference_number to the kiosk payment reference — a fully paid SO-pay
+ * charge would legitimately return an empty invoices array, which a naive
+ * invoice-only check would misclassify as an orphan and void a paying
+ * customer. So: a record carrying ctx.salesorder_id is verified against the
+ * SALES ORDER (the durable record of payment — the customerpayment applies
+ * to it BEFORE the best-effort invoice leg runs); every other record type
+ * (/api/kiosk/sale, /api/kiosk/recipe-sale — both DO set reference_number on
+ * their invoice payload) is verified via the invoice reference lookup.
  *
  * @param {Object} ctx  Pending charge context from Redis
- * @returns {Promise<boolean>}
+ * @returns {Promise<{settled: boolean, proven: boolean}>}
+ *   proven=true  → the Zoho answer is authoritative (safe to act on it)
+ *   proven=false → the Zoho call was unanswerable; settled is forced true
+ *                  (fail CLOSED — never void what could not be verified)
+ */
+function _zohoAuthoritativeCheck(ctx) {
+  if (ctx && ctx.salesorder_id) {
+    return zohoGet('/salesorders/' + encodeURIComponent(ctx.salesorder_id)).then(function (data) {
+      var so = (data && data.salesorder) || {};
+      var balance = parseFloat(so.balance);
+      var statusStr = ((so.order_status || so.status || '') + '').toLowerCase();
+      var settled = (!isNaN(balance) && balance <= 0.01) || statusStr === 'paid' || statusStr === 'closed';
+      return { settled: settled, proven: true };
+    }).catch(function (err) {
+      log.error('[reconcile] Zoho salesorder lookup failed for SO=' + ctx.salesorder_id +
+        ': ' + (err && err.message || err) + ' — treating as settled (fail CLOSED, D-50-07): will NOT void');
+      return { settled: true, proven: false };
+    });
+  }
+
+  var refNum = (ctx && ctx.reference_number) || '';
+  return zohoGet('/invoices?reference_number=' + encodeURIComponent(refNum)).then(function (data) {
+    var invoices = (data && data.invoices) || [];
+    return { settled: invoices.length > 0, proven: true };
+  }).catch(function (err) {
+    log.error('[reconcile] Zoho invoice lookup failed for reference=' + refNum +
+      ': ' + (err && err.message || err) + ' — treating as settled (fail CLOSED, D-50-07): will NOT void');
+    return { settled: true, proven: false };
+  });
+}
+
+/**
+ * Return whether the given pending-charge context has a matching, settled
+ * Zoho order — the gate that decides whether reconcile voids a charge.
+ *
+ * D-50-07: a three-step ladder, in order:
+ *   1. Cache fast path (cheap, no Zoho call): if the confirm-level
+ *      idempotency key written by /api/kiosk/sale(recipe)/confirm on success
+ *      (KIOSK_IDEM_PREFIX + 'confirm:' + key) is present, confirm ran and the
+ *      Zoho invoice is recorded — settled, proven. A Redis error on THIS
+ *      step falls through to step 2 (never straight to "not settled").
+ *   2. Zoho authority (D-50-08 branch — see _zohoAuthoritativeCheck):
+ *      otherwise, ask Zoho whether the sale was actually recorded.
+ *   3. Fail CLOSED on an unanswerable Zoho call: an unprovable answer
+ *      resolves settled=true, proven=false — the caller must NOT void and
+ *      must NOT clear the pending record, so the next sweep gets another
+ *      chance to prove it one way or the other. We void ONLY when we can
+ *      positively prove a charge is orphaned; an unprovable case is left
+ *      standing, because an incorrect void takes money back from a customer
+ *      who legitimately paid — the safe direction is to do nothing, not to
+ *      "fail safe" by reversing a card charge we cannot account for.
+ *
+ * @param {Object} ctx  Pending charge context from Redis
+ * @returns {Promise<{settled: boolean, proven: boolean}>}
  */
 function hasMatchingZohoOrder(ctx) {
   if (!ctx || !ctx.idempotency_key) {
-    // No idempotency_key (e.g. salesorder-pay with server-generated key that was
-    // never stored in an idem cache) → cannot confirm Zoho order without a Zoho call.
-    // Treat as potential orphan; void will fail cleanly if already voided/settled.
-    return Promise.resolve(false);
+    // No idempotency_key on the record at all (the salesorder-pay case this
+    // early return used to bail out of entirely) → skip straight to the
+    // Zoho authority check; there is no cache fast path to try.
+    return _zohoAuthoritativeCheck(ctx);
   }
 
   var confirmIdemKey = C.CACHE_KEYS.KIOSK_IDEM_PREFIX + 'confirm:' + ctx.idempotency_key;
   return cache.get(confirmIdemKey).then(function (val) {
-    return !!val;
+    if (val) {
+      return { settled: true, proven: true };
+    }
+    return _zohoAuthoritativeCheck(ctx);
   }).catch(function () {
-    return false; // Redis error → fail-safe (treat as potential orphan)
+    // Redis error on the cache fast path itself — fall through to the Zoho
+    // authority check rather than resolving false (D-50-07 inversion).
+    return _zohoAuthoritativeCheck(ctx);
   });
 }
 
@@ -255,12 +316,23 @@ function reconcilePendingCharge(transactionId, deps) {
           return;
         }
 
-        return hasMatchingZohoOrder(ctx).then(function (matched) {
-          if (matched) {
-            // Charge was settled via /confirm — clear the pending sentinel
+        return hasMatchingZohoOrder(ctx).then(function (result) {
+          if (result.settled && result.proven) {
+            // Charge was proven settled (cache fast path or a positive Zoho
+            // answer) — clear the pending sentinel.
             log.info('[reconcile] Pending charge settled for invoice=' +
               invoiceNumber + ' txn=' + transactionId + ' — clearing record');
             return cache.del(pendingKey);
+          }
+
+          if (result.settled && !result.proven) {
+            // D-50-07 fail-CLOSED: the Zoho check was unanswerable. Do NOT
+            // void, do NOT clear the pending record — leave it intact so the
+            // next sweep gets another chance to prove it one way or the
+            // other (mirrors the Helcim-lookup-failure precedent below).
+            log.warn('[reconcile] Zoho check unprovable for invoice=' + invoiceNumber +
+              ' txn=' + transactionId + ' — leaving pending record intact (fail CLOSED, D-50-07)');
+            return;
           }
 
           // Orphan detected: APPROVED but no Zoho order — void it
