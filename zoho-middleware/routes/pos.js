@@ -421,6 +421,23 @@ function findMissingCatalogItem(items, catalogMap) {
 }
 
 function processSale(body, idempotencyKey, req, res, stageStart) {
+  // D-50-03 (50-03 / H4 / SC#2): mirrors the confirm-path hook above — release
+  // the sale idempotency lock on EVERY failure return in processSale AND
+  // processSaleWithPrices (same res object, so one hook here covers both).
+  // As of plan 50-04 the kiosk client sends a STABLE idempotency key across a
+  // double-tap; a keyed request that 400s on a pre-charge validation guard
+  // (catalog miss, gift-card lookup 503, etc.) and is then legitimately
+  // retried with the SAME key would otherwise hit contention -> 409 and
+  // strand the sale. Never release on a path where a terminal charge may
+  // have succeeded — statusCode >= 400 satisfies that: the successful
+  // terminal-push path responds 202.
+  if (idempotencyKey && res && typeof res.on === 'function') {
+    res.on('finish', function () {
+      if (res.statusCode >= 400 && !(res.locals && res.locals.__keepIdemLock)) {
+        cache.releaseLock(idempotencyKey).catch(function () {});
+      }
+    });
+  }
   // Validate required fields
   if (!body || !Array.isArray(body.items) || body.items.length === 0) {
     return res.status(400).json({ error: 'Cart is empty' });
@@ -1158,6 +1175,24 @@ router.post('/api/kiosk/sale/confirm', function (req, res) {
 });
 
 function runConfirm(body, confirmIdemKey, req, res) {
+  // D-50-03 (50-03 / H4 / SC#2): release the confirm idempotency lock on
+  // EVERY failure return in this function — the ~10 existing ones and any
+  // future one — via a single response-finish hook instead of editing each
+  // return res.status(4xx) site (that per-site approach is exactly how the
+  // bug happened: a failure path was added without a release). The
+  // exception is load-bearing: when an unvoided charge is still in play
+  // (res.locals.__keepIdemLock === true, set by the void-failure branch
+  // below), the lock stays held so a retry cannot double-charge.
+  // Guarded on typeof res.on === 'function': real Express responses are
+  // EventEmitters and always have it; a handful of pre-existing test files
+  // pass a plain mock res object without .on, and must not crash here.
+  if (confirmIdemKey && res && typeof res.on === 'function') {
+    res.on('finish', function () {
+      if (res.statusCode >= 400 && !(res.locals && res.locals.__keepIdemLock)) {
+        cache.releaseLock(confirmIdemKey).catch(function () {});
+      }
+    });
+  }
   cache.get(KIOSK_PRODUCTS_CACHE_KEY).then(function (catalog) {
     var catalogMap = {};
     if (Array.isArray(catalog)) {
@@ -1927,7 +1962,16 @@ function runConfirm(body, confirmIdemKey, req, res) {
           payment_voided: !_voidFailed,
           voided_transaction_id: _txnIdForVoid
         };
-        if (_voidFailed) responseBody.needs_manual_review = true;
+        if (_voidFailed) {
+          responseBody.needs_manual_review = true;
+          // D-50-03: the void itself failed — the customer is STILL charged.
+          // Keep the lock held so a retry cannot charge a second time on top
+          // of a live, unvoided first charge. Must be set BEFORE res.json()
+          // below: the response-finish hook fires after the response is
+          // sent, so res.locals has to already carry the flag by then.
+          res.locals = res.locals || {};
+          res.locals.__keepIdemLock = true;
+        }
         res.status(_statusForFailure).json(responseBody);
       });
     } else {
