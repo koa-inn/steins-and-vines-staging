@@ -2450,15 +2450,22 @@ function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
       // Redis lock is bypassed (Redis outage, two Railway instances racing a
       // lock release).
       var helcimIdemKey = crypto.createHash('sha256').update(effectiveKey).digest('hex').substring(0, 25);
+      // D-50-01b: unique reference per attempt. The bare soNumber was reused
+      // on every attempt against the same order, so two attempts collided on
+      // Helcim's invoiceNumber, the pollTerminalResult key, AND the
+      // pending-charge key — attempt 2 could read attempt 1's approval and
+      // neither could be attributed (T-50-08). Must be the SAME string
+      // everywhere below or lib/reconcile.js will never find the record.
+      var refNumber = (soNumber + '-' + helcimIdemKey.substring(0, 6)).slice(0, 64);
 
-      helcimLib.terminalPurchase(balance, soNumber, helcimIdemKey)
+      helcimLib.terminalPurchase(balance, refNumber, helcimIdemKey)
         .then(function () {
-          log.info('[kiosk/so-pay] Terminal push sent: soNumber=' + soNumber);
+          log.info('[kiosk/so-pay] Terminal push sent: soNumber=' + soNumber + ' ref=' + refNumber);
 
           // Poll for result — same pattern as /api/kiosk/sale
           var pollStart = Date.now();
           function poll() {
-            return helcimLib.pollTerminalResult(soNumber).then(function (result) {
+            return helcimLib.pollTerminalResult(refNumber).then(function (result) {
               if (result.approved) {
                 return result;
               }
@@ -2609,9 +2616,9 @@ function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
             // D-13 (45-07): persist pending-charge context for reconciliation backstop (45-08).
             // The terminal push may have reached Helcim before the timeout; the record lets
             // the daily reconcile job detect any orphaned charges.
-            var _pendingKey = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + soNumber;
+            var _pendingKey = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + refNumber;
             var _pendingCtx = {
-              reference_number: soNumber,
+              reference_number: refNumber,
               amount:           balance,
               salesorder_id:    soId,
               idempotency_key:  helcimIdemKey,
