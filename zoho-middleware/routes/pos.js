@@ -2598,40 +2598,48 @@ function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
                 amount: balance
               });
 
-              helcimLib.voidTransaction(txnId)
-                .then(function () {
-                  log.info('[kiosk/so-pay] Voided txn=' + txnId + ' after payment recording failure');
-                })
-                .catch(function (voidErr) {
-                  log.error('[kiosk/so-pay] CRITICAL: Void failed for txn=' + txnId + ': ' + voidErr.message);
-                  var failRecord = {
-                    txnId: txnId,
-                    amount: balance,
-                    timestamp: new Date().toISOString(),
-                    error: voidErr.message,
-                    needs_manual_review: true
-                  };
-                  cache.set('sv:void-failure:' + Date.now(), failRecord, 60 * 60 * 24 * 30)
-                    .catch(function (redisErr) {
-                      log.error('[kiosk/so-pay] CRITICAL: Failed to persist void-failure record: ' + redisErr.message);
-                    });
-                  mailer.sendVoidFailureAlert({
-                    txnId: txnId,
-                    amount: balance,
-                    error: voidErr.message,
-                    timestamp: failRecord.timestamp
-                  }).catch(function (mailErr) {
-                    log.error('[kiosk/so-pay] Void failure alert email failed: ' + mailErr.message);
+              // T-50-09/D-50-02: track void failure (INCLUDING an unconfirmed
+              // void — 50-01 made helcimLib.voidTransaction REJECT with
+              // err.isUnconfirmedVoid when Helcim's /payment/reverse response
+              // carries no positive reversal signal) via a thin wrapper, so
+              // the response body can honestly report payment_voided instead
+              // of the old hardcoded payment_voided:true — a claim made even
+              // when the void had failed or was never confirmed, because it
+              // lived in a .then() that ran AFTER the void's .catch() had
+              // already swallowed the failure. Mirrors the confirm route's
+              // _voidFailed shim (this file, sale/confirm's outer catch).
+              var _voidFailed = false;
+              var _helcimForVoid = {
+                voidTransaction: function (voidTxnId) {
+                  return helcimLib.voidTransaction(voidTxnId).catch(function (voidErr) {
+                    _voidFailed = true;
+                    var failRecord = {
+                      txnId: txnId,
+                      amount: balance,
+                      timestamp: new Date().toISOString(),
+                      error: voidErr.message,
+                      needs_manual_review: true
+                    };
+                    cache.set('sv:void-failure:' + Date.now(), failRecord, 60 * 60 * 24 * 30).catch(function () {});
+                    throw voidErr; // Re-throw so voidWithTimeout's CRITICAL log + mailer alert fires
                   });
-                })
-                .then(function () {
-                  if (res.headersSent) return;
-                  res.status(502).json({
-                    error: 'Payment was taken but could not be recorded against the order. Please contact support.',
-                    payment_voided: true,
-                    voided_transaction_id: txnId
-                  });
-                });
+                }
+              };
+
+              moneyPath.voidWithTimeout(_helcimForVoid, txnId, balance, {
+                mailer: mailer,
+                eventLog: eventLog,
+                reqId: req.id
+              }).then(function () {
+                if (res.headersSent) return;
+                var responseBody = {
+                  error: 'Payment was taken but could not be recorded against the order. Please contact support.',
+                  payment_voided: !_voidFailed,
+                  voided_transaction_id: txnId
+                };
+                if (_voidFailed) responseBody.needs_manual_review = true;
+                res.status(502).json(responseBody);
+              });
             });
         })
         .catch(function (termErr) {
