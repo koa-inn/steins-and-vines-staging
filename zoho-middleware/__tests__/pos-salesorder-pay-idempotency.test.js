@@ -288,6 +288,12 @@ describe('POST /api/kiosk/salesorder-pay — idempotency hardening (50-02)', fun
       var refNumber = call[1];
       expect(refNumber).not.toBe('SO-001');
       expect(refNumber.indexOf('SO-001-')).toBe(0);
+      // D-50-01b format pin, direct (not a mirror of the sha256 derivation):
+      // soNumber + '-' + exactly 6 lowercase-hex chars, nothing more. This is
+      // the property pos-giftcard.test.js's expectedSoPayRefNumber helper
+      // CANNOT catch a regression in, since that helper reimplements the same
+      // derivation rather than asserting its shape independently.
+      expect(refNumber).toMatch(/^SO-001-[0-9a-f]{6}$/);
       expect(helcimLib.pollTerminalResult).toHaveBeenCalledWith(refNumber);
     });
   });
@@ -316,6 +322,60 @@ describe('POST /api/kiosk/salesorder-pay — idempotency hardening (50-02)', fun
       expect(setCall[1].created_at).toEqual(expect.any(String));
 
       expect(cache.del).toHaveBeenCalledWith(pendingKey);
+    });
+  });
+
+  // ---- Coordinator follow-up: the two pending-charge write sites must agree
+  // on what idempotency_key means. The success-path write (terminal push OK)
+  // and the 90s-timeout-path write are two separate code branches that both
+  // persist a pending-charge record for the SAME kind of attempt — they must
+  // store the SAME value (effectiveKey, the attempt's idempotency key — what
+  // a client retry varies) rather than one storing effectiveKey and the other
+  // storing helcimIdemKey (the derived Helcim API key). A field that means two
+  // different things depending on which failure mode fired is a trap for
+  // whoever reads it next (plan 50-05's D-50-08 discriminator).
+  test('the timeout-path pending record stores the SAME idempotency_key shape as the success-path record (effectiveKey, not the derived Helcim key)', function () {
+    mockHappyZoho('SO1', 'SO-001', 100);
+
+    // Success-path record for one attempt.
+    var reqSuccess = makeReq({ salesorder_id: 'SO1', idempotency_key: 'ABC' });
+    var resSuccess = makeRes();
+    paySalesorderHandler(reqSuccess, resSuccess);
+
+    return flushN(8).then(function () {
+      var successRefNumber = helcimLib.terminalPurchase.mock.calls[0][1];
+      var successPendingKey = 'kiosk:pending-charge:' + successRefNumber;
+      var successSetCall = cache.set.mock.calls.find(function (c) { return c[0] === successPendingKey; });
+      expect(successSetCall).toBeTruthy();
+      expect(successSetCall[1].idempotency_key).toBe('ABC');
+
+      // Reset just enough state to run a second, independent attempt that
+      // hits the 90s-timeout branch instead (terminalPurchase itself rejects
+      // with the exact timeout message, mirroring kiosk-salesorders.test.js's
+      // 'terminal timeout returns 504' convention).
+      cache.set.mockClear();
+      cache.acquireLock.mockResolvedValue(true);
+      helcimLib.terminalPurchase.mockRejectedValueOnce(new Error('Terminal timeout after 90s'));
+
+      var reqTimeout = makeReq({ salesorder_id: 'SO1', idempotency_key: 'ABC' });
+      var resTimeout = makeRes();
+      paySalesorderHandler(reqTimeout, resTimeout);
+
+      return flushN(8).then(function () {
+        expect(resTimeout._status).toBe(504);
+        var timeoutSetCall = cache.set.mock.calls.find(function (c) {
+          return typeof c[0] === 'string' && c[0].indexOf('kiosk:pending-charge:') === 0;
+        });
+        expect(timeoutSetCall).toBeTruthy();
+        // Same effective key -> same idempotency_key value across BOTH branches.
+        expect(timeoutSetCall[1].idempotency_key).toBe(successSetCall[1].idempotency_key);
+        expect(timeoutSetCall[1].idempotency_key).toBe('ABC');
+        // And explicitly NOT the derived Helcim key (sha256 hex slice), which
+        // is what the timeout branch used to store before this fix.
+        var crypto2 = require('crypto');
+        var derivedHelcimKey = crypto2.createHash('sha256').update('ABC').digest('hex').substring(0, 25);
+        expect(timeoutSetCall[1].idempotency_key).not.toBe(derivedHelcimKey);
+      });
     });
   });
 

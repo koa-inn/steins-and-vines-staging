@@ -2473,6 +2473,10 @@ function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
           // salesorder_id is load-bearing — plan 50-05's D-50-08 discriminator
           // uses it to route this record to the sales-order check instead of
           // an invoice lookup. Deleted on the success path below.
+          // idempotency_key stores effectiveKey (the attempt's idempotency key),
+          // NOT helcimIdemKey — kept consistent with the 90s-timeout branch's
+          // write below, which persists the same context shape for the same
+          // reference/attempt if the terminal never responds.
           var pendingContext = {
             reference_number: refNumber,
             amount:           balance,
@@ -2648,12 +2652,18 @@ function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
             // D-13 (45-07): persist pending-charge context for reconciliation backstop (45-08).
             // The terminal push may have reached Helcim before the timeout; the record lets
             // the daily reconcile job detect any orphaned charges.
+            // idempotency_key stores effectiveKey (the attempt's idempotency key —
+            // what a client retry varies), NOT helcimIdemKey (the derived Helcim
+            // API key) — must match the success-path write below so the field
+            // means the same thing regardless of which branch wrote the record.
+            // helcimIdemKey is trivially recoverable from effectiveKey via the
+            // same one-line sha256 derivation above if a future reader needs it.
             var _pendingKey = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + refNumber;
             var _pendingCtx = {
               reference_number: refNumber,
               amount:           balance,
               salesorder_id:    soId,
-              idempotency_key:  helcimIdemKey,
+              idempotency_key:  effectiveKey,
               created_at:       new Date().toISOString()
             };
             cache.set(_pendingKey, _pendingCtx, KIOSK_PENDING_CHARGE_TTL).catch(function () {});
