@@ -2457,10 +2457,30 @@ function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
       // neither could be attributed (T-50-08). Must be the SAME string
       // everywhere below or lib/reconcile.js will never find the record.
       var refNumber = (soNumber + '-' + helcimIdemKey.substring(0, 6)).slice(0, 64);
+      // Declared here (not inside the terminal-push .then below) so the
+      // success-path .then further down the SAME chain can also delete it —
+      // a var declared inside a sibling .then callback is out of scope there.
+      var pendingCacheKey = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + refNumber;
 
       helcimLib.terminalPurchase(balance, refNumber, helcimIdemKey)
         .then(function () {
           log.info('[kiosk/so-pay] Terminal push sent: soNumber=' + soNumber + ' ref=' + refNumber);
+
+          // SC#4 / T-50-10: persist pending-charge context immediately after a
+          // successful terminal push — the only safe placement (writing it
+          // before the push would leave a phantom record for a charge that
+          // never happened). Mirrors /api/kiosk/sale's D-13 write.
+          // salesorder_id is load-bearing — plan 50-05's D-50-08 discriminator
+          // uses it to route this record to the sales-order check instead of
+          // an invoice lookup. Deleted on the success path below.
+          var pendingContext = {
+            reference_number: refNumber,
+            amount:           balance,
+            salesorder_id:    soId,
+            idempotency_key:  effectiveKey,
+            created_at:       new Date().toISOString()
+          };
+          cache.set(pendingCacheKey, pendingContext, KIOSK_PENDING_CHARGE_TTL).catch(function () {});
 
           // Poll for result — same pattern as /api/kiosk/sale
           var pollStart = Date.now();
@@ -2530,6 +2550,10 @@ function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
               // Invalidate caches (SO list + products stock)
               cache.del(KIOSK_SO_CACHE_KEY).catch(function () {});
               cache.del(KIOSK_PRODUCTS_CACHE_KEY).catch(function () {});
+              // SC#4: clear the pending-charge sentinel — the charge is now
+              // reconciled against a real Zoho payment, so it must no longer
+              // be flagged as a potential orphan by the reconcile backstop.
+              cache.del(pendingCacheKey).catch(function () {});
 
               eventLog.logEvent('kiosk.salesorder_payment', {
                 soId: soId,
