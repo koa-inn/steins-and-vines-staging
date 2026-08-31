@@ -40,6 +40,20 @@
 
 jest.mock('../lib/helcim');
 jest.mock('../lib/mailer');
+// D-50-07 (50-05): see reconcile.test.js for the full rationale — without
+// this mock, hasMatchingZohoOrder's Zoho call hits the real zoho-api module
+// and gets an "unanswerable" auth rejection in this test environment,
+// changing Case B's genuine-orphan scenario into an unprovable one. A
+// definitive "no matching order" answer restores it as a POSITIVELY PROVEN
+// orphan, so the case still exercises the unconfirmed-void alerting path it
+// was written to test.
+jest.mock('../lib/zoho-api', function () {
+  return {
+    zohoGet: jest.fn().mockResolvedValue({ invoices: [] }),
+    zohoPost: jest.fn(),
+    zohoPut: jest.fn()
+  };
+});
 jest.mock('../lib/cache', function () {
   return {
     get: jest.fn().mockResolvedValue(null),
