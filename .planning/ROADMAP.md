@@ -738,7 +738,7 @@ Plans:
 | 47. Purge Publicly-Served Internal Docs | v4.5 | 1/1 | ✅ Closed on staging (verified 2026-07-03); prod audit-doc at next prod deploy | 2026-07-03 |
 | 48. Kiosk POS De-Fork (kiosk-core.js) | v4.5 | 5/6 | Complete    | 2026-07-10 |
 | 49. Online Captured-Amount Verification | v4.5 | 1/2 | 49-01 done (H2 fix + 13-test regression, suite green); 49-02 live-card UAT pending deploy | - |
-| 50. Kiosk Money-Path Defect Closeout | v4.5 | 1/5 | In Progress|  |
+| 50. Kiosk Money-Path Defect Closeout | v4.5 | 4/5 | In Progress|  |
 | 51. Gift-Card Ledger Integrity | v4.5 | 0/? | Not started | - |
 | 52. Fail-Closed Sweep | v4.5 | 5/5 | Complete    | 2026-07-03 |
 | 53. Money-Path Observability & CI Gates | v4.5 | 6/6 | Complete    | 2026-07-03 |
@@ -1329,12 +1329,12 @@ Plans:
 
 **Wave 2**
 
-- [ ] 50-02-PLAN.md — `/api/kiosk/salesorder-pay` gets an idempotency lock, a deterministic Helcim key, a unique reference, a pending record and a hardened void (M-A1/H8, SC#4 — the headline double-charge defect)
+- [x] 50-02-PLAN.md — `/api/kiosk/salesorder-pay` gets an idempotency lock, a deterministic Helcim key, a unique reference, a pending record and a hardened void (M-A1/H8, SC#4 — the headline double-charge defect)
 
 **Wave 3** (both depend on 50-02; `files_modified` are disjoint — `pos.js` vs `pos-recipe.js`/`reconcile.js` — so they may run in parallel)
 
-- [ ] 50-03-PLAN.md — Captured-amount verification at kiosk confirm (M-A3, SC#1) + idempotency lock released on every confirm/sale failure path, retained when a charge is unvoided (H4, SC#2)
-- [ ] 50-05-PLAN.md — `pos-recipe.js` adopts the money-path primitives + pending record (M12, SC#5); reconcile becomes Zoho-authoritative so a settled paid charge is never voided (H3, SC#1)
+- [x] 50-03-PLAN.md — Captured-amount verification at kiosk confirm (M-A3, SC#1) + idempotency lock released on every confirm/sale failure path, retained when a charge is unvoided (H4, SC#2)
+- [x] 50-05-PLAN.md — `pos-recipe.js` adopts the money-path primitives + pending record (M12, SC#5); reconcile becomes Zoho-authoritative so a settled paid charge is never voided (H3, SC#1)
 
 **Wave note (2026-07-13 plan-check, iteration 2):** 50-05 was moved from Wave 2 → Wave 3 and now declares `depends_on: ["50-01", "50-02"]`. Its blind-spot-closing regression (cases 12–14) builds the pending record by capturing the REAL `cache.set` argument from a live `/api/kiosk/salesorder-pay` request — but the *unhardened* route writes **no pending-charge record on its success path at all** (`pos.js:1884-1940`). Same-wave plans branch from the same pre-wave commit, and the executor's intra-wave safety net only forces sequencing on overlapping `files_modified` (which these two do not share). So as originally waved, 50-05 could legally have run before 50-02 existed and silently rebuilt the exact hand-mocked-`ctx` blind spot the revision was written to close.
 

@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: Phase 76 context gathered
+stopped_at: Phase 50 code COMPLETE on main (5/5 plans) — 4 blocking live checkpoints open, nothing deployed
 last_updated: "2026-08-31T17:23:13.848Z"
-last_activity: 2026-08-31 -- Phase 50 execution started
+last_activity: 2026-08-31 -- Phase 50 executed: all 5 plans code-complete + merged, paused at 4 live checkpoints
 progress:
   total_phases: 63
   completed_phases: 22
@@ -25,7 +25,21 @@ See: .planning/PROJECT.md (updated 2026-06-19)
 
 ## Current Position
 
-Phase: 50 (kiosk-money-path-defect-closeout) — EXECUTING
+Phase: 50 (kiosk-money-path-defect-closeout) — CODE COMPLETE on `main`, NOT deployed, NOT verified live.
+
+All 5 plans executed 2026-08-31 in 3 waves via parallel worktree executors. Gates green on the fully merged tree: middleware **1514/1514** (101 suites; baseline 1461, +53), frontend **1166/1166** (88 suites; baseline 1158, +8), both linters clean. Nothing pushed to staging or production.
+
+**Plan status — only 50-04 is COMPLETE. The other four are paused at `gate="blocking"` human-verify checkpoints and MUST NOT be treated as done:**
+- **50-01** (`lib/helcim.js`) — `voidTransaction` inspects the `/payment/reverse` body via `isReversalConfirmed` and REJECTS with `err.isUnconfirmedVoid` when no positive signal is present, instead of trusting any 2xx. Commits `cb755ed6`/`9d822248`, plus `1ff42de4`/`e12d6f26` closing a collision hole found in orchestrator review: the rejection interpolates Helcim's status, so a status like `reversal_pending` smuggled a substring past `isAlreadyVoidedError` and would have let reconcile silently clear the pending sentinel with no alert. Fixed structurally — `if (err.isUnconfirmedVoid === true) return false;` ahead of the substring match. **No SUMMARY (plan incomplete). Task 3 open: read the raw `[helcim] reverse response for txn=` line from a real prod void and confirm the accept-set.**
+- **50-02** (`routes/pos.js`, salesorder-pay) — idempotency lock, deterministic Helcim key (sha256 of the effective key), unique per-attempt terminal reference, pending-charge record, honest `payment_voided`. T-50-11 rule established: on a 90s terminal timeout the lock is deliberately HELD (terminal may still approve late). Deviations: `pos-giftcard.test.js` T6/T7 reference-format assertions updated (they hardcoded the very collision D-50-01b removes), and both pending-charge writes reconciled to store `effectiveKey`. **Task 4 open: live double-tap on a $0.01 SO, confirm exactly ONE Helcim transaction.**
+- **50-03** (`routes/pos.js`, confirm) — captured-amount verification (±$0.01, void + 402 on drift) and H4 lock release on failure / retain on unvoided charge. Added `getCardTransactionById` mock scaffolding to 7 pre-existing test files; **zero assertions changed** (verified in orchestrator review). **Task 4 open — HIGHEST BLAST RADIUS: if `getCardTransactionById().amount` is not populated for card-PRESENT transactions, every kiosk sale is charged, voided and 402'd. Run the UAT-RUNSHEET §0.1 read-only probe FIRST — it needs no deploy and gates everything else.**
+- **50-04** (`js/kiosk-core.js`) — ✅ COMPLETE. One idempotency key per payment attempt (re-minted only for a genuine retry) + disable-on-click on the sale and salesorder-pay paths, both surfaces via the shared file; `kiosk-core.min.js` rebuilt. Plan premise was partly stale (the mint site had already been hoisted by an unrelated refactor); executor retargeted the RED test at the real remaining defect.
+- **50-05** (`routes/pos-recipe.js`, `lib/reconcile.js`) — recipe-sale adopts the money-path primitives + pending record; reconcile now asks Zoho before voiding, with a D-50-08 discriminator routing `salesorder_id`-bearing records to a SALES-ORDER check (salesorder-pay's `fromsalesorder` invoice never carries the kiosk reference, so an invoice-only lookup would misclassify a paid SO as an orphan and void a paying customer). User approved adding `zoho-api` mocks to 3 pre-existing reconcile test files; **zero assertions changed**. **Task 4 open: three read-only Zoho probes (A: does a paid SO's balance go to 0? B: does the fromsalesorder invoice lack the kiosk reference? C: does the invoice reference lookup work for an ordinary kiosk sale?).**
+
+**⚠ Operational behaviour change for the runbook (D-50-07):** while Zoho is unreachable, reconcile no longer auto-voids ANY orphan charge — every case fails closed and accumulates as a pending record for manual review. Correct trade (never void a settled sale), but orphan auto-recovery silently degrades to a manual queue during a Zoho outage.
+
+**Note on the deploy story:** 50-01/02/03/05 all deploy straight to the PRODUCTION Railway middleware — there is no staging middleware for these routes. Every remaining checkpoint therefore needs a prod deploy plus real hardware, and they batch naturally into one terminal session (likely alongside the pending 73/75/76 cutovers). Phase 50 security gate not yet run — no `50-SECURITY.md` exists and `workflow.security_enforcement` is `true`.
+
 
 Phase: 76
 Plan: 1 of 5
