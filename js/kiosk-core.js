@@ -379,11 +379,23 @@
   // ---- Payment-path state relocated here in 48-03 Task 1 (D-02) ----
   var _kioskTerminalReady = false;
   var _kioskSaleData = null; // receipt data from the last completed sale
+  // 50-04 (D-50-05, T-50-20/T-50-21): ONE idempotency key per payment attempt
+  // + a re-entrancy guard — the backstop for the disabled-button primary
+  // guard (an iPad touch that registers twice before the DOM disables, a
+  // client retry, a stale onclick already queued). Minted at the top of
+  // kioskProceedToPayment(); cleared on every terminal outcome.
+  var _kioskPaymentKey = null;
+  var _kioskPaymentInFlight = false;
   // ---- Dual-cart / Sales-Order-import state relocated here in 48-03 Task 2 (D-02) ----
   var _kioskSalesOrders = [];
   var _kioskSoItems = [];       // items for new SO creation
   var _kioskSoCustomer = null;  // { contact_id, name, email }
   var _kioskSoPayingId = null;  // tracks SO being paid (for retry)
+  // 50-04 (D-50-05, T-50-20/T-50-21): salesorder-pay's own key + guard,
+  // separate from the sale-path ones above — kioskCollectPayment is
+  // reachable from four call sites, only one of which is a button click.
+  var _kioskSoPayKey = null;
+  var _kioskSoPayInFlightId = null;
   var _kioskSoActiveChips = ['open', 'draft'];  // default active chip filter (D-10)
   var _kioskImportedSoId = null;        // SO ID when cart was imported from an SO
   var _kioskImportedSoNumber = null;    // SO number for display (e.g., "SO-001234")
@@ -2332,12 +2344,22 @@
     }
 
     if (skipBtn) {
-      skipBtn.onclick = function () { kioskProceedToPayment(); };
+      // 50-04 (D-50-05, T-50-21): disable-on-click is the PRIMARY guard — no
+      // debounce on a touch surface known for double-registration. The
+      // _kioskPaymentInFlight re-entrancy check inside kioskProceedToPayment
+      // is the backstop for what this alone cannot cover.
+      skipBtn.onclick = function () {
+        skipBtn.disabled = true;
+        kioskProceedToPayment();
+      };
     }
 
     if (proceedBtn) {
       proceedBtn.onclick = function () {
-        if (_kcEnv.getCustomer()) kioskProceedToPayment();
+        if (_kcEnv.getCustomer()) {
+          proceedBtn.disabled = true;
+          kioskProceedToPayment();
+        }
       };
     }
 
@@ -2453,7 +2475,29 @@
     });
   }
 
+  // 50-04 (D-50-05, T-50-22): the mirror of the D-50-03 server lock-release
+  // rule — clear the sale-path in-flight guard + key AND re-enable the
+  // Proceed/Skip buttons on every terminal outcome (success, cancel, every
+  // error branch). Called from kioskShowError/kioskShowReceipt (which cover
+  // every failure/success branch of the sale path) plus the explicit cancel
+  // handlers, which never route through either. A missed call here bricks
+  // the kiosk until reload — the button looks clickable but the re-entrancy
+  // guard silently swallows the tap.
+  function _kioskEndPaymentAttempt() {
+    _kioskPaymentInFlight = false;
+    _kioskPaymentKey = null;
+    var proceedBtn = document.getElementById('kiosk-customer-proceed');
+    var skipBtn = document.getElementById('kiosk-customer-skip');
+    if (proceedBtn) proceedBtn.disabled = !_kcEnv.getCustomer();
+    if (skipBtn) skipBtn.disabled = false;
+  }
+
   function kioskShowError(title, msg, canRetry, extra) {
+    // 50-04: every kioskShowError call in this file is a sale-path terminal
+    // outcome (recipe/standard/cash/moto sale error, terminal error, decline,
+    // the pre-flight phantom-item/missing-tax guards) — never the SO-pay path
+    // (which uses kioskShowSoError). Safe to centralize the cleanup here.
+    _kioskEndPaymentAttempt();
     kioskShowView('error');
 
     var titleEl = document.getElementById('kiosk-error-title');
@@ -2557,12 +2601,26 @@
   }
 
   function kioskProceedToPayment() {
+    // 50-04 (D-50-05, T-50-20/T-50-21): primary re-entrancy guard. A second
+    // tap of Proceed/Skip (or any other re-entrant call) while an attempt is
+    // already in flight is a no-op — this is the backstop the disabled
+    // button alone cannot cover (an iPad touch that registers twice before
+    // the DOM disables, a client retry, a stale onclick already queued).
+    if (_kioskPaymentInFlight) return;
+
     var totals = kioskCalcTotals();
     var mwUrl = _kcEnv.mwUrl;
     if (!mwUrl) {
       showToast('Middleware URL not configured', 'error');
       return;
     }
+
+    // Mint the ONE key for this attempt now that it is actually proceeding.
+    // Every re-entry within this attempt (GC panel Skip/Proceed, the
+    // stock-override resubmit) reads this SAME closure-captured value via
+    // the local `refNumber` below — never re-minted per invocation.
+    _kioskPaymentInFlight = true;
+    _kioskPaymentKey = 'KIOSK-' + Date.now();
 
     var items = Object.keys(_kcEnv.getCart()).map(function (id) {
       var entry = _kcEnv.getCart()[id];
@@ -2678,6 +2736,11 @@
               break;
             }
           }
+          // 50-04: hand off from the sale-path guard to kioskCollectPayment's
+          // own SO-pay guard — this kioskProceedToPayment() invocation has
+          // reached a terminal outcome (control now belongs to the SO-pay
+          // subsystem).
+          _kioskEndPaymentAttempt();
           kioskCollectPayment(_kioskImportedSoId);
         } else {
           // D-02: SO update failed — do NOT proceed to terminal
@@ -2693,6 +2756,7 @@
 
     } else if (_kioskImportedSoId && _kioskImportedSoUpdated) {
       // D-08: Retry after terminal failure — SO already updated, skip update
+      _kioskEndPaymentAttempt();
       kioskCollectPayment(_kioskImportedSoId);
       return;
     }
@@ -2733,11 +2797,20 @@
       cancelBtn.disabled = false;
       cancelBtn.onclick = function () {
         cancelled = true;
+        // 50-04 (T-50-22): cancel is a terminal outcome too — clear the guard
+        // so a subsequent Proceed/Skip tap is a genuinely new attempt.
+        _kioskEndPaymentAttempt();
         kioskShowView('browse');
       };
     }
 
-    var refNumber = 'KIOSK-' + Date.now();
+    // 50-04 (D-50-05): read the ONE key minted at the top of this function —
+    // do NOT mint a fresh one here. Minting per-invocation here was the
+    // T-50-20 defect vector once (before the mint site moved up to the top
+    // of kioskProceedToPayment); the null-fallback only guards a
+    // not-yet-migrated entry path (_kioskPaymentInFlight guarantees this is
+    // already set by the time we reach here).
+    var refNumber = _kioskPaymentKey || ('KIOSK-' + Date.now());
     var saleCompleted = false;
     var pollTimer = null;
     var pollStart = Date.now();
@@ -2970,6 +3043,10 @@
         cancelBtn.onclick = function () {
           cancelled = true;
           cancelBtn.disabled = true;
+          // 50-04 (T-50-22): cancel is a terminal outcome — clear the guard
+          // now, not after the /api/pos/cancel round-trip, so the buttons
+          // aren't left disabled while the cancel POST is in flight.
+          _kioskEndPaymentAttempt();
           if (msgEl) msgEl.textContent = 'Cancelling...';
           // 68-02: send the ref so the server can flag this sale as cancelled
           // (KIOSK_CANCELLED_PREFIX) — if a slow terminal push already landed
@@ -3238,6 +3315,8 @@
           cancelled = true;
           _kcMotoHandlers = null;
           _kcHelcimCheckoutToken = null;
+          // 50-04 (T-50-22): cancel is a terminal outcome — clear the guard.
+          _kioskEndPaymentAttempt();
           if (typeof removeHelcimPayIframe === 'function') removeHelcimPayIframe();
           kioskShowView('browse');
         };
@@ -3750,6 +3829,10 @@
   // ===== Receipt (48-03 Task 1) =====
 
   function kioskShowReceipt(saleData, totals, items, batches) {
+    // 50-04 (T-50-22): success is a terminal outcome too — both sale-path
+    // callers of this function (handleSaleResult, confirmSale's recipe
+    // branch) reach here only after a completed attempt.
+    _kioskEndPaymentAttempt();
     kioskShowView('receipt');
     batches = batches || [];
 
@@ -3972,6 +4055,11 @@
     Array.prototype.forEach.call(list.querySelectorAll('.kiosk-so-pay-btn'), function (btn) {
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
+        // 50-04 (D-50-05, T-50-21): disable-on-click primary guard. The
+        // in-flight guard inside kioskCollectPayment (_kioskSoPayInFlightId)
+        // is the real backstop — this function is reachable from three other
+        // non-button call sites too.
+        btn.disabled = true;
         kioskCollectPayment(btn.getAttribute('data-so-id'));
       });
     });
@@ -4224,6 +4312,13 @@
       return;
     }
 
+    // 50-04 (D-50-05, T-50-21): re-entrancy guard — a double-tap on the SAME
+    // order while it is already in flight is a no-op. This function is
+    // reachable from four call sites (the imported-SO update/retry forks in
+    // kioskProceedToPayment, the .kiosk-so-pay-btn click, the post-SO-create
+    // "Save & Pay" flow) — only one of which is covered by a disabled button.
+    if (_kioskSoPayInFlightId === soId) return;
+
     _kioskSoPayingId = soId;
     var balance = parseFloat(so.balance) || 0;
     var mwUrl = _kcEnv.mwUrl;
@@ -4236,6 +4331,11 @@
       showToast('POS terminal is not ready. Check terminal status below.', 'error');
       return;
     }
+
+    // Mint the key for THIS order's payment attempt now that it is actually
+    // proceeding.
+    _kioskSoPayInFlightId = soId;
+    _kioskSoPayKey = 'SOPAY-' + soId + '-' + Date.now();
 
     // Show payment view
     kioskShowView('payment');
@@ -4268,6 +4368,10 @@
       cancelBtn.disabled = false;
       cancelBtn.onclick = function () {
         cancelled = true;
+        // 50-04 (T-50-22): cancel is a terminal outcome — clear the guard so
+        // a legitimate retry (or a different order) isn't silently swallowed.
+        _kioskSoPayInFlightId = null;
+        _kioskSoPayKey = null;
         kioskShowCollect();
       };
     }
@@ -4275,11 +4379,19 @@
     fetch(mwUrl + '/api/kiosk/salesorder-pay', _kcMergeAuth({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ salesorder_id: soId })
+      body: JSON.stringify({ salesorder_id: soId, idempotency_key: _kioskSoPayKey })
     }))
     .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
     .then(function (result) {
       if (cancelled) return;
+      // 50-04 (T-50-22): every branch below — success and every failure
+      // routed through kioskShowSoError — is a terminal outcome for THIS
+      // order's attempt. Clear FIRST: the retry path in kioskShowSoError
+      // re-enters kioskCollectPayment(_kioskSoPayingId) synchronously, so if
+      // this guard is still set the retry is silently swallowed and the Pay
+      // button appears dead.
+      _kioskSoPayInFlightId = null;
+      _kioskSoPayKey = null;
       if (spinnerEl) spinnerEl.style.display = 'none';
 
       if (result.data && result.data.ok) {
@@ -4331,12 +4443,25 @@
     })
     .catch(function () {
       if (cancelled) return;
+      // 50-04 (T-50-22): network failure never reaches the .then() clear
+      // above — clear here too, or a connection error bricks SO-pay retries.
+      _kioskSoPayInFlightId = null;
+      _kioskSoPayKey = null;
       if (spinnerEl) spinnerEl.style.display = 'none';
       kioskShowSoError('Connection Error', 'Could not reach the payment server. Please try again.', true);
     });
   }
 
   function kioskShowSoError(title, msg, canRetry, extra) {
+    // 50-04 (T-50-22): belt-and-suspenders — also release the sale-path
+    // guard here. kioskShowSoError is reached both from inside
+    // kioskCollectPayment (already cleared above) AND from the imported-SO
+    // update/retry forks in kioskProceedToPayment BEFORE kioskCollectPayment
+    // is ever entered, where only the sale-path flag was set. Harmless no-op
+    // when either guard is already clear.
+    _kioskEndPaymentAttempt();
+    _kioskSoPayInFlightId = null;
+    _kioskSoPayKey = null;
     kioskShowView('error');
 
     var titleEl = document.getElementById('kiosk-error-title');
