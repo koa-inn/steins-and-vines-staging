@@ -2364,8 +2364,19 @@ router.post('/api/kiosk/salesorder-create', function (req, res) {
  *
  * Expected body:
  * {
- *   salesorder_id: "zoho_salesorder_id"
+ *   salesorder_id: "zoho_salesorder_id",
+ *   idempotency_key: "optional client-minted key — see D-50-01"
  * }
+ *
+ * D-50-01 (50-02): idempotency lock gate — the SAME money-path primitive
+ * /api/kiosk/sale uses. Hybrid contract: an explicit client idempotency_key
+ * is honoured verbatim (lock key `kiosk:idem:sopay:<key>`, replayable); with
+ * no key, a salesorder-scoped fallback (`kiosk:idem:sopay:so:<salesorder_id>`)
+ * still locks but NEVER replays a cached receipt — it is not a statement of
+ * client intent, only a same-attempt duplicate guard. This route deploys
+ * straight to the production Railway instance (no staging middleware), so a
+ * stale cached kiosk client that predates the idempotency_key contract must
+ * still be hardened against a double-tap on day one.
  *
  * Response: { ok, transaction_id, salesorder_number, amount, card_type }
  */
@@ -2383,6 +2394,30 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
     return res.status(503).json({ error: 'POS terminal not configured' });
   }
 
+  var clientSuppliedKey = (typeof body.idempotency_key === 'string' && body.idempotency_key.length > 0);
+  var effectiveKey = clientSuppliedKey ? body.idempotency_key.slice(0, 128) : ('so:' + soId);
+  var lockKey = C.CACHE_KEYS.KIOSK_IDEM_PREFIX + 'sopay:' + effectiveKey;
+
+  return moneyPath.acquireIdempotencyLock(cache, lockKey, IDEMPOTENCY_KEY_TTL)
+    .then(function (lockResult) {
+      if (lockResult.status === 'replay') {
+        if (clientSuppliedKey && lockResult.cached && lockResult.cached.ok === true) {
+          log.info('[kiosk/so-pay] Idempotent replay: ' + lockKey);
+          return res.status(200).json(lockResult.cached);
+        }
+        // D-50-01: the SO-id-scoped fallback key never serves a cached
+        // receipt — it may be a genuinely new payment attempt.
+        return res.status(409).json({ error: 'Payment already in progress for this order — please wait and check the order before retrying' });
+      }
+      if (lockResult.status === 'contention' || lockResult.status === 'failclosed') {
+        return res.status(409).json({ error: 'Payment already in progress for this order — please wait and check the order before retrying' });
+      }
+      // status === 'acquired' — proceed
+      return processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res);
+    });
+});
+
+function processSalesOrderPay(body, soId, effectiveKey, lockKey, req, res) {
   // Fetch the Sales Order from Zoho
   zohoGet('/salesorders/' + soId)
     .then(function (data) {
@@ -2497,13 +2532,19 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
               });
               brewpadIntegration.createBatchesFromSale(soLineItems, soNumber, so.customer_name || '', customerId, null, invoiceId);
 
-              res.json({
+              var responseBody = {
                 ok: true,
                 transaction_id: txnId,
                 salesorder_number: soNumber,
                 amount: balance,
                 card_type: paymentMode
-              });
+              };
+
+              // D-50-01: cache the success receipt under lockKey so a
+              // client-keyed retry replays instead of re-charging.
+              cache.set(lockKey, responseBody, IDEMPOTENCY_KEY_TTL).catch(function () {});
+
+              res.json(responseBody);
             })
             .catch(function (payErr) {
               // Zoho payment recording failed after terminal approval — void
@@ -2571,12 +2612,17 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
               created_at:       new Date().toISOString()
             };
             cache.set(_pendingKey, _pendingCtx, KIOSK_PENDING_CHARGE_TTL).catch(function () {});
+            // T-50-11: deliberately do NOT release the lock — the terminal may
+            // still approve late; the pending record + reconcile backstop own
+            // that case, not a client retry (a retry here could double-charge).
             return res.status(504).json({ error: 'Terminal did not respond in time. Please try again.' });
           }
           if (termErr.isDeclined) {
             return res.status(402).json({ error: 'Payment declined', code: 'DECLINED' });
           }
           log.error('[kiosk/so-pay] Terminal error: ' + termErr.message);
+          // No charge was taken — safe to release the lock for an immediate retry.
+          cache.releaseLock(lockKey).catch(function () {});
           if (!res.headersSent) {
             res.status(502).json({ error: 'Terminal error — please try again' });
           }
@@ -2584,6 +2630,8 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
     })
     .catch(function (err) {
       var status = err.status || (err.response && err.response.status) || 502;
+      // No terminal charge was ever attempted at this stage — safe to release.
+      cache.releaseLock(lockKey).catch(function () {});
       if (status === 404 || (err.response && err.response.status === 404)) {
         log.error('[kiosk/so-pay] Sales order not found: soId=' + soId);
         return res.status(404).json({ error: 'Sales order not found' });
@@ -2593,7 +2641,7 @@ router.post('/api/kiosk/salesorder-pay', function (req, res) {
         res.status(502).json({ error: 'Failed to process sales order payment' });
       }
     });
-});
+}
 
 /**
  * PUT /api/kiosk/salesorder-update
