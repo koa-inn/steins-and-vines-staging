@@ -133,10 +133,52 @@ function initializeCheckout(amount, currency) {
 // ---------------------------------------------------------------------------
 
 /**
+ * D-50-02: positive-signal, fail-closed inspection of a Helcim
+ * /payment/reverse response body. Deliberately permissive on the positive
+ * side (a real reversal must never be misreported as failed) and closed
+ * only on genuinely uninformative or negative bodies (an empty body, a
+ * request echo, or an explicit decline must never be misreported as a
+ * successful void).
+ *
+ * CONFIRMED iff:
+ *   - status (case-insensitive) is one of APPROVED, COMPLETED, REVERSED, VOIDED, OR
+ *   - approved === true, OR
+ *   - transactionId is present AND type (case-insensitive) is reverse or void
+ *
+ * @param {object} data - the reverse response body
+ * @returns {boolean}
+ */
+function isReversalConfirmed(data) {
+  var body = data || {};
+  var status = String(body.status || '').toUpperCase();
+  if (status === 'APPROVED' || status === 'COMPLETED' || status === 'REVERSED' || status === 'VOIDED') {
+    return true;
+  }
+  if (body.approved === true) {
+    return true;
+  }
+  var type = String(body.type || '').toLowerCase();
+  if (body.transactionId && (type === 'reverse' || type === 'void')) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Void a transaction (same-day / open batch).
  * Use for ghost-charge recovery when Zoho order creation fails after payment.
  *
  * POST https://api.helcim.com/v2/payment/reverse
+ *
+ * D-50-02: inspects the response body for a positive reversal signal
+ * (see isReversalConfirmed) instead of trusting any 2xx. An unconfirmed
+ * reversal REJECTS (D-50-02a) rather than resolving { ok: false } so every
+ * existing caller's .catch flows into the proven fail-closed machinery
+ * (sv:void-failure record + sendVoidFailureAlert + needs_manual_review)
+ * with zero caller changes. The rejection message deliberately avoids the
+ * substrings 'already'/'reversal'/'reversed'/'voided' (D-50-02b) so it does
+ * not collide with lib/reconcile.js isAlreadyVoidedError, which treats
+ * those substrings as an already-voided SUCCESS signal.
  *
  * @param {string} transactionId - Helcim transaction ID to void
  * @returns {Promise<{ ok: boolean, transactionId: string }>}
@@ -152,7 +194,17 @@ function voidTransaction(transactionId) {
     timeout: 10000
   }).then(function (resp) {
     var data = resp.data || {};
-    return { ok: true, transactionId: transactionId, status: data.status || 'voided' };
+    // D-50-02: unconditional, not debug-gated — closes the knowledge gap on
+    // Helcim's real reverse-response shape (undocumented in this repo; no
+    // staging middleware to probe it against). No PAN/PII in this body.
+    log.info('[helcim] reverse response for txn=' + transactionId + ': ' + JSON.stringify(data));
+    if (isReversalConfirmed(data)) {
+      return { ok: true, transactionId: transactionId, status: data.status || 'reversed' };
+    }
+    var err = new Error('Helcim void not confirmed (status=' + (data.status || 'none') + ')');
+    err.isUnconfirmedVoid = true;
+    err.helcimResponse = data;
+    throw err;
   });
 }
 
