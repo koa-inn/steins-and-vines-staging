@@ -512,6 +512,60 @@ describe('PUT /api/recipes/:id', function () {
       expect(mocks.axios.post).not.toHaveBeenCalled();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Regression: the guard fires on `status === 'active'`, not on "is being
+  // activated", so it re-runs on EVERY edit of an already-active recipe. A
+  // dynamic-priced recipe prices from computed_price and legitimately has
+  // locked_price 0 — which made renaming an active dynamic recipe impossible.
+  // -------------------------------------------------------------------------
+
+  test('allows editing an ACTIVE DYNAMIC recipe that has no locked_price', function () {
+    return callHandler('PUT', '/api/recipes/:id', {
+      params: { id: 'SV-R-000002' },
+      body: {
+        name: 'Czech Lager (renamed)',
+        status: 'active',
+        pricing_mode: 'dynamic',
+        locked_price: 0,
+        ingredient_count: 5
+      }
+    }).then(function (res) {
+      expect(res._status).not.toBe(422);
+      expect(res._body.code).not.toBe('activation_locked_price');
+      expect(res._body.ok).toBe(true);
+    });
+  });
+
+  test('still requires ingredients on an active dynamic recipe — price derives from them', function () {
+    return callHandler('PUT', '/api/recipes/:id', {
+      params: { id: 'SV-R-000002' },
+      body: {
+        status: 'active',
+        pricing_mode: 'dynamic',
+        locked_price: 0,
+        ingredient_count: 0
+      }
+    }).then(function (res) {
+      expect(res._status).toBe(422);
+      expect(res._body.code).toBe('activation_no_ingredients');
+    });
+  });
+
+  test('still requires locked_price when pricing_mode is locked', function () {
+    return callHandler('PUT', '/api/recipes/:id', {
+      params: { id: 'SV-R-000001' },
+      body: {
+        status: 'active',
+        pricing_mode: 'locked',
+        locked_price: 0,
+        ingredient_count: 3
+      }
+    }).then(function (res) {
+      expect(res._status).toBe(422);
+      expect(res._body.code).toBe('activation_locked_price');
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

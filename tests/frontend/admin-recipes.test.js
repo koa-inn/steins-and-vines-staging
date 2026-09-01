@@ -137,6 +137,53 @@ describe('canActivateRecipe', function () {
     expect(result.ok).toBe(false);
     expect(result.reason).toContain('ingredient');
   });
+
+  // -------------------------------------------------------------------------
+  // Regression: the caller gates on `status === 'active'`, not on "is being
+  // activated", so this guard re-runs on EVERY save of an already-active
+  // recipe. A dynamic-priced recipe prices from computed_price and
+  // legitimately has locked_price 0 — which made renaming one impossible.
+  // -------------------------------------------------------------------------
+
+  test('returns ok:true for a dynamic recipe with no locked_price', function () {
+    var result = admin.canActivateRecipe(
+      { pricing_mode: 'dynamic', locked_price: 0 },
+      [{ item_id: '123', quantity: 1 }]
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  test('returns ok:true for a dynamic recipe with a blank locked_price field', function () {
+    var result = admin.canActivateRecipe(
+      { pricing_mode: 'dynamic', locked_price: '' },
+      [{ item_id: '123', quantity: 1 }]
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  test('a dynamic recipe still requires ingredients — its price derives from them', function () {
+    var result = admin.canActivateRecipe(
+      { pricing_mode: 'dynamic', locked_price: 0 },
+      []
+    );
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/ingredient/i);
+  });
+
+  test('a locked recipe still requires a locked_price', function () {
+    var result = admin.canActivateRecipe(
+      { pricing_mode: 'locked', locked_price: 0 },
+      [{ item_id: '123', quantity: 1 }]
+    );
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/price/i);
+  });
+
+  test('an absent pricing_mode is treated as locked and still requires a price', function () {
+    var result = admin.canActivateRecipe({ locked_price: 0 }, [{ item_id: '123', quantity: 1 }]);
+    expect(result.ok).toBe(false);
+  });
+
 });
 
 // ---------------------------------------------------------------------------
