@@ -77,12 +77,65 @@ function buildWaitlistCtaLink(doc) {
   return wrap;
 }
 
+/**
+ * Sort a filter row's unique values into their per-field domain order.
+ * Pure function — no DOM, no closure state — so it can be shared by both
+ * loadProducts()'s per-category call list and tested in isolation.
+ *
+ * @param {String} field - The product field the filter row is built from (e.g. 'subcategory', 'abv', 'time').
+ * @param {Array} values - Unique values to sort (NOT mutated — a sorted copy is returned).
+ * @param {String} [categoryFilter] - Active category ('wine' | 'beer' | ''), gates the wine-only subcategory order.
+ * @returns {Array} A new, sorted array.
+ */
+function sortFilterValues(field, values, categoryFilter) {
+  var out = (values || []).slice();
+
+  if (field === 'time' || field === 'abv') {
+    out.sort(function (a, b) {
+      var numA = parseFloat(a) || 0;
+      var numB = parseFloat(b) || 0;
+      return numA - numB;
+    });
+  } else if (field === 'subcategory' && categoryFilter !== 'beer') {
+    var styleOrder = ['red', 'white', 'rosé', 'rose', 'fruit', 'specialty'];
+    out.sort(function (a, b) {
+      var aIdx = styleOrder.indexOf(a.toLowerCase());
+      var bIdx = styleOrder.indexOf(b.toLowerCase());
+      if (aIdx === -1) aIdx = styleOrder.length;
+      if (bIdx === -1) bIdx = styleOrder.length;
+      return aIdx - bIdx;
+    });
+  } else if (field === 'body') {
+    var bodyOrder = ['light', 'light-medium', 'medium', 'medium-full', 'full'];
+    out.sort(function (a, b) {
+      var aIdx = bodyOrder.indexOf(a.toLowerCase());
+      var bIdx = bodyOrder.indexOf(b.toLowerCase());
+      if (aIdx === -1) aIdx = bodyOrder.length;
+      if (bIdx === -1) bIdx = bodyOrder.length;
+      return aIdx - bIdx;
+    });
+  } else if (field === 'sweetness') {
+    var sweetOrder = ['dry', 'off-dry', 'semi-sweet', 'sweet'];
+    out.sort(function (a, b) {
+      var aIdx = sweetOrder.indexOf(a.toLowerCase());
+      var bIdx = sweetOrder.indexOf(b.toLowerCase());
+      if (aIdx === -1) aIdx = sweetOrder.length;
+      if (bIdx === -1) bIdx = sweetOrder.length;
+      return aIdx - bIdx;
+    });
+  } else {
+    out.sort();
+  }
+
+  return out;
+}
+
 function loadProducts(categoryFilter) {
   var _categoryFilter = (categoryFilter || '').toLowerCase();
   var allProducts = [];
   var _kitsFuse = null;
   var userHasSorted = false;
-  var activeFilters = { type: [], brand: [], manufacturer: [], subcategory: [], time: [], body: [], oak: [], sweetness: [] };
+  var activeFilters = { type: [], brand: [], manufacturer: [], subcategory: [], time: [], body: [], oak: [], sweetness: [], abv: [] };
   var saleFilterActive = false;
 
   var middlewareUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL)
@@ -235,15 +288,21 @@ function loadProducts(categoryFilter) {
         });
       }
 
-      buildFilterRow('filter-type', 'type', 'Type:');
-      buildFilterRow('filter-brand', 'brand', 'Brand:');
-      buildFilterRow('filter-manufacturer', 'manufacturer', 'Producer:');
-      buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
-      buildFilterRow('filter-time', 'time', 'Production Time:');
-      buildFilterRow('filter-body', 'body', 'Body:');
-      buildFilterRow('filter-oak', 'oak', 'Oak:');
-      buildFilterRow('filter-sweetness', 'sweetness', 'Sweetness:');
-      buildSaleFilter();
+      if (_categoryFilter === 'beer') {
+        // D-13: beer only builds Style + ABV — no Brand/Producer/Time/Body/Oak/Sweetness/Sale.
+        buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
+        buildFilterRow('filter-abv', 'abv', 'ABV:');
+      } else {
+        buildFilterRow('filter-type', 'type', 'Type:');
+        buildFilterRow('filter-brand', 'brand', 'Brand:');
+        buildFilterRow('filter-manufacturer', 'manufacturer', 'Producer:');
+        buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
+        buildFilterRow('filter-time', 'time', 'Production Time:');
+        buildFilterRow('filter-body', 'body', 'Body:');
+        buildFilterRow('filter-oak', 'oak', 'Oak:');
+        buildFilterRow('filter-sweetness', 'sweetness', 'Sweetness:');
+        buildSaleFilter();
+      }
       // Only render kits if the kits tab is still active (guards against the
       // ?tab=ingredients URL param switching away before this async chain resolves)
       if (_activeCartTab === 'kits') applyFilters();
@@ -375,42 +434,7 @@ function loadProducts(categoryFilter) {
       }
     });
 
-    if (field === 'time') {
-      uniqueValues.sort(function (a, b) {
-        var numA = parseFloat(a) || 0;
-        var numB = parseFloat(b) || 0;
-        return numA - numB;
-      });
-    } else if (field === 'subcategory') {
-      var styleOrder = ['red', 'white', 'rosé', 'rose', 'fruit', 'specialty'];
-      uniqueValues.sort(function (a, b) {
-        var aIdx = styleOrder.indexOf(a.toLowerCase());
-        var bIdx = styleOrder.indexOf(b.toLowerCase());
-        if (aIdx === -1) aIdx = styleOrder.length;
-        if (bIdx === -1) bIdx = styleOrder.length;
-        return aIdx - bIdx;
-      });
-    } else if (field === 'body') {
-      var bodyOrder = ['light', 'light-medium', 'medium', 'medium-full', 'full'];
-      uniqueValues.sort(function (a, b) {
-        var aIdx = bodyOrder.indexOf(a.toLowerCase());
-        var bIdx = bodyOrder.indexOf(b.toLowerCase());
-        if (aIdx === -1) aIdx = bodyOrder.length;
-        if (bIdx === -1) bIdx = bodyOrder.length;
-        return aIdx - bIdx;
-      });
-    } else if (field === 'sweetness') {
-      var sweetOrder = ['dry', 'off-dry', 'semi-sweet', 'sweet'];
-      uniqueValues.sort(function (a, b) {
-        var aIdx = sweetOrder.indexOf(a.toLowerCase());
-        var bIdx = sweetOrder.indexOf(b.toLowerCase());
-        if (aIdx === -1) aIdx = sweetOrder.length;
-        if (bIdx === -1) bIdx = sweetOrder.length;
-        return aIdx - bIdx;
-      });
-    } else {
-      uniqueValues.sort();
-    }
+    uniqueValues = sortFilterValues(field, uniqueValues, _categoryFilter);
 
     if (uniqueValues.length === 0) {
       container.classList.add('hidden');
@@ -497,7 +521,7 @@ function loadProducts(categoryFilter) {
   }
 
   function matchesFilters(product, excludeField) {
-    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness'];
+    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness', 'abv'];
     for (var i = 0; i < fields.length; i++) {
       var f = fields[i];
       if (f === excludeField) continue;
@@ -507,7 +531,7 @@ function loadProducts(categoryFilter) {
   }
 
   function updateFilterAvailability() {
-    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness'];
+    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness', 'abv'];
     fields.forEach(function (field) {
       var containerId = 'filter-' + (field === 'subcategory' ? 'subcategory' : field);
       var container = document.getElementById(containerId);
@@ -562,6 +586,7 @@ function loadProducts(categoryFilter) {
       if (activeFilters.body.length > 0 && activeFilters.body.indexOf(r.body) === -1) return false;
       if (activeFilters.oak.length > 0 && activeFilters.oak.indexOf(r.oak) === -1) return false;
       if (activeFilters.sweetness.length > 0 && activeFilters.sweetness.indexOf(r.sweetness) === -1) return false;
+      if (activeFilters.abv.length > 0 && activeFilters.abv.indexOf(r.abv) === -1) return false;
       if (saleFilterActive && !(parseFloat(r.discount) > 0)) return false;
       if (!query) return true;
       if (_kitsFuse) return _kitsFuseSet.has(r);
@@ -1554,5 +1579,5 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink };
+  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues };
 }

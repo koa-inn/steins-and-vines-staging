@@ -142,3 +142,43 @@ describe('buildWaitlistCtaLink', function () {
     expect(wrap.className.indexOf('product-reserve-wrap')).toBe(-1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 3 — sortFilterValues (D-13 per-category filter rows + ABV field)
+// ---------------------------------------------------------------------------
+
+describe('sortFilterValues', function () {
+  test('is exported from the module', function () {
+    expect(typeof mod.sortFilterValues).toBe('function');
+  });
+
+  test('abv sorts ascending numerically, tolerating a trailing %', function () {
+    expect(mod.sortFilterValues('abv', ['12%', '5.8', '9'])).toEqual(['5.8', '9', '12%']);
+  });
+
+  test('subcategory applies the wine styleOrder when categoryFilter is "wine"', function () {
+    expect(mod.sortFilterValues('subcategory', ['White', 'Red'], 'wine')).toEqual(['Red', 'White']);
+  });
+
+  test('subcategory falls through to alphabetical order when categoryFilter is "beer"', function () {
+    expect(mod.sortFilterValues('subcategory', ['Stout', 'IPA', 'Lager'], 'beer')).toEqual(['IPA', 'Lager', 'Stout']);
+  });
+
+  test('body still produces its existing domain order', function () {
+    expect(mod.sortFilterValues('body', ['full', 'light', 'medium'])).toEqual(['light', 'medium', 'full']);
+  });
+
+  test('sweetness still produces its existing domain order', function () {
+    expect(mod.sortFilterValues('sweetness', ['sweet', 'dry', 'off-dry'])).toEqual(['dry', 'off-dry', 'sweet']);
+  });
+
+  test('time still sorts numerically ascending', function () {
+    expect(mod.sortFilterValues('time', ['12 weeks', '4 weeks', '8 weeks'])).toEqual(['4 weeks', '8 weeks', '12 weeks']);
+  });
+
+  test('does not mutate the input array', function () {
+    var input = ['White', 'Red'];
+    mod.sortFilterValues('subcategory', input, 'wine');
+    expect(input).toEqual(['White', 'Red']);
+  });
+});
