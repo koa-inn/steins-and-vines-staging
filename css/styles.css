@@ -279,6 +279,12 @@ small, .text-small {
   text-align: center;
 }
 
+/* beer.html has 3 steps, not 4 — without this they fill 3 of 4 columns and
+   the whole block sits left of centre. */
+.how-it-works-steps--3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .how-it-works-step {
   display: flex;
   flex-direction: column;
@@ -765,6 +771,28 @@ small, .text-small {
   background-color: var(--color-cream);
   border-color: var(--color-cream);
   color: var(--color-burgundy);
+}
+
+/* Solid secondary for dark hero banners. The outline variant above reads as
+   unfinished next to a filled primary on a photographic background, so this
+   inverts the primary instead of hollowing it out. */
+.btn--hero-solid {
+  background-color: var(--color-cream);
+  border-color: var(--color-cream);
+  color: var(--color-burgundy);
+}
+
+.btn--hero-solid:hover {
+  background-color: var(--color-green);
+  border-color: var(--color-cream);
+  color: var(--color-cream);
+}
+
+.btn--hero-solid:active {
+  background-color: var(--color-green);
+  border-color: var(--color-cream);
+  color: var(--color-cream);
+  opacity: 0.85;
 }
 
 /* ===== Buttons ===== */
