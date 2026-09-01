@@ -2060,6 +2060,110 @@ function orderCatalogBlocks(kitCount, recipeCount) {
   return kitCount >= recipeCount ? ['kits', 'recipes'] : ['recipes', 'kits'];
 }
 
+  // Lifted to module scope so the beer buy path is unit-testable; it uses no
+// loadProducts closure state, only module-level helpers from 02/04/11.
+function buildBeerCard(product, doc) {
+  var d = doc || (typeof document !== 'undefined' ? document : null);
+  var tint = getTintClass(product);
+  var card = d.createElement('div');
+  card.className = 'label-beer' + (tint ? ' ' + tint : '');
+  if (product.sku) card.setAttribute('data-sku', product.sku);
+
+  var discount = parseFloat(product.discount) || 0;
+  if (discount > 0) {
+    var badge = d.createElement('span');
+    badge.className = 'discount-badge';
+    badge.textContent = Math.round(discount) + '% OFF';
+    card.appendChild(badge);
+  }
+
+  var body = d.createElement('div');
+  body.className = 'label-body';
+
+  var logo = d.createElement('div');
+  logo.className = 'sv-logo';
+  logo.innerHTML = SV_LOGO_SVG;
+  body.appendChild(logo);
+
+  if (product.manufacturer) {
+    var producer = d.createElement('div');
+    producer.className = 'producer';
+    producer.textContent = product.manufacturer;
+    body.appendChild(producer);
+  }
+
+  var brand = d.createElement('div');
+  brand.className = 'brand';
+  brand.textContent = product.brand || '';
+  body.appendChild(brand);
+
+  var goldRule = d.createElement('div');
+  goldRule.className = 'gold-rule';
+  body.appendChild(goldRule);
+
+  var beerName = d.createElement('div');
+  beerName.className = 'beer-name';
+  beerName.textContent = product.name || '';
+  body.appendChild(beerName);
+
+  if (product.subcategory) {
+    var sub = d.createElement('div');
+    sub.className = 'subcategory';
+    sub.textContent = product.subcategory;
+    body.appendChild(sub);
+  }
+
+  var bBatchSize = (product['batch_size_(l)'] || product.batch_size_liters || '').trim();
+  if (product.time || bBatchSize) {
+    var timeRow = d.createElement('div');
+    timeRow.className = 'time';
+    var timeParts = [];
+    if (product.time) timeParts.push(product.time);
+    if (bBatchSize) timeParts.push(bBatchSize + 'L');
+    timeRow.textContent = timeParts.join(' \u00b7 ');
+    body.appendChild(timeRow);
+  }
+
+  if (product.abv) {
+    var abv = d.createElement('div');
+    abv.className = 'abv';
+    abv.textContent = product.abv + (product.abv.toLowerCase().indexOf('abv') === -1 ? ' ABV' : '');
+    body.appendChild(abv);
+  }
+
+  if (product.tasting_notes || product.sku) {
+    body.appendChild(buildLabelNotesToggle(product));
+  }
+
+  var spacer = d.createElement('div');
+  spacer.className = 'notes-spacer';
+  body.appendChild(spacer);
+
+  card.appendChild(body);
+
+  if (product.sku) card.appendChild(buildProductLinkBtn(product.sku));
+
+  var kit = (product.retail_kit || '').trim();
+  if (kit) {
+    card.appendChild(buildLabelPriceFooter(product, { kitOnly: true }));
+  }
+
+  // D-12 (revised 2026-09-01, owner UAT): beer kits ARE purchasable, but as a
+  // take-home kit only. There is deliberately no Reserve/ferment-in-store
+  // control here — that experience is booked through the recipe waitlist, so
+  // only the kit-buy path is offered.
+  var beerProductKey = getProductKey(product);
+  var beerKitBuyWrap = d.createElement('div');
+  beerKitBuyWrap.className = 'reserve-link product-reserve-wrap';
+  beerKitBuyWrap._reserveProduct = product;
+  beerKitBuyWrap._reserveKey = beerProductKey;
+  beerKitBuyWrap._reserveRenderer = renderKitBuyControl;
+  renderKitBuyControl(beerKitBuyWrap, product);
+  card.appendChild(beerKitBuyWrap);
+
+  return card;
+}
+
 function loadProducts(categoryFilter) {
   var _categoryFilter = (categoryFilter || '').toLowerCase();
   var allProducts = [];
@@ -2841,106 +2945,6 @@ function loadProducts(categoryFilter) {
     return card;
   }
 
-  function buildBeerCard(product) {
-    var tint = getTintClass(product);
-    var card = document.createElement('div');
-    card.className = 'label-beer' + (tint ? ' ' + tint : '');
-    if (product.sku) card.setAttribute('data-sku', product.sku);
-
-    var discount = parseFloat(product.discount) || 0;
-    if (discount > 0) {
-      var badge = document.createElement('span');
-      badge.className = 'discount-badge';
-      badge.textContent = Math.round(discount) + '% OFF';
-      card.appendChild(badge);
-    }
-
-    var body = document.createElement('div');
-    body.className = 'label-body';
-
-    var logo = document.createElement('div');
-    logo.className = 'sv-logo';
-    logo.innerHTML = SV_LOGO_SVG;
-    body.appendChild(logo);
-
-    if (product.manufacturer) {
-      var producer = document.createElement('div');
-      producer.className = 'producer';
-      producer.textContent = product.manufacturer;
-      body.appendChild(producer);
-    }
-
-    var brand = document.createElement('div');
-    brand.className = 'brand';
-    brand.textContent = product.brand || '';
-    body.appendChild(brand);
-
-    var goldRule = document.createElement('div');
-    goldRule.className = 'gold-rule';
-    body.appendChild(goldRule);
-
-    var beerName = document.createElement('div');
-    beerName.className = 'beer-name';
-    beerName.textContent = product.name || '';
-    body.appendChild(beerName);
-
-    if (product.subcategory) {
-      var sub = document.createElement('div');
-      sub.className = 'subcategory';
-      sub.textContent = product.subcategory;
-      body.appendChild(sub);
-    }
-
-    var bBatchSize = (product['batch_size_(l)'] || product.batch_size_liters || '').trim();
-    if (product.time || bBatchSize) {
-      var timeRow = document.createElement('div');
-      timeRow.className = 'time';
-      var timeParts = [];
-      if (product.time) timeParts.push(product.time);
-      if (bBatchSize) timeParts.push(bBatchSize + 'L');
-      timeRow.textContent = timeParts.join(' \u00b7 ');
-      body.appendChild(timeRow);
-    }
-
-    if (product.abv) {
-      var abv = document.createElement('div');
-      abv.className = 'abv';
-      abv.textContent = product.abv + (product.abv.toLowerCase().indexOf('abv') === -1 ? ' ABV' : '');
-      body.appendChild(abv);
-    }
-
-    if (product.tasting_notes || product.sku) {
-      body.appendChild(buildLabelNotesToggle(product));
-    }
-
-    var spacer = document.createElement('div');
-    spacer.className = 'notes-spacer';
-    body.appendChild(spacer);
-
-    card.appendChild(body);
-
-    if (product.sku) card.appendChild(buildProductLinkBtn(product.sku));
-
-    var kit = (product.retail_kit || '').trim();
-    if (kit) {
-      card.appendChild(buildLabelPriceFooter(product, { kitOnly: true }));
-    }
-
-    // D-12 (revised 2026-09-01, owner UAT): beer kits ARE purchasable, but as a
-    // take-home kit only. There is deliberately no Reserve/ferment-in-store
-    // control here — that experience is booked through the recipe waitlist, so
-    // only the kit-buy path is offered.
-    var beerProductKey = getProductKey(product);
-    var beerKitBuyWrap = document.createElement('div');
-    beerKitBuyWrap.className = 'reserve-link product-reserve-wrap';
-    beerKitBuyWrap._reserveProduct = product;
-    beerKitBuyWrap._reserveKey = beerProductKey;
-    beerKitBuyWrap._reserveRenderer = renderKitBuyControl;
-    renderKitBuyControl(beerKitBuyWrap, product);
-    card.appendChild(beerKitBuyWrap);
-
-    return card;
-  }
 
   function buildDefaultCard(product) {
     var card = document.createElement('div');
@@ -3580,7 +3584,7 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { appendSvLogo: appendSvLogo, flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, buildRecipeCard: buildRecipeCard, fetchActiveRecipes: fetchActiveRecipes, renderRecipeBlock: renderRecipeBlock, orderCatalogBlocks: orderCatalogBlocks };
+  module.exports = { appendSvLogo: appendSvLogo, buildBeerCard: buildBeerCard, flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, buildRecipeCard: buildRecipeCard, fetchActiveRecipes: fetchActiveRecipes, renderRecipeBlock: renderRecipeBlock, orderCatalogBlocks: orderCatalogBlocks };
 }
 var _allIngredients = [];
 var _ingredientsFuse = null;
