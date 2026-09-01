@@ -26,7 +26,30 @@ function flattenCustomFields(obj, customFields) {
   });
 }
 
-function loadProducts() {
+/**
+ * Test whether a product's resolved category matches a category filter.
+ * When categoryFilter is falsy, reproduces the pre-existing "any kit category"
+ * test used by loadProducts(). When categoryFilter is truthy, it must both be
+ * a recognised KIT_CATEGORIES value AND be present in the product's resolved
+ * category string.
+ *
+ * @param {Object} obj - Product-like object (category / _zoho_category / type).
+ * @param {String} [categoryFilter] - e.g. 'wine' or 'beer'; falsy = match any kit category.
+ * @returns {Boolean}
+ */
+function matchesKitCategory(obj, categoryFilter) {
+  if (!obj) return false;
+  var cat = (obj.category || obj._zoho_category || obj.type || '').toLowerCase();
+  if (!cat) return false;
+  if (categoryFilter) {
+    var target = categoryFilter.toLowerCase();
+    return KIT_CATEGORIES.indexOf(target) !== -1 && cat.indexOf(target) !== -1;
+  }
+  return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
+}
+
+function loadProducts(categoryFilter) {
+  var _categoryFilter = (categoryFilter || '').toLowerCase();
   var allProducts = [];
   var _kitsFuse = null;
   var userHasSorted = false;
@@ -120,11 +143,9 @@ function loadProducts() {
           // Exclude items with Type = Ingredient or Service
           var t = (obj.type || '').toLowerCase();
           if (t === 'ingredient' || t === 'service') return false;
-          // Only keep kit categories (wine, beer, cider, seltzer)
-          // Fall back to obj.type when category_name is absent from Zoho
-          var cat = (obj.category || obj._zoho_category || obj.type || '').toLowerCase();
-          if (!cat) return false;
-          return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
+          // Only keep kit categories (wine, beer, cider, seltzer), optionally
+          // scoped to a single category via _categoryFilter.
+          return matchesKitCategory(obj, _categoryFilter);
         });
       });
   }
@@ -166,10 +187,7 @@ function loadProducts() {
       items = items.filter(function (obj) {
         var t = (obj.type || '').toLowerCase();
         if (t === 'ingredient' || t === 'service') return false;
-        // Fall back to obj.type when category_name is absent from Zoho
-        var cat = (obj.category || obj._zoho_category || obj.type || '').toLowerCase();
-        if (!cat) return false;
-        return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
+        return matchesKitCategory(obj, _categoryFilter);
       });
       items.forEach(function (obj) {
         obj._item_type = 'kit';
@@ -1520,5 +1538,5 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { flattenCustomFields: flattenCustomFields };
+  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory };
 }
