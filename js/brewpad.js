@@ -751,9 +751,17 @@ function isValidImportNumber(num) {
 // Inline activation guardrail (D-06). Client-side UX only — server re-validates on PUT.
 // Returns { ok: true } or { ok: false, reason: string }.
 function canActivateRecipe(formData, ingredients) {
-  var lockedPrice = parseFloat(formData && formData.locked_price);
-  if (!lockedPrice || isNaN(lockedPrice) || lockedPrice <= 0) {
-    return { ok: false, reason: 'Set a valid locked price before activating this recipe.' };
+  // This runs on EVERY save of an active recipe, not only on the draft->active
+  // transition, so it must not demand a locked price from a recipe that does
+  // not use one. A dynamic recipe prices from computed_price and legitimately
+  // carries locked_price 0 — requiring one here made active dynamic recipes
+  // impossible to rename or edit at all.
+  var isDynamic = formData && formData.pricing_mode === 'dynamic';
+  if (!isDynamic) {
+    var lockedPrice = parseFloat(formData && formData.locked_price);
+    if (!lockedPrice || isNaN(lockedPrice) || lockedPrice <= 0) {
+      return { ok: false, reason: 'Set a valid locked price before activating this recipe.' };
+    }
   }
   if (!ingredients || ingredients.length === 0) {
     return { ok: false, reason: 'Add at least one ingredient before activating this recipe.' };

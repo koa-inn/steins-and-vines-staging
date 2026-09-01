@@ -48,7 +48,7 @@
   }
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-09-01T20:43:13.232Z';
+  var BUILD_TIMESTAMP = '2026-09-01T20:52:51.876Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP); // eslint-disable-line no-console -- deploy build-verification log
 
   var accessToken = null;
@@ -9051,9 +9051,15 @@
 
   // Activation guardrail (D-02)
   function canActivateRecipe(formData, ingredients) {
-    var lockedPrice = parseFloat(formData && formData.locked_price);
-    if (!lockedPrice || isNaN(lockedPrice) || lockedPrice <= 0) {
-      return { ok: false, reason: 'Set a valid locked price before activating this recipe.' };
+    // Runs on EVERY save of an active recipe, not only the draft->active
+    // transition. A dynamic recipe prices from computed_price and carries
+    // locked_price 0, so demanding one here blocked all edits to it.
+    var isDynamic = formData && formData.pricing_mode === 'dynamic';
+    if (!isDynamic) {
+      var lockedPrice = parseFloat(formData && formData.locked_price);
+      if (!lockedPrice || isNaN(lockedPrice) || lockedPrice <= 0) {
+        return { ok: false, reason: 'Set a valid locked price before activating this recipe.' };
+      }
     }
     if (!ingredients || ingredients.length === 0) {
       return { ok: false, reason: 'Add at least one ingredient before activating this recipe.' };

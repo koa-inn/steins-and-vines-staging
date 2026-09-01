@@ -521,6 +521,7 @@ describe('PUT /api/recipes/:id', function () {
   // -------------------------------------------------------------------------
 
   test('allows editing an ACTIVE DYNAMIC recipe that has no locked_price', function () {
+    mocks.axios.post.mockResolvedValue({ data: { ok: true } });
     return callHandler('PUT', '/api/recipes/:id', {
       params: { id: 'SV-R-000002' },
       body: {

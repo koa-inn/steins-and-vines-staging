@@ -629,10 +629,17 @@ router.put('/api/recipes/:id', function (req, res) {
   payload.recipe_id = req.params.id;
 
   // D-02 activation guardrail — enforce server-side (Pitfall 7, T-13-04)
+  // NOTE: this fires whenever status is 'active', including on a plain edit of
+  // an already-active recipe. A dynamic-priced recipe derives its price from
+  // computed_price and legitimately has locked_price 0, so the locked-price
+  // requirement applies only to locked-mode recipes — otherwise renaming an
+  // active dynamic recipe is impossible. Ingredients are still required in
+  // both modes, since a dynamic price is computed from them.
   if (payload.status === 'active') {
     var ingCount = parseInt(payload.ingredient_count, 10) || 0;
     var lockedPrice = parseFloat(payload.locked_price) || 0;
-    if (lockedPrice <= 0) {
+    var isDynamic = payload.pricing_mode === 'dynamic';
+    if (!isDynamic && lockedPrice <= 0) {
       return res.status(422).json({
         error: 'Cannot activate recipe: a valid locked price must be set',
         code: 'activation_locked_price'
