@@ -78,3 +78,67 @@ describe('matchesKitCategory', function () {
     expect(mod.matchesKitCategory(null, 'wine')).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 2 — buildWaitlistCtaLink (D-12 beer card waitlist CTA)
+// ---------------------------------------------------------------------------
+
+// Minimal jsdom-like document stub sufficient for createElement/appendChild/
+// getAttribute — real jsdom is available via testEnvironment but we build a
+// throwaway document-like object here to keep this test self-contained and
+// match the require()'d Node harness pattern used above.
+function makeFakeDoc(dataPage) {
+  function makeElement(tag) {
+    return {
+      tagName: tag,
+      className: '',
+      textContent: '',
+      href: '',
+      children: [],
+      appendChild: function (child) { this.children.push(child); },
+      getAttribute: function () { return null; }
+    };
+  }
+  return {
+    body: dataPage === undefined ? null : {
+      getAttribute: function (name) {
+        return name === 'data-page' ? dataPage : null;
+      }
+    },
+    createElement: function (tag) { return makeElement(tag); }
+  };
+}
+
+describe('buildWaitlistCtaLink', function () {
+  test('is exported from the module', function () {
+    expect(typeof mod.buildWaitlistCtaLink).toBe('function');
+  });
+
+  test('anchor has class btn and exact textContent "Join the Waitlist"', function () {
+    var doc = makeFakeDoc('beer');
+    var wrap = mod.buildWaitlistCtaLink(doc);
+    var anchor = wrap.children[0];
+    expect(anchor.className).toBe('btn');
+    expect(anchor.textContent).toBe('Join the Waitlist');
+  });
+
+  test('href is "#waitlist" (no beer.html prefix) when body has data-page="beer"', function () {
+    var doc = makeFakeDoc('beer');
+    var wrap = mod.buildWaitlistCtaLink(doc);
+    var anchor = wrap.children[0];
+    expect(anchor.href).toBe('#waitlist');
+  });
+
+  test('href is "beer.html#waitlist" when body does not have data-page="beer"', function () {
+    var doc = makeFakeDoc('wine');
+    var wrap = mod.buildWaitlistCtaLink(doc);
+    var anchor = wrap.children[0];
+    expect(anchor.href).toBe('beer.html#waitlist');
+  });
+
+  test('wrapper className does not contain product-reserve-wrap', function () {
+    var doc = makeFakeDoc('beer');
+    var wrap = mod.buildWaitlistCtaLink(doc);
+    expect(wrap.className.indexOf('product-reserve-wrap')).toBe(-1);
+  });
+});

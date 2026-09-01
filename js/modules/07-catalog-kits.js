@@ -48,6 +48,35 @@ function matchesKitCategory(obj, categoryFilter) {
   return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
 }
 
+/**
+ * Build the "Join the Waitlist" CTA node used by beer kit cards in place of
+ * the wine cart controls (D-12 — beer is booked-ahead only, no cart path).
+ * Deliberately does NOT carry the product-reserve-wrap class: that class is
+ * walked by refreshAllReserveControls() (js/modules/11-cart.js) which expects
+ * an _reserveRenderer, and this link has no cart state to refresh.
+ *
+ * @param {Document} [doc] - Optional document to build against (tests pass a jsdom document).
+ * @returns {HTMLElement} A div.reserve-link wrapping a single a.btn anchor.
+ */
+function buildWaitlistCtaLink(doc) {
+  var d = doc || (typeof document !== 'undefined' ? document : null);
+  var wrap = d.createElement('div');
+  wrap.className = 'reserve-link';
+
+  var isBeerPage = false;
+  if (d && d.body) {
+    isBeerPage = d.body.getAttribute('data-page') === 'beer';
+  }
+
+  var link = d.createElement('a');
+  link.className = 'btn';
+  link.href = isBeerPage ? '#waitlist' : 'beer.html#waitlist';
+  link.textContent = 'Join the Waitlist';
+
+  wrap.appendChild(link);
+  return wrap;
+}
+
 function loadProducts(categoryFilter) {
   var _categoryFilter = (categoryFilter || '').toLowerCase();
   var allProducts = [];
@@ -897,22 +926,9 @@ function loadProducts(categoryFilter) {
       card.appendChild(buildLabelPriceFooter(product));
     }
 
-    var reserveWrap = document.createElement('div');
-    reserveWrap.className = 'reserve-link product-reserve-wrap';
-    var productKey = getProductKey(product);
-    reserveWrap._reserveProduct = product;
-    reserveWrap._reserveKey = productKey;
-    reserveWrap._reserveRenderer = renderReserveControl;
-    renderReserveControl(reserveWrap, product, productKey);
-    card.appendChild(reserveWrap);
-
-    var kitBuyWrapBeer = document.createElement('div');
-    kitBuyWrapBeer.className = 'reserve-link reserve-link--secondary product-reserve-wrap';
-    kitBuyWrapBeer._reserveProduct = product;
-    kitBuyWrapBeer._reserveKey = productKey;
-    kitBuyWrapBeer._reserveRenderer = renderKitBuyControl;
-    renderKitBuyControl(kitBuyWrapBeer, product);
-    card.appendChild(kitBuyWrapBeer);
+    // D-12: beer is booked-ahead only — no Reserve/Buy Kit cart controls,
+    // just the waitlist CTA (see buildWaitlistCtaLink()).
+    card.appendChild(buildWaitlistCtaLink());
 
     return card;
   }
@@ -1538,5 +1554,5 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory };
+  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink };
 }
