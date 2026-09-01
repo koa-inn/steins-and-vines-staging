@@ -58,6 +58,57 @@ function bustRecipeCache(recipeId) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper — Public recipe read contract (D-05/D-06/D-07)
+//
+// GET /api/recipes and GET /api/recipes/:id are exempt from the global /api
+// guard (server.js lets every GET through), so they must resolve their own
+// credential tier. Mirrors catalog.js's isAdminGrade shape but uses
+// allowKiosk, NOT allowAdmin — kiosk devices build recipes at the kiosk and
+// must keep draft visibility (D-05), unlike the admin-only Internal Only
+// ingredients gate.
+// ---------------------------------------------------------------------------
+
+var PUBLIC_RECIPE_FIELDS = ['recipe_id', 'name', 'style', 'description'];
+
+// Build-by-allowlist, never delete-from-source (T-74-04): a public recipe is
+// assembled as a NEW object copying only PUBLIC_RECIPE_FIELDS, so a future
+// field added to the source recipe is absent from the public shape by
+// default rather than leaking until someone remembers to blocklist it.
+// Pricing is collapsed to a single fee-inclusive `price` so
+// locked_price/service_fee/materials_fee/computed_price (margin-derivable)
+// can never be recovered from a public response.
+function toPublicRecipe(recipe) {
+  var src = recipe || {};
+  var out = {};
+  PUBLIC_RECIPE_FIELDS.forEach(function (field) {
+    if (Object.prototype.hasOwnProperty.call(src, field)) {
+      out[field] = src[field];
+    }
+  });
+  if (src.pricing_mode === 'locked') {
+    var total = Number(src.locked_price || 0) + Number(src.service_fee || 0) + Number(src.materials_fee || 0);
+    out.price = Math.round(total * 100) / 100;
+  } else if (src.pricing_mode === 'dynamic') {
+    out.price = typeof src.computed_price === 'number' ? src.computed_price : null;
+    out.price_from = true;
+  }
+  return out;
+}
+
+// Resolves whether the caller may see the staff/full recipe shape (draft
+// status + ingredients + cost fields). Async because session lookup is
+// async; callers must consume the returned Promise<boolean>. Fails CLOSED
+// to the public projection on any resolution error (T-74-06) — never opens
+// the staff path on an unexpected rejection.
+function isRecipeStaff(req) {
+  return authTiers.resolveTier(req).then(function (tier) {
+    return authTiers.allowKiosk(tier);
+  }).catch(function () {
+    return false;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Helper — Custom-field accessor (mirrors catalog.js L551-556 Millable idiom)
 // ---------------------------------------------------------------------------
 
@@ -252,37 +303,60 @@ function enrichListPrices(recipes) {
 // ---------------------------------------------------------------------------
 
 router.get('/api/recipes', function (req, res) {
-  var status = req.query.status || 'all';
-  var limit  = parseInt(req.query.limit, 10) || 0;
-  var offset = parseInt(req.query.offset, 10) || 0;
-  var cacheKey = C.CACHE_KEYS.RECIPES + ':' + status + ':' + limit + ':' + offset;
+  return isRecipeStaff(req).then(function (isStaff) {
+    // D-06: a non-staff caller's requested status is discarded before it
+    // reaches the cache key or the Apps Script payload — a query-string
+    // edit (?status=all/draft/...) has no effect for anonymous callers
+    // (T-74-03).
+    var requestedStatus = req.query.status || 'all';
+    var status = isStaff ? requestedStatus : 'active';
+    var limit  = parseInt(req.query.limit, 10) || 0;
+    var offset = parseInt(req.query.offset, 10) || 0;
+    var cacheKey = C.CACHE_KEYS.RECIPES + ':' + status + ':' + limit + ':' + offset;
 
-  cache.get(cacheKey).then(function (cached) {
-    if (cached && cached.recipes) {
-      log.info('[api/recipes] Cache hit status=' + status);
-      return enrichListPrices(cached.recipes).then(function () {
-        res.json({ source: 'cache', recipes: cached.recipes, total: cached.total });
+    // Staff tiers get today's payload byte-for-byte. Non-staff callers get
+    // the array re-filtered to status=active server-side (T-74-01) — this
+    // is defense-in-depth against a stale/over-broad cached or upstream
+    // payload, not merely trusting the resolved `status` above — and each
+    // surviving record is projected through the field allowlist (T-74-04).
+    function sendRecipeList(source, recipes, total) {
+      if (isStaff) {
+        return res.json({ source: source, recipes: recipes, total: total });
+      }
+      var filtered = (recipes || []).filter(function (r) {
+        return String((r && r.status) || '').toLowerCase() === 'active';
       });
+      var publicRecipes = filtered.map(toPublicRecipe);
+      res.json({ source: source, recipes: publicRecipes, total: publicRecipes.length });
     }
-    return callAppsScriptPost('get_recipes', { status: status, limit: limit, offset: offset })
-      .then(function (data) {
-        if (data && data.ok === false) {
-          log.warn('[api/recipes] Apps Script rejected: ' + (data.error || '') + ' ' + (data.message || ''));
-          return res.status(502).json({ error: 'Apps Script error: ' + (data.error || 'unknown'), detail: data.message || '' });
-        }
-        var payload = data.data || {};
-        if (payload.recipes && payload.recipes.length > 0) {
-          cache.set(cacheKey, payload, RECIPES_CACHE_TTL);
-          cache.set(C.CACHE_KEYS.RECIPES_TS, Date.now(), RECIPES_CACHE_TTL);
-        }
-        var recipeList = payload.recipes || [];
-        return enrichListPrices(recipeList).then(function () {
-          res.json({ source: 'apps-script', recipes: recipeList, total: payload.total || 0 });
+
+    return cache.get(cacheKey).then(function (cached) {
+      if (cached && cached.recipes) {
+        log.info('[api/recipes] Cache hit status=' + status);
+        return enrichListPrices(cached.recipes).then(function () {
+          sendRecipeList('cache', cached.recipes, cached.total);
         });
-      });
-  }).catch(function (err) {
-    log.error('[api/recipes] ' + err.message);
-    res.status(502).json({ error: 'Unable to fetch recipes' });
+      }
+      return callAppsScriptPost('get_recipes', { status: status, limit: limit, offset: offset })
+        .then(function (data) {
+          if (data && data.ok === false) {
+            log.warn('[api/recipes] Apps Script rejected: ' + (data.error || '') + ' ' + (data.message || ''));
+            return res.status(502).json({ error: 'Apps Script error: ' + (data.error || 'unknown'), detail: data.message || '' });
+          }
+          var payload = data.data || {};
+          if (payload.recipes && payload.recipes.length > 0) {
+            cache.set(cacheKey, payload, RECIPES_CACHE_TTL);
+            cache.set(C.CACHE_KEYS.RECIPES_TS, Date.now(), RECIPES_CACHE_TTL);
+          }
+          var recipeList = payload.recipes || [];
+          return enrichListPrices(recipeList).then(function () {
+            sendRecipeList('apps-script', recipeList, payload.total || 0);
+          });
+        });
+    }).catch(function (err) {
+      log.error('[api/recipes] ' + err.message);
+      res.status(502).json({ error: 'Unable to fetch recipes' });
+    });
   });
 });
 
@@ -294,33 +368,54 @@ router.get('/api/recipes/:id', function (req, res) {
   var recipeId = req.params.id;
   var cacheKey = C.CACHE_KEYS.RECIPES + ':' + recipeId;
 
-  cache.get(cacheKey).then(function (cached) {
-    if (cached) {
-      log.info('[api/recipes/' + recipeId + '] Cache hit');
-      return enrichWithComputedPrice(cached.recipe, cached.ingredients).then(function () {
-        return enrichIngredientGroups(cached.ingredients);
-      }).then(function () {
-        cache.set(cacheKey, cached, RECIPES_CACHE_TTL);
-        res.json(cached);
-      });
+  return isRecipeStaff(req).then(function (isStaff) {
+    // Staff/kiosk tiers keep today's full response (recipe + ingredients)
+    // unchanged. Non-staff callers of a non-active recipe get 404 — the
+    // same shape as "recipe does not exist" — so an id enumerator cannot
+    // distinguish "draft" from "missing" (T-74-02). Active recipes are
+    // projected through the field allowlist with the `ingredients` key
+    // absent entirely, not an empty array.
+    function sendRecipeDetail(result) {
+      if (isStaff) {
+        return res.json(result);
+      }
+      var status = String((result.recipe && result.recipe.status) || '').toLowerCase();
+      if (status !== 'active') {
+        return res.status(404).json({ error: 'Recipe not found' });
+      }
+      return res.json({ recipe: toPublicRecipe(result.recipe) });
     }
-    return callAppsScriptPost('get_recipe', { recipe_id: recipeId })
-      .then(function (data) {
-        if (!data.ok) {
-          return res.status(404).json({ error: data.message || 'Recipe not found' });
-        }
-        var detail = data.data || {};
-        var result = { recipe: detail.recipe || detail, ingredients: detail.ingredients || [] };
-        return enrichWithComputedPrice(result.recipe, result.ingredients).then(function () {
-          return enrichIngredientGroups(result.ingredients);
+
+    return cache.get(cacheKey).then(function (cached) {
+      if (cached) {
+        log.info('[api/recipes/' + recipeId + '] Cache hit');
+        return enrichWithComputedPrice(cached.recipe, cached.ingredients).then(function () {
+          return enrichIngredientGroups(cached.ingredients);
         }).then(function () {
-          cache.set(cacheKey, result, RECIPES_CACHE_TTL);
-          res.json(result);
+          // Full result stays cached regardless of caller tier — staff and
+          // the kiosk depend on it. Projection happens only at response time.
+          cache.set(cacheKey, cached, RECIPES_CACHE_TTL);
+          sendRecipeDetail(cached);
         });
-      });
-  }).catch(function (err) {
-    log.error('[api/recipes/' + recipeId + '] ' + err.message);
-    res.status(502).json({ error: 'Unable to fetch recipe' });
+      }
+      return callAppsScriptPost('get_recipe', { recipe_id: recipeId })
+        .then(function (data) {
+          if (!data.ok) {
+            return res.status(404).json({ error: data.message || 'Recipe not found' });
+          }
+          var detail = data.data || {};
+          var result = { recipe: detail.recipe || detail, ingredients: detail.ingredients || [] };
+          return enrichWithComputedPrice(result.recipe, result.ingredients).then(function () {
+            return enrichIngredientGroups(result.ingredients);
+          }).then(function () {
+            cache.set(cacheKey, result, RECIPES_CACHE_TTL);
+            sendRecipeDetail(result);
+          });
+        });
+    }).catch(function (err) {
+      log.error('[api/recipes/' + recipeId + '] ' + err.message);
+      res.status(502).json({ error: 'Unable to fetch recipe' });
+    });
   });
 });
 
