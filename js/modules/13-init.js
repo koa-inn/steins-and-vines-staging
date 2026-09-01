@@ -328,7 +328,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Product catalog loader — shared by products.html, ingredients.html, and clean-URL sub-pages
-  if (page === 'products' || page === 'ingredients' || page === 'ferment-in-store' || page === 'ingredients-supplies') {
+  if (page === 'products' || page === 'ingredients' || page === 'ingredients-supplies') {
     loadProducts();
     initReservationBar();
     initCartDrawer();
@@ -348,6 +348,10 @@ document.addEventListener('DOMContentLoaded', function () {
       if (ingTabBtn) ingTabBtn.click();
     }
   }
+
+  // Category-scoped catalogue pages — /wine and /beer (D-09); also wires the
+  // beer waitlist form, which has never been reachable on its own page (D-11).
+  initCategoryCatalogPage(page);
 
   // Reservation page
   if (page === 'reservation') {
@@ -408,6 +412,36 @@ document.addEventListener('DOMContentLoaded', function () {
     if (typeof refreshAllReserveControls === 'function') refreshAllReserveControls();
   });
 });
+
+// ===== Category-Scoped Catalogue Pages (/wine, /beer) =====
+// D-09: /wine and /beer each render their own category-scoped catalogue via
+// loadProducts(page) (contract established by plan 74-02). D-11: beer.html's
+// waitlist form has carried data-page="beer" and #beer-waitlist-form since
+// 2026-08-31, but the waitlist-form setup call below was only ever reachable
+// from the page === 'home' branch — so it has never been wired on its own
+// page and has
+// been doing a native submit + full-page reload instead of posting to
+// /api/waitlist. Extracted to a module-scope function so it is directly
+// testable (see tests/frontend/init-category-page.test.js) and callable from
+// the DOMContentLoaded dispatch above without disturbing any existing branch.
+function initCategoryCatalogPage(page) {
+  if (page !== 'wine' && page !== 'beer') return false;
+
+  loadProducts(page);
+  initReservationBar();
+  initCartDrawer();
+  initMobileBottomControls();
+  initCatalogViewToggle();
+  // Neither wine.html nor beer.html carries div.product-tabs#product-tabs
+  // (the hub's tab switcher), so initProductTabs()/loadIngredients() are
+  // intentionally NOT called here.
+
+  if (page === 'beer') {
+    setupBeerWaitlistForm();
+  }
+
+  return true;
+}
 
 // ===== Mobile Bottom Controls =====
 // Moves .catalog-controls elements to a direct body child so position:fixed
@@ -994,6 +1028,8 @@ if (typeof module !== 'undefined' && module.exports) {
     // Test-only: invoke the kiosk idle-reset cart clearing logic directly
     _resetKioskSessionForTest: _clearKioskSession,
     // REVIEW-03: lazy content-image placeholder load-state helper
-    initFacilityPhotoPlaceholders: initFacilityPhotoPlaceholders
+    initFacilityPhotoPlaceholders: initFacilityPhotoPlaceholders,
+    // D-09/D-11: /wine and /beer category-catalogue dispatch + beer waitlist wiring
+    initCategoryCatalogPage: initCategoryCatalogPage
   };
 }
