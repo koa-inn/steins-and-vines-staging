@@ -3,7 +3,7 @@ phase: 74-beer-cider-wine-catalogue-pages-under-ferment-in-store-split
 plan: 06
 subsystem: frontend (JS dispatch + build) / content (BrewPad recipe copy)
 tags: [dispatch, waitlist, build, D-08, D-09, D-11, tdd]
-status: PAUSED — blocking checkpoint (Task 4 of 5)
+status: IN_PROGRESS — Task 4 closed, Task 5 awaiting owner browser verification
 
 # Dependency graph
 requires: ["74-01", "74-02", "74-03", "74-04", "74-05"]
@@ -57,20 +57,20 @@ decisions:
   - "zoho-middleware/node_modules restored via `npm ci` from the existing package-lock.json (fresh worktree, gitignored directory absent) — zero new/different packages, same precedent as 74-01-SUMMARY.md."
 
 metrics:
-  duration: "~35 min so far (Tasks 1-3 + authorized addition; paused before Task 4 completes)"
-  completed: "in progress — 2026-09-01"
+  duration: "~35 min (Tasks 1-3 + authorized addition) + Task 4 closure by continuation agent; Task 5 browser verification still outstanding"
+  completed: "Tasks 1-4 complete 2026-09-01; Task 5 in progress — 2026-09-01"
 ---
 
-# Phase 74 Plan 06: Wire /wine and /beer dispatch, fix beer waitlist bug, rebuild bundles — Summary (PAUSED)
+# Phase 74 Plan 06: Wire /wine and /beer dispatch, fix beer waitlist bug, rebuild bundles — Summary
 
-**Extracted a testable `initCategoryCatalogPage(page)` dispatch into `js/modules/13-init.js` (TDD RED→GREEN), wiring `/wine` and `/beer` into `loadProducts(page)` and fixing a live shipped bug — `beer.html`'s waitlist form has never posted to `/api/waitlist` because `setupBeerWaitlistForm()` was only reachable from the homepage branch — then ran the single phase-wide `npm run build` and both full test suites green. Execution is PAUSED at Task 4, a `gate="blocking"` `checkpoint:human-action` for the D-08 content pass, which must not be self-approved.**
+**Extracted a testable `initCategoryCatalogPage(page)` dispatch into `js/modules/13-init.js` (TDD RED→GREEN), wiring `/wine` and `/beer` into `loadProducts(page)` and fixing a live shipped bug — `beer.html`'s waitlist form has never posted to `/api/waitlist` because `setupBeerWaitlistForm()` was only reachable from the homepage branch — then ran the single phase-wide `npm run build` and both full test suites green. Task 4 (D-08 content pass) is now closed: the owner approved and saved the Czech Lager blurb in BrewPad, confirmed live via unauthenticated probe. Task 5 (staging push + 12-point browser verification) has had its staging push completed by the orchestrator; the browser verification itself is returned to the owner as a `human-verify` checkpoint below.**
 
 ## Performance
 
 - **Started:** 2026-09-01
-- **Tasks completed:** 3 of 5 (plus one owner-authorized scope addition between Task 3 and Task 4)
-- **Task 4 (D-08 content pass):** preparation complete, PAUSED awaiting owner review/BrewPad save
-- **Task 5 (human-verify checkpoint):** not started — blocked on Task 4
+- **Tasks completed:** 4 of 5 (Tasks 1-4, plus one owner-authorized scope addition between Task 3 and Task 4)
+- **Task 4 (D-08 content pass):** CLOSED — owner approved and saved the blurb, verified live on staging and production
+- **Task 5 (human-verify checkpoint):** staging push done (`git push origin main`, commit `1346e381`); 12-point browser checklist prepared and returned to owner, awaiting response
 
 ## Accomplishments
 
@@ -149,7 +149,33 @@ None introduced by this plan.
 
 None. This plan's edits fall within its own `<threat_model>` register (T-74-28 through T-74-33, T-74-SC): no hand-edited build artifact (both `js/main.js`/`js/main.min.js` regenerated only via `npm run build`, verified to contain the six new identifiers and postdate their sources), `stamp:pages` confirmed to include `wine.html`, the beer waitlist POST target (`/api/waitlist`) is pre-existing and already rate-limited (no new endpoint/auth surface), and Task 4 (not yet resolved) is the D-08 content-leak mitigation itself.
 
-## D-08 Content Pass — Preparation (Task 4, PAUSED)
+## D-08 Content Pass — CLOSED (Task 4)
+
+Owner approved the drafted blurb as-is and saved it in BrewPad against `SV-R-000002`. Verified independently by this continuation agent via direct unauthenticated probe (not taken on faith from the checkpoint-resolution note):
+
+```
+curl -s "https://svmiddleware-production.up.railway.app/api/recipes?status=active"
+curl -s "https://svmiddleware-staging.up.railway.app/api/recipes?status=active"
+```
+
+| Check | Result |
+|---|---|
+| Active-recipe count, production | `recipes` array length 1 (unchanged from pre-pass count of 1) — **T-74-32 satisfied**, nothing was accidentally switched draft→active |
+| `SV-R-000002` `description`, production | 208 characters, verbatim the approved text: "A classic Czech-style lager — crisp and golden with a clean malt backbone and a firm, balancing bitterness. A great pick if you like a proper pilsner: refreshing, easy to drink, and not overly hoppy or heavy." |
+| Copy content check | No ingredient, quantity, supplier, cost, or price detail present — matches the D-07/UI-SPEC copywriting contract |
+| Staging response shape | `{"recipe_id","name","style","description","price","price_from"}` only — the clean six-field public allowlist, description populated, `total:1` |
+| Production response shape | Still includes `status`, `locked_price`, `service_fee`, `materials_fee`, `pricing_mode`, `computed_price`, `ingredient_count` alongside the correct description |
+
+**T-74-31 status — split finding, recorded honestly rather than glossed:**
+- The **content-pass half** (D-08: every active recipe has an owner-approved, public-facing description containing no forbidden detail) is **satisfied** — confirmed above on both staging and production.
+- The **response-projection half** (the unauthenticated endpoint must emit *only* the public allowlist, with none of `ingredients`/`locked_price`/`service_fee`/`materials_fee`/`computed_price`/`pricing_mode`/`status`) is **satisfied on staging** (74-01's guard is merged and live there) but **NOT satisfied on production**, because production has not been redeployed since 74-01 merged. This is a **deployment gap**, not a defect introduced by this plan or this content pass — the same gap 74-SECURITY.md already flagged independently under "Deployment Gap." T-74-31 cannot be marked fully closed against production until a middleware redeploy happens; that redeploy is outside this plan's and this agent's authority (owner/deploy decision, no push performed by this agent).
+
+Task 4's own acceptance criteria (all copy-side, none deployment-side) are met:
+- [x] Every active recipe has a non-empty, public-facing description
+- [x] Active-recipe count after the pass equals the count recorded before the pass (1 = 1)
+- [x] The approved blurb is recorded here with its recipe id
+
+## D-08 Content Pass — Preparation (Task 4, PAUSED) — historical, superseded by the CLOSED section above
 
 Live active-recipe audit run 2026-09-01 against production:
 
@@ -173,14 +199,20 @@ Returned exactly **ONE** active recipe:
 
 **No write was made to BrewPad and no POST was sent to any recipe endpoint** — per the plan's explicit instruction, the copy is an owner decision and the write is a staff action against live production data.
 
+## Task 5 — Staging Push + 12-Point Browser Verification
+
+**Staging push status:** already done by the orchestrator (`git push origin main`), staging is at commit `1346e381` plus the later `530d887f` docs-only commit. No push was performed by this agent, and no push to `production` was performed or will be performed by this agent — that remains the owner's explicit call per CLAUDE.md's deployment rules.
+
+**What remains:** the browser verification itself, which requires a human in a real browser (not `curl` — production and staging both sit in front of Cloudflare/App infrastructure that has previously produced misleading CLI-probe conclusions, per STATE.md's recorded anti-pattern). This is returned below as a `human-verify` checkpoint. See the CHECKPOINT REACHED block in this agent's final response for the full 12-point checklist, plus two items carried forward from earlier plans for explicit owner acceptance (beer-kit "Join the Waitlist" going site-wide onto `products/ingredients-supplies.html`'s kits tab, and `.product-grid--compact` applying to both the kit and recipe grids on `/wine` and `/beer`).
+
 ## User Setup Required
 
-- **Task 4 (blocking):** owner must approve/edit the draft blurb above, then a developer with BrewPad access must sign in, open SV-R-000002, set the description, and save.
-- **Task 5 (blocking, not yet reached):** after Task 4 resolves, `git push origin main` to staging and a 12-point browser verification on `staging.steinsandvines.ca`.
+- **Task 4:** CLOSED — owner already approved and saved the blurb; no further action.
+- **Task 5 (blocking, awaiting response):** owner (or a delegate) opens `staging.steinsandvines.ca` in a real browser and works through the 12-point checklist in the CHECKPOINT REACHED block, then replies "approved" or lists the gaps found.
 
 ## Next Phase Readiness
 
-Not applicable — this is the final plan of Phase 74, and it is not yet complete. The continuation agent resumes at Task 4's resume-signal, re-runs the post-save verification curl, records the approved blurb id, then proceeds to Task 5 (push to staging + human browser verification), and only then updates this SUMMARY to its final COMPLETE state.
+This is the final plan of Phase 74. Tasks 1-4 are complete and committed. Task 5's mechanical half (staging push) is done; its human half (browser verification) is outstanding and is the only remaining work in the phase. Once the owner returns "approved" (or a gap list) for Task 5, a final continuation agent should: record the verification outcome in this SUMMARY, flip `status` to `COMPLETE`, and hand off to the orchestrator for the STATE.md/ROADMAP.md/REQUIREMENTS.md updates and phase closure — none of which this agent performs (explicitly out of scope per this agent's instructions).
 
 ## Self-Check: PASSED
 
@@ -192,8 +224,10 @@ Not applicable — this is the final plan of Phase 74, and it is not yet complet
 - FOUND commit: `4c904dad` (fix — Task 2 GREEN)
 - FOUND commit: `ed904253` (build — Task 3)
 - FOUND commit: `9d388293` (fix — owner-authorized addition)
+- FOUND: BrewPad-saved description live on staging AND production, verified via independent curl by this continuation agent (208 chars, exact approved text)
+- FOUND: active-recipe count unchanged at 1 (pre-pass and post-pass)
 
 ---
 *Phase: 74-beer-cider-wine-catalogue-pages-under-ferment-in-store-split*
 *Plan: 06*
-*Status: PAUSED at Task 4 (blocking checkpoint) — 2026-09-01*
+*Status: Task 4 CLOSED, Task 5 awaiting owner browser verification — 2026-09-01*
