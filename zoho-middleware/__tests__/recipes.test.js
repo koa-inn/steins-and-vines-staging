@@ -73,10 +73,23 @@ function callHandler(method, path, req) {
 
 // ---------------------------------------------------------------------------
 // Tests
+//
+// 74-01: GET /api/recipes and GET /api/recipes/:id gained a tier-aware
+// status guard + public field allowlist (D-05/D-06/D-07) — a caller with no
+// credential is now treated as anonymous/public. The tests below exercise
+// the pre-existing staff/full-detail path (drafts, computed_price,
+// ingredients), so each of their requests now carries an x-api-key
+// credential (TEST_API_KEY, set/restored per describe block below) to keep
+// exercising that same staff path. Zero assertions changed — the new public
+// (anonymous) contract has its own dedicated coverage in
+// recipes-public-guard.test.js.
 // ---------------------------------------------------------------------------
+
+var TEST_API_KEY = 'test-api-key';
 
 describe('GET /api/recipes', function () {
   var mocks;
+  var OLD_API_SECRET_KEY;
   beforeEach(function () {
     mocks = resetAndLoadRecipes();
     mocks.cache.get.mockResolvedValue(null);
@@ -84,12 +97,18 @@ describe('GET /api/recipes', function () {
     mocks.cache.del.mockResolvedValue(true);
     process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
     process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
+    OLD_API_SECRET_KEY = process.env.API_SECRET_KEY;
+    process.env.API_SECRET_KEY = TEST_API_KEY;
+  });
+
+  afterEach(function () {
+    process.env.API_SECRET_KEY = OLD_API_SECRET_KEY;
   });
 
   test('returns cached data on cache hit', function () {
     var cached = { recipes: [{ recipe_id: 'SV-R-000001', name: 'Pale Ale' }], total: 1 };
     mocks.cache.get.mockResolvedValue(cached);
-    return callHandler('GET', '/api/recipes', { query: { status: 'all' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes', { query: { status: 'all' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._body.source).toBe('cache');
       expect(res._body.recipes).toEqual(cached.recipes);
       expect(res._body.total).toBe(1);
@@ -102,7 +121,7 @@ describe('GET /api/recipes', function () {
     mocks.axios.post.mockResolvedValue({
       data: { ok: true, data: { recipes: [{ recipe_id: 'SV-R-000001' }], total: 1 } }
     });
-    return callHandler('GET', '/api/recipes', { query: { status: 'active' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes', { query: { status: 'active' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._body.source).toBe('apps-script');
       expect(res._body.recipes).toHaveLength(1);
       expect(mocks.cache.set).toHaveBeenCalled();
@@ -112,7 +131,7 @@ describe('GET /api/recipes', function () {
   test('returns 502 on Apps Script error', function () {
     mocks.cache.get.mockResolvedValue(null);
     mocks.axios.post.mockRejectedValue(new Error('timeout'));
-    return callHandler('GET', '/api/recipes', { query: {} }).then(function (res) {
+    return callHandler('GET', '/api/recipes', { query: {}, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._status).toBe(502);
       expect(res._body.error).toBe('Unable to fetch recipes');
     });
@@ -121,6 +140,7 @@ describe('GET /api/recipes', function () {
 
 describe('GET /api/recipes/:id', function () {
   var mocks;
+  var OLD_API_SECRET_KEY;
   beforeEach(function () {
     mocks = resetAndLoadRecipes();
     mocks.cache.get.mockResolvedValue(null);
@@ -128,12 +148,18 @@ describe('GET /api/recipes/:id', function () {
     mocks.cache.del.mockResolvedValue(true);
     process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
     process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
+    OLD_API_SECRET_KEY = process.env.API_SECRET_KEY;
+    process.env.API_SECRET_KEY = TEST_API_KEY;
+  });
+
+  afterEach(function () {
+    process.env.API_SECRET_KEY = OLD_API_SECRET_KEY;
   });
 
   test('returns cached recipe detail on hit', function () {
     var cached = { recipe: { recipe_id: 'SV-R-000001', name: 'Pale Ale' }, ingredients: [] };
     mocks.cache.get.mockResolvedValue(cached);
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._body.recipe.recipe_id).toBe('SV-R-000001');
       expect(mocks.axios.post).not.toHaveBeenCalled();
     });
@@ -144,7 +170,7 @@ describe('GET /api/recipes/:id', function () {
     mocks.axios.post.mockResolvedValue({
       data: { ok: true, data: { recipe: { recipe_id: 'SV-R-000001' }, ingredients: [{ item_id: '123' }] } }
     });
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._body.recipe.recipe_id).toBe('SV-R-000001');
       expect(res._body.ingredients).toHaveLength(1);
       expect(mocks.cache.set).toHaveBeenCalled();
@@ -156,7 +182,7 @@ describe('GET /api/recipes/:id', function () {
     mocks.axios.post.mockResolvedValue({
       data: { ok: false, message: 'Recipe not found' }
     });
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-999999' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-999999' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._status).toBe(404);
       expect(res._body.error).toBe('Recipe not found');
     });
@@ -647,12 +673,20 @@ describe('GET /api/recipes/:id ingredient group enrichment', function () {
     }
   ];
 
+  var OLD_API_SECRET_KEY;
+
   beforeEach(function () {
     mocks = resetAndLoadRecipes();
     mocks.cache.set.mockResolvedValue(true);
     mocks.cache.del.mockResolvedValue(true);
     process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
     process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
+    OLD_API_SECRET_KEY = process.env.API_SECRET_KEY;
+    process.env.API_SECRET_KEY = TEST_API_KEY;
+  });
+
+  afterEach(function () {
+    process.env.API_SECRET_KEY = OLD_API_SECRET_KEY;
   });
 
   test('warm catalog: each ingredient gains cf_type, cf_subcategory, display_group on cache hit', function () {
@@ -667,7 +701,7 @@ describe('GET /api/recipes/:id ingredient group enrichment', function () {
       .mockResolvedValueOnce(cached)          // recipe cache
       .mockResolvedValueOnce(warmCatalog);    // ingredients cache
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       var ing = res._body.ingredients[0];
       expect(ing.cf_type).toBe('Grain');
       expect(ing.cf_subcategory).toBe('Base Malt');
@@ -694,7 +728,7 @@ describe('GET /api/recipes/:id ingredient group enrichment', function () {
       .mockResolvedValueOnce(cached)
       .mockResolvedValueOnce([catalogEntry]);
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000002' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000002' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       var ing = res._body.ingredients[0];
       expect(ing.cf_subcategory).toBe('Pellet Hops');
     });
@@ -711,7 +745,7 @@ describe('GET /api/recipes/:id ingredient group enrichment', function () {
       .mockResolvedValueOnce(cached)
       .mockResolvedValueOnce(warmCatalog);
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._body.ingredients).toHaveLength(1);
       var ing = res._body.ingredients[0];
       expect(ing.item_id).toBe('ING-001');
@@ -738,7 +772,7 @@ describe('GET /api/recipes/:id ingredient group enrichment', function () {
       .mockResolvedValueOnce(cached)  // recipe cache hit
       .mockResolvedValueOnce(null);   // ingredients cache cold
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       // Must still return ingredients array — no error
       expect(res._status).toBe(200);
       expect(res._body.ingredients).toHaveLength(1);
@@ -760,7 +794,7 @@ describe('GET /api/recipes/:id ingredient group enrichment', function () {
       .mockResolvedValueOnce(cached)
       .mockResolvedValueOnce(warmCatalog);
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000003' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000003' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       // pricing_mode is 'locked' so enrichWithComputedPrice early-returns,
       // but enrichIngredientGroups must still run
       var ing = res._body.ingredients[0];
@@ -785,7 +819,7 @@ describe('GET /api/recipes/:id ingredient group enrichment', function () {
       }
     });
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000001' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       var ing = res._body.ingredients[0];
       expect(ing.cf_type).toBe('Grain');
       expect(ing.cf_subcategory).toBe('Base Malt');
@@ -839,12 +873,20 @@ describe('SCALE-05 ext — enrichment reads INGREDIENTS_ALL for internal-only in
     });
   }
 
+  var OLD_API_SECRET_KEY;
+
   beforeEach(function () {
     mocks = resetAndLoadRecipes();
     mocks.cache.set.mockResolvedValue(true);
     mocks.cache.del.mockResolvedValue(true);
     process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
     process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
+    OLD_API_SECRET_KEY = process.env.API_SECRET_KEY;
+    process.env.API_SECRET_KEY = TEST_API_KEY;
+  });
+
+  afterEach(function () {
+    process.env.API_SECRET_KEY = OLD_API_SECRET_KEY;
   });
 
   // --- Test 1: enrichIngredientGroups reads INGREDIENTS_ALL ---
@@ -858,7 +900,7 @@ describe('SCALE-05 ext — enrichment reads INGREDIENTS_ALL for internal-only in
     // Recipe cache hit; catalog reads are key-dispatched
     keyedCacheMock(cachedDetail, []);
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-INTERNAL' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-INTERNAL' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._status).toBe(200);
       var ing = res._body.ingredients[0];
       // Enrichment must have resolved cf_type from INGREDIENTS_ALL
@@ -879,7 +921,7 @@ describe('SCALE-05 ext — enrichment reads INGREDIENTS_ALL for internal-only in
     };
     keyedCacheMock(cachedDetail, []);
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-INTERNAL' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-INTERNAL' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._status).toBe(200);
       // computed_price = (2 * 1.50) + service_fee 10 = 13.00
       // Before fix: INGREDIENTS is empty → rate=0 → computed_price = 10.00 → test fails
@@ -931,7 +973,7 @@ describe('SCALE-05 ext — enrichment reads INGREDIENTS_ALL for internal-only in
       return Promise.resolve(null); // list and detail cache both cold
     });
 
-    return callHandler('GET', '/api/recipes', { query: { status: 'active' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes', { query: { status: 'active' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._status).toBe(200);
       var recipe = res._body.recipes[0];
       // computed_price = (4 * 1.50) + service_fee 5 = 11.00
@@ -978,12 +1020,20 @@ describe('Phase 73-02: unit-aware computed_price (detail + list read-paths)', fu
     { item_id: 'LACTIC', item_name: 'Lactic Acid 88%',              unit: 'L',   quantity: 0.02 }
   ];
 
+  var OLD_API_SECRET_KEY;
+
   beforeEach(function () {
     mocks = resetAndLoadRecipes();
     mocks.cache.set.mockResolvedValue(true);
     mocks.cache.del.mockResolvedValue(true);
     process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
     process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
+    OLD_API_SECRET_KEY = process.env.API_SECRET_KEY;
+    process.env.API_SECRET_KEY = TEST_API_KEY;
+  });
+
+  afterEach(function () {
+    process.env.API_SECRET_KEY = OLD_API_SECRET_KEY;
   });
 
   test('D-04: SV-R-000004 corrected fixture recomputes to ~$88-95, not $1,896.98', function () {
@@ -997,7 +1047,7 @@ describe('Phase 73-02: unit-aware computed_price (detail + list read-paths)', fu
       return Promise.resolve(null);
     });
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000004' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-000004' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._status).toBe(200);
       var price = res._body.recipe.computed_price;
       expect(price).toBeGreaterThanOrEqual(88);
@@ -1022,7 +1072,7 @@ describe('Phase 73-02: unit-aware computed_price (detail + list read-paths)', fu
       return Promise.resolve(null);
     });
 
-    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-BAD' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes/:id', { params: { id: 'SV-R-BAD' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._status).toBe(200);
       expect(res._body.recipe.computed_price).toBeNull();
       expect(typeof res._body.recipe.pricing_error).toBe('string');
@@ -1057,7 +1107,7 @@ describe('Phase 73-02: unit-aware computed_price (detail + list read-paths)', fu
       return Promise.resolve(null);
     });
 
-    return callHandler('GET', '/api/recipes', { query: { status: 'all' } }).then(function (res) {
+    return callHandler('GET', '/api/recipes', { query: { status: 'all' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
       expect(res._status).toBe(200);
       var good = res._body.recipes.find(function (r) { return r.recipe_id === 'SV-R-GOOD'; });
       var bad = res._body.recipes.find(function (r) { return r.recipe_id === 'SV-R-BADLIST'; });
