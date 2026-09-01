@@ -1530,6 +1530,33 @@ behold-widget {
   gap: 2rem;
 }
 
+/* Applied when a rendered grid group has <= 3 cards — prevents the
+   auto-fit/1fr stretch from blowing a 1-2-card grid up to full width. */
+.product-grid--compact {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 320px));
+  justify-content: start;
+}
+
+@media (max-width: 480px) {
+  .product-grid--compact {
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+}
+
+.hub-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  justify-content: center;
+}
+
+.hub-category-item {
+  flex: 1 1 280px;
+  max-width: 340px;
+  text-align: center;
+}
+
 .product-card {
   position: relative;
   overflow: hidden;
@@ -5610,6 +5637,11 @@ behold-widget {
 }
 
 #product-catalog {
+  flex: 1;
+  min-width: 0;
+}
+
+#catalog-blocks {
   flex: 1;
   min-width: 0;
 }
