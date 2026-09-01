@@ -102,6 +102,15 @@ None — no external service configuration required. This is a pure middleware c
 
 No blockers for downstream plans in this phase.
 
+## Self-Check: PASSED
+
+- FOUND: `zoho-middleware/__tests__/recipes-public-guard.test.js`
+- FOUND: `zoho-middleware/routes/recipes.js`
+- FOUND: `.planning/phases/74-beer-cider-wine-catalogue-pages-under-ferment-in-store-split/74-01-SUMMARY.md`
+- FOUND commit: `8fdf954c` (test — RED)
+- FOUND commit: `c9b33f73` (fix — GREEN)
+- FOUND commit: `fbbf9b21` (docs — this summary)
+
 ---
 *Phase: 74-beer-cider-wine-catalogue-pages-under-ferment-in-store-split*
 *Plan: 01*
