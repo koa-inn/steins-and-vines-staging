@@ -1112,13 +1112,13 @@ Plans:
 **Deferred out of scope:** `/cider` and its launch copy (11 kits in stock, but `cider.html` was deleted 2026-08-27 and launch intent is unconfirmed); ingredient lists on public cards.
 **Superseded roadmap items:** "remove the top-level Beer/Cider nav from 72-02" is DONE (2026-08-31, Beer now sits under Products → Ferment in Store). "Rebuild beer.html/cider.html in this layout (replacing the announcement hero)" is REVERSED — beer's hero is kept; cider.html does not exist.
 **Open for research:** how many recipes are `active`, and their wine/beer split — this sizes the release-gating content pass and determines whether the wine recipe block is meaningful.
-**Plans:** 6 plans across 3 waves
+**Plans:** 3/6 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 74-01-PLAN.md — Tier-guard GET /api/recipes + /api/recipes/:id: active-only for anonymous callers plus a name/style/price/blurb field allowlist, regression-test-first (D-05/D-06/D-07) [autonomous:false]
-- [ ] 74-02-PLAN.md — Category-scope loadProducts(categoryFilter), swap the beer card's cart controls for the waitlist CTA, per-category filter sets incl. the net-new ABV field (D-01/D-09/D-12/D-13)
-- [ ] 74-04-PLAN.md — Author wine.html at the root with CSP + two-block DOM contract, register it in nav/sitemap/stamp:pages, add all four new CSS rules (D-01/D-04/D-09/D-13)
+- [x] 74-01-PLAN.md — Tier-guard GET /api/recipes + /api/recipes/:id: active-only for anonymous callers plus a name/style/price/blurb field allowlist, regression-test-first (D-05/D-06/D-07) [autonomous:false]
+- [x] 74-02-PLAN.md — Category-scope loadProducts(categoryFilter), swap the beer card's cart controls for the waitlist CTA, per-category filter sets incl. the net-new ABV field (D-01/D-09/D-12/D-13)
+- [x] 74-04-PLAN.md — Author wine.html at the root with CSP + two-block DOM contract, register it in nav/sitemap/stamp:pages, add all four new CSS rules (D-01/D-04/D-09/D-13)
 
 **Wave 2**
 - [ ] 74-03-PLAN.md — Public recipe block: fetch, recipe card, dynamic block order with kits leading a tie, zero-item suppression, per-block error isolation (D-01/D-02/D-03/D-04/D-05/D-07)
