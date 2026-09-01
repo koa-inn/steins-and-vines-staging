@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: Phase 50 code COMPLETE on main (5/5 plans) — 4 blocking live checkpoints open, nothing deployed
-last_updated: "2026-08-31T17:23:13.848Z"
-last_activity: 2026-08-31 -- Phase 50 executed: all 5 plans code-complete + merged, paused at 4 live checkpoints
+stopped_at: Phase 74 UI-SPEC approved
+last_updated: "2026-09-01T17:37:31.046Z"
+last_activity: 2026-09-01 -- Phase 74 planning complete
 progress:
   total_phases: 63
   completed_phases: 22
-  total_plans: 128
-  completed_plans: 125
+  total_plans: 134
+  completed_plans: 129
   percent: 35
 ---
 
@@ -30,6 +30,7 @@ Phase: 50 (kiosk-money-path-defect-closeout) — CODE COMPLETE on `main`, NOT de
 All 5 plans executed 2026-08-31 in 3 waves via parallel worktree executors. Gates green on the fully merged tree: middleware **1514/1514** (101 suites; baseline 1461, +53), frontend **1166/1166** (88 suites; baseline 1158, +8), both linters clean. Nothing pushed to staging or production.
 
 **Plan status — only 50-04 is COMPLETE. The other four are paused at `gate="blocking"` human-verify checkpoints and MUST NOT be treated as done:**
+
 - **50-01** (`lib/helcim.js`) — `voidTransaction` inspects the `/payment/reverse` body via `isReversalConfirmed` and REJECTS with `err.isUnconfirmedVoid` when no positive signal is present, instead of trusting any 2xx. Commits `cb755ed6`/`9d822248`, plus `1ff42de4`/`e12d6f26` closing a collision hole found in orchestrator review: the rejection interpolates Helcim's status, so a status like `reversal_pending` smuggled a substring past `isAlreadyVoidedError` and would have let reconcile silently clear the pending sentinel with no alert. Fixed structurally — `if (err.isUnconfirmedVoid === true) return false;` ahead of the substring match. **No SUMMARY (plan incomplete). Task 3 open: read the raw `[helcim] reverse response for txn=` line from a real prod void and confirm the accept-set.**
 - **50-02** (`routes/pos.js`, salesorder-pay) — idempotency lock, deterministic Helcim key (sha256 of the effective key), unique per-attempt terminal reference, pending-charge record, honest `payment_voided`. T-50-11 rule established: on a 90s terminal timeout the lock is deliberately HELD (terminal may still approve late). Deviations: `pos-giftcard.test.js` T6/T7 reference-format assertions updated (they hardcoded the very collision D-50-01b removes), and both pending-charge writes reconciled to store `effectiveKey`. **Task 4 open: live double-tap on a $0.01 SO, confirm exactly ONE Helcim transaction.**
 - **50-03** (`routes/pos.js`, confirm) — captured-amount verification (±$0.01, void + 402 on drift) and H4 lock release on failure / retain on unvoided charge. Added `getCardTransactionById` mock scaffolding to 7 pre-existing test files; **zero assertions changed** (verified in orchestrator review). **Task 4 open — HIGHEST BLAST RADIUS: if `getCardTransactionById().amount` is not populated for card-PRESENT transactions, every kiosk sale is charged, voided and 402'd. Run the UAT-RUNSHEET §0.1 read-only probe FIRST — it needs no deploy and gates everything else.**
@@ -40,7 +41,6 @@ All 5 plans executed 2026-08-31 in 3 waves via parallel worktree executors. Gate
 
 **Note on the deploy story:** 50-01/02/03/05 all deploy straight to the PRODUCTION Railway middleware — there is no staging middleware for these routes. Every remaining checkpoint therefore needs a prod deploy plus real hardware, and they batch naturally into one terminal session (likely alongside the pending 73/75/76 cutovers). Phase 50 security gate not yet run — no `50-SECURITY.md` exists and `workflow.security_enforcement` is `true`.
 
-
 Phase: 76
 Plan: 1 of 5
 Next: **staging deploy + BrewPad UAT, then prod cutover.** Apps-Script leg already owner-redeployed + live-probed (get_batches ok:true; update_batch + update_batch_schedule recognized on SV-B-000203). Remaining: (1) `git push origin main` → staging middleware auto-deploys + staging frontend; (2) live BrewPad UAT — confirm a GIS silent-refresh / Apps-Script "unauthorized" no longer forces a full re-login, and batch/dashboard/reading/schedule reads+writes flow via `/api/batch/admin-proxy` on `x-session-token`; **specifically re-test the iPad Safari third-party-cookie path** (the diagnosed root cause); (3) prod cutover — deploy middleware then `git push production main`. Verdict `human_needed` (all 11 must-haves + all automated gates green; only live checks remain). See `.planning/phases/76-.../76-VERIFICATION.md`.
@@ -48,8 +48,8 @@ Next: **staging deploy + BrewPad UAT, then prod cutover.** Apps-Script leg alrea
 **Phase 76 / STAFF-AUTH (BrewPad session-expiry hardening) — ✅ CODE COMPLETE + verified 2026-08-27.** Full single-credential migration (decisions D-01..D-05): BrewPad now authenticates every batch/dashboard/reading/schedule call via middleware `POST /api/batch/admin-proxy` on `x-session-token` only; Google token used solely at login. Dual-token machinery DELETED (not hardened) — `_tokenRefreshTimer`, `_silentRefreshTimer`, `handleUnauthorized`-on-Apps-Script-401, `isUnauthorizedError` all gone (grep 0). Full re-login fires ONLY on a real middleware `res.status===401` (single global `_handleMiddlewareResponse` interceptor), never a body substring. `sv_session` TTL now slides on use (`touchSession` fire-and-forget in `resolveTier`) — no hard 7-day cliff. Apps-Script `doPost` server_token allowlist extended with BrewPad's 10 write actions (owner-redeployed + live-probed). Verifier caught + closed a D-03 gap missed by SUMMARY/tests/lint: a residual `clearSession()` in `onTokenResponse`'s GIS-error else branch (reachable from `doSilentRefreshOnLoad` on iPad-Safari 3p-cookie GIS errors) — reproduced RED then fixed (`fix(76) d79084b3`), min artifact rebuilt via terser. Commits: 76-01 `9a6dc31b`/`a26a9d72`, 76-02 `d202f4a1`/`85ce6a93`/`2f3f6404`/`16c5ffd3`, 76-03 `c739f92d`/`a572275b`/`2e899904`/`d9bb07aa`, gap `fd5048c9`/`d79084b3`. Frontend 1151/1151, middleware 1459/1459, lint clean. Non-code owner sibling still open: review Cloudflare Access session-duration policy for `staging.steinsandvines.ca`.
 
 Milestone: v4.5 Security & Money-Path Closeout — NOT complete (the 2026-07-08 `milestone_complete` flag was false; corrected 2026-07-10). Done: 46 (SEC-02 ✅), 48 (KIOSK-01 ✅ — de-fork live-verified standalone 2026-07-10, 22/22 threats secured), 52 (RESIL-01 ✅), 53 (OBS-01 ✅), 54 (kiosk gift-card mgmt ✅ — UAT+security closed 2026-07-10). **Open phases:** 47 (SEC-01 — STATE narrative says closed-on-staging but ROADMAP checkbox is still `[ ]`; needs owner reconciliation), 49 (MONEY-01 — 49-01 code merged, 49-02 live-card UAT pending), 50 (MONEY-02) + 51 (MONEY-03) — both now UNBLOCKED (were gated on 48). 50/51 also depend on the money-path-primitive adoption in pos-recipe.js.
-Status: Executing Phase 50
-Last activity: 2026-08-31 -- Phase 50 execution started
+Status: Ready to execute
+Last activity: 2026-09-01 -- Phase 74 planning complete
 
 **Phase 49 / MONEY-01 (H2) — 49-01 code done, merged to main.** `/api/checkout` now reads back the captured amount (`helcimLib.getCardTransactionById`) and verifies it covers the invoice total (±$0.01) BEFORE side-effects/customerpayments; short/unverifiable → tagged throw routed through the existing `moneyPath.voidWithTimeout` (single void path) → 402. RED→GREEN commits + 13-test regression `checkout-captured-amount.test.js`; full middleware suite 62/1187 green; lint clean. **Pending: 49-02** live-card UAT (checkpoint) — needs the new code deployed and a real card terminal, so it rides a prod deploy / Phase 46 cutover: confirm a legit order still books paid (no false-void) + a tamper attempt is voided.
 
@@ -162,8 +162,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-08-27T12:29:39.770Z
-Stopped at: Phase 76 context gathered
+Last session: 2026-09-01T14:01:02.332Z
+Stopped at: Phase 74 UI-SPEC approved
 **INV-000137 backfilled** — `SV-B-000183` + `SV-B-000184`; guard now reports "3 of 3" and rejects a 4th. Owner redeployed Apps Script twice. Middleware suite 1283 / frontend 986 / lint clean.
 **⚠️ Anti-patterns discovered (see `.planning/.continue-here.md`):** (1) *green tests ≠ working system* — `fda6e40` passed its suite for 4 days while dead in prod, because the contradicting logic lived in Apps Script (no CI deploy, no Jest); exercise Apps-Script-crossing changes against the live system. (2) *`curl` against prod lies* — Cloudflare returns a 403 bot-challenge page, which made me wrongly conclude prod had no GTM/CSP; verify prod **through the browser**. (3) `apps-script/*.gs` needs a MANUAL redeploy.
 **Open (owner-only, non-blocking):** iPad UAT of the kiosk recovery fix (the one fix inferred from symptoms, never reproduced); watch the next multi-kit sale in BrewPad; Phase 56 leftovers (2nd GTM admin + `purchase` UAT); optional repair of historical mangled customer names.
@@ -181,7 +181,7 @@ GA4 IDs: account `a391385411`, property `p533046537`.
 
 Stopped at: **PROD STAGE-3 CUTOVER SHIPPED** (tag prod-20260710-2, blessed gated-deploy run 29127742148) — Phases 48 + 54 + kiosk fixes + brewpad + Metricool CSP + v4.6 GA4 events all live on production; middleware redeployed (uptime reset, redis ✅); frontend verified (kiosk-core, Metricool CSP, GA4 in bundle). Earlier this session: iPad UAT (48/54 standalone), Fix 1 break-glass (prod-20260710-1), 9 test invoices+11 payments deleted from Zoho, Phase 48 secured (22/22), v4.6 milestone + Phase 55/56 scaffolded, GA4 reviewed + shipped + staging-verified (site half proven; GA4 collect 503s from this browser only), milestone state reconciled.
 Open threads: (1) **watch Sentry** on the 48/54 money-path/auth changes now live; (2) **GA4 Realtime** confirm on a real prod order (Option A — the staging DebugView 503 was environment-local); (3) delete test order INV-000145 from Zoho (Helcim already voided by owner); (4) v4.5 Phase 47 SEC-01 checkbox vs narrative mismatch — owner reconcile; (5) Phases 49/50/51 remain in v4.5; (6) Phase 56 GTM remaining (Conversion Linker, Ads tag AW-18091171314, mark purchase key event, 2nd admin) + staging internal-traffic filter (todo); (7) GiftCards sheet tidy for GC-000001.
-Resume file: .planning/phases/76-brewpad-session-expiry-hardening-decouple-the-durable-7-day-/76-CONTEXT.md
+Resume file: .planning/phases/74-beer-cider-wine-catalogue-pages-under-ferment-in-store-split/74-UI-SPEC.md
 
 ### Prior session (2026-07-08T21:04:01.660Z)
 
