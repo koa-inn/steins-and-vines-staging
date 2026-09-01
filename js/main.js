@@ -1722,15 +1722,327 @@ function flattenCustomFields(obj, customFields) {
   });
 }
 
-function loadProducts() {
+/**
+ * Test whether a product's resolved category matches a category filter.
+ * When categoryFilter is falsy, reproduces the pre-existing "any kit category"
+ * test used by loadProducts(). When categoryFilter is truthy, it must both be
+ * a recognised KIT_CATEGORIES value AND be present in the product's resolved
+ * category string.
+ *
+ * @param {Object} obj - Product-like object (category / _zoho_category / type).
+ * @param {String} [categoryFilter] - e.g. 'wine' or 'beer'; falsy = match any kit category.
+ * @returns {Boolean}
+ */
+function matchesKitCategory(obj, categoryFilter) {
+  if (!obj) return false;
+  var cat = (obj.category || obj._zoho_category || obj.type || '').toLowerCase();
+  if (!cat) return false;
+  if (categoryFilter) {
+    var target = categoryFilter.toLowerCase();
+    return KIT_CATEGORIES.indexOf(target) !== -1 && cat.indexOf(target) !== -1;
+  }
+  return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
+}
+
+/**
+ * Build the "Join the Waitlist" CTA node used by beer kit cards in place of
+ * the wine cart controls (D-12 — beer is booked-ahead only, no cart path).
+ * Deliberately does NOT carry the product-reserve-wrap class: that class is
+ * walked by refreshAllReserveControls() (js/modules/11-cart.js) which expects
+ * an _reserveRenderer, and this link has no cart state to refresh.
+ *
+ * @param {Document} [doc] - Optional document to build against (tests pass a jsdom document).
+ * @returns {HTMLElement} A div.reserve-link wrapping a single a.btn anchor.
+ */
+function buildWaitlistCtaLink(doc) {
+  var d = doc || (typeof document !== 'undefined' ? document : null);
+  var wrap = d.createElement('div');
+  wrap.className = 'reserve-link';
+
+  var isBeerPage = false;
+  if (d && d.body) {
+    isBeerPage = d.body.getAttribute('data-page') === 'beer';
+  }
+
+  var link = d.createElement('a');
+  link.className = 'btn';
+  link.href = isBeerPage ? '#waitlist' : 'beer.html#waitlist';
+  link.textContent = 'Join the Waitlist';
+
+  wrap.appendChild(link);
+  return wrap;
+}
+
+/**
+ * Sort a filter row's unique values into their per-field domain order.
+ * Pure function — no DOM, no closure state — so it can be shared by both
+ * loadProducts()'s per-category call list and tested in isolation.
+ *
+ * @param {String} field - The product field the filter row is built from (e.g. 'subcategory', 'abv', 'time').
+ * @param {Array} values - Unique values to sort (NOT mutated — a sorted copy is returned).
+ * @param {String} [categoryFilter] - Active category ('wine' | 'beer' | ''), gates the wine-only subcategory order.
+ * @returns {Array} A new, sorted array.
+ */
+function sortFilterValues(field, values, categoryFilter) {
+  var out = (values || []).slice();
+
+  if (field === 'time' || field === 'abv') {
+    out.sort(function (a, b) {
+      var numA = parseFloat(a) || 0;
+      var numB = parseFloat(b) || 0;
+      return numA - numB;
+    });
+  } else if (field === 'subcategory' && categoryFilter !== 'beer') {
+    var styleOrder = ['red', 'white', 'rosé', 'rose', 'fruit', 'specialty'];
+    out.sort(function (a, b) {
+      var aIdx = styleOrder.indexOf(a.toLowerCase());
+      var bIdx = styleOrder.indexOf(b.toLowerCase());
+      if (aIdx === -1) aIdx = styleOrder.length;
+      if (bIdx === -1) bIdx = styleOrder.length;
+      return aIdx - bIdx;
+    });
+  } else if (field === 'body') {
+    var bodyOrder = ['light', 'light-medium', 'medium', 'medium-full', 'full'];
+    out.sort(function (a, b) {
+      var aIdx = bodyOrder.indexOf(a.toLowerCase());
+      var bIdx = bodyOrder.indexOf(b.toLowerCase());
+      if (aIdx === -1) aIdx = bodyOrder.length;
+      if (bIdx === -1) bIdx = bodyOrder.length;
+      return aIdx - bIdx;
+    });
+  } else if (field === 'sweetness') {
+    var sweetOrder = ['dry', 'off-dry', 'semi-sweet', 'sweet'];
+    out.sort(function (a, b) {
+      var aIdx = sweetOrder.indexOf(a.toLowerCase());
+      var bIdx = sweetOrder.indexOf(b.toLowerCase());
+      if (aIdx === -1) aIdx = sweetOrder.length;
+      if (bIdx === -1) bIdx = sweetOrder.length;
+      return aIdx - bIdx;
+    });
+  } else {
+    out.sort();
+  }
+
+  return out;
+}
+
+/**
+ * Compute the display string for a recipe's price slot (D-07).
+ * Reads only `recipe.price` / `recipe.price_from` — the public payload never
+ * carries any other pricing field (ingredients, locked_price, service_fee,
+ * materials_fee, computed_price, pricing_mode are all server-stripped).
+ *
+ * @param {Object} recipe - Public recipe payload ({price, price_from}).
+ * @returns {String} The exact string to render in the price slot.
+ */
+function recipeDisplayPrice(recipe) {
+  var price = recipe && recipe.price;
+  if (typeof price !== 'number' || !isFinite(price)) {
+    return 'Price set when you book';
+  }
+  var formatted = formatCurrency(price);
+  return recipe.price_from ? 'From ' + formatted : formatted;
+}
+
+/**
+ * Build a public recipe card — the plain `.product-card` idiom (D-02), never
+ * the `.label-wine`/`.label-beer` bottle-label idiom, so a recipe never reads
+ * as a purchasable product. Built entirely with createElement/textContent —
+ * never innerHTML — since recipe name/style/description are staff-authored
+ * free text rendered on a public page (T-74-12).
+ *
+ * Reads ONLY recipe_id, name, style, description, price, price_from — the
+ * public payload's field allowlist (D-07, T-74-14).
+ *
+ * @param {Object} recipe - Public recipe payload.
+ * @param {Document} [doc] - Optional document to build against (tests pass a stub).
+ * @returns {HTMLElement} div.product-card
+ */
+function buildRecipeCard(recipe, doc) {
+  var d = doc || (typeof document !== 'undefined' ? document : null);
+
+  var card = d.createElement('div');
+  card.className = 'product-card';
+  card.setAttribute('data-recipe-id', recipe.recipe_id);
+
+  var header = d.createElement('div');
+  header.className = 'product-card-header';
+
+  var name = d.createElement('h4');
+  name.textContent = recipe.name;
+  header.appendChild(name);
+
+  if (recipe.style) {
+    var style = d.createElement('p');
+    style.className = 'product-card-category';
+    style.textContent = recipe.style;
+    header.appendChild(style);
+  }
+
+  card.appendChild(header);
+
+  var priceRow = d.createElement('div');
+  priceRow.className = 'product-prices service-price';
+  var priceBox = d.createElement('div');
+  priceBox.className = 'product-price-box';
+  var priceValue = d.createElement('span');
+  priceValue.className = 'product-price-value';
+  priceValue.textContent = recipeDisplayPrice(recipe);
+  priceBox.appendChild(priceValue);
+  priceRow.appendChild(priceBox);
+  card.appendChild(priceRow);
+
+  if (recipe.description) {
+    var desc = d.createElement('p');
+    desc.className = 'service-description';
+    desc.textContent = recipe.description;
+    card.appendChild(desc);
+  }
+
+  card.appendChild(buildWaitlistCtaLink(d));
+
+  return card;
+}
+
+/**
+ * Fetch active recipes for the public recipe block (D-05). Always resolves,
+ * never rejects, to either { ok: true, recipes: [...] } or { ok: false }.
+ * Recipes carry no category field of any kind — this phase's RESEARCH
+ * (Pitfall 2) confirms the Recipes sheet has no category column, so recipes
+ * are routed to the beer page only by a fixed category check, never by
+ * style-keyword inference. LOCKED DECISION: if a wine recipe is ever created
+ * it will need an explicit category field on the record, not a heuristic
+ * added here.
+ *
+ * @param {String} categoryFilter - the active page's category ('wine' | 'beer' | '').
+ * @param {String} middlewareUrl - SHEETS_CONFIG.MIDDLEWARE_URL.
+ * @returns {Promise<{ok: Boolean, recipes: Array}>}
+ */
+function fetchActiveRecipes(categoryFilter, middlewareUrl) {
+  if (!categoryFilter) return Promise.resolve({ ok: true, recipes: [] });
+  if (categoryFilter !== 'beer') return Promise.resolve({ ok: true, recipes: [] });
+
+  return fetch((middlewareUrl || '') + '/api/recipes?status=active')
+    .then(function (r) {
+      if (!r.ok) throw new Error('Recipes fetch failed: ' + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      return { ok: true, recipes: data.recipes || [] };
+    })
+    .catch(function () {
+      return { ok: false };
+    });
+}
+
+/**
+ * Paint the recipe block (D-01/D-02/D-04). No-ops cleanly when
+ * #recipe-catalog is absent (every page without a recipe block). A
+ * zero-item result renders nothing at all (D-04 — no heading, no wrapper,
+ * no placeholder). A failed fetch shows an inline retry scoped to this
+ * container only — it must never touch #product-catalog, so a recipe
+ * failure never blanks a kit block that loaded successfully.
+ *
+ * @param {{ok: Boolean, recipes: Array}} result - fetchActiveRecipes()'s resolution.
+ * @param {Boolean} showSubCopy - append the differentiating sub-copy line;
+ *   passed in rather than re-queried so the caller (which already knows
+ *   whether the kit block is also rendering) controls it (D-02).
+ * @param {String} categoryFilter - forwarded to the retry click handler's re-fetch.
+ * @param {String} middlewareUrl - forwarded to the retry click handler's re-fetch.
+ * @param {Document} [doc] - Optional document to build against (tests pass a jsdom document).
+ */
+function renderRecipeBlock(result, showSubCopy, categoryFilter, middlewareUrl, doc) {
+  var d = doc || (typeof document !== 'undefined' ? document : null);
+  var recipeEl = d.getElementById('recipe-catalog');
+  if (!recipeEl) return;
+
+  recipeEl.innerHTML = '';
+
+  if (!result.ok) {
+    var errorDiv = d.createElement('div');
+    errorDiv.className = 'catalog-error';
+    var errorMsg = d.createElement('p');
+    errorMsg.textContent = "Couldn't load recipes right now. Check your connection and try again.";
+    var retryBtn = d.createElement('button');
+    retryBtn.className = 'btn-retry btn-outline';
+    retryBtn.type = 'button';
+    retryBtn.textContent = 'Try again';
+    retryBtn.addEventListener('click', function () {
+      fetchActiveRecipes(categoryFilter, middlewareUrl).then(function (r) {
+        renderRecipeBlock(r, showSubCopy, categoryFilter, middlewareUrl, d);
+      });
+    });
+    errorDiv.appendChild(errorMsg);
+    errorDiv.appendChild(retryBtn);
+    recipeEl.appendChild(errorDiv);
+    return;
+  }
+
+  if (!result.recipes || result.recipes.length === 0) return;
+
+  var section = d.createElement('div');
+  section.className = 'catalog-section';
+
+  var sectionHeader = d.createElement('div');
+  sectionHeader.className = 'catalog-section-header';
+
+  var heading = d.createElement('h2');
+  heading.className = 'catalog-section-title';
+  heading.textContent = 'Beer Recipes';
+  sectionHeader.appendChild(heading);
+
+  if (showSubCopy) {
+    var note = d.createElement('p');
+    note.className = 'process-note';
+    note.textContent = 'Book a session and brew your own batch in our studio.';
+    sectionHeader.appendChild(note);
+  }
+
+  section.appendChild(sectionHeader);
+
+  var grid = d.createElement('div');
+  grid.className = 'product-grid' + (result.recipes.length <= 3 ? ' product-grid--compact' : '');
+  result.recipes.forEach(function (recipe) {
+    grid.appendChild(buildRecipeCard(recipe, d));
+  });
+  section.appendChild(grid);
+
+  recipeEl.appendChild(section);
+}
+
+/**
+ * Decide which of the two catalog blocks renders first on a category page
+ * (D-03). A pure, explicit comparison — never an emergent property of array
+ * order. LOCKED tie-break: kits lead on an exact count tie (at launch /beer
+ * has 1 kit and 1 active recipe).
+ *
+ * @param {Number} kitCount - in-stock kit count.
+ * @param {Number} recipeCount - active recipe count (0 on a failed fetch).
+ * @returns {Array} ['kits','recipes'] or ['recipes','kits'].
+ */
+function orderCatalogBlocks(kitCount, recipeCount) {
+  return kitCount >= recipeCount ? ['kits', 'recipes'] : ['recipes', 'kits'];
+}
+
+function loadProducts(categoryFilter) {
+  var _categoryFilter = (categoryFilter || '').toLowerCase();
   var allProducts = [];
   var _kitsFuse = null;
   var userHasSorted = false;
-  var activeFilters = { type: [], brand: [], manufacturer: [], subcategory: [], time: [], body: [], oak: [], sweetness: [] };
+  var activeFilters = { type: [], brand: [], manufacturer: [], subcategory: [], time: [], body: [], oak: [], sweetness: [], abv: [] };
   var saleFilterActive = false;
+  // D-02 kit sub-copy, set once the recipe/kit join (below) knows whether
+  // both blocks are rendering on this page — read by renderCatalog/renderSection.
+  var _kitSubCopy = null;
 
   var middlewareUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL)
     ? SHEETS_CONFIG.MIDDLEWARE_URL : '';
+
+  // D-05/D-01: start the recipe fetch alongside the kit fetch below (not
+  // sequentially after it) so neither block waits on the other unnecessarily.
+  // Resolves synchronously-empty for every unscoped/wine caller (D-01
+  // Pitfall 2 — recipes have no category field, routed to beer only).
+  var recipePromise = fetchActiveRecipes(_categoryFilter, middlewareUrl);
 
   // Fallback: load kit products from the committed Zoho snapshot file.
   // This replaces the old Google Sheets published CSV fallback.
@@ -1816,11 +2128,9 @@ function loadProducts() {
           // Exclude items with Type = Ingredient or Service
           var t = (obj.type || '').toLowerCase();
           if (t === 'ingredient' || t === 'service') return false;
-          // Only keep kit categories (wine, beer, cider, seltzer)
-          // Fall back to obj.type when category_name is absent from Zoho
-          var cat = (obj.category || obj._zoho_category || obj.type || '').toLowerCase();
-          if (!cat) return false;
-          return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
+          // Only keep kit categories (wine, beer, cider, seltzer), optionally
+          // scoped to a single category via _categoryFilter.
+          return matchesKitCategory(obj, _categoryFilter);
         });
       });
   }
@@ -1848,6 +2158,11 @@ function loadProducts() {
     showCatalogSkeletons(catalog, 6);
   }
 
+  var recipeEl = document.getElementById('recipe-catalog');
+  if (_categoryFilter && recipeEl) {
+    showCatalogSkeletons(recipeEl, 2);
+  }
+
   var _usedSnapshotFallback = false;
   var dataPromise = middlewareUrl
     ? loadFromMiddleware().catch(function () {
@@ -1862,10 +2177,7 @@ function loadProducts() {
       items = items.filter(function (obj) {
         var t = (obj.type || '').toLowerCase();
         if (t === 'ingredient' || t === 'service') return false;
-        // Fall back to obj.type when category_name is absent from Zoho
-        var cat = (obj.category || obj._zoho_category || obj.type || '').toLowerCase();
-        if (!cat) return false;
-        return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
+        return matchesKitCategory(obj, _categoryFilter);
       });
       items.forEach(function (obj) {
         obj._item_type = 'kit';
@@ -1884,18 +2196,47 @@ function loadProducts() {
         });
       }
 
-      buildFilterRow('filter-type', 'type', 'Type:');
-      buildFilterRow('filter-brand', 'brand', 'Brand:');
-      buildFilterRow('filter-manufacturer', 'manufacturer', 'Producer:');
-      buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
-      buildFilterRow('filter-time', 'time', 'Production Time:');
-      buildFilterRow('filter-body', 'body', 'Body:');
-      buildFilterRow('filter-oak', 'oak', 'Oak:');
-      buildFilterRow('filter-sweetness', 'sweetness', 'Sweetness:');
-      buildSaleFilter();
-      // Only render kits if the kits tab is still active (guards against the
-      // ?tab=ingredients URL param switching away before this async chain resolves)
-      if (_activeCartTab === 'kits') applyFilters();
+      if (_categoryFilter === 'beer') {
+        // D-13: beer only builds Style + ABV — no Brand/Producer/Time/Body/Oak/Sweetness/Sale.
+        buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
+        buildFilterRow('filter-abv', 'abv', 'ABV:');
+      } else {
+        buildFilterRow('filter-type', 'type', 'Type:');
+        buildFilterRow('filter-brand', 'brand', 'Brand:');
+        buildFilterRow('filter-manufacturer', 'manufacturer', 'Producer:');
+        buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
+        buildFilterRow('filter-time', 'time', 'Production Time:');
+        buildFilterRow('filter-body', 'body', 'Body:');
+        buildFilterRow('filter-oak', 'oak', 'Oak:');
+        buildFilterRow('filter-sweetness', 'sweetness', 'Sweetness:');
+        buildSaleFilter();
+      }
+      // D-03/D-10: commit both blocks in a single paint. Neither block paints
+      // until both fetches settle, so the final order never reflows (recipes
+      // may resolve before or after the kit data above — recipePromise was
+      // started alongside the kit fetch, not after it).
+      recipePromise.then(function (recipeResult) {
+        var kitCount = allProducts.filter(function (r) { return getAvailable(r) > 0; }).length;
+        // A failed recipe fetch is treated as recipeCount === 0 for both the
+        // D-03 ordering rule and the D-02 sub-copy differentiation rule.
+        var effectiveRecipeCount = recipeResult.ok ? recipeResult.recipes.length : 0;
+        var bothBlocksRender = kitCount > 0 && effectiveRecipeCount > 0;
+
+        var order = orderCatalogBlocks(kitCount, effectiveRecipeCount);
+        var catalogBlocks = document.getElementById('catalog-blocks');
+        var productEl = document.getElementById('product-catalog');
+        var recipeCatalogEl = document.getElementById('recipe-catalog');
+        if (catalogBlocks && productEl && recipeCatalogEl && order[0] === 'recipes') {
+          catalogBlocks.insertBefore(recipeCatalogEl, productEl);
+        }
+
+        _kitSubCopy = bothBlocksRender ? 'Take a kit home to ferment yourself.' : null;
+        renderRecipeBlock(recipeResult, bothBlocksRender, _categoryFilter, middlewareUrl);
+
+        // Only render kits if the kits tab is still active (guards against the
+        // ?tab=ingredients URL param switching away before this async chain resolves)
+        if (_activeCartTab === 'kits') applyFilters();
+      });
 
 
       // Refresh button — clears middleware cache and reloads products (only once)
@@ -2024,42 +2365,7 @@ function loadProducts() {
       }
     });
 
-    if (field === 'time') {
-      uniqueValues.sort(function (a, b) {
-        var numA = parseFloat(a) || 0;
-        var numB = parseFloat(b) || 0;
-        return numA - numB;
-      });
-    } else if (field === 'subcategory') {
-      var styleOrder = ['red', 'white', 'rosé', 'rose', 'fruit', 'specialty'];
-      uniqueValues.sort(function (a, b) {
-        var aIdx = styleOrder.indexOf(a.toLowerCase());
-        var bIdx = styleOrder.indexOf(b.toLowerCase());
-        if (aIdx === -1) aIdx = styleOrder.length;
-        if (bIdx === -1) bIdx = styleOrder.length;
-        return aIdx - bIdx;
-      });
-    } else if (field === 'body') {
-      var bodyOrder = ['light', 'light-medium', 'medium', 'medium-full', 'full'];
-      uniqueValues.sort(function (a, b) {
-        var aIdx = bodyOrder.indexOf(a.toLowerCase());
-        var bIdx = bodyOrder.indexOf(b.toLowerCase());
-        if (aIdx === -1) aIdx = bodyOrder.length;
-        if (bIdx === -1) bIdx = bodyOrder.length;
-        return aIdx - bIdx;
-      });
-    } else if (field === 'sweetness') {
-      var sweetOrder = ['dry', 'off-dry', 'semi-sweet', 'sweet'];
-      uniqueValues.sort(function (a, b) {
-        var aIdx = sweetOrder.indexOf(a.toLowerCase());
-        var bIdx = sweetOrder.indexOf(b.toLowerCase());
-        if (aIdx === -1) aIdx = sweetOrder.length;
-        if (bIdx === -1) bIdx = sweetOrder.length;
-        return aIdx - bIdx;
-      });
-    } else {
-      uniqueValues.sort();
-    }
+    uniqueValues = sortFilterValues(field, uniqueValues, _categoryFilter);
 
     if (uniqueValues.length === 0) {
       container.classList.add('hidden');
@@ -2146,7 +2452,7 @@ function loadProducts() {
   }
 
   function matchesFilters(product, excludeField) {
-    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness'];
+    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness', 'abv'];
     for (var i = 0; i < fields.length; i++) {
       var f = fields[i];
       if (f === excludeField) continue;
@@ -2156,7 +2462,7 @@ function loadProducts() {
   }
 
   function updateFilterAvailability() {
-    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness'];
+    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness', 'abv'];
     fields.forEach(function (field) {
       var containerId = 'filter-' + (field === 'subcategory' ? 'subcategory' : field);
       var container = document.getElementById(containerId);
@@ -2211,6 +2517,7 @@ function loadProducts() {
       if (activeFilters.body.length > 0 && activeFilters.body.indexOf(r.body) === -1) return false;
       if (activeFilters.oak.length > 0 && activeFilters.oak.indexOf(r.oak) === -1) return false;
       if (activeFilters.sweetness.length > 0 && activeFilters.sweetness.indexOf(r.sweetness) === -1) return false;
+      if (activeFilters.abv.length > 0 && activeFilters.abv.indexOf(r.abv) === -1) return false;
       if (saleFilterActive && !(parseFloat(r.discount) > 0)) return false;
       if (!query) return true;
       if (_kitsFuse) return _kitsFuseSet.has(r);
@@ -2350,6 +2657,14 @@ function loadProducts() {
     summary.classList.toggle('hidden', !hasAny);
   }
 
+  // Hoisted out of renderCatalog (was nested) so the dual-block ordering join
+  // (D-03) can compute the in-stock kit count with the exact same rule before
+  // renderCatalog itself runs.
+  function getAvailable(r) {
+    if (r.available !== undefined && r.available !== '') return parseInt(r.available, 10) || 0;
+    return parseInt(r.stock, 10) || 0;
+  }
+
   function renderCatalog(rows) {
     var catalog = document.getElementById('product-catalog');
     if (!catalog) return;
@@ -2366,10 +2681,6 @@ function loadProducts() {
       return;
     }
 
-    function getAvailable(r) {
-      if (r.available !== undefined && r.available !== '') return parseInt(r.available, 10) || 0;
-      return parseInt(r.stock, 10) || 0;
-    }
     // Out-of-stock products are hidden site-wide, including build-to-order kits
     // that would previously appear under an "Available to order" section.
     var inStock = rows.filter(function (r) { return getAvailable(r) > 0; });
@@ -2382,7 +2693,12 @@ function loadProducts() {
       return;
     }
 
-    renderSection(catalog, 'Currently available', inStock);
+    // D-02: category pages carry their own kit heading; every existing
+    // unscoped caller (products.html, products/ingredients-supplies.html,
+    // the hub) keeps the pre-existing default heading unchanged.
+    var kitTitle = _categoryFilter === 'wine' ? 'Wine Kits'
+      : (_categoryFilter === 'beer' ? 'Beer Kits' : 'Currently available');
+    renderSection(catalog, kitTitle, inStock, undefined, _kitSubCopy);
     injectKitListSchema(inStock);
     equalizeCardHeights();
     setTimeout(handleDeepLinkedItem, 200);
@@ -2575,22 +2891,9 @@ function loadProducts() {
       card.appendChild(buildLabelPriceFooter(product));
     }
 
-    var reserveWrap = document.createElement('div');
-    reserveWrap.className = 'reserve-link product-reserve-wrap';
-    var productKey = getProductKey(product);
-    reserveWrap._reserveProduct = product;
-    reserveWrap._reserveKey = productKey;
-    reserveWrap._reserveRenderer = renderReserveControl;
-    renderReserveControl(reserveWrap, product, productKey);
-    card.appendChild(reserveWrap);
-
-    var kitBuyWrapBeer = document.createElement('div');
-    kitBuyWrapBeer.className = 'reserve-link reserve-link--secondary product-reserve-wrap';
-    kitBuyWrapBeer._reserveProduct = product;
-    kitBuyWrapBeer._reserveKey = productKey;
-    kitBuyWrapBeer._reserveRenderer = renderKitBuyControl;
-    renderKitBuyControl(kitBuyWrapBeer, product);
-    card.appendChild(kitBuyWrapBeer);
+    // D-12: beer is booked-ahead only — no Reserve/Buy Kit cart controls,
+    // just the waitlist CTA (see buildWaitlistCtaLink()).
+    card.appendChild(buildWaitlistCtaLink());
 
     return card;
   }
@@ -2759,7 +3062,7 @@ function loadProducts() {
     return card;
   }
 
-  function renderSection(catalog, title, items, extraClass) {
+  function renderSection(catalog, title, items, extraClass, subCopy) {
     if (items.length === 0) return;
 
     var wrapper = document.createElement('div');
@@ -2778,6 +3081,15 @@ function loadProducts() {
       note.className = 'process-note';
       note.textContent = 'Allow up to 2 weeks for items to be ordered in.';
       sectionHeader.appendChild(note);
+    } else if (subCopy) {
+      // D-02 block-differentiation sub-copy — only passed when the sibling
+      // recipe block is also rendering on this page (see loadProducts's
+      // recipePromise join); with a single block on the page there's
+      // nothing to differentiate.
+      var subCopyNote = document.createElement('p');
+      subCopyNote.className = 'process-note';
+      subCopyNote.textContent = subCopy;
+      sectionHeader.appendChild(subCopyNote);
     }
 
     wrapper.appendChild(sectionHeader);
@@ -2794,6 +3106,12 @@ function loadProducts() {
     });
     groupOrder.sort(function (a, b) { return groups[b].length - groups[a].length; });
 
+    // With a category filter active there is exactly one group, so an inner
+    // "Wine"/"Beer" .product-group-title heading would immediately repeat
+    // the block heading above it ("Wine Kits" -> "Wine"). Suppress it in
+    // that case only; unscoped multi-group pages (hub/products) keep it.
+    var suppressGroupHeading = !!(_categoryFilter && groupOrder.length === 1);
+
     if (catalogViewMode === 'table') {
       groupOrder.forEach(function (type) {
         var group = document.createElement('div');
@@ -2802,7 +3120,7 @@ function loadProducts() {
         var heading = document.createElement('h3');
         heading.className = 'product-group-title';
         heading.textContent = type;
-        group.appendChild(heading);
+        if (!suppressGroupHeading) group.appendChild(heading);
 
         var table = document.createElement('table');
         table.className = 'catalog-table';
@@ -3115,10 +3433,12 @@ function loadProducts() {
         var heading = document.createElement('h3');
         heading.className = 'product-group-title';
         heading.textContent = type;
-        group.appendChild(heading);
+        if (!suppressGroupHeading) group.appendChild(heading);
 
         var grid = document.createElement('div');
-        grid.className = 'product-grid';
+        // UI-SPEC §2: caps a 1-3 card grid at 320px columns so a single
+        // stretched card doesn't blow up to full container width.
+        grid.className = 'product-grid' + (groups[type].length <= 3 ? ' product-grid--compact' : '');
 
         groups[type].forEach(function (product) {
           var productType = (product.type || '').toLowerCase();
@@ -3216,7 +3536,7 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { flattenCustomFields: flattenCustomFields };
+  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, buildRecipeCard: buildRecipeCard, fetchActiveRecipes: fetchActiveRecipes, renderRecipeBlock: renderRecipeBlock, orderCatalogBlocks: orderCatalogBlocks };
 }
 var _allIngredients = [];
 var _ingredientsFuse = null;
@@ -8916,7 +9236,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Product catalog loader — shared by products.html, ingredients.html, and clean-URL sub-pages
-  if (page === 'products' || page === 'ingredients' || page === 'ferment-in-store' || page === 'ingredients-supplies') {
+  if (page === 'products' || page === 'ingredients' || page === 'ingredients-supplies') {
     loadProducts();
     initReservationBar();
     initCartDrawer();
@@ -8936,6 +9256,10 @@ document.addEventListener('DOMContentLoaded', function () {
       if (ingTabBtn) ingTabBtn.click();
     }
   }
+
+  // Category-scoped catalogue pages — /wine and /beer (D-09); also wires the
+  // beer waitlist form, which has never been reachable on its own page (D-11).
+  initCategoryCatalogPage(page);
 
   // Reservation page
   if (page === 'reservation') {
@@ -8996,6 +9320,36 @@ document.addEventListener('DOMContentLoaded', function () {
     if (typeof refreshAllReserveControls === 'function') refreshAllReserveControls();
   });
 });
+
+// ===== Category-Scoped Catalogue Pages (/wine, /beer) =====
+// D-09: /wine and /beer each render their own category-scoped catalogue via
+// loadProducts(page) (contract established by plan 74-02). D-11: beer.html's
+// waitlist form has carried data-page="beer" and #beer-waitlist-form since
+// 2026-08-31, but the waitlist-form setup call below was only ever reachable
+// from the page === 'home' branch — so it has never been wired on its own
+// page and has
+// been doing a native submit + full-page reload instead of posting to
+// /api/waitlist. Extracted to a module-scope function so it is directly
+// testable (see tests/frontend/init-category-page.test.js) and callable from
+// the DOMContentLoaded dispatch above without disturbing any existing branch.
+function initCategoryCatalogPage(page) {
+  if (page !== 'wine' && page !== 'beer') return false;
+
+  loadProducts(page);
+  initReservationBar();
+  initCartDrawer();
+  initMobileBottomControls();
+  initCatalogViewToggle();
+  // Neither wine.html nor beer.html carries div.product-tabs#product-tabs
+  // (the hub's tab switcher), so initProductTabs()/loadIngredients() are
+  // intentionally NOT called here.
+
+  if (page === 'beer') {
+    setupBeerWaitlistForm();
+  }
+
+  return true;
+}
 
 // ===== Mobile Bottom Controls =====
 // Moves .catalog-controls elements to a direct body child so position:fixed
@@ -9582,6 +9936,8 @@ if (typeof module !== 'undefined' && module.exports) {
     // Test-only: invoke the kiosk idle-reset cart clearing logic directly
     _resetKioskSessionForTest: _clearKioskSession,
     // REVIEW-03: lazy content-image placeholder load-state helper
-    initFacilityPhotoPlaceholders: initFacilityPhotoPlaceholders
+    initFacilityPhotoPlaceholders: initFacilityPhotoPlaceholders,
+    // D-09/D-11: /wine and /beer category-catalogue dispatch + beer waitlist wiring
+    initCategoryCatalogPage: initCategoryCatalogPage
   };
 }
