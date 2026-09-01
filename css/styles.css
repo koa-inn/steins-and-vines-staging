@@ -4725,6 +4725,13 @@ behold-widget {
   border: none;
 }
 
+/* Recipe cards carry an a.btn CTA rather than the flush .product-reserve-btn
+   that kit cards use, so it sits hard against the card's bottom edge. Scoped
+   to [data-recipe-id] so beer kit cards keep their flush buy control. */
+.label-beer[data-recipe-id] .reserve-link {
+  padding-bottom: 1rem;
+}
+
 /* Beer tint overrides */
 .label-beer[class*="tint-"] { border-color: var(--tint-border); }
 .label-beer[class*="tint-"] .gold-rule { border-top-color: var(--tint-border); }
