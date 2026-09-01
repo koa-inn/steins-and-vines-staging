@@ -1180,6 +1180,32 @@ Plans:
 
 ---
 
+### Phase 78: BrewPad waitlist tracking — make the beer waitlist a workable internal list, not just a MailerLite group
+
+**Goal:** Give staff a way to see and work the beer waitlist inside BrewPad. Today `POST /api/waitlist` (`zoho-middleware/server.js:211`) validates the email and hands it to MailerLite (`mailerlite.addSubscriber`, optionally into `MAILERLITE_WAITLIST_GROUP_ID`) — and that is the entire record. Nothing is stored anywhere staff can read, so there is no way to see who is waiting, how long they have waited, or who has already been contacted.
+
+**Why this matters now:** Phase 74 made the waitlist load-bearing. `beer.html` tells customers "Beer batches are booked ahead, and we work through the list in order", and after the Phase 74 UAT revision the waitlist is the ONLY route into the ferment-in-store beer experience — beer kit cards now sell take-home kits, and the waitlist CTA lives on recipe cards. The site promises an ordered queue that no internal tool can actually show.
+
+**Source:** Owner direction 2026-09-01, during Phase 74 staging UAT.
+
+**Scope sketch (confirm at discuss-phase):** BrewPad surface listing waitlist entries with signup timestamp and status; staff can mark an entry contacted/booked/removed; ordering reflects the "we work through the list in order" promise. Needs a durable store — the current flow keeps no record on our side, so where entries live (Apps Script sheet, Zoho, or middleware-side) is the first real design decision. MailerLite stays the marketing sync; it is not the system of record.
+
+**Open questions for discuss-phase:**
+- Where do waitlist entries live? MailerLite is not queryable as an ordered work list; Phase 74 research did not cover this.
+- Does an existing entry need linking to a customer/batch once they book, or is it a standalone list?
+- Is the beer waitlist the only one, or does this generalize (wine, cider, classes)?
+- Does removing/booking someone need to write back to the MailerLite group, or only to our store?
+
+**Depends on:** Phase 74 (which wired the form and made the waitlist the sole ferment-in-store route for beer). Independent of the Phase 74 production deploy.
+**Requirements**: TBD — assign at discuss-phase.
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 78 to break down)
+
+---
+
 ### Phase 46: Auth Re-Architecture (CRITICAL — split from Phase 45)
 
 **v4.5 carryover:** This phase closes v4.5 **SEC-02** (audit C1) — carried over as-is, not re-planned. ✅ COMPLETE 2026-07-08: owner production cutover (46-10) executed off-hours; kiosk (device token), admin + BrewPad (Google session) all verified; `API_SECRET_KEY` rotated → leaked key dead (403), no surface locked out, public checkout intact. See `46-10-SUMMARY.md` and `docs/RUNBOOK.md` Outcome record; `REQUIREMENTS.md` Traceability.
