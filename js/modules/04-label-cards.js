@@ -97,11 +97,16 @@ function formatCurrency(val) {
 }
 
 // DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
-function buildLabelPriceFooter(product) {
+// opts.kitOnly suppresses the "Ferment in store" column. Beer is sold as a
+// take-home kit only — the ferment-in-store experience is booked through the
+// recipe waitlist instead, so showing an in-store price on a beer kit card
+// would advertise a purchase path that does not exist.
+function buildLabelPriceFooter(product, opts) {
+  var options = opts || {};
   var discount = parseFloat(product.discount) || 0;
   var pricingFrom = (product.pricing_from || '').trim().toUpperCase() === 'TRUE';
   var plusSign = pricingFrom ? '+' : '';
-  var instore = (product.retail_instore || '').trim();
+  var instore = options.kitOnly ? '' : (product.retail_instore || '').trim();
   var kit = (product.retail_kit || '').trim();
 
   var footer = document.createElement('div');

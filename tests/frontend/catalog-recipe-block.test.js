@@ -54,7 +54,10 @@ describe('recipeDisplayPrice', function () {
 });
 
 // ---------------------------------------------------------------------------
-// Task 1 — buildRecipeCard (D-07 field allowlist, plain .product-card idiom)
+// Task 1 — buildRecipeCard (D-07 field allowlist, label-beer card idiom)
+// D-02 revised by owner UAT 2026-09-01: recipe cards now use the same
+// bottle-label idiom as kit cards so both blocks read as one catalogue.
+// The D-07 field allowlist below is UNCHANGED and still enforced.
 // ---------------------------------------------------------------------------
 
 describe('buildRecipeCard', function () {
@@ -62,22 +65,21 @@ describe('buildRecipeCard', function () {
     expect(typeof mod.buildRecipeCard).toBe('function');
   });
 
-  test('root has class product-card and never label-beer/label-wine', function () {
+  test('root uses the label-beer idiom and never label-wine', function () {
     var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000002', name: 'Czech Lager', style: 'Lager', description: '', price: null }, document);
-    expect(card.className).toBe('product-card');
-    expect(card.className.indexOf('label-beer')).toBe(-1);
+    expect(card.className).toBe('label-beer');
     expect(card.className.indexOf('label-wine')).toBe(-1);
   });
 
-  test('h4 textContent equals the recipe name', function () {
+  test('.beer-name textContent equals the recipe name', function () {
     var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000002', name: 'Czech Lager', style: 'Lager', description: '', price: null }, document);
-    expect(card.querySelector('h4').textContent).toBe('Czech Lager');
+    expect(card.querySelector('.beer-name').textContent).toBe('Czech Lager');
   });
 
   test('a card built from a recipe with empty description contains zero .service-description elements, and price slot reads the fallback', function () {
     var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000002', name: 'Czech Lager', style: 'Lager', description: '', price: null }, document);
     expect(card.querySelectorAll('.service-description').length).toBe(0);
-    expect(card.querySelector('.product-price-value').textContent).toBe('Price set when you book');
+    expect(card.querySelector('.price-value').textContent).toBe('Price set when you book');
   });
 
   test('a card built with a description contains exactly one .service-description whose text equals the description', function () {
@@ -101,13 +103,24 @@ describe('buildRecipeCard', function () {
     expect(links[0].textContent).toBe('Join the Waitlist');
   });
 
-  test('field order is exactly name -> style -> price -> blurb -> CTA', function () {
+  test('card structure is exactly body -> price footer -> CTA', function () {
     var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000003', name: 'Czech Lager', style: 'Lager', description: 'A crisp, clean pilsner.', price: 45 }, document);
     var order = [];
     Array.prototype.forEach.call(card.children, function (child) {
       order.push(child.className);
     });
-    expect(order).toEqual(['product-card-header', 'product-prices service-price', 'service-description', 'reserve-link']);
+    expect(order).toEqual(['label-body', 'price-footer', 'reserve-link']);
+  });
+
+  test('inside the body, field order is name -> style -> blurb', function () {
+    var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000003', name: 'Czech Lager', style: 'Lager', description: 'A crisp, clean pilsner.', price: 45 }, document);
+    var body = card.querySelector('.label-body');
+    var order = [];
+    Array.prototype.forEach.call(body.children, function (child) {
+      order.push(child.className);
+    });
+    expect(order.indexOf('beer-name')).toBeLessThan(order.indexOf('subcategory'));
+    expect(order.indexOf('subcategory')).toBeLessThan(order.indexOf('service-description'));
   });
 
   test('reads no property outside the public allowlist — extra fields are ignored', function () {
