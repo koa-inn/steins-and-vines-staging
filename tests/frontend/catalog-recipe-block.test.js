@@ -258,3 +258,29 @@ describe('renderRecipeBlock', function () {
     expect(note).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 3 — orderCatalogBlocks (D-03 dual-block ordering, LOCKED tie-break)
+// ---------------------------------------------------------------------------
+
+describe('orderCatalogBlocks', function () {
+  test('is exported from the module', function () {
+    expect(typeof mod.orderCatalogBlocks).toBe('function');
+  });
+
+  test('an exact tie (the /beer launch state) leads with kits', function () {
+    expect(mod.orderCatalogBlocks(1, 1)).toEqual(['kits', 'recipes']);
+  });
+
+  test('more recipes than kits leads with recipes', function () {
+    expect(mod.orderCatalogBlocks(0, 3)).toEqual(['recipes', 'kits']);
+  });
+
+  test('more kits than recipes leads with kits', function () {
+    expect(mod.orderCatalogBlocks(5, 2)).toEqual(['kits', 'recipes']);
+  });
+
+  test('a zero/zero tie leads with kits', function () {
+    expect(mod.orderCatalogBlocks(0, 0)).toEqual(['kits', 'recipes']);
+  });
+});
