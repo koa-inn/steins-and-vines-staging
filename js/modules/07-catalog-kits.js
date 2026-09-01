@@ -26,11 +26,116 @@ function flattenCustomFields(obj, customFields) {
   });
 }
 
-function loadProducts() {
+/**
+ * Test whether a product's resolved category matches a category filter.
+ * When categoryFilter is falsy, reproduces the pre-existing "any kit category"
+ * test used by loadProducts(). When categoryFilter is truthy, it must both be
+ * a recognised KIT_CATEGORIES value AND be present in the product's resolved
+ * category string.
+ *
+ * @param {Object} obj - Product-like object (category / _zoho_category / type).
+ * @param {String} [categoryFilter] - e.g. 'wine' or 'beer'; falsy = match any kit category.
+ * @returns {Boolean}
+ */
+function matchesKitCategory(obj, categoryFilter) {
+  if (!obj) return false;
+  var cat = (obj.category || obj._zoho_category || obj.type || '').toLowerCase();
+  if (!cat) return false;
+  if (categoryFilter) {
+    var target = categoryFilter.toLowerCase();
+    return KIT_CATEGORIES.indexOf(target) !== -1 && cat.indexOf(target) !== -1;
+  }
+  return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
+}
+
+/**
+ * Build the "Join the Waitlist" CTA node used by beer kit cards in place of
+ * the wine cart controls (D-12 — beer is booked-ahead only, no cart path).
+ * Deliberately does NOT carry the product-reserve-wrap class: that class is
+ * walked by refreshAllReserveControls() (js/modules/11-cart.js) which expects
+ * an _reserveRenderer, and this link has no cart state to refresh.
+ *
+ * @param {Document} [doc] - Optional document to build against (tests pass a jsdom document).
+ * @returns {HTMLElement} A div.reserve-link wrapping a single a.btn anchor.
+ */
+function buildWaitlistCtaLink(doc) {
+  var d = doc || (typeof document !== 'undefined' ? document : null);
+  var wrap = d.createElement('div');
+  wrap.className = 'reserve-link';
+
+  var isBeerPage = false;
+  if (d && d.body) {
+    isBeerPage = d.body.getAttribute('data-page') === 'beer';
+  }
+
+  var link = d.createElement('a');
+  link.className = 'btn';
+  link.href = isBeerPage ? '#waitlist' : 'beer.html#waitlist';
+  link.textContent = 'Join the Waitlist';
+
+  wrap.appendChild(link);
+  return wrap;
+}
+
+/**
+ * Sort a filter row's unique values into their per-field domain order.
+ * Pure function — no DOM, no closure state — so it can be shared by both
+ * loadProducts()'s per-category call list and tested in isolation.
+ *
+ * @param {String} field - The product field the filter row is built from (e.g. 'subcategory', 'abv', 'time').
+ * @param {Array} values - Unique values to sort (NOT mutated — a sorted copy is returned).
+ * @param {String} [categoryFilter] - Active category ('wine' | 'beer' | ''), gates the wine-only subcategory order.
+ * @returns {Array} A new, sorted array.
+ */
+function sortFilterValues(field, values, categoryFilter) {
+  var out = (values || []).slice();
+
+  if (field === 'time' || field === 'abv') {
+    out.sort(function (a, b) {
+      var numA = parseFloat(a) || 0;
+      var numB = parseFloat(b) || 0;
+      return numA - numB;
+    });
+  } else if (field === 'subcategory' && categoryFilter !== 'beer') {
+    var styleOrder = ['red', 'white', 'rosé', 'rose', 'fruit', 'specialty'];
+    out.sort(function (a, b) {
+      var aIdx = styleOrder.indexOf(a.toLowerCase());
+      var bIdx = styleOrder.indexOf(b.toLowerCase());
+      if (aIdx === -1) aIdx = styleOrder.length;
+      if (bIdx === -1) bIdx = styleOrder.length;
+      return aIdx - bIdx;
+    });
+  } else if (field === 'body') {
+    var bodyOrder = ['light', 'light-medium', 'medium', 'medium-full', 'full'];
+    out.sort(function (a, b) {
+      var aIdx = bodyOrder.indexOf(a.toLowerCase());
+      var bIdx = bodyOrder.indexOf(b.toLowerCase());
+      if (aIdx === -1) aIdx = bodyOrder.length;
+      if (bIdx === -1) bIdx = bodyOrder.length;
+      return aIdx - bIdx;
+    });
+  } else if (field === 'sweetness') {
+    var sweetOrder = ['dry', 'off-dry', 'semi-sweet', 'sweet'];
+    out.sort(function (a, b) {
+      var aIdx = sweetOrder.indexOf(a.toLowerCase());
+      var bIdx = sweetOrder.indexOf(b.toLowerCase());
+      if (aIdx === -1) aIdx = sweetOrder.length;
+      if (bIdx === -1) bIdx = sweetOrder.length;
+      return aIdx - bIdx;
+    });
+  } else {
+    out.sort();
+  }
+
+  return out;
+}
+
+function loadProducts(categoryFilter) {
+  var _categoryFilter = (categoryFilter || '').toLowerCase();
   var allProducts = [];
   var _kitsFuse = null;
   var userHasSorted = false;
-  var activeFilters = { type: [], brand: [], manufacturer: [], subcategory: [], time: [], body: [], oak: [], sweetness: [] };
+  var activeFilters = { type: [], brand: [], manufacturer: [], subcategory: [], time: [], body: [], oak: [], sweetness: [], abv: [] };
   var saleFilterActive = false;
 
   var middlewareUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL)
@@ -120,11 +225,9 @@ function loadProducts() {
           // Exclude items with Type = Ingredient or Service
           var t = (obj.type || '').toLowerCase();
           if (t === 'ingredient' || t === 'service') return false;
-          // Only keep kit categories (wine, beer, cider, seltzer)
-          // Fall back to obj.type when category_name is absent from Zoho
-          var cat = (obj.category || obj._zoho_category || obj.type || '').toLowerCase();
-          if (!cat) return false;
-          return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
+          // Only keep kit categories (wine, beer, cider, seltzer), optionally
+          // scoped to a single category via _categoryFilter.
+          return matchesKitCategory(obj, _categoryFilter);
         });
       });
   }
@@ -166,10 +269,7 @@ function loadProducts() {
       items = items.filter(function (obj) {
         var t = (obj.type || '').toLowerCase();
         if (t === 'ingredient' || t === 'service') return false;
-        // Fall back to obj.type when category_name is absent from Zoho
-        var cat = (obj.category || obj._zoho_category || obj.type || '').toLowerCase();
-        if (!cat) return false;
-        return KIT_CATEGORIES.some(function (kc) { return cat.indexOf(kc) !== -1; });
+        return matchesKitCategory(obj, _categoryFilter);
       });
       items.forEach(function (obj) {
         obj._item_type = 'kit';
@@ -188,15 +288,21 @@ function loadProducts() {
         });
       }
 
-      buildFilterRow('filter-type', 'type', 'Type:');
-      buildFilterRow('filter-brand', 'brand', 'Brand:');
-      buildFilterRow('filter-manufacturer', 'manufacturer', 'Producer:');
-      buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
-      buildFilterRow('filter-time', 'time', 'Production Time:');
-      buildFilterRow('filter-body', 'body', 'Body:');
-      buildFilterRow('filter-oak', 'oak', 'Oak:');
-      buildFilterRow('filter-sweetness', 'sweetness', 'Sweetness:');
-      buildSaleFilter();
+      if (_categoryFilter === 'beer') {
+        // D-13: beer only builds Style + ABV — no Brand/Producer/Time/Body/Oak/Sweetness/Sale.
+        buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
+        buildFilterRow('filter-abv', 'abv', 'ABV:');
+      } else {
+        buildFilterRow('filter-type', 'type', 'Type:');
+        buildFilterRow('filter-brand', 'brand', 'Brand:');
+        buildFilterRow('filter-manufacturer', 'manufacturer', 'Producer:');
+        buildFilterRow('filter-subcategory', 'subcategory', 'Style:');
+        buildFilterRow('filter-time', 'time', 'Production Time:');
+        buildFilterRow('filter-body', 'body', 'Body:');
+        buildFilterRow('filter-oak', 'oak', 'Oak:');
+        buildFilterRow('filter-sweetness', 'sweetness', 'Sweetness:');
+        buildSaleFilter();
+      }
       // Only render kits if the kits tab is still active (guards against the
       // ?tab=ingredients URL param switching away before this async chain resolves)
       if (_activeCartTab === 'kits') applyFilters();
@@ -328,42 +434,7 @@ function loadProducts() {
       }
     });
 
-    if (field === 'time') {
-      uniqueValues.sort(function (a, b) {
-        var numA = parseFloat(a) || 0;
-        var numB = parseFloat(b) || 0;
-        return numA - numB;
-      });
-    } else if (field === 'subcategory') {
-      var styleOrder = ['red', 'white', 'rosé', 'rose', 'fruit', 'specialty'];
-      uniqueValues.sort(function (a, b) {
-        var aIdx = styleOrder.indexOf(a.toLowerCase());
-        var bIdx = styleOrder.indexOf(b.toLowerCase());
-        if (aIdx === -1) aIdx = styleOrder.length;
-        if (bIdx === -1) bIdx = styleOrder.length;
-        return aIdx - bIdx;
-      });
-    } else if (field === 'body') {
-      var bodyOrder = ['light', 'light-medium', 'medium', 'medium-full', 'full'];
-      uniqueValues.sort(function (a, b) {
-        var aIdx = bodyOrder.indexOf(a.toLowerCase());
-        var bIdx = bodyOrder.indexOf(b.toLowerCase());
-        if (aIdx === -1) aIdx = bodyOrder.length;
-        if (bIdx === -1) bIdx = bodyOrder.length;
-        return aIdx - bIdx;
-      });
-    } else if (field === 'sweetness') {
-      var sweetOrder = ['dry', 'off-dry', 'semi-sweet', 'sweet'];
-      uniqueValues.sort(function (a, b) {
-        var aIdx = sweetOrder.indexOf(a.toLowerCase());
-        var bIdx = sweetOrder.indexOf(b.toLowerCase());
-        if (aIdx === -1) aIdx = sweetOrder.length;
-        if (bIdx === -1) bIdx = sweetOrder.length;
-        return aIdx - bIdx;
-      });
-    } else {
-      uniqueValues.sort();
-    }
+    uniqueValues = sortFilterValues(field, uniqueValues, _categoryFilter);
 
     if (uniqueValues.length === 0) {
       container.classList.add('hidden');
@@ -450,7 +521,7 @@ function loadProducts() {
   }
 
   function matchesFilters(product, excludeField) {
-    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness'];
+    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness', 'abv'];
     for (var i = 0; i < fields.length; i++) {
       var f = fields[i];
       if (f === excludeField) continue;
@@ -460,7 +531,7 @@ function loadProducts() {
   }
 
   function updateFilterAvailability() {
-    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness'];
+    var fields = ['type', 'brand', 'manufacturer', 'subcategory', 'time', 'body', 'oak', 'sweetness', 'abv'];
     fields.forEach(function (field) {
       var containerId = 'filter-' + (field === 'subcategory' ? 'subcategory' : field);
       var container = document.getElementById(containerId);
@@ -515,6 +586,7 @@ function loadProducts() {
       if (activeFilters.body.length > 0 && activeFilters.body.indexOf(r.body) === -1) return false;
       if (activeFilters.oak.length > 0 && activeFilters.oak.indexOf(r.oak) === -1) return false;
       if (activeFilters.sweetness.length > 0 && activeFilters.sweetness.indexOf(r.sweetness) === -1) return false;
+      if (activeFilters.abv.length > 0 && activeFilters.abv.indexOf(r.abv) === -1) return false;
       if (saleFilterActive && !(parseFloat(r.discount) > 0)) return false;
       if (!query) return true;
       if (_kitsFuse) return _kitsFuseSet.has(r);
@@ -879,22 +951,9 @@ function loadProducts() {
       card.appendChild(buildLabelPriceFooter(product));
     }
 
-    var reserveWrap = document.createElement('div');
-    reserveWrap.className = 'reserve-link product-reserve-wrap';
-    var productKey = getProductKey(product);
-    reserveWrap._reserveProduct = product;
-    reserveWrap._reserveKey = productKey;
-    reserveWrap._reserveRenderer = renderReserveControl;
-    renderReserveControl(reserveWrap, product, productKey);
-    card.appendChild(reserveWrap);
-
-    var kitBuyWrapBeer = document.createElement('div');
-    kitBuyWrapBeer.className = 'reserve-link reserve-link--secondary product-reserve-wrap';
-    kitBuyWrapBeer._reserveProduct = product;
-    kitBuyWrapBeer._reserveKey = productKey;
-    kitBuyWrapBeer._reserveRenderer = renderKitBuyControl;
-    renderKitBuyControl(kitBuyWrapBeer, product);
-    card.appendChild(kitBuyWrapBeer);
+    // D-12: beer is booked-ahead only — no Reserve/Buy Kit cart controls,
+    // just the waitlist CTA (see buildWaitlistCtaLink()).
+    card.appendChild(buildWaitlistCtaLink());
 
     return card;
   }
@@ -1520,5 +1579,5 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { flattenCustomFields: flattenCustomFields };
+  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues };
 }
