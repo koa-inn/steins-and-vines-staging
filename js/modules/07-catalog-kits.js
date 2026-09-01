@@ -130,6 +130,84 @@ function sortFilterValues(field, values, categoryFilter) {
   return out;
 }
 
+/**
+ * Compute the display string for a recipe's price slot (D-07).
+ * Reads only `recipe.price` / `recipe.price_from` — the public payload never
+ * carries any other pricing field (ingredients, locked_price, service_fee,
+ * materials_fee, computed_price, pricing_mode are all server-stripped).
+ *
+ * @param {Object} recipe - Public recipe payload ({price, price_from}).
+ * @returns {String} The exact string to render in the price slot.
+ */
+function recipeDisplayPrice(recipe) {
+  var price = recipe && recipe.price;
+  if (typeof price !== 'number' || !isFinite(price)) {
+    return 'Price set when you book';
+  }
+  var formatted = formatCurrency(price);
+  return recipe.price_from ? 'From ' + formatted : formatted;
+}
+
+/**
+ * Build a public recipe card — the plain `.product-card` idiom (D-02), never
+ * the `.label-wine`/`.label-beer` bottle-label idiom, so a recipe never reads
+ * as a purchasable product. Built entirely with createElement/textContent —
+ * never innerHTML — since recipe name/style/description are staff-authored
+ * free text rendered on a public page (T-74-12).
+ *
+ * Reads ONLY recipe_id, name, style, description, price, price_from — the
+ * public payload's field allowlist (D-07, T-74-14).
+ *
+ * @param {Object} recipe - Public recipe payload.
+ * @param {Document} [doc] - Optional document to build against (tests pass a stub).
+ * @returns {HTMLElement} div.product-card
+ */
+function buildRecipeCard(recipe, doc) {
+  var d = doc || (typeof document !== 'undefined' ? document : null);
+
+  var card = d.createElement('div');
+  card.className = 'product-card';
+  card.setAttribute('data-recipe-id', recipe.recipe_id);
+
+  var header = d.createElement('div');
+  header.className = 'product-card-header';
+
+  var name = d.createElement('h4');
+  name.textContent = recipe.name;
+  header.appendChild(name);
+
+  if (recipe.style) {
+    var style = d.createElement('p');
+    style.className = 'product-card-category';
+    style.textContent = recipe.style;
+    header.appendChild(style);
+  }
+
+  card.appendChild(header);
+
+  var priceRow = d.createElement('div');
+  priceRow.className = 'product-prices service-price';
+  var priceBox = d.createElement('div');
+  priceBox.className = 'product-price-box';
+  var priceValue = d.createElement('span');
+  priceValue.className = 'product-price-value';
+  priceValue.textContent = recipeDisplayPrice(recipe);
+  priceBox.appendChild(priceValue);
+  priceRow.appendChild(priceBox);
+  card.appendChild(priceRow);
+
+  if (recipe.description) {
+    var desc = d.createElement('p');
+    desc.className = 'service-description';
+    desc.textContent = recipe.description;
+    card.appendChild(desc);
+  }
+
+  card.appendChild(buildWaitlistCtaLink(d));
+
+  return card;
+}
+
 function loadProducts(categoryFilter) {
   var _categoryFilter = (categoryFilter || '').toLowerCase();
   var allProducts = [];
@@ -1579,5 +1657,5 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues };
+  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, buildRecipeCard: buildRecipeCard };
 }
