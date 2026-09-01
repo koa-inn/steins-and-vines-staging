@@ -656,11 +656,16 @@ function formatCurrency(val) {
 }
 
 // DISPLAY ESTIMATE ONLY — server recomputes authoritative totals at checkout
-function buildLabelPriceFooter(product) {
+// opts.kitOnly suppresses the "Ferment in store" column. Beer is sold as a
+// take-home kit only — the ferment-in-store experience is booked through the
+// recipe waitlist instead, so showing an in-store price on a beer kit card
+// would advertise a purchase path that does not exist.
+function buildLabelPriceFooter(product, opts) {
+  var options = opts || {};
   var discount = parseFloat(product.discount) || 0;
   var pricingFrom = (product.pricing_from || '').trim().toUpperCase() === 'TRUE';
   var plusSign = pricingFrom ? '+' : '';
-  var instore = (product.retail_instore || '').trim();
+  var instore = options.kitOnly ? '' : (product.retail_instore || '').trim();
   var kit = (product.retail_kit || '').trim();
 
   var footer = document.createElement('div');
@@ -1858,46 +1863,77 @@ function recipeDisplayPrice(recipe) {
  * @param {Document} [doc] - Optional document to build against (tests pass a stub).
  * @returns {HTMLElement} div.product-card
  */
+// Injects the first-party Steins & Vines mark. Isolated in its own helper so
+// buildRecipeCard's body stays free of innerHTML — T-74-12's mitigation
+// evidence is a grep for innerHTML inside that function, and the only value
+// ever passed here is a module-level constant, never recipe data.
+function appendSvLogo(d, parent) {
+  if (typeof SV_LOGO_SVG === 'undefined') return;
+  var logo = d.createElement('div');
+  logo.className = 'sv-logo';
+  logo.innerHTML = SV_LOGO_SVG;
+  parent.appendChild(logo);
+}
+
+// Recipe cards use the same bottle-label idiom as kit cards (owner UAT
+// 2026-09-01) so the two blocks read as one catalogue. The recipe IS the
+// ferment-in-store product, so it carries the in-store price and the waitlist
+// CTA, while beer kit cards carry a kit-only price and a buy control.
 function buildRecipeCard(recipe, doc) {
   var d = doc || (typeof document !== 'undefined' ? document : null);
 
   var card = d.createElement('div');
-  card.className = 'product-card';
+  card.className = 'label-beer';
   card.setAttribute('data-recipe-id', recipe.recipe_id);
 
-  var header = d.createElement('div');
-  header.className = 'product-card-header';
+  var body = d.createElement('div');
+  body.className = 'label-body';
 
-  var name = d.createElement('h4');
-  name.textContent = recipe.name;
-  header.appendChild(name);
+  appendSvLogo(d, body);
+
+  var goldRule = d.createElement('div');
+  goldRule.className = 'gold-rule';
+  body.appendChild(goldRule);
+
+  var beerName = d.createElement('div');
+  beerName.className = 'beer-name';
+  beerName.textContent = recipe.name;
+  body.appendChild(beerName);
 
   if (recipe.style) {
-    var style = d.createElement('p');
-    style.className = 'product-card-category';
-    style.textContent = recipe.style;
-    header.appendChild(style);
+    var sub = d.createElement('div');
+    sub.className = 'subcategory';
+    sub.textContent = recipe.style;
+    body.appendChild(sub);
   }
-
-  card.appendChild(header);
-
-  var priceRow = d.createElement('div');
-  priceRow.className = 'product-prices service-price';
-  var priceBox = d.createElement('div');
-  priceBox.className = 'product-price-box';
-  var priceValue = d.createElement('span');
-  priceValue.className = 'product-price-value';
-  priceValue.textContent = recipeDisplayPrice(recipe);
-  priceBox.appendChild(priceValue);
-  priceRow.appendChild(priceBox);
-  card.appendChild(priceRow);
 
   if (recipe.description) {
     var desc = d.createElement('p');
     desc.className = 'service-description';
     desc.textContent = recipe.description;
-    card.appendChild(desc);
+    body.appendChild(desc);
   }
+
+  var spacer = d.createElement('div');
+  spacer.className = 'notes-spacer';
+  body.appendChild(spacer);
+
+  card.appendChild(body);
+
+  var footer = d.createElement('div');
+  footer.className = 'price-footer';
+  var priceCol = d.createElement('div');
+  priceCol.className = 'price-col';
+  var priceLabel = d.createElement('div');
+  priceLabel.className = 'price-label';
+  priceLabel.textContent = 'Ferment in store';
+  priceCol.appendChild(priceLabel);
+  var priceValue = d.createElement('div');
+  priceValue.className = 'price-value';
+  priceValue.textContent = recipeDisplayPrice(recipe);
+  priceCol.appendChild(priceValue);
+  footer.appendChild(priceCol);
+  card.appendChild(footer);
 
   card.appendChild(buildWaitlistCtaLink(d));
 
@@ -2885,15 +2921,23 @@ function loadProducts(categoryFilter) {
 
     if (product.sku) card.appendChild(buildProductLinkBtn(product.sku));
 
-    var instore = (product.retail_instore || '').trim();
     var kit = (product.retail_kit || '').trim();
-    if (instore || kit) {
-      card.appendChild(buildLabelPriceFooter(product));
+    if (kit) {
+      card.appendChild(buildLabelPriceFooter(product, { kitOnly: true }));
     }
 
-    // D-12: beer is booked-ahead only — no Reserve/Buy Kit cart controls,
-    // just the waitlist CTA (see buildWaitlistCtaLink()).
-    card.appendChild(buildWaitlistCtaLink());
+    // D-12 (revised 2026-09-01, owner UAT): beer kits ARE purchasable, but as a
+    // take-home kit only. There is deliberately no Reserve/ferment-in-store
+    // control here — that experience is booked through the recipe waitlist, so
+    // only the kit-buy path is offered.
+    var beerProductKey = getProductKey(product);
+    var beerKitBuyWrap = document.createElement('div');
+    beerKitBuyWrap.className = 'reserve-link product-reserve-wrap';
+    beerKitBuyWrap._reserveProduct = product;
+    beerKitBuyWrap._reserveKey = beerProductKey;
+    beerKitBuyWrap._reserveRenderer = renderKitBuyControl;
+    renderKitBuyControl(beerKitBuyWrap, product);
+    card.appendChild(beerKitBuyWrap);
 
     return card;
   }
@@ -3536,7 +3580,7 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, buildRecipeCard: buildRecipeCard, fetchActiveRecipes: fetchActiveRecipes, renderRecipeBlock: renderRecipeBlock, orderCatalogBlocks: orderCatalogBlocks };
+  module.exports = { appendSvLogo: appendSvLogo, flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, buildRecipeCard: buildRecipeCard, fetchActiveRecipes: fetchActiveRecipes, renderRecipeBlock: renderRecipeBlock, orderCatalogBlocks: orderCatalogBlocks };
 }
 var _allIngredients = [];
 var _ingredientsFuse = null;
