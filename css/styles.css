@@ -4712,6 +4712,7 @@ behold-widget {
 .label-beer .reserve-link {
   display: block; width: 100%;
   background: rgba(184,150,62,0.06);
+  padding-bottom: 1rem;
 }
 .label-beer .reserve-link .product-reserve-btn {
   margin-top: 0;
@@ -4720,16 +4721,35 @@ behold-widget {
   background: var(--color-burgundy);
   color: var(--color-cream);
 }
+
+/* A beer kit card's buy control is its ONLY call to action, so it should read
+   as a primary action matching the recipe card's waitlist button. Without this
+   it inherits .product-reserve-btn--secondary's muted grey 0.8rem/400
+   treatment, which was designed for when it sat beneath a primary Reserve
+   control on a wine card. .product-reserve-wrap is carried only by cart
+   controls, so recipe cards are unaffected. */
+.label-beer .reserve-link.product-reserve-wrap {
+  margin-top: 0;
+  padding-top: 1rem;
+}
+.label-beer .reserve-link.product-reserve-wrap .product-reserve-btn {
+  width: auto;
+  padding: 12px 24px;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--color-cream);
+  background-color: var(--color-burgundy);
+  border: 2px solid var(--color-burgundy);
+}
+.label-beer .reserve-link.product-reserve-wrap .product-reserve-btn:hover {
+  background-color: var(--color-green);
+  border-color: var(--color-green);
+  color: var(--color-cream);
+}
 .label-beer .reserve-link .product-qty-controls {
   border-radius: 0;
   border: none;
-}
-
-/* Recipe cards carry an a.btn CTA rather than the flush .product-reserve-btn
-   that kit cards use, so it sits hard against the card's bottom edge. Scoped
-   to [data-recipe-id] so beer kit cards keep their flush buy control. */
-.label-beer[data-recipe-id] .reserve-link {
-  padding-bottom: 1rem;
 }
 
 /* Beer tint overrides */
