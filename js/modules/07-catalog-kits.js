@@ -208,6 +208,112 @@ function buildRecipeCard(recipe, doc) {
   return card;
 }
 
+/**
+ * Fetch active recipes for the public recipe block (D-05). Always resolves,
+ * never rejects, to either { ok: true, recipes: [...] } or { ok: false }.
+ * Recipes carry no category field of any kind — this phase's RESEARCH
+ * (Pitfall 2) confirms the Recipes sheet has no category column, so recipes
+ * are routed to the beer page only by a fixed category check, never by
+ * style-keyword inference. LOCKED DECISION: if a wine recipe is ever created
+ * it will need an explicit category field on the record, not a heuristic
+ * added here.
+ *
+ * @param {String} categoryFilter - the active page's category ('wine' | 'beer' | '').
+ * @param {String} middlewareUrl - SHEETS_CONFIG.MIDDLEWARE_URL.
+ * @returns {Promise<{ok: Boolean, recipes: Array}>}
+ */
+function fetchActiveRecipes(categoryFilter, middlewareUrl) {
+  if (!categoryFilter) return Promise.resolve({ ok: true, recipes: [] });
+  if (categoryFilter !== 'beer') return Promise.resolve({ ok: true, recipes: [] });
+
+  return fetch((middlewareUrl || '') + '/api/recipes?status=active')
+    .then(function (r) {
+      if (!r.ok) throw new Error('Recipes fetch failed: ' + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      return { ok: true, recipes: data.recipes || [] };
+    })
+    .catch(function () {
+      return { ok: false };
+    });
+}
+
+/**
+ * Paint the recipe block (D-01/D-02/D-04). No-ops cleanly when
+ * #recipe-catalog is absent (every page without a recipe block). A
+ * zero-item result renders nothing at all (D-04 — no heading, no wrapper,
+ * no placeholder). A failed fetch shows an inline retry scoped to this
+ * container only — it must never touch #product-catalog, so a recipe
+ * failure never blanks a kit block that loaded successfully.
+ *
+ * @param {{ok: Boolean, recipes: Array}} result - fetchActiveRecipes()'s resolution.
+ * @param {Boolean} showSubCopy - append the differentiating sub-copy line;
+ *   passed in rather than re-queried so the caller (which already knows
+ *   whether the kit block is also rendering) controls it (D-02).
+ * @param {String} categoryFilter - forwarded to the retry click handler's re-fetch.
+ * @param {String} middlewareUrl - forwarded to the retry click handler's re-fetch.
+ * @param {Document} [doc] - Optional document to build against (tests pass a jsdom document).
+ */
+function renderRecipeBlock(result, showSubCopy, categoryFilter, middlewareUrl, doc) {
+  var d = doc || (typeof document !== 'undefined' ? document : null);
+  var recipeEl = d.getElementById('recipe-catalog');
+  if (!recipeEl) return;
+
+  recipeEl.innerHTML = '';
+
+  if (!result.ok) {
+    var errorDiv = d.createElement('div');
+    errorDiv.className = 'catalog-error';
+    var errorMsg = d.createElement('p');
+    errorMsg.textContent = "Couldn't load recipes right now. Check your connection and try again.";
+    var retryBtn = d.createElement('button');
+    retryBtn.className = 'btn-retry btn-outline';
+    retryBtn.type = 'button';
+    retryBtn.textContent = 'Try again';
+    retryBtn.addEventListener('click', function () {
+      fetchActiveRecipes(categoryFilter, middlewareUrl).then(function (r) {
+        renderRecipeBlock(r, showSubCopy, categoryFilter, middlewareUrl, d);
+      });
+    });
+    errorDiv.appendChild(errorMsg);
+    errorDiv.appendChild(retryBtn);
+    recipeEl.appendChild(errorDiv);
+    return;
+  }
+
+  if (!result.recipes || result.recipes.length === 0) return;
+
+  var section = d.createElement('div');
+  section.className = 'catalog-section';
+
+  var sectionHeader = d.createElement('div');
+  sectionHeader.className = 'catalog-section-header';
+
+  var heading = d.createElement('h2');
+  heading.className = 'catalog-section-title';
+  heading.textContent = 'Beer Recipes';
+  sectionHeader.appendChild(heading);
+
+  if (showSubCopy) {
+    var note = d.createElement('p');
+    note.className = 'process-note';
+    note.textContent = 'Book a session and brew your own batch in our studio.';
+    sectionHeader.appendChild(note);
+  }
+
+  section.appendChild(sectionHeader);
+
+  var grid = d.createElement('div');
+  grid.className = 'product-grid' + (result.recipes.length <= 3 ? ' product-grid--compact' : '');
+  result.recipes.forEach(function (recipe) {
+    grid.appendChild(buildRecipeCard(recipe, d));
+  });
+  section.appendChild(grid);
+
+  recipeEl.appendChild(section);
+}
+
 function loadProducts(categoryFilter) {
   var _categoryFilter = (categoryFilter || '').toLowerCase();
   var allProducts = [];
@@ -331,6 +437,11 @@ function loadProducts(categoryFilter) {
   var catalog = document.getElementById('product-catalog');
   if (catalog) {
     showCatalogSkeletons(catalog, 6);
+  }
+
+  var recipeEl = document.getElementById('recipe-catalog');
+  if (_categoryFilter && recipeEl) {
+    showCatalogSkeletons(recipeEl, 2);
   }
 
   var _usedSnapshotFallback = false;
@@ -1657,5 +1768,5 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, buildRecipeCard: buildRecipeCard };
+  module.exports = { flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, buildRecipeCard: buildRecipeCard, fetchActiveRecipes: fetchActiveRecipes, renderRecipeBlock: renderRecipeBlock };
 }

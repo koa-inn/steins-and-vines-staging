@@ -128,3 +128,133 @@ describe('buildRecipeCard', function () {
     expect(card.textContent.indexOf('malt')).toBe(-1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 2 — fetchActiveRecipes / renderRecipeBlock (D-05, per-block error isolation)
+// ---------------------------------------------------------------------------
+
+describe('fetchActiveRecipes', function () {
+  test('is exported from the module', function () {
+    expect(typeof mod.fetchActiveRecipes).toBe('function');
+  });
+
+  test('resolves { ok: true, recipes: [] } immediately when categoryFilter is falsy — no fetch called', function () {
+    var fetchSpy = jest.fn();
+    global.fetch = fetchSpy;
+    return mod.fetchActiveRecipes('', 'https://mw.example.test').then(function (result) {
+      expect(result).toEqual({ ok: true, recipes: [] });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  test('resolves { ok: true, recipes: [] } when categoryFilter is not "beer" — no fetch called', function () {
+    var fetchSpy = jest.fn();
+    global.fetch = fetchSpy;
+    return mod.fetchActiveRecipes('wine', 'https://mw.example.test').then(function (result) {
+      expect(result).toEqual({ ok: true, recipes: [] });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  test('fetches the public status=active endpoint with no headers when categoryFilter is "beer"', function () {
+    var recipes = [{ recipe_id: 'SV-R-1', name: 'Czech Lager', price: 45 }];
+    global.fetch = jest.fn(function () {
+      return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ source: 'cache', recipes: recipes, total: 1 }); } });
+    });
+    return mod.fetchActiveRecipes('beer', 'https://mw.example.test').then(function (result) {
+      expect(global.fetch).toHaveBeenCalledWith('https://mw.example.test/api/recipes?status=active');
+      expect(result).toEqual({ ok: true, recipes: recipes });
+    });
+  });
+
+  test('resolves { ok: false } on a non-ok response', function () {
+    global.fetch = jest.fn(function () {
+      return Promise.resolve({ ok: false, status: 500, json: function () { return Promise.resolve({}); } });
+    });
+    return mod.fetchActiveRecipes('beer', 'https://mw.example.test').then(function (result) {
+      expect(result).toEqual({ ok: false });
+    });
+  });
+
+  test('resolves { ok: false } when fetch itself throws/rejects', function () {
+    global.fetch = jest.fn(function () { return Promise.reject(new Error('network down')); });
+    return mod.fetchActiveRecipes('beer', 'https://mw.example.test').then(function (result) {
+      expect(result).toEqual({ ok: false });
+    });
+  });
+});
+
+describe('renderRecipeBlock', function () {
+  beforeEach(function () {
+    document.body.innerHTML = '<div id="product-catalog"><p id="sentinel">kit content already rendered</p></div><div id="recipe-catalog"></div>';
+  });
+
+  test('is exported from the module', function () {
+    expect(typeof mod.renderRecipeBlock).toBe('function');
+  });
+
+  test('no-ops cleanly when #recipe-catalog is absent', function () {
+    document.body.innerHTML = '<div id="product-catalog"></div>';
+    expect(function () {
+      mod.renderRecipeBlock({ ok: true, recipes: [] }, false, '', '', document);
+    }).not.toThrow();
+  });
+
+  test('a zero-length recipe list leaves #recipe-catalog innerHTML exactly empty', function () {
+    mod.renderRecipeBlock({ ok: true, recipes: [] }, false, 'beer', '', document);
+    expect(document.getElementById('recipe-catalog').innerHTML).toBe('');
+  });
+
+  test('a failed result yields exactly one .catalog-error with the exact copy string and one .btn-retry', function () {
+    mod.renderRecipeBlock({ ok: false }, false, 'beer', '', document);
+    var recipeEl = document.getElementById('recipe-catalog');
+    var errors = recipeEl.querySelectorAll('.catalog-error');
+    expect(errors.length).toBe(1);
+    expect(errors[0].querySelector('p').textContent).toBe("Couldn't load recipes right now. Check your connection and try again.");
+    expect(recipeEl.querySelectorAll('.btn-retry').length).toBe(1);
+  });
+
+  test('a failed result leaves #product-catalog untouched (sentinel child survives)', function () {
+    mod.renderRecipeBlock({ ok: false }, false, 'beer', '', document);
+    expect(document.getElementById('sentinel')).not.toBeNull();
+    expect(document.getElementById('sentinel').textContent).toBe('kit content already rendered');
+  });
+
+  test('a two-recipe result yields one .catalog-section, one h2.catalog-section-title reading "Beer Recipes", and a .product-grid carrying product-grid--compact', function () {
+    var recipes = [
+      { recipe_id: 'SV-R-1', name: 'Czech Lager', style: 'Lager', description: 'Crisp.', price: 45 },
+      { recipe_id: 'SV-R-2', name: 'Amber Ale', style: 'Ale', description: 'Malty.', price: 40 }
+    ];
+    mod.renderRecipeBlock({ ok: true, recipes: recipes }, false, 'beer', '', document);
+    var recipeEl = document.getElementById('recipe-catalog');
+    expect(recipeEl.querySelectorAll('.catalog-section').length).toBe(1);
+    var heading = recipeEl.querySelector('h2.catalog-section-title');
+    expect(heading.textContent).toBe('Beer Recipes');
+    var grid = recipeEl.querySelector('.product-grid');
+    expect(grid.className.indexOf('product-grid--compact')).not.toBe(-1);
+  });
+
+  test('a four-recipe result yields a .product-grid WITHOUT product-grid--compact', function () {
+    var recipes = [1, 2, 3, 4].map(function (n) {
+      return { recipe_id: 'SV-R-' + n, name: 'Recipe ' + n, style: 'Ale', description: 'x', price: 10 };
+    });
+    mod.renderRecipeBlock({ ok: true, recipes: recipes }, false, 'beer', '', document);
+    var grid = document.getElementById('recipe-catalog').querySelector('.product-grid');
+    expect(grid.className.indexOf('product-grid--compact')).toBe(-1);
+  });
+
+  test('appends the sub-copy note only when showSubCopy is true', function () {
+    var recipes = [{ recipe_id: 'SV-R-1', name: 'Czech Lager', style: 'Lager', description: 'Crisp.', price: 45 }];
+    mod.renderRecipeBlock({ ok: true, recipes: recipes }, true, 'beer', '', document);
+    var note = document.getElementById('recipe-catalog').querySelector('.process-note');
+    expect(note).not.toBeNull();
+    expect(note.textContent).toBe('Book a session and brew your own batch in our studio.');
+  });
+
+  test('omits the sub-copy note when showSubCopy is falsy', function () {
+    var recipes = [{ recipe_id: 'SV-R-1', name: 'Czech Lager', style: 'Lager', description: 'Crisp.', price: 45 }];
+    mod.renderRecipeBlock({ ok: true, recipes: recipes }, false, 'beer', '', document);
+    var note = document.getElementById('recipe-catalog').querySelector('.process-note');
+    expect(note).toBeNull();
+  });
+});
