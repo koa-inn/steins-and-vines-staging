@@ -193,6 +193,91 @@
       <img src="images/Icon_wine.svg" alt="" aria-hidden="true" loading="lazy">
     </div>
 
+    <section class="catalog-section">
+      <div class="container">
+        <div class="catalog-layout">
+          <div id="catalog-blocks">
+            <div id="product-catalog">
+              <div class="catalog-controls" id="catalog-controls-kits">
+                <input type="text" class="catalog-search" id="catalog-search" placeholder="Search beer..." inputmode="search" autocomplete="off">
+                <div class="catalog-view-toggle">
+                  <button type="button" class="view-toggle-btn active" data-view="cards" aria-label="Card view"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></button>
+                  <button type="button" class="view-toggle-btn" data-view="table" aria-label="Table view"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+                </div>
+                <button type="button" class="catalog-toggle" id="catalog-toggle" aria-expanded="false">
+                  <span class="catalog-toggle-text">Filters &amp; Sort</span>
+                  <span class="catalog-toggle-icon" aria-hidden="true">&#9660;</span>
+                </button>
+                <div class="catalog-collapsible" id="catalog-collapsible">
+                  <div class="catalog-filter-row" id="filter-subcategory"></div>
+                  <div class="catalog-filter-row" id="filter-abv"></div>
+                  <div class="catalog-filter-row">
+                    <label for="catalog-sort" class="catalog-filter-label">Sort:</label>
+                    <select class="catalog-sort" id="catalog-sort">
+                      <option value="name-asc">Name (A–Z)</option>
+                      <option value="name-desc">Name (Z–A)</option>
+                      <option value="brand-asc">Brand (A–Z)</option>
+                      <option value="brand-desc">Brand (Z–A)</option>
+                      <option value="style-asc">Style (A–Z)</option>
+                      <option value="style-desc">Style (Z–A)</option>
+                      <option value="price-asc">Price (low–high)</option>
+                      <option value="price-desc">Price (high–low)</option>
+                      <option value="reserved-desc">In cart first</option>
+                      <option value="reserved-asc">In cart last</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="filter-summary hidden" id="filter-summary"></div>
+              </div>
+              <noscript><p>Please enable JavaScript to view our product catalog.</p></noscript>
+            </div>
+            <div id="recipe-catalog"></div>
+          </div>
+
+          <aside class="cart-sidebar" id="cart-sidebar">
+            <div class="cart-sidebar-header">
+              <h3>Your Cart</h3>
+            </div>
+            <div class="cart-sidebar-items" id="cart-sidebar-items">
+              <p class="cart-sidebar-empty">Your cart is empty.</p>
+            </div>
+            <div class="cart-sidebar-footer" id="cart-sidebar-footer">
+              <div class="cart-sidebar-subtotal">
+                <span>Subtotal</span>
+                <span id="cart-sidebar-total">$0.00</span>
+              </div>
+              <a href="/reservation.html" class="btn cart-sidebar-checkout">Checkout</a>
+              <button type="button" class="btn-secondary cart-sidebar-clear" id="cart-sidebar-clear">Clear Cart</button>
+            </div>
+          </aside>
+
+          <div class="cart-drawer-backdrop" id="cart-drawer-backdrop"></div>
+          <div class="cart-drawer" id="cart-drawer">
+            <div class="cart-drawer-header">
+              <h3 id="cart-drawer-title">Your Cart</h3>
+              <button type="button" class="cart-drawer-close" id="cart-drawer-close" aria-label="Close cart">&times;</button>
+            </div>
+            <div class="cart-drawer-items" id="cart-drawer-items">
+              <p class="cart-sidebar-empty">Your cart is empty.</p>
+            </div>
+            <div class="cart-drawer-footer" id="cart-drawer-footer">
+              <div class="cart-drawer-subtotal">
+                <span>Subtotal</span>
+                <span id="cart-drawer-total">$0.00</span>
+              </div>
+              <a href="/reservation.html" class="btn cart-drawer-checkout" id="cart-drawer-checkout">Checkout</a>
+              <button type="button" class="btn-secondary cart-drawer-clear" id="cart-drawer-clear">Clear Cart</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-icon">
+      <img src="images/Icon_wine.svg" alt="" aria-hidden="true" loading="lazy">
+    </div>
+    <div role="status" aria-live="polite" class="sr-only" id="filter-status"></div>
+
     <section class="content" id="waitlist">
       <div class="container">
         <h2>Ready to Brew?</h2>
@@ -263,8 +348,10 @@
 
   <script src="js/vendor/sentry.min.js"></script>
   <script src="js/sentry-init.js"></script>
+  <script src="js/vendor/fuse.min.js" defer></script>
   <script src="js/sheets-config.js" defer></script>
   <script src="js/main.min.js?v=mt8x50y5" defer></script>
+  <script src="js/modules/17-search-overlay.min.js?v=mt8x50y5" defer></script>
 
 </body>
 </html>
