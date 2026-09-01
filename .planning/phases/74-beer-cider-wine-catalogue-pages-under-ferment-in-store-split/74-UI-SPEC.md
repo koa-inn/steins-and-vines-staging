@@ -1,7 +1,7 @@
 ---
 phase: 74
 slug: beer-cider-wine-catalogue-pages-under-ferment-in-store-split
-status: draft
+status: approved
 shadcn_initialized: false
 preset: not applicable
 created: 2026-09-01
@@ -249,24 +249,38 @@ Beer's section order is locked: hero → What It Is → How It Works → **What'
 
 ---
 
+## Visual Hierarchy — focal point per surface
+
+Each surface has exactly one primary visual anchor. Everything else is secondary and must not compete with it.
+
+| Surface | Primary focal point | Secondary | Rationale |
+|---------|--------------------|-----------|-----------|
+| `/beer` | The hero / launch announcement | Catalogue blocks, then waitlist | D-11 exists precisely so the "booked ahead, join the waitlist" framing lands before products. The catalogue must not out-weigh the hero. |
+| `/wine` | The kit catalogue grid | Page header, filter panel | This is the shopping surface for 238 live purchasable kits — the grid is the reason the page exists. |
+| `products/ferment-in-store.html` (hub) | The retained "Make Your Own Wine in Squamish" wine section | The three category entry links | D-10 requires wine stay prominent; the hub's job is ranking copy first, routing second. |
+
+---
+
 ## Responsive / Accessibility Contract
 
 - **Grid breakpoints:** `.product-grid` (and `.product-grid--compact`) use CSS Grid `auto-fit`/`minmax`, which reflows continuously with no explicit breakpoint needed down to ~320px viewport width, where the `@media (max-width: 480px)` override in §2 forces a clean single column. No new breakpoint values are introduced — reuse the site's existing 1024 / 768 / 480px tiers if any further per-viewport tuning is needed.
 - **Filter panel:** unchanged from Phase 77's live behavior — `.catalog-collapsible.open` caps at `60vh` with internal scroll (styles.css:2016-2022); this phase's beer/wine filter rows inherit it with zero changes.
 - **Touch targets:** all interactive elements this phase adds (waitlist CTA link, hub category links, filter chips) reuse existing classes (`.btn`, `.btn-secondary`, `.catalog-filter-btn`) that already satisfy the 44px minimum (`.catalog-filter-btn { min-height: 44px }` styles.css:2071; `.btn`/`.btn-secondary { min-height: 44px }` :778/816).
 - **Focus states:** reuse the sitewide `*:focus-visible { outline: 2px solid var(--color-burgundy); outline-offset: 2px }` (styles.css:164-167) — applies automatically to the new waitlist `<a class="btn">` and hub `.btn-secondary` links with no extra CSS.
-- **Semantic heading levels:** page `<h1>` (page-header) → block `<h2 class="catalog-section-title">` (Wine Kits / Beer Kits / Beer Recipes) → card `<h4>` (recipe/kit name — matches the existing kit-card pattern of jumping h2→h4 for cards, since cards are grid items not a strict document outline; this is pre-existing sitewide convention, not a new gap). Hub category entries use `<h3>` (one level below the hub's own `<h2>`-less landing-copy `<h2>Make Your Own Wine in Squamish</h2>` — verify no level is skipped once the hub's actual heading tree is assembled at implementation time).
+- **Semantic heading levels:** page `<h1>` (page-header) → block `<h2 class="catalog-section-title">` (Wine Kits / Beer Kits / Beer Recipes) → card `<h4>` (recipe/kit name — matches the existing kit-card pattern of jumping h2→h4 for cards, since cards are grid items not a strict document outline; this is pre-existing sitewide convention, not a new gap). Hub category entries use `<h3>`, sitting one level below the hub's existing landing-copy `<h2>Make Your Own Wine in Squamish</h2>` (D-10 requires that heading survive verbatim). Verify no level is skipped once the hub's actual heading tree is assembled at implementation time.
 - **Contrast:** no new color pairing introduced (see Color § above) — all reused pairings are already ≥7:1.
 
 ---
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: N/A (no component registry in this stack)
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS (FLAG resolved — focal point per surface now declared)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS (documented deviation — 6 roles, all pre-existing on production)
+- [x] Dimension 5 Spacing: PASS (documented deviation — off-grid micro-spacing is pre-existing; new CSS uses clean 4px column only)
+- [x] Dimension 6 Registry Safety: N/A (no component registry in this stack)
 
-**Approval:** pending
+**Approval:** approved 2026-09-01 (gsd-ui-checker, 6/6)
+
+**Open for owner sign-off before implementation:** removal of the hub's `#product-catalog` block including the "Ingredients & Supplies" tab (§8). RESEARCH classifies this as an open question and CONTEXT D-10 is silent on the ingredients tab; access is preserved via a link-out to the existing `products/ingredients-supplies.html`, but this removes a live nav-embedded surface. Planner must confirm rather than treat as settled by this contract alone.
