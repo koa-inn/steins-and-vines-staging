@@ -1112,7 +1112,7 @@ Plans:
 **Deferred out of scope:** `/cider` and its launch copy (11 kits in stock, but `cider.html` was deleted 2026-08-27 and launch intent is unconfirmed); ingredient lists on public cards.
 **Superseded roadmap items:** "remove the top-level Beer/Cider nav from 72-02" is DONE (2026-08-31, Beer now sits under Products → Ferment in Store). "Rebuild beer.html/cider.html in this layout (replacing the announcement hero)" is REVERSED — beer's hero is kept; cider.html does not exist.
 **Open for research:** how many recipes are `active`, and their wine/beer split — this sizes the release-gating content pass and determines whether the wine recipe block is meaningful.
-**Plans:** 3/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 **Wave 1**
@@ -1121,8 +1121,8 @@ Plans:
 - [x] 74-04-PLAN.md — Author wine.html at the root with CSP + two-block DOM contract, register it in nav/sitemap/stamp:pages, add all four new CSS rules (D-01/D-04/D-09/D-13)
 
 **Wave 2**
-- [ ] 74-03-PLAN.md — Public recipe block: fetch, recipe card, dynamic block order with kits leading a tie, zero-item suppression, per-block error isolation (D-01/D-02/D-03/D-04/D-05/D-07)
-- [ ] 74-05-PLAN.md — Rewrite ferment-in-store.html into a neutral hub keeping its wine ranking copy, insert the catalogue into beer.html below its launch copy (D-10/D-11/D-12/D-13) [autonomous:false]
+- [x] 74-03-PLAN.md — Public recipe block: fetch, recipe card, dynamic block order with kits leading a tie, zero-item suppression, per-block error isolation (D-01/D-02/D-03/D-04/D-05/D-07)
+- [x] 74-05-PLAN.md — Rewrite ferment-in-store.html into a neutral hub keeping its wine ranking copy, insert the catalogue into beer.html below its launch copy (D-10/D-11/D-12/D-13) [autonomous:false]
 
 **Wave 3**
 - [ ] 74-06-PLAN.md — wine/beer page dispatch + fix the shipped unwired beer waitlist form, npm run build, both full suites, D-08 content pass, browser verification (D-01/D-03/D-08/D-09/D-11/D-12) [autonomous:false]
