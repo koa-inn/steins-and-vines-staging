@@ -2672,3 +2672,22 @@ textarea.bp-input {
   font-weight: 700;
   color: var(--ink-secondary, var(--ink-primary));
 }
+
+/* ===== Waitlist (Phase 78) ===== */
+/* Queue-position cell — the one place this phase uses the primary accent on data. */
+.bp-waitlist-pos { font-weight: 700; color: var(--stain); }
+
+/* Sync-state pill — copies .bp-kiosk-badge's visual weight (:424-435). */
+.bp-sync-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-left: 4px;
+  vertical-align: middle;
+  background: var(--batch-info-bg);
+  color: var(--batch-info);
+}
+.bp-sync-badge--warning { background: var(--batch-warning-bg); color: var(--batch-warning); }

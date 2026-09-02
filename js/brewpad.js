@@ -943,6 +943,122 @@ function bpIngredientLineCost(item, line) {
   return { ok: true, convertedQty: convertedQty, cost: cost };
 }
 
+// ===== Waitlist: pure helpers lifted out of the IIFE for unit-testing (Phase 78) =====
+
+// D-05: one-way progression -- waiting -> contacted -> booked. Deliberately excludes
+// 'removed': removed is an exit from the queue, not a step in the forward cycle
+// (UI-SPEC.md Phase-Specific Decision 2).
+var WAITLIST_STATUS_ORDER = ['waiting', 'contacted', 'booked'];
+
+var WAITLIST_STATUS_LABELS = { waiting: 'Waiting', contacted: 'Contacted', booked: 'Booked', removed: 'Removed' };
+
+// Mirrors the .bp-status-badge--{neutral,warning,success,danger} classes already shipped.
+var WAITLIST_STATUS_COLORS = { waiting: 'neutral', contacted: 'warning', booked: 'success', removed: 'danger' };
+
+// D-05 ONE-WAY: returns the next status in WAITLIST_STATUS_ORDER, or null when there is
+// none (booked, removed, or any unrecognized value). Deliberately does NOT use
+// `% WAITLIST_STATUS_ORDER.length` -- the batch-status handler wraps around
+// (js/brewpad.js:5690-5692), but copying that here would silently reopen a booked
+// customer's spot. See UI-SPEC.md Phase-Specific Decision 2.
+function nextWaitlistStatus(current) {
+  var idx = WAITLIST_STATUS_ORDER.indexOf(current);
+  if (idx === -1 || idx === WAITLIST_STATUS_ORDER.length - 1) return null;
+  return WAITLIST_STATUS_ORDER[idx + 1];
+}
+
+// D-07: the Apps Script side already coerces mailerlite_synced to a real boolean, but a
+// hand-pasted D-04 backfill cell may reach the client as a string, so the client
+// normalizes too.
+function isWaitlistSynced(value) {
+  if (value === true || value === 1) return true;
+  if (typeof value === 'string') {
+    var v = value.trim().toLowerCase();
+    return v === 'true' || v === 'yes' || v === 'y' || v === '1';
+  }
+  return false;
+}
+
+// Returns a NEW array (never mutates `rows`) sorted by signed_up_at ascending (oldest
+// first), comparing the raw ISO strings. A row with a missing/unparseable signed_up_at
+// sorts LAST, in its original relative order, so a backfilled undated row never
+// displaces a dated one from the front of the queue (UI-SPEC.md §3).
+function sortWaitlistRows(rows) {
+  var input = rows || [];
+  var indexed = [];
+  for (var i = 0; i < input.length; i++) indexed.push({ row: input[i], i: i });
+  indexed.sort(function (a, b) {
+    var sa = a.row && a.row.signed_up_at;
+    var sb = b.row && b.row.signed_up_at;
+    var aValid = typeof sa === 'string' && sa !== '' && !isNaN(Date.parse(sa));
+    var bValid = typeof sb === 'string' && sb !== '' && !isNaN(Date.parse(sb));
+    if (!aValid && !bValid) return a.i - b.i;
+    if (!aValid) return 1;
+    if (!bValid) return -1;
+    if (sa < sb) return -1;
+    if (sa > sb) return 1;
+    return a.i - b.i;
+  });
+  return indexed.map(function (x) { return x.row; });
+}
+
+// Ranks each row (1-based) among rows whose status === 'waiting', in the order given
+// (call with the output of sortWaitlistRows). Any row not in 'waiting' gets null. A
+// number is shown only while an entry is still genuinely next in line -- a stale
+// number on an already-contacted entry would mislead staff (UI-SPEC.md §3).
+function computeWaitlistQueuePositions(sortedRows) {
+  var positions = [];
+  var counter = 0;
+  (sortedRows || []).forEach(function (row) {
+    if (row && row.status === 'waiting') {
+      counter++;
+      positions.push(counter);
+    } else {
+      positions.push(null);
+    }
+  });
+  return positions;
+}
+
+// statusFilter: 'all' | 'waiting' | 'contacted' | 'booked' | 'removed' | 'notSynced'.
+// 'notSynced' matches isWaitlistSynced(row.mailerlite_synced) === false regardless of
+// status (D-07). searchText matches row.email case-insensitively as a trimmed
+// substring; empty/whitespace-only search matches everything. Preserves input order.
+function filterWaitlistRows(rows, statusFilter, searchText) {
+  var input = rows || [];
+  var search = (searchText || '').trim().toLowerCase();
+  return input.filter(function (row) {
+    if (!row) return false;
+    var statusOk;
+    if (!statusFilter || statusFilter === 'all') {
+      statusOk = true;
+    } else if (statusFilter === 'notSynced') {
+      statusOk = !isWaitlistSynced(row.mailerlite_synced);
+    } else {
+      statusOk = row.status === statusFilter;
+    }
+    if (!statusOk) return false;
+    if (!search) return true;
+    var email = String(row.email || '').trim().toLowerCase();
+    return email.indexOf(search) !== -1;
+  });
+}
+
+// D-02: the Category column is shown only when the fetched data holds more than one
+// distinct non-empty category (compared trimmed + lowercased). Beer-only data returns
+// false; the moment cider/wine rows land in the same tab this flips to true with no
+// code change (UI-SPEC.md §5).
+function shouldShowWaitlistCategoryColumn(rows) {
+  var seen = {};
+  var count = 0;
+  (rows || []).forEach(function (row) {
+    var cat = String((row && row.category) || '').trim().toLowerCase();
+    if (!cat || seen[cat]) return;
+    seen[cat] = true;
+    count++;
+  });
+  return count > 1;
+}
+
 (function () {
   'use strict';
 
@@ -1017,6 +1133,12 @@ function bpIngredientLineCost(item, line) {
   var _taskSearch = '';
   var _taskSearchTimer = null;
   var _chartCache = {};        // keyed by batchId+readingCount+lastTimestamp
+
+  // Waitlist (Phase 78)
+  var _waitlistRows = [];
+  var _waitlistFilter = 'all';
+  var _waitlistSearch = '';
+  var _waitlistSearchTimer = null;
 
   // Preload state — touchstart pre-fetch + top-3 background fetch
   var _preloadBatchId = null;
@@ -2311,7 +2433,7 @@ function bpIngredientLineCost(item, line) {
       btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     });
 
-    var panels = ['dashboard', 'batches', 'tasks', 'measurements', 'recipes'];
+    var panels = ['dashboard', 'batches', 'tasks', 'measurements', 'recipes', 'waitlist'];
     panels.forEach(function (p) {
       var el = document.getElementById('bp-panel-' + p);
       if (el) el.style.display = (p === tab) ? '' : 'none';
@@ -2336,6 +2458,8 @@ function bpIngredientLineCost(item, line) {
       loadMeasurementBatches();
     } else if (tab === 'recipes') {
       initRecipesTab();
+    } else if (tab === 'waitlist') {
+      loadWaitlist();
     }
   }
 
@@ -8103,6 +8227,200 @@ function bpIngredientLineCost(item, line) {
       });
   }
 
+  // ===== Waitlist Tab (Phase 78) =====
+
+  function loadWaitlist() {
+    var panel = document.getElementById('bp-panel-waitlist');
+    if (!panel) return;
+    panel.innerHTML = '<div class="bp-skeleton-block"></div>';
+    adminApiGet('get_waitlist')
+      .then(function (res) {
+        _waitlistRows = res.data || [];
+        renderWaitlist();
+      })
+      .catch(function () {
+        panel.innerHTML = '<p class="bp-empty-state">Could not load the waitlist. Please try again.</p>';
+      });
+  }
+
+  function renderWaitlist() {
+    var panel = document.getElementById('bp-panel-waitlist');
+    if (!panel) return;
+
+    var sorted = sortWaitlistRows(_waitlistRows);
+    var positions = computeWaitlistQueuePositions(sorted);
+    var withPositions = sorted.map(function (row, i) { return { row: row, pos: positions[i] }; });
+    var filtered = filterWaitlistRows(withPositions.map(function (wp) { return wp.row; }), _waitlistFilter, _waitlistSearch);
+    // Re-attach the FULL-list-derived position to each filtered row, keyed by id.
+    var posById = {};
+    withPositions.forEach(function (wp) { if (wp.row && wp.row.id != null) posById[wp.row.id] = wp.pos; }); // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+    var showCategory = shouldShowWaitlistCategoryColumn(_waitlistRows);
+
+    var html = '<div class="bp-panel-inner" aria-live="polite" aria-atomic="false">';
+    html += '<h2 class="bp-section-header">BEER WAITLIST</h2>';
+
+    html += '<div class="bp-tasks-toolbar">';
+    html += '<input type="search" class="bp-search-input" id="bp-waitlist-search" placeholder="Search email…" value="' + escapeHTML(_waitlistSearch) + '" autocomplete="off" inputmode="search">';
+    html += '<button type="button" class="btn-secondary bp-btn-sm" id="bp-waitlist-refresh">↻ Refresh</button>';
+    html += '</div>';
+
+    html += '<div class="bp-batch-filters">';
+    var waitlistFilterOpts = [
+      { val: 'all', label: 'All' },
+      { val: 'waiting', label: 'Waiting' },
+      { val: 'contacted', label: 'Contacted' },
+      { val: 'booked', label: 'Booked' },
+      { val: 'removed', label: 'Removed' },
+      { val: 'notSynced', label: 'Not Synced' }
+    ];
+    waitlistFilterOpts.forEach(function (f) {
+      var active = _waitlistFilter === f.val ? ' bp-filter-btn--active' : '';
+      html += '<button type="button" class="bp-filter-btn' + active + '" data-waitlist-filter="' + f.val + '">' + f.label + '</button>';
+    });
+    html += '</div>';
+
+    if (_waitlistRows.length === 0) {
+      html += '<p class="bp-empty-state">No one on the beer waitlist yet.</p>';
+      html += '<p class="bp-empty-state">New signups from the beer page will appear here, in order.</p>';
+    } else if (filtered.length === 0) {
+      html += '<p class="bp-empty-state">No entries match this filter.</p>';
+    } else {
+      html += '<table class="bp-active-batches-table" aria-label="Beer waitlist">';
+      html += '<thead><tr><th>#</th><th>Email</th>';
+      if (showCategory) html += '<th>Category</th>';
+      html += '<th>Signed up</th><th>Status</th><th>Notes</th><th></th></tr></thead>';
+      html += '<tbody>';
+      filtered.forEach(function (row) {
+        var pos = row.id != null ? posById[row.id] : null; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+        var status = row.status;
+        var label = WAITLIST_STATUS_LABELS[status] || status;
+        var color = WAITLIST_STATUS_COLORS[status] || 'neutral';
+        var actionable = status !== 'booked' && status !== 'removed';
+        var ariaLabel = actionable
+          ? 'Waitlist status: ' + label + '. Tap to advance.'
+          : 'Waitlist status: ' + label + '.';
+        var syncBadge = isWaitlistSynced(row.mailerlite_synced)
+          ? '<span class="bp-sync-badge">✓ Synced</span>'
+          : '<span class="bp-sync-badge bp-sync-badge--warning">⚠ Not synced</span>';
+
+        html += '<tr>';
+        html += '<td class="bp-waitlist-pos">' + (pos != null ? pos : '—') + '</td>'; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+        html += '<td>' + escapeHTML(row.email) + syncBadge + '</td>';
+        if (showCategory) html += '<td>' + escapeHTML(row.category || '—') + '</td>';
+        html += '<td>' + fmtShortDate(row.signed_up_at) + '</td>';
+        html += '<td><span class="bp-status-badge bp-status-badge--' + color + (actionable ? ' bp-status-clickable' : '') +
+          '" data-waitlist-id="' + escapeHTML(row.id) + '" aria-label="' + escapeHTML(ariaLabel) + '">' + escapeHTML(label) + '</span></td>';
+        html += '<td>' + escapeHTML(row.notes || '—') +
+          ' <button type="button" class="bp-reading-edit" data-waitlist-notes-id="' + escapeHTML(row.id) + '">✎</button></td>';
+        html += '<td><button type="button" class="bp-reading-del" data-waitlist-remove-id="' + escapeHTML(row.id) + '" aria-label="Remove from waitlist">×</button></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+
+    html += '</div>';
+    panel.innerHTML = html;
+
+    // Search + refresh bind directly (stable single ids), matching the Tasks
+    // toolbar convention. Filter chips + per-row actions (status/remove/notes)
+    // are handled by delegation on #bp-panel-waitlist — see initDelegation.
+    var searchEl = document.getElementById('bp-waitlist-search');
+    if (searchEl) {
+      searchEl.addEventListener('input', function () {
+        clearTimeout(_waitlistSearchTimer);
+        _waitlistSearchTimer = setTimeout(function () {
+          _waitlistSearch = searchEl.value;
+          renderWaitlist();
+        }, 200);
+      });
+    }
+
+    var refreshBtn = document.getElementById('bp-waitlist-refresh');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function () { loadWaitlist(); });
+    }
+  }
+
+  function findWaitlistRow(id) {
+    for (var i = 0; i < _waitlistRows.length; i++) {
+      if (String(_waitlistRows[i].id) === String(id)) return _waitlistRows[i];
+    }
+    return null;
+  }
+
+  // Tap-to-cycle a waitlist status badge forward one step (D-05, UI-SPEC.md §2).
+  // ONE-WAY: nextWaitlistStatus returns null for 'booked'/'removed'/unknown, and this
+  // handler bails out immediately in that case -- no confirm sheet, no write, no
+  // toast. This is a deliberate deviation from the batch-status handler
+  // (js/brewpad.js ~2455), which wraps around via `% order.length`; wrapping here
+  // would silently reopen a booked customer's spot.
+  function advanceWaitlistStatus(badgeEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+    var next = nextWaitlistStatus(row.status);
+    if (next === null) return; // booked/removed/unknown -- not actionable, no-op
+    showConfirmSheet(
+      'Mark ' + row.email + ' as “' + (WAITLIST_STATUS_LABELS[next] || next) + '”?',
+      'Confirm', 'bp-confirm-btn--primary',
+      function () {
+        adminApiPost('update_waitlist_status', { id: row.id, status: next })
+          .then(function () {
+            row.status = next;
+            renderWaitlist();
+            showToast('Status updated', 'success');
+          })
+          .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+      }
+    );
+  }
+
+  // Remove is a separate, always-danger-styled affordance, independent of the status
+  // badge (D-05, UI-SPEC.md §2) -- a status write to 'removed', not a row deletion, so
+  // the audit trail and signup ordering survive (D-01).
+  function removeWaitlistEntry(id) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+    showConfirmSheet(
+      'Remove ' + row.email + ' from the beer waitlist? This cannot be undone.',
+      'Remove', 'bp-confirm-btn--danger',
+      function () {
+        adminApiPost('update_waitlist_status', { id: row.id, status: 'removed' })
+          .then(function () {
+            row.status = 'removed';
+            renderWaitlist();
+            showToast('Removed from waitlist', 'success');
+          })
+          .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+      }
+    );
+  }
+
+  // Inline notes editor -- row-becomes-input shape copied from openReadingEditRow()
+  // (js/brewpad.js:6644-6666). The client input is not a trust boundary; sanitizeInput()
+  // runs server-side in updateWaitlistStatus. escapeHTML on render is the client's job.
+  function openWaitlistNotesEdit(cellEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    cellEl.innerHTML =
+      '<input class="bp-inline-input" data-waitlist-notes-input="' + escapeHTML(id) + '" type="text" value="' + escapeHTML(row.notes || '') + '" style="width:100%;">' +
+      '<button type="button" class="btn bp-btn-sm" data-waitlist-notes-save="' + escapeHTML(id) + '">Save</button>' +
+      '<button type="button" class="btn-secondary bp-btn-sm" data-waitlist-notes-cancel="' + escapeHTML(id) + '">×</button>';
+    var input = cellEl.querySelector('input');
+    if (input) input.focus();
+  }
+
+  function saveWaitlistNotes(id, value) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+    adminApiPost('update_waitlist_status', { id: row.id, notes: value })
+      .then(function () {
+        row.notes = value;
+        renderWaitlist();
+        showToast('Notes saved', 'success');
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
   // ===== Schedule Template Editor =====
 
   function reloadSchedules() {
@@ -8905,6 +9223,47 @@ function bpIngredientLineCost(item, line) {
       });
     }
 
+    // Waitlist (Phase 78): filter chips + status advance + remove + inline notes edit.
+    // Delegate on #bp-panel-waitlist (stable) since the toolbar/table are rebuilt on
+    // every renderWaitlist() call.
+    var waitlistPanel = document.getElementById('bp-panel-waitlist');
+    if (waitlistPanel) {
+      waitlistPanel.addEventListener('click', function (e) {
+        var filterBtn = e.target.closest('.bp-filter-btn[data-waitlist-filter]');
+        if (filterBtn) {
+          _waitlistFilter = filterBtn.getAttribute('data-waitlist-filter');
+          renderWaitlist();
+          return;
+        }
+        var statusBadge = e.target.closest('.bp-status-clickable[data-waitlist-id]');
+        if (statusBadge) {
+          advanceWaitlistStatus(statusBadge, statusBadge.getAttribute('data-waitlist-id'));
+          return;
+        }
+        var removeBtn = e.target.closest('.bp-reading-del[data-waitlist-remove-id]');
+        if (removeBtn) {
+          removeWaitlistEntry(removeBtn.getAttribute('data-waitlist-remove-id'));
+          return;
+        }
+        var notesEditBtn = e.target.closest('.bp-reading-edit[data-waitlist-notes-id]');
+        if (notesEditBtn) {
+          openWaitlistNotesEdit(notesEditBtn.parentNode, notesEditBtn.getAttribute('data-waitlist-notes-id'));
+          return;
+        }
+        var notesCancelBtn = e.target.closest('[data-waitlist-notes-cancel]');
+        if (notesCancelBtn) {
+          renderWaitlist();
+          return;
+        }
+        var notesSaveBtn = e.target.closest('[data-waitlist-notes-save]');
+        if (notesSaveBtn) {
+          var savedId = notesSaveBtn.getAttribute('data-waitlist-notes-save');
+          var input = waitlistPanel.querySelector('[data-waitlist-notes-input="' + savedId + '"]');
+          saveWaitlistNotes(savedId, input ? input.value : '');
+        }
+      });
+    }
+
     // Detail pane: task checkbox auto-save + staging remove buttons
     var detailPane = document.getElementById('bp-batch-detail-pane');
     if (detailPane) {
@@ -9528,7 +9887,18 @@ if (typeof module !== 'undefined' && module.exports) {
     // Phase 73-07: unit-aware editor cost helper (mirrors lib/recipe-scaling.js, CR-02)
     bpIngredientLineCost: bpIngredientLineCost,
     bpClassifyUnit: bpClassifyUnit,
-    unitOptionsFor: unitOptionsFor
+    unitOptionsFor: unitOptionsFor,
+    // Phase 78-03: pure waitlist helpers (ordering, queue positions, one-way status
+    // cycle, filtering, sync normalization, category suppression).
+    WAITLIST_STATUS_ORDER: WAITLIST_STATUS_ORDER,
+    WAITLIST_STATUS_LABELS: WAITLIST_STATUS_LABELS,
+    WAITLIST_STATUS_COLORS: WAITLIST_STATUS_COLORS,
+    nextWaitlistStatus: nextWaitlistStatus,
+    isWaitlistSynced: isWaitlistSynced,
+    sortWaitlistRows: sortWaitlistRows,
+    computeWaitlistQueuePositions: computeWaitlistQueuePositions,
+    filterWaitlistRows: filterWaitlistRows,
+    shouldShowWaitlistCategoryColumn: shouldShowWaitlistCategoryColumn
     // Plan 36-19: renderRecipeListHtml + bpCloneRecipePayload exported by the IIFE inner block above
     // Plan 36-22: afterBatchWrite + getStateForTest exported by the IIFE inner block above
     // State-dependent attach-flow exports are merged by Object.assign inside the IIFE above
