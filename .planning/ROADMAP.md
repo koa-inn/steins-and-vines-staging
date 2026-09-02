@@ -1229,13 +1229,16 @@ Target: ~54 round-trips → ~5. Do NOT simply raise the middleware timeout — t
 
 **Deferred (explicitly NOT this phase):** migrating off Google Sheets to Postgres. Assessed 2026-09-02 and deferred — the timeout is caused by round-trip count, not data volume, and would likely be carried into any new store. Revisit after this phase's measurements. The genuine long-term drivers are the global script lock, absence of transactions, and unindexed scans — not row counts. See `.planning/notes/recipe-save-performance-and-sheets-scaling.md`.
 
-**Requirements**: Owner-reported blocker 2026-09-01. Source: `.planning/notes/recipe-save-performance-and-sheets-scaling.md`.
+**Requirements**: RECIPE-SAVE-01 (owner-reported blocker 2026-09-01; no formal requirement id existed, so the phase-local id `RECIPE-SAVE-01` stands in). Source: `.planning/notes/recipe-save-performance-and-sheets-scaling.md`.
 **Depends on:** none (independent of Phase 74; the two causes that masked this one are already fixed and deployed)
-**Plans:** 0 plans
+**Plans:** 4 plans in 4 waves (strictly sequential — 79-01 is a diagnosis gate that can stop the phase, and 79-02/79-03 both edit `apps-script/adminApi.gs` so all `.gs` edits land before the single owner redeploy in 79-04)
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 79 to break down)
+- [ ] 79-01-PLAN.md — Confirm the timeout diagnosis from the Railway `[api/recipes] PUT ... failed:` log line before spending the owner's redeploy (D-12); STOP the phase if it contradicts
+- [ ] 79-02-PLAN.md — Test-first pure helpers for the D-04 ingredient comparison and D-05 hoisted id minting, plus a Jest harness that evaluates the real `adminApi.gs` (also becomes its first syntax gate)
+- [ ] 79-03-PLAN.md — Rewrite `updateRecipe`: skip-when-unchanged, batched deletes/inserts, batched row write, stable ingredient ids, local lock retune (D-04..D-10, D-15)
+- [ ] 79-04-PLAN.md — Owner redeploys Apps Script and live-probes: rename returns 200 well under 15s, ingredient ids survive, a real ingredient edit still persists (D-11, D-13)
 
 ---
 
