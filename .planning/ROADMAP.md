@@ -1437,6 +1437,14 @@ Plans:
   6. An interleaved redeem retry decrements the balance exactly once, verified by a regression test
   7. **A redeem or reload interrupted MID-WRITE cannot be replayed for a second balance change** — a regression test must exercise the crash window described below, not only the concurrent-retry case in criterion 6
 
+**SCOPE NARROWED (owner decision, 2026-09-02).** This phase now covers **criteria 1, 2, 6, 7 only** — the atomicity core. `apps-script/adminApi.gs` cannot be tested locally and each change costs a manual owner redeploy with no staging gate, so the diff stays on the live money-path defect.
+
+- **Criterion 3 (M9 — `=+-@` formula-injection sanitization)** → deferred to a follow-up phase.
+- **Criterion 4 (M18 — header-mapped `issueGiftCard` + bounded numerics)** → deferred to a follow-up phase.
+- **Criterion 5 (M15 — negative-taxable custom-line tax parity)** → **MOVED OUT of Phase 51 entirely.** It shares no code path with the gift-card ledger and was parked here by the audit; it belongs with the kiosk/tax work. Rehome before closing MONEY-03.
+
+**Chosen approach: append-only ledger.** A `GiftCardTransactions` sheet where the `tx_ref` row is written as a **claim before the balance changes**, with the idempotency guard reading the ledger instead of `last_tx_ref`. Also gives the durable `needs_manual_review` record criterion 2 requires — today that flag exists only as a middleware response value and a Redis sentinel, never persisted. See `51-CONTEXT.md` (D-01..D-11).
+
 ---
 
 **ROOT CAUSE LOCATED (2026-09-02, during the Sheets→Postgres research pass).** The audit flagged this class as H6/H7 in 2026-06-29 but never pinned the mechanism. It is now pinned:
