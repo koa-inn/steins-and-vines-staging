@@ -1134,6 +1134,12 @@ function shouldShowWaitlistCategoryColumn(rows) {
   var _taskSearchTimer = null;
   var _chartCache = {};        // keyed by batchId+readingCount+lastTimestamp
 
+  // Waitlist (Phase 78)
+  var _waitlistRows = [];
+  var _waitlistFilter = 'all';
+  var _waitlistSearch = '';
+  var _waitlistSearchTimer = null;
+
   // Preload state — touchstart pre-fetch + top-3 background fetch
   var _preloadBatchId = null;
   var _preloadPromise = null;
@@ -2427,7 +2433,7 @@ function shouldShowWaitlistCategoryColumn(rows) {
       btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     });
 
-    var panels = ['dashboard', 'batches', 'tasks', 'measurements', 'recipes'];
+    var panels = ['dashboard', 'batches', 'tasks', 'measurements', 'recipes', 'waitlist'];
     panels.forEach(function (p) {
       var el = document.getElementById('bp-panel-' + p);
       if (el) el.style.display = (p === tab) ? '' : 'none';
@@ -2452,6 +2458,8 @@ function shouldShowWaitlistCategoryColumn(rows) {
       loadMeasurementBatches();
     } else if (tab === 'recipes') {
       initRecipesTab();
+    } else if (tab === 'waitlist') {
+      loadWaitlist();
     }
   }
 
@@ -8217,6 +8225,104 @@ function shouldShowWaitlistCategoryColumn(rows) {
         }
         _measMultiData = {};
       });
+  }
+
+  // ===== Waitlist Tab (Phase 78) =====
+
+  function loadWaitlist() {
+    var panel = document.getElementById('bp-panel-waitlist');
+    if (!panel) return;
+    panel.innerHTML = '<div class="bp-skeleton-block"></div>';
+    adminApiGet('get_waitlist')
+      .then(function (res) {
+        _waitlistRows = res.data || [];
+        renderWaitlist();
+      })
+      .catch(function () {
+        panel.innerHTML = '<p class="bp-empty-state">Could not load the waitlist. Please try again.</p>';
+      });
+  }
+
+  function renderWaitlist() {
+    var panel = document.getElementById('bp-panel-waitlist');
+    if (!panel) return;
+
+    var sorted = sortWaitlistRows(_waitlistRows);
+    var positions = computeWaitlistQueuePositions(sorted);
+    var withPositions = sorted.map(function (row, i) { return { row: row, pos: positions[i] }; });
+    var filtered = filterWaitlistRows(withPositions.map(function (wp) { return wp.row; }), _waitlistFilter, _waitlistSearch);
+    // Re-attach the FULL-list-derived position to each filtered row, keyed by id.
+    var posById = {};
+    withPositions.forEach(function (wp) { if (wp.row && wp.row.id != null) posById[wp.row.id] = wp.pos; }); // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+    var showCategory = shouldShowWaitlistCategoryColumn(_waitlistRows);
+
+    var html = '<div class="bp-panel-inner" aria-live="polite" aria-atomic="false">';
+    html += '<h2 class="bp-section-header">BEER WAITLIST</h2>';
+
+    html += '<div class="bp-tasks-toolbar">';
+    html += '<input type="search" class="bp-search-input" id="bp-waitlist-search" placeholder="Search email…" value="' + escapeHTML(_waitlistSearch) + '" autocomplete="off" inputmode="search">';
+    html += '<button type="button" class="btn-secondary bp-btn-sm" id="bp-waitlist-refresh">↻ Refresh</button>';
+    html += '</div>';
+
+    html += '<div class="bp-batch-filters">';
+    var waitlistFilterOpts = [
+      { val: 'all', label: 'All' },
+      { val: 'waiting', label: 'Waiting' },
+      { val: 'contacted', label: 'Contacted' },
+      { val: 'booked', label: 'Booked' },
+      { val: 'removed', label: 'Removed' },
+      { val: 'notSynced', label: 'Not Synced' }
+    ];
+    waitlistFilterOpts.forEach(function (f) {
+      var active = _waitlistFilter === f.val ? ' bp-filter-btn--active' : '';
+      html += '<button type="button" class="bp-filter-btn' + active + '" data-waitlist-filter="' + f.val + '">' + f.label + '</button>';
+    });
+    html += '</div>';
+
+    if (_waitlistRows.length === 0) {
+      html += '<p class="bp-empty-state">No one on the beer waitlist yet.</p>';
+      html += '<p class="bp-empty-state">New signups from the beer page will appear here, in order.</p>';
+    } else if (filtered.length === 0) {
+      html += '<p class="bp-empty-state">No entries match this filter.</p>';
+    } else {
+      html += '<table class="bp-active-batches-table" aria-label="Beer waitlist">';
+      html += '<thead><tr><th>#</th><th>Email</th>';
+      if (showCategory) html += '<th>Category</th>';
+      html += '<th>Signed up</th><th>Status</th><th>Notes</th><th></th></tr></thead>';
+      html += '<tbody>';
+      filtered.forEach(function (row) {
+        var pos = row.id != null ? posById[row.id] : null; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+        var status = row.status;
+        var label = WAITLIST_STATUS_LABELS[status] || status;
+        var color = WAITLIST_STATUS_COLORS[status] || 'neutral';
+        var actionable = status !== 'booked' && status !== 'removed';
+        var ariaLabel = actionable
+          ? 'Waitlist status: ' + label + '. Tap to advance.'
+          : 'Waitlist status: ' + label + '.';
+        var syncBadge = isWaitlistSynced(row.mailerlite_synced)
+          ? '<span class="bp-sync-badge">✓ Synced</span>'
+          : '<span class="bp-sync-badge bp-sync-badge--warning">⚠ Not synced</span>';
+
+        html += '<tr>';
+        html += '<td class="bp-waitlist-pos">' + (pos != null ? pos : '—') + '</td>'; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+        html += '<td>' + escapeHTML(row.email) + syncBadge + '</td>';
+        if (showCategory) html += '<td>' + escapeHTML(row.category || '—') + '</td>';
+        html += '<td>' + fmtShortDate(row.signed_up_at) + '</td>';
+        html += '<td><span class="bp-status-badge bp-status-badge--' + color + (actionable ? ' bp-status-clickable' : '') +
+          '" data-waitlist-id="' + escapeHTML(row.id) + '" aria-label="' + escapeHTML(ariaLabel) + '">' + escapeHTML(label) + '</span></td>';
+        html += '<td>' + escapeHTML(row.notes || '—') +
+          ' <button type="button" class="bp-reading-edit" data-waitlist-notes-id="' + escapeHTML(row.id) + '">✎</button></td>';
+        html += '<td><button type="button" class="bp-reading-del" data-waitlist-remove-id="' + escapeHTML(row.id) + '" aria-label="Remove from waitlist">×</button></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+
+    html += '</div>';
+    panel.innerHTML = html;
+
+    // Task 3 (Phase 78-03) binds the toolbar (search/filter/refresh) and the
+    // per-row handlers (status advance, remove, notes edit) here.
   }
 
   // ===== Schedule Template Editor =====
