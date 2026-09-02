@@ -1231,14 +1231,24 @@ Target: ~54 round-trips → ~5. Do NOT simply raise the middleware timeout — t
 
 **Requirements**: RECIPE-SAVE-01 (owner-reported blocker 2026-09-01; no formal requirement id existed, so the phase-local id `RECIPE-SAVE-01` stands in). Source: `.planning/notes/recipe-save-performance-and-sheets-scaling.md`.
 **Depends on:** none (independent of Phase 74; the two causes that masked this one are already fixed and deployed)
-**Plans:** 4 plans in 4 waves (strictly sequential — 79-01 is a diagnosis gate that can stop the phase, and 79-02/79-03 both edit `apps-script/adminApi.gs` so all `.gs` edits land before the single owner redeploy in 79-04)
+**Plans:** 4/4 plans complete (4 waves, strictly sequential — 79-01 was a diagnosis gate that could stop the phase, and 79-02/79-03 both edit `apps-script/adminApi.gs` so all `.gs` edits landed before the single owner redeploy in 79-04)
+
+**Status:** ✅ COMPLETE — Apps Script redeployed by owner 2026-09-02 (previous version **v49** = rollback target; new version number not captured). **Recipe saves work again.**
+
+- **Diagnosis (79-01):** CONFIRMED from production logs — three verbatim `[api/recipes] PUT SV-R-000002 failed: timeout of 15000ms exceeded` lines, no other error class present.
+- **Probe B — the strong evidence:** ingredient ids `RI-000171`..`RI-000183` on SV-R-000002 survived a rename save *plus* several unit-correction saves. Structurally impossible under the old code, which discarded the sent `ingredient_id` and reminted all 13 on every save. D-09 verified.
+- **Probe C — the abort gate:** PASSED. A real changed-ingredients save (the owner's unit corrections) persisted; no rollback needed. This also exercised the *changed* branch, complementing the rename-only save's *unchanged* branch.
+- **Probe A — qualitative only:** owner reported "quick and clean" against a 15287ms/502 baseline, but **no millisecond figure was captured**. Corroborated (not proven) by zero timeout/error/lock lines in production Railway logs across the save window — the PUT handler logs only on failure, so absence of errors is consistent with success rather than positive proof.
+- **Probe D — NOT RUN:** the `ingredients_unchanged` / `ingredients_written` / `row_write_mode` diagnostics were never read from a direct Apps Script POST, so the D-04 skip is **inferred** from id stability and latency rather than directly observed.
+
+See `79-04-SUMMARY.md`. Follow-ups carried forward (not fixed here): `bustRecipeCache()` omits `RECIPE_AVAILABILITY:<id>` (`zoho-middleware/routes/recipes.js:48-58`, TTL 600s — same class as the Phase 69 `gds` gap); and confirm the stale out-of-stock banner on SV-R-000002 has cleared now that its units are corrected.
 
 Plans:
 
-- [ ] 79-01-PLAN.md — Confirm the timeout diagnosis from the Railway `[api/recipes] PUT ... failed:` log line before spending the owner's redeploy (D-12); STOP the phase if it contradicts
-- [ ] 79-02-PLAN.md — Test-first pure helpers for the D-04 ingredient comparison and D-05 hoisted id minting, plus a Jest harness that evaluates the real `adminApi.gs` (also becomes its first syntax gate)
-- [ ] 79-03-PLAN.md — Rewrite `updateRecipe`: skip-when-unchanged, batched deletes/inserts, batched row write, stable ingredient ids, local lock retune (D-04..D-10, D-15)
-- [ ] 79-04-PLAN.md — Owner redeploys Apps Script and live-probes: rename returns 200 well under 15s, ingredient ids survive, a real ingredient edit still persists (D-11, D-13)
+- [x] 79-01-PLAN.md — Confirm the timeout diagnosis from the Railway `[api/recipes] PUT ... failed:` log line before spending the owner's redeploy (D-12); STOP the phase if it contradicts
+- [x] 79-02-PLAN.md — Test-first pure helpers for the D-04 ingredient comparison and D-05 hoisted id minting, plus a Jest harness that evaluates the real `adminApi.gs` (also becomes its first syntax gate)
+- [x] 79-03-PLAN.md — Rewrite `updateRecipe`: skip-when-unchanged, batched deletes/inserts, batched row write, stable ingredient ids, local lock retune (D-04..D-10, D-15)
+- [x] 79-04-PLAN.md — Owner redeploys Apps Script and live-probes: rename returns 200 well under 15s, ingredient ids survive, a real ingredient edit still persists (D-11, D-13)
 
 ---
 
