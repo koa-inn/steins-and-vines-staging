@@ -252,6 +252,118 @@ gift-card flow.
 
 ---
 
+## Waitlist (Phase 78)
+
+### What it is and why
+
+`beer.html` promises customers "Beer batches are booked ahead, and we work through the list in
+order." Before this phase, the only record of who signed up was MailerLite — not queryable as an
+ordered work list, so nobody could see who was waiting, how long, or who had already been
+contacted. The `Waitlist` tab is now the system of record (D-01): `POST /api/waitlist`'s Apps
+Script write is authoritative and blocking; MailerLite is demoted to a best-effort marketing sync
+with its drift tracked in a durable cell (`mailerlite_synced`), not a log line (D-07, applying
+Phase 51's criterion-2 lesson directly).
+
+This mirrors the `GiftCardTransactions` ledger's bootstrap + pure-decision shape above, but
+deliberately at the `addReservation` rigor level, not the gift-card level: **no
+`LockService.getScriptLock()`, no claim-before-mutate ceremony.** A waitlist signup moves no
+money. D-01 explicitly accepts that sheets are weak under concurrent writes as the cost of reusing
+the existing staff-hand-editable pattern; a genuine double-submit (same email, same category,
+within milliseconds) is handled by the D-06 idempotency check below, not by a lock — those are
+different mitigations for different failure modes and only one is warranted here. Do not "fix"
+this by adding a lock later without re-reading `78-RESEARCH.md` Pitfall 5 first.
+
+### The columns
+
+The `Waitlist` tab has exactly these 7 columns, in this order, created by `setupWaitlist()`:
+
+| Column | Meaning |
+|---|---|
+| `id` | A generated `Utilities.getUuid()` string, never the customer's email. Keeps `findRowById`'s "column A is a unique key" assumption valid once D-02's multi-category future lands (the same email could legitimately appear twice, once per category). Unique and non-blank on every row — `findRowById` matches on this column, and a blank cell makes the row uneditable from BrewPad. |
+| `email` | Lowercase-trimmed. Sanitized via `waitlistCellSafe()` on write. |
+| `category` | `'beer'` for every row today (D-02 keeps the column ready for cider/wine/classes later without a schema migration). |
+| `status` | One of `waiting`, `contacted`, `booked`, `removed` (D-05). |
+| `signed_up_at` | ISO-8601 UTC (`new Date().toISOString()`). **This is the queue-order key** — the whole point of the backfill is making it real for pre-cutover signups too. |
+| `mailerlite_synced` | `TRUE` / `FALSE`. Set by the middleware's best-effort MailerLite sync (D-07); read back via `waitlistSyncedTrue()`, which tolerates a real boolean, the strings `'true'/'yes'/'y'/'1'`, or the number `1`, since a D-04 backfill paste of `TRUE` and a code-written boolean `true` must read back identically. |
+| `notes` | Free text (D-08). Sanitized via `waitlistCellSafe()` on write. No linking to a Zoho customer or BrewPad batch in this phase — that's deferred to a future phase per D-08. |
+
+### First-time setup
+
+From the Apps Script editor's function dropdown, select `setupWaitlist` and click **Run**. Safe to
+re-run at any time — it does nothing if the tab already exists and its columns are intact, and it
+is fail-closed by design: if a `Waitlist` tab already exists with drifted headers, `setupWaitlist`
+does **not** repair or reorder them. It logs which columns are missing and leaves the tab alone;
+fix the header row by hand to exactly `id, email, category, status, signed_up_at,
+mailerlite_synced, notes` and re-run.
+
+### The three actions
+
+| Action | Transport | Auth | On admin proxy? |
+|---|---|---|---|
+| `add_waitlist_entry` | `doPost` | `server_token` | **No** — deliberately absent from both `ADMIN_PROXY_ACTIONS` and `ADMIN_PROXY_READS` in `zoho-middleware/routes/pos.js`. Staff never create waitlist rows from BrewPad; every row originates from the public `POST /api/waitlist` endpoint's own server-to-server call. Widening this to the admin proxy would let a session-tier caller inject arbitrary rows into the public queue. |
+| `get_waitlist` | `doGet` / `handleReadAction` | `server_token` | Yes — read, forwarded as GET. Returns either an array of rows or `ensureWaitlistSheet()`'s failure object directly (`{ok:false, error:'waitlist_unavailable', missing:[...]}`) so a caller can't mistake a broken tab for an empty one. Deliberately **no `_cachedGet` wrapper** — `get_gift_cards` sets the precedent of skipping the cache layer entirely for a low-volume staff list, sidestepping the Phase 69 stale-cache bug class outright. |
+| `update_waitlist_status` | `doPost` | `server_token` | Yes — write, forwarded as POST. Accepts `{id, status?, notes?, mailerlite_synced?}`; at least one optional field is required. Validates `status` against the fixed set (`waiting`/`contacted`/`booked`/`removed`) **before** any `setValue` call — an out-of-set status writes nothing. |
+
+**`add_waitlist_entry` request/response:**
+```
+Request:  { action: 'add_waitlist_entry', server_token, email, category? }
+Response: { ok: true, id: '<uuid>' }               // identical shape whether new or a D-06 dedupe hit
+          { ok: false, error: 'invalid_email' }
+          { ok: false, error: 'waitlist_unavailable', missing: [...] }
+```
+The dedupe-hit and new-row branches return the byte-identical `{ok, id}` key set — this is D-06's
+non-disclosure requirement. No field name may ever differ between the two paths, or a repeat
+signup could be inferred by a customer from response shape alone.
+
+**`get_waitlist` request/response:**
+```
+Request:  { action: 'get_waitlist', server_token }
+Response: { ok: true, data: [ { id, email, category, status, signed_up_at, mailerlite_synced, notes }, ... ] }
+          { ok: false, error: 'waitlist_unavailable', missing: [...] }
+```
+
+**`update_waitlist_status` request/response:**
+```
+Request:  { action: 'update_waitlist_status', server_token, id, status?, notes?, mailerlite_synced? }
+Response: { ok: true, id, status }
+          { ok: false, error: 'not_found' | 'invalid_status' | 'no_fields' | 'waitlist_unavailable' }
+```
+
+**One-way status transitions are enforced client-side, not by this handler.** `updateWaitlistStatus`
+itself will happily accept any request that moves a row from `booked` back to `waiting` — the
+Apps Script layer only validates that the requested status is one of the four known values, not
+that the transition is forward-only. The one-way `waiting → contacted → booked` cycle (D-05) is
+enforced in `js/brewpad.js`'s `nextWaitlistStatus()` helper, which returns `null` (and the click
+handler no-ops, with no confirm sheet, no toast, no request sent) once a row is `booked` or
+`removed`. If a future caller reaches this action directly (a new UI, a script, a curl probe) it
+can still write `waiting` over a `booked` row — this is a known gap, consistent with this phase's
+accepted rigor level, not a defect to silently "fix" by hardening the Apps Script side without a
+plan review first.
+
+### Why neither write handler takes a script lock
+
+`addWaitlistEntry` and `updateWaitlistStatus` both skip `acquireScriptLock()`. This is deliberate,
+not an oversight: `voidGiftCard`/`redeemGiftCard`/`reloadGiftCard` above take a lock because a
+gift card's balance is money-adjacent and a lost update there means a customer's money silently
+vanishes or duplicates. A waitlist row is not money-adjacent — the worst case of an unlocked
+concurrent write is two near-simultaneous signups landing in a slightly different row order, which
+does not corrupt any balance and does not violate D-06's per-address idempotency guarantee (that
+guarantee is enforced by the dedupe scan, not by serializing writes). `addReservation`
+(`adminApi.gs:910-949`), the closest existing precedent for "public form → sheet append", has no
+lock either. Do not add one here without first re-reading `78-RESEARCH.md` Pitfall 5 — copying the
+gift-card ledger's locking ceremony onto every new sheet-backed list is exactly the
+over-engineering that research flagged and rejected for this phase.
+
+### Deploy topology reminder
+
+Same caveat as everywhere else in this file: **one Apps Script Web App deployment serves both
+staging and production.** Redeploying `adminApi.gs` to add or change a waitlist action is a
+production release with no staging gate at this layer, even though `zoho-middleware` itself has a
+separate staging Railway instance. See `.planning/phases/78-brewpad-waitlist-tracking-make-the-beer-waitlist-a-workable-/78-CUTOVER.md`
+for the full ordered runsheet (redeploy → probe → MailerLite backfill gate → staging → UAT).
+
+---
+
 ## Railway Env Vars Checklist
 
 When setting up a new Railway deployment from scratch:
