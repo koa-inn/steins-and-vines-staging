@@ -96,6 +96,13 @@ None - no external service configuration required by this plan. (Plan 78-04's Ap
 - The middleware contract (`/api/waitlist` response shape, `add_waitlist_entry`/`get_waitlist`/`update_waitlist_status` request/response shapes) matches the shared `<interfaces>` block in 78-01/78-02/78-03 exactly, so 78-03 (BrewPad UI) can build against `get_waitlist`/`update_waitlist_status` via `adminApiGet`/`adminApiPost` without further contract changes.
 - Not verifiable in this plan: whether the deployed Apps Script recognises the three new actions — that depends on 78-01's code existing AND the owner's manual redeploy in 78-04. Until then, live calls will 503/400 as documented in the plan's `<verification>` section.
 
+## Self-Check: PASSED
+
+All claimed files verified present (`zoho-middleware/server.js`, `zoho-middleware/routes/pos.js`,
+`zoho-middleware/__tests__/waitlist-route.test.js`, `zoho-middleware/__tests__/waitlist-admin-proxy.test.js`,
+this SUMMARY.md) and all claimed commit hashes verified present in `git log`
+(`63f6d524`, `2105f61a`, `bed7facb`).
+
 ---
 *Phase: 78-brewpad-waitlist-tracking-make-the-beer-waitlist-a-workable-*
 *Completed: 2026-09-02*
