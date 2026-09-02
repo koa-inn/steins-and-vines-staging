@@ -406,3 +406,183 @@ describe('ledger IO helpers — source-shape assertions only (cannot be invoked 
     expect(matches.length).toBe(13);
   });
 });
+
+// ─── 51-02: claim-before-mutate source-order assertions for redeemGiftCard/reloadGiftCard ───
+//
+// WHAT THESE PROVE AND WHAT THEY DO NOT: these assertions prove the ORDER of statements in the
+// source text of redeemGiftCard/reloadGiftCard — that appendGiftCardClaim( appears before the
+// balance-mutating setValue(, and settleGiftCardClaim( appears after it. That is the strongest
+// local guarantee available for a file with no local execution environment (SpreadsheetApp does
+// not exist outside Google). They do NOT prove the claim write actually lands in Sheets, that it
+// survives an interrupted execution, or that needs_manual_review is really persisted at runtime.
+// STATE.md records a commit (fda6e40) that passed its test suite for FOUR DAYS while dead in
+// production, because the contradicting logic lived in Apps Script with no CI/Jest crossing —
+// a future reader must not mistake a green run of this describe block for runtime proof. 51-03's
+// live probes against a real Google Sheet are the only evidence for claim-before-mutate atomicity,
+// claim durability across a crash, and needs_manual_review persistence.
+
+function countOccurrences(haystack, needle) {
+  var count = 0;
+  var idx = haystack.indexOf(needle);
+  while (idx !== -1) {
+    count++;
+    idx = haystack.indexOf(needle, idx + needle.length);
+  }
+  return count;
+}
+
+var BAL_WRITE = 'getRange(result.row, balCol).setValue(';
+
+[
+  { name: 'redeemGiftCard', kind: 'redeem' },
+  { name: 'reloadGiftCard', kind: 'reload' }
+].forEach(function (handler) {
+  describe(handler.name + ' — claim-before-mutate source order (51-02, source-order proof only)', function () {
+    test('slice contains ensureGiftCardLedgerSheet(, giftCardLedgerDecision(, appendGiftCardClaim(, settleGiftCardClaim( and flagGiftCardClaim(', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      expect(fnSrc).not.toBeNull();
+      expect(fnSrc).toMatch(/ensureGiftCardLedgerSheet\(/);
+      expect(fnSrc).toMatch(/giftCardLedgerDecision\(/);
+      expect(fnSrc).toMatch(/appendGiftCardClaim\(/);
+      expect(fnSrc).toMatch(/settleGiftCardClaim\(/);
+      expect(fnSrc).toMatch(/flagGiftCardClaim\(/);
+    });
+
+    test('appendGiftCardClaim( precedes the balance setValue( — the claim-before-mutate assertion, the single most load-bearing check in this suite', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      var claimIdx = fnSrc.indexOf('appendGiftCardClaim(');
+      var balWriteIdx = fnSrc.indexOf(BAL_WRITE);
+      expect(claimIdx).toBeGreaterThan(-1);
+      expect(balWriteIdx).toBeGreaterThan(-1);
+      expect(claimIdx).toBeLessThan(balWriteIdx);
+    });
+
+    test('settleGiftCardClaim( follows the balance setValue(', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      var balWriteIdx = fnSrc.indexOf(BAL_WRITE);
+      var settleIdx = fnSrc.indexOf('settleGiftCardClaim(');
+      expect(balWriteIdx).toBeGreaterThan(-1);
+      expect(settleIdx).toBeGreaterThan(-1);
+      expect(balWriteIdx).toBeLessThan(settleIdx);
+    });
+
+    test('giftCardLedgerDecision( precedes appendGiftCardClaim( — the guard runs before the claim', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      var decisionIdx = fnSrc.indexOf('giftCardLedgerDecision(');
+      var claimIdx = fnSrc.indexOf('appendGiftCardClaim(');
+      expect(decisionIdx).toBeGreaterThan(-1);
+      expect(claimIdx).toBeGreaterThan(-1);
+      expect(decisionIdx).toBeLessThan(claimIdx);
+    });
+
+    test("slice contains the literals 'unsettled_claim' and 'ledger_unavailable'", function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      expect(fnSrc).toMatch(/'unsettled_claim'/);
+      expect(fnSrc).toMatch(/'ledger_unavailable'/);
+    });
+
+    test('the stale last_tx_ref guard is gone, not merely supplemented — zero occurrences of String(gc.last_tx_ref) === String(txRef)', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      expect(countOccurrences(fnSrc, 'String(gc.last_tx_ref) === String(txRef)')).toBe(0);
+    });
+
+    test('exactly four setValue( calls and zero setValues( — the D-05 non-contiguous-column trap is not re-entered', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      expect(countOccurrences(fnSrc, 'setValue(')).toBe(4);
+      expect(countOccurrences(fnSrc, 'setValues(')).toBe(0);
+    });
+
+    test('acquireScriptLock(15000) and lock.releaseLock() are preserved — T-44-04 concurrency mutex kept for its existing purpose (D-06)', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      expect(fnSrc).toMatch(/acquireScriptLock\(15000\)/);
+      expect(fnSrc).toMatch(/lock\.releaseLock\(\)/);
+    });
+
+    test('passes the literal kind argument \'' + handler.kind + '\' to appendGiftCardClaim(', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      var claimIdx = fnSrc.indexOf('appendGiftCardClaim(');
+      expect(claimIdx).toBeGreaterThan(-1);
+      // The call's argument list (up to the next top-level closing paren on the same statement)
+      // must contain the literal 'redeem' or 'reload' — scan a generous window after the call site.
+      var window = fnSrc.slice(claimIdx, claimIdx + 400);
+      expect(window).toMatch(new RegExp("'" + handler.kind + "'"));
+    });
+
+    test('needs_manual_review: true appears on every non-ok return path added by this task (at least 5 occurrences)', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, handler.name);
+      expect(countOccurrences(fnSrc, 'needs_manual_review')).toBeGreaterThanOrEqual(5);
+    });
+  });
+});
+
+describe('redeemGiftCard — pre-existing business rules survive the rewrite', function () {
+  test("retains 'insufficient_balance' and the + 0.001 float tolerance", function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'redeemGiftCard');
+    expect(fnSrc).toMatch(/'insufficient_balance'/);
+    expect(fnSrc).toMatch(/\+\s*0\.001/);
+  });
+
+  test("retains the 'invalid_status' active-status guard", function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'redeemGiftCard');
+    expect(fnSrc).toMatch(/'invalid_status'/);
+  });
+});
+
+describe('reloadGiftCard — pre-existing business rules survive the rewrite', function () {
+  test("retains the String(gc.status) === 'void' guard", function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'reloadGiftCard');
+    expect(fnSrc).toMatch(/String\(gc\.status\)\s*===\s*'void'/);
+  });
+
+  test("no insufficient_balance behaviour was invented — reload has none today", function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'reloadGiftCard');
+    expect(countOccurrences(fnSrc, "'insufficient_balance'")).toBe(0);
+  });
+});
+
+describe('whole-file: other gift-card handlers are unchanged in shape by this plan', function () {
+  test('updateGiftCardInvoice still takes no lock (decision 44-02 stands, deliberately left unmodified)', function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'updateGiftCardInvoice');
+    expect(fnSrc).not.toBeNull();
+    expect(countOccurrences(fnSrc, 'acquireScriptLock(')).toBe(0);
+  });
+
+  test("issueGiftCard's appendRow still writes the 10-column GiftCards schema", function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'issueGiftCard');
+    expect(fnSrc).not.toBeNull();
+    var normalized = fnSrc.replace(/\/\/[^\n]*/g, '').replace(/\s+/g, ' ');
+    expect(normalized).toMatch(
+      /certNum\s*,\s*faceValue\s*,\s*faceValue\s*,\s*'active'\s*,\s*today\s*,\s*issuedBy\s*,\s*''\s*,\s*notes\s*,\s*now\s*,\s*''/
+    );
+  });
+
+  test('lookupGiftCard is present and unmodified in shape (still read-only, no lock)', function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'lookupGiftCard');
+    expect(fnSrc).not.toBeNull();
+    expect(countOccurrences(fnSrc, 'acquireScriptLock(')).toBe(0);
+  });
+
+  test('voidGiftCard is present and unmodified — no ledger row added to it by this plan', function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'voidGiftCard');
+    expect(fnSrc).not.toBeNull();
+    expect(countOccurrences(fnSrc, 'appendGiftCardClaim(')).toBe(0);
+  });
+});
