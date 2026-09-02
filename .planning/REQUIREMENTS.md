@@ -81,7 +81,7 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 | KIOSK-01 | Phase 48 | ✅ Complete (2026-07-10) — de-fork verified (standalone UAT live), 22/22 threats secured; admin-surface UAT owner-waived w/ automated parity coverage |
 | MONEY-01 | Phase 49 | Pending |
 | MONEY-02 | Phase 50 | Pending (depends on KIOSK-01) |
-| MONEY-03 | Phase 51 | Pending (depends on KIOSK-01) |
+| MONEY-03 | Phase 51 | Partial — Phase 51 complete for criteria 1/2/6/7 (atomicity core), live-verified 2026-09-02 on Apps Script Version 51. Criteria 3 (M9), 4 (M18) deferred to a follow-up phase; criterion 5 (M15) moved out entirely. Not closeable until those land. |
 | RESIL-01 | Phase 52 | Complete |
 | OBS-01 | Phase 53 | Complete |
 | ANALYTICS-01 | Phase 55 | Pending (code written, uncommitted — review-and-ship) |

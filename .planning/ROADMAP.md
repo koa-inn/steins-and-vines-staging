@@ -109,7 +109,7 @@
 - [x] **Phase 48: Kiosk POS De-Fork (kiosk-core.js)** - shared `js/kiosk-core.js`, behaviour-preserving, parity-tested, discount on both surfaces (KIOSK-01) — rehomed from v4.4 Phase 42 (completed 2026-07-10: 5/6 plans + human UAT gate satisfied + 22/22 threats secured)
 - [ ] **Phase 49: Online Captured-Amount Verification** - assert captured card amount ≥ recorded/invoiced total before booking; void + reject on mismatch (MONEY-01)
 - [ ] **Phase 50: Kiosk Money-Path Defect Closeout** - reconcile TTL/lock-release/void-status/salesorder-pay/sweep fixes, `pos-recipe.js` adopts money-path primitives (MONEY-02)
-- [ ] **Phase 51: Gift-Card Ledger Integrity** - idempotent reload, durable needs_manual_review, cell sanitizer, header-mapped issueGiftCard, tax parity (MONEY-03)
+- [x] **Phase 51: Gift-Card Ledger Integrity** - idempotent reload, durable needs_manual_review, cell sanitizer, header-mapped issueGiftCard, tax parity (MONEY-03) — completed 2026-09-02 for the phase's owner-narrowed scope only (criteria 1/2/6/7, the atomicity core); live-verified on Apps Script Version 51. **MONEY-03 itself is NOT fully closed** — criteria 3 (M9 sanitizer), 4 (M18 bounds-checking) and 5 (M15 tax parity, moved out entirely) remain, see `51-03-SUMMARY.md`.
 - [x] **Phase 52: Fail-Closed Sweep** - shared closed-on-Redis-error helper across remaining money/security call-sites (RESIL-01) (completed 2026-07-03)
 - [x] **Phase 53: Money-Path Observability & CI Gates** - Sentry on every money-path catch, `npm ci` + Node pin, `--max-warnings 0` + ES5 lint rule, pos.js coverage floor (OBS-01) (completed 2026-07-03)
 - [x] **Phase 54: Gift-Card Management on the Kiosk Surface** - lookup + void on the staff-only kiosk page; add `gift-card/void` to the kiosk device-token scope (owner decision D-54-GC, supersedes D-46-02/T-46-07); kiosk-native `kgcm-*` panel in `kiosk-core.js`. Depends on Phase 48; land before the 48 iPad UAT. (completed 2026-07-08)
@@ -1489,7 +1489,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 51-03-PLAN.md — stuck-claim runbook in `docs/APPS_SCRIPT.md`, pre-flight gate, then the owner redeploy + live probes in the DANGEROUS direction on a disposable test cert (D-09/D-11). autonomous: false.
+- [x] 51-03-PLAN.md — stuck-claim runbook in `docs/APPS_SCRIPT.md`, pre-flight gate, then the owner redeploy + live probes in the DANGEROUS direction on a disposable test cert (D-09/D-11). autonomous: false. **Live-verified 2026-09-02:** Apps Script Version 51 ACTIVE (rollback Version 50 recorded); Probes A-E' all PASS — same-ref replay refused, crash-then-retry with a fresh ref refused (criterion 7/D-12), `needs_manual_review` durable in-cell (criterion 2), stuck claim cleared via documented single-cell edit, reload duplicate-credit refused (criterion 1/H7). Step 8 regression sweep (real kiosk sale, lookup, void, invoice-number path) and `TEST-LEDGER-01` cleanup NOT done — see `51-03-SUMMARY.md`.
 
 ### Phase 52: Fail-Closed Sweep
 
