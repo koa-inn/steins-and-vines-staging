@@ -3688,8 +3688,43 @@ function updateRecipe(payload, userEmail) {
     return { ok: false, error: 'missing_id', message: 'recipe_id is required' };
   }
 
-  var lock = acquireScriptLock(15000);
+  // D-10: local 5s lock budget for THIS call site only (was 15000ms, the exact same ceiling
+  // as the middleware's own axios timeout at zoho-middleware/routes/recipes.js:37). Waiting
+  // the full 15s here meant that under lock contention the middleware could give up at the
+  // very moment the lock was granted, so recipe saves failed with an indistinguishable 502.
+  // 5000ms leaves roughly 10s of headroom for the now-~6-call write below, and a failed
+  // acquisition returns fast with a distinguishable `lock_timeout` result (surfaced by the
+  // middleware as an HTTP 422 carrying this message, not a 502). The acquisition try/catch
+  // sits BEFORE the main try/finally and returns early on failure, so releaseLock() can never
+  // run against a lock that was never acquired. The other 10 acquireScriptLock() call sites
+  // in this file (createBatch, addBatchTask, addPlatoReading, propagateFermSchedule,
+  // createRecipe, deleteRecipe, issueGiftCard, redeemGiftCard, reloadGiftCard, voidGiftCard)
+  // are out of this phase's scope (recipe save, not batch/gift-card locking) and keep their
+  // existing literals unchanged.
+  var lock;
   try {
+    lock = acquireScriptLock(5000);
+  } catch (lockErr) {
+    return { ok: false, error: 'lock_timeout', message: 'Recipe sheet is busy - another write is in progress. Please retry.' };
+  }
+
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var recipesSheet = ss.getSheetByName(RECIPES_SHEET_NAME);
+    if (!recipesSheet) {
+      return { ok: false, error: 'sheet_not_found', message: 'Recipes sheet not found' };
+    }
+
+    // D-08 ordering: run the self-migrating pricing_mode column BEFORE the row is read, and
+    // unconditionally (not gated on payload.pricing_mode being present) -- the column may
+    // need to migrate on any save. ensureRecipesPricingModeColumn() may append a header cell,
+    // widening the row; findRowById() returns headers from a stale, already-populated
+    // _sheetCache entry when one exists, so reading the row first would yield a short header
+    // array and the batched setValues() below would then write a stale-width row. Invalidate
+    // the cache immediately after so findRowById() below re-reads the (possibly new) width.
+    var pmCol = ensureRecipesPricingModeColumn(recipesSheet);
+    invalidateSheetCache(RECIPES_SHEET_NAME);
+
     var result = findRowById(RECIPES_SHEET_NAME, payload.recipe_id);
     if (result.row === -1) {
       return { ok: false, error: 'not_found', message: 'Recipe not found: ' + payload.recipe_id };
@@ -3700,12 +3735,25 @@ function updateRecipe(payload, userEmail) {
     var row = result.row;
     var now = new Date().toISOString();
 
+    // D-08: read the recipe row once, mutate a plain array in memory, then write once --
+    // replaces ~14 individual setValue() calls (two forEach loops + pricing_mode +
+    // updated_at) with a single ranged read + a single ranged write (or a formula-safe
+    // per-cell fallback below). Column 0 (recipe_id, the primary key) is never mutated or
+    // included in the written span.
+    var rowValues = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
+    var minCol = null;
+    var maxCol = null;
+
     // Update string fields via header lookup
     var stringFields = ['name', 'style', 'description', 'status', 'notes'];
     stringFields.forEach(function (field) {
       if (payload[field] !== undefined) {
         var col = headers.indexOf(field);
-        if (col !== -1) sheet.getRange(row, col + 1).setValue(sanitizeInput(payload[field]));
+        if (col > 0) {
+          rowValues[col] = sanitizeInput(payload[field]);
+          if (minCol === null || col < minCol) minCol = col;
+          if (maxCol === null || col > maxCol) maxCol = col;
+        }
       }
     });
 
@@ -3714,19 +3762,52 @@ function updateRecipe(payload, userEmail) {
     numericFields.forEach(function (field) {
       if (payload[field] !== undefined) {
         var col = headers.indexOf(field);
-        if (col !== -1) sheet.getRange(row, col + 1).setValue(Number(payload[field]));
+        if (col > 0) {
+          rowValues[col] = Number(payload[field]);
+          if (minCol === null || col < minCol) minCol = col;
+          if (maxCol === null || col > maxCol) maxCol = col;
+        }
       }
     });
 
     // Update pricing_mode (enum: locked | dynamic) via the self-migrated column
-    if (payload.pricing_mode !== undefined) {
-      var pmCol = ensureRecipesPricingModeColumn(sheet);
-      sheet.getRange(row, pmCol + 1).setValue(normalizePricingMode(payload.pricing_mode));
+    if (payload.pricing_mode !== undefined && pmCol > 0) {
+      rowValues[pmCol] = normalizePricingMode(payload.pricing_mode);
+      if (minCol === null || pmCol < minCol) minCol = pmCol;
+      if (maxCol === null || pmCol > maxCol) maxCol = pmCol;
     }
 
     // Always update updated_at
     var luCol = headers.indexOf('updated_at');
-    if (luCol !== -1) sheet.getRange(row, luCol + 1).setValue(now);
+    if (luCol > 0) {
+      rowValues[luCol] = now;
+      if (minCol === null || luCol < minCol) minCol = luCol;
+      if (maxCol === null || luCol > maxCol) maxCol = luCol;
+    }
+
+    var rowWriteMode = 'none';
+    if (minCol !== null) {
+      var span = maxCol - minCol + 1;
+      // Formula-safety fallback (T-79-03-03): a ranged setValues() writes literals, so a
+      // formula sitting in an UNMUTATED cell inside [minCol, maxCol] would be silently
+      // flattened. Read the formulas for the exact span first; if any cell in it holds a
+      // formula, fall back to per-cell setValue for only the mutated columns (today's
+      // behaviour, at most 14 calls) instead of assuming the range is formula-free.
+      var formulasInSpan = sheet.getRange(row, minCol + 1, 1, span).getFormulas()[0];
+      var hasFormula = false;
+      for (var fIdx = 0; fIdx < formulasInSpan.length; fIdx++) {
+        if (formulasInSpan[fIdx]) { hasFormula = true; break; }
+      }
+      if (hasFormula) {
+        for (var mc = minCol; mc <= maxCol; mc++) {
+          sheet.getRange(row, mc + 1).setValue(rowValues[mc]);
+        }
+        rowWriteMode = 'per_cell';
+      } else {
+        sheet.getRange(row, minCol + 1, 1, span).setValues([rowValues.slice(minCol, maxCol + 1)]);
+        rowWriteMode = 'batched';
+      }
+    }
 
     // Replace ingredient list if provided
     if (payload.ingredients !== undefined) {
