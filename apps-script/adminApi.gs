@@ -4469,8 +4469,27 @@ function lookupGiftCard(payload) {
 
 /**
  * Atomically decrement a gift certificate balance (partial redemption supported).
- * Idempotent: a repeated transaction_ref returns the prior result without re-decrementing (T-44-05).
- * T-44-04: acquireScriptLock prevents concurrent double-spend.
+ *
+ * Phase 51 (D-02/D-12) rewrite: the idempotency guard now reads the GiftCardTransactions LEDGER,
+ * not the GiftCards row's last_tx_ref cell. A durable CLAIM row is appended BEFORE the balance
+ * setValue() and marked SETTLED after it succeeds — money never moves without a record, and a
+ * crash between the two leaves a claimed row that fails the next attempt closed rather than
+ * silently decrementing twice (H6). D-12: blocking is keyed on the existence of an unsettled
+ * claim for the CERTIFICATE, not on transaction_ref equality — kiosk-core.js:2486-2493 clears
+ * _kioskPaymentKey on every terminal outcome including errors, so a crash-then-retry arrives with
+ * a freshly minted ref that a ref-keyed guard alone would wave through.
+ *
+ * Failure-mode intent:
+ *   - Crash between the claim append and the balance write: claim exists, balance unchanged.
+ *     Next attempt is BLOCKED. Safe — the customer's balance is intact, a human resolves it.
+ *   - Crash between the balance write and settle: claim exists, balance already moved. Next
+ *     attempt is BLOCKED. This is precisely the window that produced the double-debit; closed.
+ *   - An unsettled claim otherwise exists only for the ~1s of a normal write. Blocking a second
+ *     redemption in that window is the correct fail-closed behaviour on a money path (D-12's
+ *     accepted false-positive profile).
+ *
+ * T-44-04: acquireScriptLock still guards CONCURRENT double-spend (D-06: it does not, by itself,
+ * solve the single-interrupted-execution crash window — that is what the ledger claim is for).
  * T-44-06: amount must be ≤ current_balance (float tolerance ±0.001).
  * @param {Object} payload - { cert_number, amount, transaction_ref }
  */
@@ -4490,9 +4509,34 @@ function redeemGiftCard(payload) {
 
     var gc = result.data;
 
-    // T-44-05: idempotency — same tx_ref returns prior result without decrementing
-    if (String(gc.last_tx_ref) === String(txRef)) {
-      return { ok: true, idempotent: true, new_balance: parseFloat(gc.current_balance) || 0 };
+    var ledger = ensureGiftCardLedgerSheet();
+    if (!ledger.ok) {
+      // Money must never move without a record — fail closed before any balance write.
+      return { ok: false, error: 'ledger_unavailable', needs_manual_review: true };
+    }
+
+    var decision = giftCardLedgerDecision(sheetToObjects(GIFT_CARD_TRANSACTIONS_SHEET_NAME), certNum, txRef);
+
+    if (decision.action === 'replay') {
+      return {
+        ok: true,
+        idempotent: true,
+        new_balance: parseFloat(gc.current_balance) || 0,
+        status: gc.status,
+        needs_manual_review: decision.unsettled
+      };
+    }
+
+    if (decision.action === 'blocked') {
+      flagGiftCardClaim(ledger, decision.row, 'Blocked duplicate redeem attempt: incoming tx_ref=' + txRef + ', amount=' + amount);
+      return {
+        ok: false,
+        error: 'unsettled_claim',
+        needs_manual_review: true,
+        claim_tx_id: decision.row.tx_id,
+        claim_tx_ref: decision.row.tx_ref,
+        claim_created_at: decision.row.created_at
+      };
     }
 
     if (String(gc.status) !== 'active') {
@@ -4508,6 +4552,15 @@ function redeemGiftCard(payload) {
     var newStatus = newBalance <= 0 ? 'depleted' : 'active';
     var now = new Date().toISOString();
 
+    var claim = appendGiftCardClaim(ledger, certNum, txRef, 'redeem', amount, balance);
+    if (!claim.ok) {
+      return { ok: false, error: 'claim_write_failed', needs_manual_review: true };
+    }
+    // appendGiftCardClaim returns a plain row-index number in `row`, not a sheetToObjects-shaped
+    // object — settleGiftCardClaim/flagGiftCardClaim both index via `row._row`. Wrap it once here
+    // so both later calls reference the same claim row consistently.
+    var claimRowRef = { _row: claim.row };
+
     // Resolve column indices from header row at runtime (not hardcoded positionally)
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(GIFT_CARDS_SHEET_NAME);
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -4516,13 +4569,34 @@ function redeemGiftCard(payload) {
     var updatedCol = headers.indexOf('last_updated') + 1;
     var txRefCol = headers.indexOf('last_tx_ref') + 1;
 
-    sheet.getRange(result.row, balCol).setValue(newBalance);
-    sheet.getRange(result.row, statusCol).setValue(newStatus);
-    sheet.getRange(result.row, updatedCol).setValue(now);
-    sheet.getRange(result.row, txRefCol).setValue(txRef);
+    try {
+      sheet.getRange(result.row, balCol).setValue(newBalance);
+      sheet.getRange(result.row, statusCol).setValue(newStatus);
+      sheet.getRange(result.row, updatedCol).setValue(now);
+      sheet.getRange(result.row, txRefCol).setValue(txRef);
+    } catch (writeErr) {
+      flagGiftCardClaim(ledger, claimRowRef, 'balance write failed: ' + writeErr.message);
+      return { ok: false, error: 'write_failed', needs_manual_review: true, claim_tx_id: claim.tx_id };
+    }
+
+    // Do not let a settleGiftCardClaim exception propagate out of this function uncaught: the
+    // balance has already changed by this point, so an uncaught throw would surface as a generic
+    // Apps Script error and lose the durable needs_manual_review signal criterion 2 requires. The
+    // ledger row stays 'claimed' either way, so the next attempt is still BLOCKED — money safety
+    // holds regardless — but the operator-facing signal must not be dropped in this narrow window.
+    try {
+      var settled = settleGiftCardClaim(ledger, claimRowRef, claim.tx_id, newBalance);
+      if (!settled) {
+        flagGiftCardClaim(ledger, claimRowRef, 'settle failed: tx_id mismatch on claim row');
+        return { ok: false, error: 'settle_failed', needs_manual_review: true, claim_tx_id: claim.tx_id };
+      }
+    } catch (settleErr) {
+      flagGiftCardClaim(ledger, claimRowRef, 'settle threw: ' + settleErr.message);
+      return { ok: false, error: 'settle_failed', needs_manual_review: true, claim_tx_id: claim.tx_id };
+    }
 
     invalidateSheetCache(GIFT_CARDS_SHEET_NAME);
-    return { ok: true, new_balance: newBalance, status: newStatus };
+    return { ok: true, new_balance: newBalance, status: newStatus, tx_id: claim.tx_id };
   } finally {
     lock.releaseLock();
   }
