@@ -152,7 +152,7 @@ Last activity: 2026-09-02 -- Phase 51 complete (scoped: criteria 1/2/6/7), live-
 
 ### Pending Todos
 
-None.
+- `remove-dead-beer-waitlist-handler.md` — **SUPERSEDED 2026-09-02, read before acting.** Its original instruction (delete `setupBeerWaitlistForm()` + its test as dead code) is now UNSAFE: phase 74-06 rewired that handler to the live `#beer-waitlist-form` on `beer.html`, so deleting it would take down beer waitlist signups. Only the `page === 'home'` call site (`js/modules/13-init.js:380`) is genuinely dead.
 
 ### Blockers/Concerns
 
