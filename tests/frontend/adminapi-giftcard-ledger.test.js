@@ -342,3 +342,67 @@ describe('source assertions — the honest substitute for an end-to-end test', f
     );
   });
 });
+
+// The five ledger IO helpers (Task 3) touch SpreadsheetApp and cannot be invoked in this sandbox
+// — see the file header comment. These are source-shape assertions only, the honest substitute
+// for exercising the Sheets write itself; the 51-03 live probe is the real verification.
+describe('ledger IO helpers — source-shape assertions only (cannot be invoked outside Google)', function () {
+  var IO_HELPER_NAMES = [
+    'ensureGiftCardLedgerSheet',
+    'appendGiftCardClaim',
+    'settleGiftCardClaim',
+    'flagGiftCardClaim',
+    'setupGiftCardLedger'
+  ];
+
+  IO_HELPER_NAMES.forEach(function (name) {
+    test(name + ' exists as a top-level function', function () {
+      var src = rawSource();
+      expect(sliceFunctionSource(src, name)).not.toBeNull();
+    });
+  });
+
+  test('appendGiftCardClaim mints tx_id via Utilities.getUuid( and does NOT use generateNextId( (Phase 79 O(n)-scan cost avoided)', function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'appendGiftCardClaim');
+    expect(fnSrc).toMatch(/Utilities\.getUuid\(/);
+    expect(fnSrc).not.toMatch(/generateNextId\(/);
+  });
+
+  ['appendGiftCardClaim', 'settleGiftCardClaim', 'flagGiftCardClaim'].forEach(function (name) {
+    test(name + ' invalidates the GiftCardTransactions sheet cache after writing', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, name);
+      expect(fnSrc).toMatch(/invalidateSheetCache\(GIFT_CARD_TRANSACTIONS_SHEET_NAME\)/);
+    });
+  });
+
+  test("ensureGiftCardLedgerSheet creates the tab via insertSheet( and fails closed with the literal 'ledger_unavailable' on header drift", function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'ensureGiftCardLedgerSheet');
+    expect(fnSrc).toMatch(/insertSheet\(/);
+    expect(fnSrc).toMatch(/'ledger_unavailable'/);
+  });
+
+  test('ensureGiftCardLedgerSheet declares the 12 header names in the exact documented order', function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'ensureGiftCardLedgerSheet');
+    var normalized = fnSrc.replace(/\s+/g, ' ');
+    expect(normalized).toMatch(
+      /'tx_id'\s*,\s*'cert_number'\s*,\s*'tx_ref'\s*,\s*'kind'\s*,\s*'amount'\s*,\s*'balance_before'\s*,\s*'balance_after'\s*,\s*'status'\s*,\s*'needs_manual_review'\s*,\s*'created_at'\s*,\s*'settled_at'\s*,\s*'notes'/
+    );
+  });
+
+  test("flagGiftCardClaim writes the needs_manual_review column and routes noteText through sanitizeInput( — the persisted-flag half of D-08", function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'flagGiftCardClaim');
+    expect(fnSrc).toMatch(/col\.needs_manual_review/);
+    expect(fnSrc).toMatch(/sanitizeInput\(/);
+  });
+
+  test('generateNextId( total count across the file is unchanged from its pre-plan value (13) — no existing call site was added or removed', function () {
+    var src = rawSource();
+    var matches = src.match(/generateNextId\(/g) || [];
+    expect(matches.length).toBe(13);
+  });
+});
