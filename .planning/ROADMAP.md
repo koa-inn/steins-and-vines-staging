@@ -739,7 +739,7 @@ Plans:
 | 48. Kiosk POS De-Fork (kiosk-core.js) | v4.5 | 5/6 | Complete    | 2026-07-10 |
 | 49. Online Captured-Amount Verification | v4.5 | 1/2 | 49-01 done (H2 fix + 13-test regression, suite green); 49-02 live-card UAT pending deploy | - |
 | 50. Kiosk Money-Path Defect Closeout | v4.5 | 4/5 | In Progress|  |
-| 51. Gift-Card Ledger Integrity | v4.5 | 1/3 | In Progress|  |
+| 51. Gift-Card Ledger Integrity | v4.5 | 2/3 | In Progress|  |
 | 52. Fail-Closed Sweep | v4.5 | 5/5 | Complete    | 2026-07-03 |
 | 53. Money-Path Observability & CI Gates | v4.5 | 6/6 | Complete    | 2026-07-03 |
 | 54. Gift-Card Management on the Kiosk Surface | v4.5 | 3/3 | Complete    | 2026-07-08 |
@@ -1485,7 +1485,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 51-02-PLAN.md — `redeemGiftCard` and `reloadGiftCard` rewritten to claim-before-mutate and to guard on the ledger instead of `last_tx_ref` (H6 + H7). Four per-cell writes preserved (D-05); 44-02 deliberately left standing.
+- [x] 51-02-PLAN.md — `redeemGiftCard` and `reloadGiftCard` rewritten to claim-before-mutate and to guard on the ledger instead of `last_tx_ref` (H6 + H7). Four per-cell writes preserved (D-05); 44-02 deliberately left standing.
 
 **Wave 3** *(blocked on Wave 2)*
 
