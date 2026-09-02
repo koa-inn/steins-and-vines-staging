@@ -3809,7 +3809,11 @@ function updateRecipe(payload, userEmail) {
       }
     }
 
-    // Replace ingredient list if provided
+    // Replace ingredient list if provided (D-04, D-05, D-06, D-07, D-09)
+    var ingredientsUnchanged = null;
+    var ingredientsWritten = 0;
+    var ingredientRowsDeleted = 0;
+
     if (payload.ingredients !== undefined) {
       var ingredients;
       try {
@@ -3818,47 +3822,147 @@ function updateRecipe(payload, userEmail) {
         return { ok: false, error: 'invalid_data', message: 'Invalid ingredients JSON' };
       }
 
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
       var ingSheet = ss.getSheetByName(RECIPE_INGREDIENTS_SHEET_NAME);
 
-      // Delete all existing ingredient rows for this recipe
-      if (ingSheet && ingSheet.getLastRow() > 1) {
-        var ingData = ingSheet.getDataRange().getValues();
-        var ingHeaders = ingData[0];
-        var ridCol = ingHeaders.indexOf('recipe_id');
-        var rowsToDelete = [];
-        for (var i = 1; i < ingData.length; i++) {
-          if (String(ingData[i][ridCol]) === String(payload.recipe_id)) {
-            rowsToDelete.push(i + 1);
+      // One read, three uses (D-04 + D-05 + D-07 all feed off this single getDataRange()
+      // read): the delete-scan, the change-comparison, and the max-id computation.
+      var ingData = (ingSheet && ingSheet.getLastRow() > 1) ? ingSheet.getDataRange().getValues() : [];
+      var ingHeadersRow = ingData.length ? ingData[0] : [];
+      var idCol = ingHeadersRow.indexOf('ingredient_id');
+      var ridCol = ingHeadersRow.indexOf('recipe_id');
+      var itemCol = ingHeadersRow.indexOf('item_id');
+      var qtyCol = ingHeadersRow.indexOf('quantity');
+      var unitCol = ingHeadersRow.indexOf('unit');
+      // D-15 fixed column-order fallback when a header is missing or the sheet is empty --
+      // the insert path already writes positionally, so this stays consistent with disk.
+      if (idCol === -1) idCol = 0;
+      if (ridCol === -1) ridCol = 1;
+      if (itemCol === -1) itemCol = 2;
+      if (qtyCol === -1) qtyCol = 4;
+      if (unitCol === -1) unitCol = 5;
+
+      // Build the stored side: this recipe's existing rows, their sheet row numbers, their
+      // ingredient_ids and their comparison keys. Stored values are NOT re-sanitized -- they
+      // were already sanitized when written, and re-running sanitizeInput would compare a
+      // doubly-processed stored value against a singly-processed incoming one.
+      var storedRows = [];
+      var storedKeys = [];
+      var storedIdSet = {};
+      for (var si = 1; si < ingData.length; si++) {
+        if (String(ingData[si][ridCol]) === String(payload.recipe_id)) {
+          var storedIngId = String(ingData[si][idCol] || '').trim();
+          storedRows.push({ sheetRow: si + 1, ingredientId: storedIngId });
+          storedKeys.push(normalizeRecipeIngredientTuple(ingData[si][itemCol], ingData[si][qtyCol], ingData[si][unitCol]));
+          if (storedIngId) storedIdSet[storedIngId] = true;
+        }
+      }
+
+      // Build the incoming side from the exact values that would be written, so the
+      // comparison key is derived from SANITIZED values on both sides (like-for-like).
+      var incoming = [];
+      var incomingKeys = [];
+      for (var ii = 0; ii < ingredients.length; ii++) {
+        var rawIng = ingredients[ii];
+        var itemId = sanitizeInput(rawIng.item_id || '');
+        var itemName = sanitizeInput(rawIng.item_name || '');
+        var quantity = rawIng.quantity !== undefined ? Number(rawIng.quantity) : 0;
+        var unit = sanitizeInput(rawIng.unit || '');
+        var incomingIngId = String(rawIng.ingredient_id || '').trim();
+        incoming.push({ itemId: itemId, itemName: itemName, quantity: quantity, unit: unit, ingredientId: incomingIngId });
+        incomingKeys.push(normalizeRecipeIngredientTuple(itemId, quantity, unit));
+      }
+
+      // D-04: skip the delete+insert entirely when the tuples match. Accepted consequence:
+      // the tuple is (item_id, quantity, unit) per D-15 -- a payload differing ONLY in
+      // item_name will not refresh the stored item_name. Benign (item_name is a display
+      // denormalization resolved from the Zoho catalog by item_id) but a real behaviour
+      // change, written down here rather than discovered later.
+      ingredientsUnchanged = recipeIngredientsUnchanged(incomingKeys, storedKeys);
+
+      if (!ingredientsUnchanged) {
+        // D-05: hoist id minting -- compute the max ONCE from the pre-delete snapshot (so
+        // ids of rows about to be deleted are still counted and never reused), then
+        // increment in memory. The full-column-scan id helper is never invoked from inside
+        // updateRecipe -- that removes the 13 full-column scans this fix exists to eliminate.
+        var maxIdNum = maxIdNumFromColumn(ingData.slice(1), idCol, 'RI-');
+
+        // D-09: honour an incoming ingredient_id ONLY if it already belongs to THIS
+        // recipe's stored rows and has not already been claimed by an earlier row in this
+        // same payload. A foreign recipe's id, an invented id, or a duplicate within the
+        // payload is NEVER honoured -- without this guard a client could pin a foreign
+        // recipe's ingredient id onto this recipe, or duplicate one, producing colliding
+        // primary keys in a sheet with no uniqueness constraint.
+        var claimedIds = {};
+        var rows = [];
+        for (var ci = 0; ci < incoming.length; ci++) {
+          var item = incoming[ci];
+          var finalId;
+          if (item.ingredientId && storedIdSet[item.ingredientId] && !claimedIds[item.ingredientId]) {
+            finalId = item.ingredientId;
+          } else {
+            finalId = formatPaddedId('RI-', ++maxIdNum, 6);
+          }
+          claimedIds[finalId] = true;
+          rows.push([finalId, payload.recipe_id, item.itemId, item.itemName, item.quantity, item.unit]);
+        }
+
+        // D-07: collapse the matched sheet rows into maximal contiguous runs and issue one
+        // deleteRows(start, count) per run, in DESCENDING start-row order so earlier runs'
+        // positions stay valid after later ones are removed. Recipe ingredient rows are
+        // appended together, so this typically collapses to a single call.
+        if (ingSheet && storedRows.length > 0) {
+          var sheetRowNums = storedRows.map(function (r) { return r.sheetRow; }).sort(function (a, b) { return a - b; });
+          var runs = [];
+          var runStart = sheetRowNums[0];
+          var runEnd = sheetRowNums[0];
+          for (var ri = 1; ri < sheetRowNums.length; ri++) {
+            if (sheetRowNums[ri] === runEnd + 1) {
+              runEnd = sheetRowNums[ri];
+            } else {
+              runs.push([runStart, runEnd]);
+              runStart = sheetRowNums[ri];
+              runEnd = sheetRowNums[ri];
+            }
+          }
+          runs.push([runStart, runEnd]);
+          for (var rj = runs.length - 1; rj >= 0; rj--) {
+            var runCount = runs[rj][1] - runs[rj][0] + 1;
+            ingSheet.deleteRows(runs[rj][0], runCount);
+            ingredientRowsDeleted += runCount;
           }
         }
-        for (var j = rowsToDelete.length - 1; j >= 0; j--) {
-          ingSheet.deleteRow(rowsToDelete[j]);
-        }
-      }
 
-      // Insert new ingredient rows
-      if (ingSheet && ingredients && ingredients.length > 0) {
-        for (var k = 0; k < ingredients.length; k++) {
-          var ing = ingredients[k];
-          var ingId = generateNextId(RECIPE_INGREDIENTS_SHEET_NAME, 'RI-', 6);
-          ingSheet.appendRow([
-            ingId,
-            payload.recipe_id,
-            sanitizeInput(ing.item_id || ''),
-            sanitizeInput(ing.item_name || ''),
-            ing.quantity !== undefined ? Number(ing.quantity) : 0,
-            sanitizeInput(ing.unit || '')
-          ]);
+        // D-06: batch the insert -- one setValues() instead of one appendRow() per
+        // ingredient. Skip entirely when there are zero rows (a legitimate "all ingredients
+        // removed" save -- the deletes above already handled it).
+        if (ingSheet && rows.length > 0) {
+          var startRow = ingSheet.getLastRow() + 1;
+          // getRange() beyond getMaxRows() THROWS -- grow the grid first if needed, or this
+          // optimisation turns into a hard save failure on a tightly-sized sheet.
+          var needed = (startRow + rows.length - 1) - ingSheet.getMaxRows();
+          if (needed > 0) ingSheet.insertRowsAfter(ingSheet.getMaxRows(), needed);
+          ingSheet.getRange(startRow, 1, rows.length, 6).setValues(rows);
+          ingredientsWritten = rows.length;
         }
-      }
 
-      invalidateSheetCache(RECIPE_INGREDIENTS_SHEET_NAME);
+        invalidateSheetCache(RECIPE_INGREDIENTS_SHEET_NAME);
+      }
     }
 
     invalidateSheetCache(RECIPES_SHEET_NAME);
 
-    return { ok: true, message: 'Recipe updated' };
+    // These diagnostic fields are dropped by the middleware (it returns a bare {ok:true} at
+    // zoho-middleware/routes/recipes.js:665) -- they exist for the direct-to-Apps-Script
+    // probe in 79-04, which is what makes the D-04 skip branch OBSERVABLE rather than
+    // inferred.
+    return {
+      ok: true,
+      message: 'Recipe updated',
+      ingredients_unchanged: ingredientsUnchanged,
+      ingredients_written: ingredientsWritten,
+      ingredient_rows_deleted: ingredientRowsDeleted,
+      row_write_mode: rowWriteMode
+    };
   } finally {
     lock.releaseLock();
   }
