@@ -1435,6 +1435,35 @@ Plans:
   4. `issueGiftCard`'s `appendRow` is header-mapped (not positional) with bounded numeric fields (M18) — malformed/oversized numeric input is rejected or clamped, not written raw
   5. Negative-taxable custom-line tax parity holds (M15) — a regression test asserts a legitimately discounted sale is not voided by a tax mismatch
   6. An interleaved redeem retry decrements the balance exactly once, verified by a regression test
+  7. **A redeem or reload interrupted MID-WRITE cannot be replayed for a second balance change** — a regression test must exercise the crash window described below, not only the concurrent-retry case in criterion 6
+
+---
+
+**ROOT CAUSE LOCATED (2026-09-02, during the Sheets→Postgres research pass).** The audit flagged this class as H6/H7 in 2026-06-29 but never pinned the mechanism. It is now pinned:
+
+`redeemGiftCard` (`apps-script/adminApi.gs:4204`) changes a customer balance across **four independently-committing `setValue()` calls**, with the idempotency key written **LAST**:
+
+```
+setValue(newBalance)   <- money leaves here      (~:4246)
+setValue(newStatus)
+setValue(now)
+setValue(txRef)        <- idempotency key lands here  (~:4249)
+```
+
+The idempotency guard reads `gc.last_tx_ref` (~:4221). So if the script dies between the first and last write, the balance is already debited while `last_tx_ref` is stale — and a retry with the **same** `transaction_ref` misses the guard and **debits again**.
+
+**This needs no concurrency.** A single interrupted execution is sufficient, which is why criterion 6's "interleaved retry" framing does not cover it — hence new criterion 7.
+
+`reloadGiftCard` (`:4264`) has the **identical** four-write shape with `txRef` last, so the same crash window produces a **duplicate credit**. That is precisely audit H7 / criterion 1.
+
+**Two traps for whoever plans this:**
+
+1. **Reordering is NOT a fix.** Writing `txRef` first converts double-debit into "customer keeps their balance and got the goods" — a different loss, not a fixed one. Only atomicity closes it.
+2. **A single batched `setValues()` is NOT a safe shortcut here.** GiftCards column order is `cert_number | face_value | current_balance | status | issued_date | issued_by | zoho_invoice_number | notes | last_updated | last_tx_ref`. The mutated columns (3,4 and 9,10) are **not contiguous**, so one ranged write would also rewrite `issued_date`, `issued_by`, `zoho_invoice_number` and `notes` — and `updateGiftCardInvoice` (`:4358`) writes `zoho_invoice_number` **without taking the lock** (a deliberate 44-02 decision), so a batched redeem could silently clobber a concurrent invoice-number write. Either take the append-only ledger route (criterion 1 — preferred, and it also yields the audit trail) or bring `updateGiftCardInvoice` under the lock first.
+
+Related: `.planning/research/sheets-to-postgres-migration.md` §3 reaches the same conclusion independently and proposes a `gift_card_transactions` ledger with `tx_ref UNIQUE`; `.planning/notes/sheets-to-postgres-data-conversion.md` §3.1 carries the target DDL. **This phase should fix the atomicity on Sheets — it is not gated on any migration.**
+
+---
 
 **Plans**: TBD
 
