@@ -123,6 +123,11 @@ None - no external service configuration required by this plan. (Phase 78's Apps
 - Plan 78-04 (staging UAT) can proceed once 78-01's Apps Script redeploy and 78-02's admin-proxy whitelist land — this plan's own `<verification>` section is explicit that live rendering against a real backend response is unverified here by design.
 - No blockers for 78-04. This plan's build churn (admin.html, kiosk.html, index.html, public marketing pages, `js/admin.js`/`.min.js` — cache-bust stamps and unrelated minified bundles from the whole-project `npm run build`) was left uncommitted in the working tree per the plan's `files_modified_note`; a later plan or the orchestrator's own build step will regenerate it cleanly rather than this plan committing unrelated churn.
 
+## Self-Check: PASSED
+
+- FOUND: js/brewpad.js, brewpad.html, css/brewpad.css, tests/frontend/brewpad-waitlist.test.js, js/brewpad.min.js, css/brewpad.min.css, .planning/phases/78-.../78-03-SUMMARY.md
+- FOUND: commits 8afb671a, ce79b221, f26aacdb, c1d07cb8 in `git log --oneline --all`
+
 ---
 *Phase: 78-brewpad-waitlist-tracking-make-the-beer-waitlist-a-workable-*
 *Completed: 2026-09-02*
