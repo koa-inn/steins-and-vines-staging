@@ -57,6 +57,39 @@ by the audit.
   existing wording ("append-only processed-ref ledger").
 - **D-03 — M15 moves out.** Remove it from Phase 51's criteria and rehome it (own phase, or folded
   into an existing kiosk/tax phase). Do not plan it here.
+- **D-12 — The ledger MUST carry an unsettled-claim guard, not just a `tx_ref` key.**
+  *(Added 2026-09-02 after pattern mapping found the premise was wrong.)*
+
+  **`transaction_ref` identifies a payment ATTEMPT, not a logical SALE.** It is the client's
+  `reference_number` (`pos.js:1333` → `:1713`/`:1793`), which is `_kioskPaymentKey`
+  (`js/kiosk-core.js:2623`), and that key is **cleared on every terminal outcome including every
+  error branch** (`_kioskEndPaymentAttempt`, `kiosk-core.js:2486-2493`) then re-minted as
+  `'KIOSK-' + Date.now()` on the next attempt. This is deliberate — Phase 50-04's D-50-05/T-50-22,
+  and correct for the payment path.
+
+  **Consequence:** a ledger keyed only on `tx_ref` does NOT close the most likely double-debit:
+
+  ```
+  redeem debits balance -> script dies before settling
+    -> kiosk shows error -> staff taps Retry
+    -> FRESH KIOSK-<timestamp> -> ref-keyed guard passes -> debits AGAIN
+  ```
+
+  Today's `last_tx_ref` guard has the identical hole, which is likely why it has never been
+  observed firing.
+
+  **Required design:** the ledger row is written as a **CLAIM before** the balance moves and marked
+  **SETTLED after** it succeeds. A redeem/reload against a certificate that already has an
+  **unsettled claim** must **fail closed** — return an error and flag for manual review — rather
+  than changing the balance again. This catches the Retry case without requiring a stable ref.
+
+  Precedent: the pending-charge record pattern (`KIOSK_PENDING_CHARGE_PREFIX`, decision 45-07 D-13)
+  does exactly this shape for terminal charges.
+
+  **False-positive profile (acceptable, state it in the plan):** an unsettled claim exists only for
+  the ~1s of a normal write, or after a genuine crash. Blocking a second redemption in that window
+  is the correct fail-closed behaviour on a money path. There must be a way for staff to clear a
+  stuck claim — do not create a state that bricks a customer's card with no remedy.
 
 ### Non-negotiable technical constraints
 
