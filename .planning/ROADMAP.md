@@ -1473,7 +1473,21 @@ Related: `.planning/research/sheets-to-postgres-migration.md` §3 reaches the sa
 
 ---
 
-**Plans**: TBD
+**Plans**: 3 plans (3 waves — sequential; every plan touches `apps-script/adminApi.gs`, so shared-file ownership forbids parallelism)
+
+Plans:
+
+**Wave 1**
+
+- [ ] 51-01-PLAN.md — pure ledger guard helpers (`giftCardLedgerDecision`, D-12 unsettled-claim rule) with a real Jest suite over the actual `.gs`, plus the idempotent `GiftCardTransactions` bootstrap and claim/settle/flag IO helpers. Money path untouched.
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 51-02-PLAN.md — `redeemGiftCard` and `reloadGiftCard` rewritten to claim-before-mutate and to guard on the ledger instead of `last_tx_ref` (H6 + H7). Four per-cell writes preserved (D-05); 44-02 deliberately left standing.
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 51-03-PLAN.md — stuck-claim runbook in `docs/APPS_SCRIPT.md`, pre-flight gate, then the owner redeploy + live probes in the DANGEROUS direction on a disposable test cert (D-09/D-11). autonomous: false.
 
 ### Phase 52: Fail-Closed Sweep
 
