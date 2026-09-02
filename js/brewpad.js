@@ -8321,8 +8321,104 @@ function shouldShowWaitlistCategoryColumn(rows) {
     html += '</div>';
     panel.innerHTML = html;
 
-    // Task 3 (Phase 78-03) binds the toolbar (search/filter/refresh) and the
-    // per-row handlers (status advance, remove, notes edit) here.
+    // Search + refresh bind directly (stable single ids), matching the Tasks
+    // toolbar convention. Filter chips + per-row actions (status/remove/notes)
+    // are handled by delegation on #bp-panel-waitlist — see initDelegation.
+    var searchEl = document.getElementById('bp-waitlist-search');
+    if (searchEl) {
+      searchEl.addEventListener('input', function () {
+        clearTimeout(_waitlistSearchTimer);
+        _waitlistSearchTimer = setTimeout(function () {
+          _waitlistSearch = searchEl.value;
+          renderWaitlist();
+        }, 200);
+      });
+    }
+
+    var refreshBtn = document.getElementById('bp-waitlist-refresh');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function () { loadWaitlist(); });
+    }
+  }
+
+  function findWaitlistRow(id) {
+    for (var i = 0; i < _waitlistRows.length; i++) {
+      if (String(_waitlistRows[i].id) === String(id)) return _waitlistRows[i];
+    }
+    return null;
+  }
+
+  // Tap-to-cycle a waitlist status badge forward one step (D-05, UI-SPEC.md §2).
+  // ONE-WAY: nextWaitlistStatus returns null for 'booked'/'removed'/unknown, and this
+  // handler bails out immediately in that case -- no confirm sheet, no write, no
+  // toast. This is a deliberate deviation from the batch-status handler
+  // (js/brewpad.js ~2455), which wraps around via `% order.length`; wrapping here
+  // would silently reopen a booked customer's spot.
+  function advanceWaitlistStatus(badgeEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+    var next = nextWaitlistStatus(row.status);
+    if (next === null) return; // booked/removed/unknown -- not actionable, no-op
+    showConfirmSheet(
+      'Mark ' + row.email + ' as “' + (WAITLIST_STATUS_LABELS[next] || next) + '”?',
+      'Confirm', 'bp-confirm-btn--primary',
+      function () {
+        adminApiPost('update_waitlist_status', { id: row.id, status: next })
+          .then(function () {
+            row.status = next;
+            renderWaitlist();
+            showToast('Status updated', 'success');
+          })
+          .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+      }
+    );
+  }
+
+  // Remove is a separate, always-danger-styled affordance, independent of the status
+  // badge (D-05, UI-SPEC.md §2) -- a status write to 'removed', not a row deletion, so
+  // the audit trail and signup ordering survive (D-01).
+  function removeWaitlistEntry(id) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+    showConfirmSheet(
+      'Remove ' + row.email + ' from the beer waitlist? This cannot be undone.',
+      'Remove', 'bp-confirm-btn--danger',
+      function () {
+        adminApiPost('update_waitlist_status', { id: row.id, status: 'removed' })
+          .then(function () {
+            row.status = 'removed';
+            renderWaitlist();
+            showToast('Removed from waitlist', 'success');
+          })
+          .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+      }
+    );
+  }
+
+  // Inline notes editor -- row-becomes-input shape copied from openReadingEditRow()
+  // (js/brewpad.js:6644-6666). The client input is not a trust boundary; sanitizeInput()
+  // runs server-side in updateWaitlistStatus. escapeHTML on render is the client's job.
+  function openWaitlistNotesEdit(cellEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    cellEl.innerHTML =
+      '<input class="bp-inline-input" data-waitlist-notes-input="' + escapeHTML(id) + '" type="text" value="' + escapeHTML(row.notes || '') + '" style="width:100%;">' +
+      '<button type="button" class="btn bp-btn-sm" data-waitlist-notes-save="' + escapeHTML(id) + '">Save</button>' +
+      '<button type="button" class="btn-secondary bp-btn-sm" data-waitlist-notes-cancel="' + escapeHTML(id) + '">×</button>';
+    var input = cellEl.querySelector('input');
+    if (input) input.focus();
+  }
+
+  function saveWaitlistNotes(id, value) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+    adminApiPost('update_waitlist_status', { id: row.id, notes: value })
+      .then(function () {
+        row.notes = value;
+        renderWaitlist();
+        showToast('Notes saved', 'success');
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
   }
 
   // ===== Schedule Template Editor =====
@@ -9124,6 +9220,47 @@ function shouldShowWaitlistCategoryColumn(rows) {
         e.stopPropagation();
         switchTab('batches');
         selectBatch(chip.getAttribute('data-batch-id'));
+      });
+    }
+
+    // Waitlist (Phase 78): filter chips + status advance + remove + inline notes edit.
+    // Delegate on #bp-panel-waitlist (stable) since the toolbar/table are rebuilt on
+    // every renderWaitlist() call.
+    var waitlistPanel = document.getElementById('bp-panel-waitlist');
+    if (waitlistPanel) {
+      waitlistPanel.addEventListener('click', function (e) {
+        var filterBtn = e.target.closest('.bp-filter-btn[data-waitlist-filter]');
+        if (filterBtn) {
+          _waitlistFilter = filterBtn.getAttribute('data-waitlist-filter');
+          renderWaitlist();
+          return;
+        }
+        var statusBadge = e.target.closest('.bp-status-clickable[data-waitlist-id]');
+        if (statusBadge) {
+          advanceWaitlistStatus(statusBadge, statusBadge.getAttribute('data-waitlist-id'));
+          return;
+        }
+        var removeBtn = e.target.closest('.bp-reading-del[data-waitlist-remove-id]');
+        if (removeBtn) {
+          removeWaitlistEntry(removeBtn.getAttribute('data-waitlist-remove-id'));
+          return;
+        }
+        var notesEditBtn = e.target.closest('.bp-reading-edit[data-waitlist-notes-id]');
+        if (notesEditBtn) {
+          openWaitlistNotesEdit(notesEditBtn.parentNode, notesEditBtn.getAttribute('data-waitlist-notes-id'));
+          return;
+        }
+        var notesCancelBtn = e.target.closest('[data-waitlist-notes-cancel]');
+        if (notesCancelBtn) {
+          renderWaitlist();
+          return;
+        }
+        var notesSaveBtn = e.target.closest('[data-waitlist-notes-save]');
+        if (notesSaveBtn) {
+          var savedId = notesSaveBtn.getAttribute('data-waitlist-notes-save');
+          var input = waitlistPanel.querySelector('[data-waitlist-notes-input="' + savedId + '"]');
+          saveWaitlistNotes(savedId, input ? input.value : '');
+        }
       });
     }
 
