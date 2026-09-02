@@ -284,3 +284,77 @@ describe('bootstrap helpers — source-shape assertions only (cannot be invoked 
     expect(fnSrc).toMatch(/ensureWaitlistSheet\(/);
   });
 });
+
+// ─── 78-01 Task 2: handlers (add / list / update) + dispatch wiring ─────────────────────────
+// These handlers touch SpreadsheetApp and cannot be executed in Jest — source-shape assertions
+// are the only automatable check available. Their real behaviour is proven by the live probe in
+// plan 78-04, after the owner's manual Apps Script redeploy.
+
+describe('waitlist handlers — existence + source-shape assertions only (cannot be invoked outside Google)', function () {
+  var HANDLER_NAMES = ['addWaitlistEntry', 'getWaitlist', 'updateWaitlistStatus'];
+
+  HANDLER_NAMES.forEach(function (name) {
+    test(name + ' exists as a top-level function', function () {
+      var src = rawSource();
+      expect(sliceFunctionSource(src, name)).not.toBeNull();
+    });
+  });
+
+  ['addWaitlistEntry', 'updateWaitlistStatus'].forEach(function (name) {
+    test(name + ' body contains no occurrence of acquireScriptLock — no lock needed (RESEARCH.md Pitfall 5)', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, name);
+      expect(fnSrc).not.toMatch(/acquireScriptLock/);
+    });
+  });
+
+  test('addWaitlistEntry body contains waitlistDedupeDecision( and Utilities.getUuid(', function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'addWaitlistEntry');
+    expect(fnSrc).toMatch(/waitlistDedupeDecision\(/);
+    expect(fnSrc).toMatch(/Utilities\.getUuid\(\)/);
+  });
+
+  test("addWaitlistEntry never discloses membership — body contains no occurrence of 'already' or 'duplicate' (D-06 non-disclosure)", function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'addWaitlistEntry');
+    expect(fnSrc).not.toMatch(/already/i);
+    expect(fnSrc).not.toMatch(/duplicate/i);
+  });
+
+  test('updateWaitlistStatus body contains headers.indexOf( and the four D-05 status literals', function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'updateWaitlistStatus');
+    expect(fnSrc).toMatch(/headers\.indexOf\(/);
+    expect(fnSrc).toMatch(/'waiting'/);
+    expect(fnSrc).toMatch(/'contacted'/);
+    expect(fnSrc).toMatch(/'booked'/);
+    expect(fnSrc).toMatch(/'removed'/);
+  });
+
+  test("getWaitlist body does not contain _cachedGet and does not contain '_row'", function () {
+    var src = rawSource();
+    var fnSrc = sliceFunctionSource(src, 'getWaitlist');
+    expect(fnSrc).not.toMatch(/_cachedGet/);
+    expect(fnSrc).not.toMatch(/_row/);
+  });
+});
+
+describe('dispatch wiring — doPost / handleReadAction', function () {
+  test("doPost source contains action === 'add_waitlist_entry' and action === 'update_waitlist_status', both AFTER the first occurrence of payload.server_token (inside the validated block)", function () {
+    var src = rawSource();
+    var serverTokenIdx = src.indexOf('payload.server_token');
+    var addIdx = src.indexOf("action === 'add_waitlist_entry'");
+    var updateIdx = src.indexOf("action === 'update_waitlist_status'");
+    expect(serverTokenIdx).toBeGreaterThan(-1);
+    expect(addIdx).toBeGreaterThan(-1);
+    expect(updateIdx).toBeGreaterThan(-1);
+    expect(addIdx).toBeGreaterThan(serverTokenIdx);
+    expect(updateIdx).toBeGreaterThan(serverTokenIdx);
+  });
+
+  test("handleReadAction source contains case 'get_waitlist':", function () {
+    var src = rawSource();
+    expect(src).toMatch(/case 'get_waitlist':/);
+  });
+});

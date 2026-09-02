@@ -229,6 +229,14 @@ function handleReadAction(action, getParam, authEmail) {
     case 'get_gift_cards':
       return { ok: true, data: getGiftCards() };
 
+    // Waitlist admin list (Phase 78). getWaitlist() returns either an array of rows or the
+    // ensureWaitlistSheet() failure object ({ok:false, error:'waitlist_unavailable', missing})
+    // — return the failure object directly rather than nesting it under `data`.
+    case 'get_waitlist':
+      var wlResult = getWaitlist();
+      if (wlResult && wlResult.ok === false) return wlResult;
+      return { ok: true, data: wlResult };
+
     default:
       return { ok: false, error: 'invalid_action', message: 'Unknown action: ' + action };
   }
@@ -318,6 +326,13 @@ function doPost(e) {
       }
       if (action === 'get_next_cert_number') {
         return _jsonResponse({ ok: true, suggested: generateNextId(GIFT_CARDS_SHEET_NAME, 'GC-', 6) });
+      }
+      // Waitlist actions (server_token-gated, Phase 78)
+      if (action === 'add_waitlist_entry') {
+        return _jsonResponse(addWaitlistEntry(payload));
+      }
+      if (action === 'update_waitlist_status') {
+        return _jsonResponse(updateWaitlistStatus(payload));
       }
       // BrewPad write actions (server_token-gated, Phase 76-01)
       if (action === 'update_batch') {
@@ -4964,6 +4979,141 @@ function waitlistDedupeDecision(rows, email, category) {
   }
 
   return { action: 'new', row: null };
+}
+
+/**
+ * Add a new waitlist signup (or no-op on a D-06 dedupe hit). Called via server_token auth
+ * (Railway middleware, POST /api/waitlist) — deliberately absent from both admin-proxy
+ * whitelists, staff never add rows directly.
+ *
+ * Rigor level mirrors addReservation, NOT the money-adjacent gift-card handlers: plain
+ * sheet.appendRow(...), no acquireScriptLock(). D-01 already accepts sheets' weak concurrent-
+ * write posture for this non-money list; D-06's idempotency is the mitigation for a double
+ * submit, not a lock (RESEARCH.md Pitfall 5).
+ *
+ * @param {Object} payload - { email, category }
+ * @returns {{ok:true, id:string}|{ok:false, error:string}}
+ */
+function addWaitlistEntry(payload) {
+  var ensured = ensureWaitlistSheet();
+  if (!ensured.ok) return ensured;
+
+  var email = normalizeWaitlistEmail(payload.email);
+  var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!email || !emailRegex.test(email)) {
+    return { ok: false, error: 'invalid_email' };
+  }
+
+  var category = String(payload.category || 'beer').trim().toLowerCase();
+
+  var rows = sheetToObjects(WAITLIST_SHEET_NAME);
+  var decision = waitlistDedupeDecision(rows, email, category);
+
+  // D-06 non-disclosure: the dedupe-hit and new-row branches return the IDENTICAL {ok, id}
+  // key set. No disclosing field name may ever appear on either return path.
+  if (decision.action === 'existing') {
+    return { ok: true, id: decision.row.id };
+  }
+
+  var id = Utilities.getUuid();
+  ensured.sheet.appendRow([
+    id,
+    waitlistCellSafe(email),
+    waitlistCellSafe(category),
+    'waiting',
+    new Date().toISOString(),
+    false,
+    ''
+  ]);
+
+  invalidateSheetCache(WAITLIST_SHEET_NAME);
+  return { ok: true, id: id };
+}
+
+/**
+ * Return all waitlist rows for the BrewPad admin view. Explicit field allowlist keeps _row
+ * (sheetToObjects's internal 1-based index) out of the client payload, mirroring getGiftCards.
+ * Deliberately no _cachedGet wrapper — get_gift_cards sets the precedent of skipping the cache
+ * layer entirely for a low-volume staff list (sidesteps the Phase 69 stale-cache bug class).
+ *
+ * If the Waitlist tab is absent, ensureWaitlistSheet() creates it inline and this returns an
+ * empty array (via the caller's {ok:true, data:[]}) rather than throwing. If the tab exists but
+ * headers have drifted, this returns the ensureWaitlistSheet() failure object directly so the
+ * caller (handleReadAction) can surface it undisguised.
+ *
+ * @returns {Array<Object>|{ok:false, error:string, missing:Array<string>}}
+ */
+function getWaitlist() {
+  var ensured = ensureWaitlistSheet();
+  if (!ensured.ok) return ensured;
+
+  var rows = sheetToObjects(WAITLIST_SHEET_NAME);
+  return rows.map(function (w) {
+    return {
+      id: w.id,
+      email: w.email,
+      category: w.category,
+      status: w.status,
+      signed_up_at: w.signed_up_at,
+      mailerlite_synced: waitlistSyncedTrue(w.mailerlite_synced),
+      notes: w.notes
+    };
+  });
+}
+
+/**
+ * Update a waitlist row's status / notes / mailerlite_synced flag. Called from BrewPad via
+ * /api/batch/admin-proxy (session-tier only). No acquireScriptLock() — see addWaitlistEntry's
+ * comment; this is not a money-adjacent write.
+ *
+ * @param {Object} payload - { id, status?, notes?, mailerlite_synced? } — at least one of the
+ *   three optional fields is required.
+ * @returns {{ok:true, id:*, status:string}|{ok:false, error:string}}
+ */
+function updateWaitlistStatus(payload) {
+  var ensured = ensureWaitlistSheet();
+  if (!ensured.ok) return ensured;
+
+  var id = payload.id;
+  if (!id) return { ok: false, error: 'not_found' };
+
+  var hasStatus = Object.prototype.hasOwnProperty.call(payload, 'status');
+  var hasNotes = Object.prototype.hasOwnProperty.call(payload, 'notes');
+  var hasSynced = Object.prototype.hasOwnProperty.call(payload, 'mailerlite_synced');
+
+  if (!hasStatus && !hasNotes && !hasSynced) {
+    return { ok: false, error: 'no_fields' };
+  }
+
+  // D-05: validate BEFORE any setValue — an out-of-set status writes nothing.
+  var validStatuses = ['waiting', 'contacted', 'booked', 'removed'];
+  if (hasStatus && validStatuses.indexOf(payload.status) === -1) {
+    return { ok: false, error: 'invalid_status' };
+  }
+
+  var result = findRowById(WAITLIST_SHEET_NAME, String(id).trim());
+  if (result.row === -1) return { ok: false, error: 'not_found' };
+
+  var sheet = ensured.sheet;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  if (hasStatus) {
+    var statusCol = headers.indexOf('status') + 1;
+    sheet.getRange(result.row, statusCol).setValue(payload.status);
+  }
+  if (hasNotes) {
+    var notesCol = headers.indexOf('notes') + 1;
+    sheet.getRange(result.row, notesCol).setValue(waitlistCellSafe(payload.notes));
+  }
+  if (hasSynced) {
+    var syncedCol = headers.indexOf('mailerlite_synced') + 1;
+    sheet.getRange(result.row, syncedCol).setValue(waitlistSyncedTrue(payload.mailerlite_synced));
+  }
+
+  invalidateSheetCache(WAITLIST_SHEET_NAME);
+
+  var finalStatus = hasStatus ? payload.status : result.data.status;
+  return { ok: true, id: id, status: finalStatus };
 }
 
 /**
