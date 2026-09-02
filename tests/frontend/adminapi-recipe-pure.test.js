@@ -228,11 +228,14 @@ describe('normalizeRecipeIngredientTuple', function () {
     var api = loadAdminApi();
     var nonFinite = api.normalizeRecipeIngredientTuple('123', 'abc', 'kg');
     expect(nonFinite).not.toBe(api.normalizeRecipeIngredientTuple('123', 0, 'kg'));
-    expect(nonFinite).not.toBe(api.normalizeRecipeIngredientTuple('123', NaN, 'kg'));
-    expect(nonFinite).not.toBe(api.normalizeRecipeIngredientTuple('123', Infinity, 'kg'));
-    // Two independently-computed non-finite keys must still be equal to each other (same
-    // sentinel token) — this is checked separately by recipeIngredientsUnchanged's own
-    // non-finite guard, not required to differ tuple-to-tuple here.
+    expect(nonFinite).not.toBe(api.normalizeRecipeIngredientTuple('123', 5, 'kg'));
+    expect(nonFinite).not.toBe(api.normalizeRecipeIngredientTuple('123', -1, 'kg'));
+    // NaN and Infinity are themselves non-finite, so they legitimately share the same
+    // '!nonfinite' sentinel as 'abc' — that collision is intentional (recipeIngredientsUnchanged
+    // treats ANY non-finite tuple as forcing "changed" regardless of what it matches against),
+    // not a case this test needs to exclude.
+    expect(nonFinite).toBe(api.normalizeRecipeIngredientTuple('123', NaN, 'kg'));
+    expect(nonFinite).toBe(api.normalizeRecipeIngredientTuple('123', Infinity, 'kg'));
   });
 });
 

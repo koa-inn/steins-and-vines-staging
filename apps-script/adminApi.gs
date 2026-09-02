@@ -1263,6 +1263,109 @@ function generateNextId(sheetName, prefix, padLength) {
 }
 
 /**
+ * Zero-pad `num` to `padLength` digits and prefix it. Mirrors generateNextId's own padding
+ * loop (above) so hoisted, in-memory id minting produces identical ids to the un-hoisted
+ * per-call path. Numbers longer than padLength are NOT truncated.
+ * @param {string} prefix
+ * @param {number} num
+ * @param {number} [padLength] - defaults to 6
+ * @returns {string}
+ */
+function formatPaddedId(prefix, num, padLength) {
+  if (!padLength) padLength = 6;
+  var s = String(num);
+  while (s.length < padLength) s = '0' + s;
+  return prefix + s;
+}
+
+/**
+ * Given already-fetched 2D data rows (NO header row), return the highest integer suffix
+ * among cells in `colIndex` that start with `prefix`. Returns 0 when none match. Mirrors
+ * generateNextId's scan loop (above) but operates on a passed-in array instead of doing its
+ * own Sheets read, so a caller that already has the data (e.g. for a comparison) can also
+ * mint the next id from it without a second round-trip.
+ * @param {Array<Array>} dataRows
+ * @param {number} colIndex
+ * @param {string} prefix
+ * @returns {number}
+ */
+function maxIdNumFromColumn(dataRows, colIndex, prefix) {
+  if (!dataRows || !dataRows.length) return 0;
+  var maxNum = 0;
+  for (var i = 0; i < dataRows.length; i++) {
+    var id = String(dataRows[i][colIndex] || '');
+    if (id.indexOf(prefix) === 0) {
+      var num = parseInt(id.substring(prefix.length), 10);
+      if (!isNaN(num) && num > maxNum) maxNum = num;
+    }
+  }
+  return maxNum;
+}
+
+/**
+ * Canonical comparison key for one RecipeIngredients row's (item_id, quantity, unit) tuple.
+ * Mirrors the write path's exact coercions (updateRecipe's insert loop: sanitizeInput on
+ * item_id/unit, `!== undefined ? Number(...) : 0` on quantity) so a JSON-payload tuple and a
+ * Sheets-read-back tuple for the same logical row normalize to the same key.
+ *
+ * Deliberately does NOT case-fold item_id or unit. A false "changed" verdict from this
+ * function costs one harmless, self-correcting wasted rewrite. A false "unchanged" verdict
+ * silently discards a user's ingredient edit with no error surface. Every ambiguity here
+ * must resolve toward "changed" — so casing, order and non-finite quantities are all
+ * significant.
+ * @param {*} itemId
+ * @param {*} quantity
+ * @param {*} unit
+ * @returns {string}
+ */
+function normalizeRecipeIngredientTuple(itemId, quantity, unit) {
+  var itemKey = String(itemId == null ? '' : itemId).trim();
+  var unitKey = String(unit == null ? '' : unit).trim();
+
+  var rawQty = (quantity === undefined || quantity === null || quantity === '') ? 0 : quantity;
+  var n = Number(rawQty);
+  var qtyKey;
+  if (!isFinite(n)) {
+    // Never let two unparseable quantities compare equal — always force "changed".
+    qtyKey = '!nonfinite';
+  } else {
+    // Round to 9 decimal places to absorb Sheets/JSON float drift (e.g. 0.1 + 0.2) without
+    // merging any quantity difference that matters at brewing magnitudes (kg/g/pcs).
+    qtyKey = String(Math.round(n * 1e9) / 1e9);
+  }
+
+  return itemKey + ' ' + qtyKey + ' ' + unitKey;
+}
+
+/**
+ * Order-sensitive, length-sensitive element-wise comparison of two arrays of tuple keys
+ * (each produced by normalizeRecipeIngredientTuple). Used to decide whether an incoming
+ * ingredient list actually differs from what is stored, so the expensive delete+insert can
+ * be skipped when it does not (D-04).
+ * @param {Array<string>} incomingTuples
+ * @param {Array<string>} storedTuples
+ * @returns {boolean}
+ */
+function recipeIngredientsUnchanged(incomingTuples, storedTuples) {
+  var a = incomingTuples || [];
+  var b = storedTuples || [];
+
+  if (a.length !== b.length) return false;
+
+  for (var i = 0; i < a.length; i++) {
+    // A non-finite quantity on either side always forces "changed" — even two identical
+    // sentinel tokens must never be treated as an unchanged match.
+    if (a[i].indexOf('!nonfinite') !== -1 || b[i].indexOf('!nonfinite') !== -1) return false;
+  }
+
+  for (var j = 0; j < a.length; j++) {
+    if (a[j] !== b[j]) return false;
+  }
+
+  return true;
+}
+
+/**
  * Calculate due date from start date + day offset
  */
 /**
