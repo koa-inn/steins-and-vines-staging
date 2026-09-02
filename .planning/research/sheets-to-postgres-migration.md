@@ -328,8 +328,18 @@ kiosk.html Gift Card Management screen (~half a day).
 ### Stage 3 — Recipes + RecipeIngredients *(only if triggered)*
 
 Moves together (FK). Value is real — stable ingredient IDs (currently churned on every save,
-per the note), atomic ingredient rewrite, and a genuine unique constraint on
-`(recipe_id, item_id)`. But Phase 79 already makes saves fast, and the Phase 73/74 pricing
+per the note) and an atomic ingredient rewrite.
+
+> **CORRECTION (2026-09-02, from live data during Phase 79 execution):** an earlier draft of this
+> section proposed "a genuine unique constraint on `(recipe_id, item_id)`" as a benefit.
+> **That constraint is wrong and would reject real production data.** Recipe `SV-R-000002` has
+> **three** ingredient rows carrying the same `item_id` (`109900000000621293`) out of 13 rows —
+> a recipe legitimately doses the same catalog item at multiple stages/quantities. Any
+> `recipe_ingredients` schema must treat `ingredient_id` as the sole key and allow repeated
+> `(recipe_id, item_id)` pairs. Phase 79's D-09 id-honouring logic correctly keys on
+> `ingredient_id`, not `item_id`, and handles the duplicates.
+
+But Phase 79 already makes saves fast, and the Phase 73/74 pricing
 guards live in `js/lib/recipe-scaling.js`, not in the store — so Postgres buys correctness in
 one narrow place. Seam already exists (`routes/recipes.js`, `pos-recipe.js`).
 **Effort: 4–6 days.** Staff lose the ability to hand-fix a bad unit in the sheet — but the
