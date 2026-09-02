@@ -57,6 +57,7 @@ var VESSEL_HISTORY_SHEET_NAME = 'VesselHistory';
 var RECIPES_SHEET_NAME = 'Recipes';
 var RECIPE_INGREDIENTS_SHEET_NAME = 'RecipeIngredients';
 var GIFT_CARDS_SHEET_NAME = 'GiftCards';
+var GIFT_CARD_TRANSACTIONS_SHEET_NAME = 'GiftCardTransactions';
 
 // Cal.com public booking page for the Bottling Appointment event type (Phase 25).
 // Customers self-book here; the brewpad "Send Bottling Invite" button emails this link.
@@ -4103,6 +4104,130 @@ function setupRecipeTabs() {
   }
 
   Logger.log('Recipe tab setup complete');
+}
+
+// ─── Gift Card Ledger — pure decision helpers (Phase 51, D-12) ──────────────
+// These four helpers are strictly pure: no SpreadsheetApp, LockService, Session,
+// CacheService or Logger reference anywhere in their bodies, and no reliance on
+// module-level mutable state (in particular not _sheetCache). This is enforced by
+// tests/frontend/adminapi-giftcard-ledger.test.js's source-slice purity assertion,
+// not merely requested — it is what keeps them unit-testable outside Google's
+// runtime as this file evolves.
+
+/**
+ * Trim + uppercase a gift-card certificate number for comparison. '' for null/undefined.
+ * @param {*} value
+ * @returns {string}
+ */
+function normalizeCertNumber(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim().toUpperCase();
+}
+
+/**
+ * Round a money amount to 2 decimal places, absorbing float drift (0.1 + 0.2 -> 0.3).
+ * @param {number} number
+ * @returns {number}
+ */
+function roundGiftCardAmount(number) {
+  return Math.round(number * 100) / 100;
+}
+
+/**
+ * Interpret a GiftCardTransactions cell value as a boolean flag. Sheets can hand back a real
+ * boolean, a string ('TRUE'/'true'/'yes'/'y'/'1'), or a number (1) depending on how the cell was
+ * written/edited by staff — this normalizes all of them.
+ * @param {*} cellValue
+ * @returns {boolean}
+ */
+function ledgerFlagTrue(cellValue) {
+  if (cellValue === true) return true;
+  if (cellValue === 1) return true;
+  if (typeof cellValue === 'string') {
+    var v = cellValue.trim().toLowerCase();
+    return v === 'true' || v === 'yes' || v === 'y' || v === '1';
+  }
+  return false;
+}
+
+/**
+ * The D-12 idempotency decision. Takes the GiftCardTransactions rows as its FIRST parameter —
+ * it never reads the sheet itself; the caller (51-02) is responsible for the read.
+ *
+ * Priority order (see 51-CONTEXT.md D-12 and 51-01-PLAN.md <behavior> for the full rationale):
+ *   1. a settled row matching cert+ref                              -> 'replay'
+ *   2. any OTHER row matching cert+ref whose status isn't 'claimed' -> 'replay' (consumed-ref rule)
+ *   3. a claimed row matching cert+ref                              -> 'blocked' (balance may or
+ *      may not have moved yet — fail closed rather than report a possibly-wrong balance)
+ *   4. any claimed row for the cert with a DIFFERENT ref            -> 'blocked' (the D-12 case:
+ *      a client-side retry re-mints a fresh ref, so a ref-keyed guard alone would say 'proceed')
+ *   5. otherwise                                                    -> 'proceed'
+ *
+ * `unsettled` is populated from the any-claimed-row observation regardless of which action is
+ * returned, so the caller can see the cert is dirty even on a read-only 'replay' result.
+ *
+ * @param {Array<Object>} rows - GiftCardTransactions rows, shaped like sheetToObjects() output
+ * @param {string} certNumber
+ * @param {string} txRef
+ * @returns {{action: string, row: (Object|null), unsettled: boolean}}
+ */
+function giftCardLedgerDecision(rows, certNumber, txRef) {
+  var normCert = normalizeCertNumber(certNumber);
+  var refStr = String(txRef);
+
+  var settledSameRefMatch = null;
+  var sameRefMatch = null;
+  var firstClaimedRow = null;
+  var anyClaimedRowExists = false;
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (normalizeCertNumber(row.cert_number) !== normCert) continue;
+
+    // Blocking (and the "is this row claimed" observation generally) requires an EXACT
+    // 'claimed' match after trim+lowercase. This is intentionally forgiving by design: a staff
+    // member who types anything else into the status cell clears a stuck claim with no code
+    // change or redeploy (D-12's "there must be a way for staff to clear a stuck claim";
+    // see docs/APPS_SCRIPT.md for the runbook).
+    var status = String(row.status || '').trim().toLowerCase();
+    var isClaimed = status === 'claimed';
+
+    if (isClaimed) {
+      anyClaimedRowExists = true;
+      if (!firstClaimedRow) firstClaimedRow = row;
+    }
+
+    if (String(row.tx_ref) === refStr) {
+      if (!sameRefMatch) sameRefMatch = row;
+      if (status === 'settled' && !settledSameRefMatch) settledSameRefMatch = row;
+    }
+  }
+
+  if (settledSameRefMatch) {
+    return { action: 'replay', row: settledSameRefMatch, unsettled: anyClaimedRowExists };
+  }
+
+  if (sameRefMatch) {
+    var sameRefStatus = String(sameRefMatch.status || '').trim().toLowerCase();
+    if (sameRefStatus !== 'claimed') {
+      // Consumed-ref rule: this exact tx_ref has already appeared in the ledger, so the balance
+      // may already have moved under it — regardless of what the row's status has since been
+      // edited to. Do NOT make this forgiving like the claimed-status check above: the two rules
+      // pull in opposite directions on purpose. The escape hatch (editing status away from
+      // 'claimed') frees the CARD for new attempts but must never un-protect the exact ref it
+      // just rescued, or a resubmission of that ref would move money a second time — reopening
+      // this phase's own defect immediately after its sanctioned remedy is used. Deleting the
+      // row is the only full reset.
+      return { action: 'replay', row: sameRefMatch, unsettled: anyClaimedRowExists };
+    }
+    return { action: 'blocked', row: sameRefMatch, unsettled: anyClaimedRowExists };
+  }
+
+  if (firstClaimedRow) {
+    return { action: 'blocked', row: firstClaimedRow, unsettled: anyClaimedRowExists };
+  }
+
+  return { action: 'proceed', row: null, unsettled: anyClaimedRowExists };
 }
 
 // ─── Gift Card Lifecycle (Phase 44) ─────────────────────────────────────────
