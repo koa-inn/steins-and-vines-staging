@@ -1197,12 +1197,15 @@ Plans:
 - Does removing/booking someone need to write back to the MailerLite group, or only to our store?
 
 **Depends on:** Phase 74 (which wired the form and made the waitlist the sole ferment-in-store route for beer). Independent of the Phase 74 production deploy.
-**Requirements**: TBD — assign at discuss-phase.
-**Plans:** 0 plans
+**Requirements**: No REQ-IDs mapped. Traceability runs through the locked CONTEXT.md decisions D-01..D-08, each cited in at least one plan's `must_haves`.
+**Plans:** 4 plans (3 parallel in wave 1, 1 owner cutover in wave 2)
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 78 to break down)
+- [ ] 78-01-PLAN.md — Apps Script: `Waitlist` tab schema, fail-closed bootstrap, pure dedupe decision, and the add/list/update handlers + dispatch (D-01, D-02, D-05, D-06, D-07, D-08)
+- [ ] 78-02-PLAN.md — Middleware: make the sheet write authoritative in `POST /api/waitlist`, demote MailerLite to fire-and-forget, allow-list the two BrewPad actions on the admin proxy (D-03, D-06, D-07)
+- [ ] 78-03-PLAN.md — BrewPad: sixth Waitlist tab — ordered queue table, one-way status cycle, Remove, inline notes, sync pill and filters (D-02, D-05, D-07, D-08)
+- [ ] 78-04-PLAN.md — Cutover: owner Apps Script redeploy, D-04 MailerLite timestamp gate + backfill, staging deploy and end-to-end UAT (D-01, D-04, D-05, D-07)
 
 ---
 
