@@ -1206,6 +1206,39 @@ Plans:
 
 ---
 
+### Phase 79: Apps Script recipe-save performance — updateRecipe times out at 15s, renaming a recipe is impossible
+
+**Goal:** Make recipe saves complete well inside the middleware's 15s Apps Script timeout. Today `updateRecipe` in `apps-script/adminApi.gs` performs ~54 Sheets round-trips for a 13-ingredient recipe and reliably exceeds the ceiling, so `PUT /api/recipes/:id` returns 502 and **no recipe can be saved at all** — including a pure rename.
+
+**Evidence (owner-reported 2026-09-01, diagnosed in-browser 2026-09-02):** two independent saves of SV-R-000002 took 15287ms and 15313ms against a `timeout: 15000` (`zoho-middleware/routes/recipes.js:25`), both returning 502. Payload is only 4.7KB / 13 ingredients — size is not the cause.
+
+**Root cause:** N+1 Sheets round-trips. `generateNextId` reads an entire column and is called *inside* the per-ingredient insert loop (13 full column scans); ingredient rows are deleted one at a time via `deleteRow` and re-inserted one at a time via `appendRow`; the recipe row's 12+ fields are written with individual `setValue` calls. Compounding it, `updateRecipe` rewrites the whole ingredient list whenever `payload.ingredients !== undefined` — and `buildRecipePayload` always sends it — so editing only the *name* deletes and recreates every ingredient row.
+
+**Fix direction (ordered by value-per-risk, see the note for detail):**
+1. Skip the ingredient rewrite entirely when the incoming ingredients match the stored rows — makes a rename near-free.
+2. Hoist `generateNextId` out of the insert loop (compute max once, increment in memory).
+3. Batch inserts into a single `setValues()`.
+4. Collapse consecutive `deleteRow` calls into `deleteRows(start, count)`.
+5. Batch the recipe-row field writes into one read + one `setValues()`.
+
+Target: ~54 round-trips → ~5. Do NOT simply raise the middleware timeout — that hides a fragile write.
+
+**Also in scope (decide at planning):** ingredient IDs churn on every save (`ingredient_id` is sent but discarded and regenerated), so nothing can hold a stable reference to a recipe ingredient.
+
+**Constraint:** `apps-script/adminApi.gs` is vendored here but executes in Google's environment — it cannot be verified locally and **requires an owner redeploy**. Plan for a live probe after deploy rather than test-suite proof.
+
+**Deferred (explicitly NOT this phase):** migrating off Google Sheets to Postgres. Assessed 2026-09-02 and deferred — the timeout is caused by round-trip count, not data volume, and would likely be carried into any new store. Revisit after this phase's measurements. The genuine long-term drivers are the global script lock, absence of transactions, and unindexed scans — not row counts. See `.planning/notes/recipe-save-performance-and-sheets-scaling.md`.
+
+**Requirements**: Owner-reported blocker 2026-09-01. Source: `.planning/notes/recipe-save-performance-and-sheets-scaling.md`.
+**Depends on:** none (independent of Phase 74; the two causes that masked this one are already fixed and deployed)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 79 to break down)
+
+---
+
 ### Phase 46: Auth Re-Architecture (CRITICAL — split from Phase 45)
 
 **v4.5 carryover:** This phase closes v4.5 **SEC-02** (audit C1) — carried over as-is, not re-planned. ✅ COMPLETE 2026-07-08: owner production cutover (46-10) executed off-hours; kiosk (device token), admin + BrewPad (Google session) all verified; `API_SECRET_KEY` rotated → leaked key dead (403), no surface locked out, public checkout intact. See `46-10-SUMMARY.md` and `docs/RUNBOOK.md` Outcome record; `REQUIREMENTS.md` Traceability.
