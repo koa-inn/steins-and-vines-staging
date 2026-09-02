@@ -167,6 +167,91 @@ This is a legacy handler. New reservations come through the checkout middleware 
 
 ---
 
+## Gift-Card Ledger (GiftCardTransactions)
+
+### What it is and why
+
+Every gift-card redemption or reload writes a row to the `GiftCardTransactions` tab **before** it
+touches the balance, and marks that row settled once the balance change succeeds. If the script is
+interrupted partway through — a timeout, a quota limit, a transient Google error — the row is left
+behind in an unfinished state, and the ledger refuses the next redemption or reload on that
+certificate instead of silently changing the balance a second time. Before this existed, a script
+that died mid-write could be replayed by the customer's next attempt and debit (or credit) them
+twice, because the old idempotency key was written LAST, after the money had already moved. This
+closes audit findings H6 (double-debit on redeem) and H7 (duplicate credit on reload), requirement
+**MONEY-03**.
+
+### The columns
+
+The tab has exactly these 12 columns, in this order, created by `setupGiftCardLedger()`:
+
+| Column | Meaning |
+|---|---|
+| `tx_id` | Unique id for this ledger row (a UUID, not a sequence number) |
+| `cert_number` | The gift certificate this row belongs to |
+| `tx_ref` | The transaction reference the caller sent (the kiosk's payment key) |
+| `kind` | `redeem` or `reload` |
+| `amount` | The dollar amount of this redemption or reload |
+| `balance_before` | The certificate's balance immediately before this change |
+| `balance_after` | The certificate's balance immediately after this change (blank until settled) |
+| `status` | `claimed` (write started, not yet confirmed), `settled` (write completed), or `resolved` (a staff member cleared a stuck claim by hand) |
+| `needs_manual_review` | `true` once a blocked or failed attempt has flagged this row for a human to look at |
+| `created_at` | Timestamp the claim row was written |
+| `settled_at` | Timestamp the row was marked settled (blank until settled) |
+| `notes` | Free-text explanation, filled in automatically when a row is flagged |
+
+### First-time setup
+
+From the Apps Script editor's function dropdown, select `setupGiftCardLedger` and click **Run**.
+This is safe to re-run at any time — it does nothing if the tab already exists and its columns are
+intact. It is a convenience, not a prerequisite: the tab also self-creates the first time any
+redeem or reload actually needs it.
+
+### "A customer says their gift card is refused" — the stuck-claim playbook
+
+Symptom: the kiosk shows a gift-card failure and the middleware log carries `unsettled_claim`.
+This means the ledger found a row for that certificate still sitting at `status: claimed` and
+refused to move the balance again until a human looks at it. Here is how to clear it:
+
+a. Open the Google Sheet, go to the `GiftCardTransactions` tab, and filter or search the
+   `cert_number` column for the customer's certificate.
+b. Find the row whose `status` is `claimed`. Its `tx_id` is included in the error the middleware
+   logged, so you can match the exact row rather than guessing.
+c. Compare that row's `balance_before` against the `current_balance` on the `GiftCards` tab for
+   the same certificate:
+   - **If they are EQUAL**, the balance never moved — the redemption or reload did not happen.
+     The customer still has their money (or their card was never credited). It is safe to re-run
+     the sale.
+   - **If `current_balance` equals `balance_before` minus (for a redeem) or plus (for a reload)
+     `amount`**, the balance DID move — the customer was already charged (or already credited).
+     Do **NOT** re-run the sale, or you will charge/credit them a second time.
+d. Once you know which case you're in, type `resolved` into that row's `status` cell. That is the
+   entire remedy — one cell edit. The certificate works again on the very next attempt.
+e. Don't be afraid of getting the exact word wrong: the guard only blocks on the exact value
+   `claimed` (case and surrounding spaces are ignored when it checks). Typing anything else into
+   `status`, or deleting the row entirely, clears the block. There is no redeploy and no code
+   change involved in clearing a stuck claim.
+f. One thing that is **not** safe: do not edit `current_balance` on the `GiftCards` tab to "fix" a
+   discrepancy without first doing step (c). `current_balance` is the balance of record — trust it,
+   don't overwrite it to make numbers match your assumption.
+
+### What `needs_manual_review: TRUE` means
+
+A redemption or reload against this certificate was refused or failed, and a human has not yet
+looked at it. This is the first place in the system where that flag is durable — before this
+phase it only ever existed as a field in the middleware's JSON response and a Redis sentinel, so
+it vanished the moment the process restarted. Now it lives in the sheet cell until someone clears
+it via the playbook above.
+
+### Where the error strings surface
+
+`unsettled_claim`, `ledger_unavailable`, `claim_write_failed` and `write_failed` all arrive at
+`zoho-middleware/routes/pos.js:1706-1735` and `:1786-1813`, which log CRITICAL and set
+`giftCardActivationFailed = true` — the same alert path staff already recognise from the Phase 44
+gift-card flow.
+
+---
+
 ## Railway Env Vars Checklist
 
 When setting up a new Railway deployment from scratch:
