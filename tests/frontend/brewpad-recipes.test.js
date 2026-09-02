@@ -19,6 +19,7 @@ var recipeRowPrice             = bp.recipeRowPrice;
 var canActivateRecipe          = bp.canActivateRecipe;
 var buildRecipePayload         = bp.buildRecipePayload;
 var recipeDeleteConfirmMessage = bp.recipeDeleteConfirmMessage;
+var unitOptionsFor             = bp.unitOptionsFor;
 
 // ---------------------------------------------------------------------------
 // filterRecipesByName
@@ -462,5 +463,64 @@ describe('recipeDeleteConfirmMessage', function () {
     expect(function () { recipeDeleteConfirmMessage(null); }).not.toThrow();
     var msg = recipeDeleteConfirmMessage(null);
     expect(msg.toLowerCase()).toContain('cannot be undone');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// unitOptionsFor — constrains the recipe editor's unit dropdown to units that
+// can actually convert against the catalog item, so a line CANNOT be saved in
+// a unit the pricing path will later refuse. Lactic Acid 88% (catalog kg, line
+// "L") is the case that motivated this: unconvertible, unpriceable, reported
+// as a false "out of stock", and unfixable because the column was read-only.
+// ---------------------------------------------------------------------------
+describe('unitOptionsFor', function () {
+  test('is exported from the module', function () {
+    expect(typeof unitOptionsFor).toBe('function');
+  });
+
+  test('a kg catalog item offers only mass units', function () {
+    expect(unitOptionsFor('kg', 'kg')).toEqual(['g', 'kg']);
+  });
+
+  test('a g catalog item offers the same mass units', function () {
+    expect(unitOptionsFor('g', 'g')).toEqual(['g', 'kg']);
+  });
+
+  test('a volume catalog item offers only volume units', function () {
+    expect(unitOptionsFor('l', 'ml')).toEqual(['ml', 'l']);
+  });
+
+  test('a count catalog item offers only count units', function () {
+    expect(unitOptionsFor('pcs', 'pcs')).toEqual(['pcs', 'ea', 'each', 'unit', 'pkg', 'pack']);
+  });
+
+  test('never offers a cross-family unit — a kg item cannot be set to L', function () {
+    expect(unitOptionsFor('kg', 'kg').indexOf('l')).toBe(-1);
+    expect(unitOptionsFor('kg', 'kg').indexOf('ml')).toBe(-1);
+  });
+
+  test('surfaces an existing incompatible unit so bad data is visible and fixable', function () {
+    // the Lactic Acid case: catalog kg, line L
+    var opts = unitOptionsFor('kg', 'L');
+    expect(opts.indexOf('L')).toBe(0);
+    expect(opts.indexOf('g')).toBeGreaterThan(-1);
+    expect(opts.indexOf('kg')).toBeGreaterThan(-1);
+  });
+
+  test('does not duplicate the current unit when it is already compatible', function () {
+    var opts = unitOptionsFor('kg', 'g');
+    expect(opts.filter(function (u) { return u === 'g'; }).length).toBe(1);
+  });
+
+  test('an unknown catalog unit falls back to every known unit so the row stays editable', function () {
+    var opts = unitOptionsFor('', 'g');
+    expect(opts.indexOf('g')).toBeGreaterThan(-1);
+    expect(opts.indexOf('kg')).toBeGreaterThan(-1);
+    expect(opts.indexOf('ml')).toBeGreaterThan(-1);
+    expect(opts.indexOf('pcs')).toBeGreaterThan(-1);
+  });
+
+  test('an empty current unit does not add a blank option', function () {
+    expect(unitOptionsFor('kg', '').indexOf('')).toBe(-1);
   });
 });
