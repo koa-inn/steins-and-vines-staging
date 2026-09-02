@@ -21,6 +21,7 @@ if (process.env.SENTRY_DSN) {
 }
 
 var express = require('express');
+var axios = require('axios');
 var cors = require('cors');
 var crypto = require('crypto');
 var rateLimit = require('express-rate-limit');
@@ -195,9 +196,11 @@ app.post('/api/contact', contactLimiter, async function(req, res) {
   }
 });
 
-// Beer waitlist signup → adds the email to a MailerLite group (list-building,
-// not transactional). Public like /api/contact (registered before the API-key
-// gate) and rate-limited. Contact form + order emails still go via Resend.
+// Beer waitlist signup → writes an authoritative row to the `Waitlist` sheet
+// via Apps Script (D-03/Phase 78) and best-effort adds the email to a
+// MailerLite group (list-building, not transactional). Public like
+// /api/contact (registered before the API-key gate) and rate-limited.
+// Contact form + order emails still go via Resend.
 var waitlistLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 5,
@@ -208,26 +211,79 @@ var waitlistLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later' }
 });
 
+// Local helper — a fourth private copy of the callAppsScript(action, payload)
+// blocking-POST pattern also duplicated in routes/gift-cards.js, routes/
+// recipes.js and routes/pos-recipe.js. Deliberately not extracted into a
+// shared lib/apps-script.js here (CLAUDE.md rule 3 — out of scope refactor).
+function callAppsScript(action, payload) {
+  var url = process.env.APPS_SCRIPT_URL;
+  var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
+  var body = Object.assign({}, payload, { action: action, server_token: token });
+  return axios.post(url, JSON.stringify(body), {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 12000,
+    maxRedirects: 5
+  }).then(function (resp) { return resp.data || {}; });
+}
+
 app.post('/api/waitlist', waitlistLimiter, async function (req, res) {
   var email = (req.body.email || '').trim();
   var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) return res.status(400).json({ error: 'Valid email is required' });
 
-  if (!mailerlite.isConfigured()) {
-    console.error('[waitlist] MAILERLITE_API_KEY not set — cannot add subscriber');
-    return res.status(503).json({ error: 'Waitlist is temporarily unavailable' });
-  }
+  // Category is never client-supplied — a public unauthenticated endpoint
+  // must not be able to choose which queue a row lands in (T-78-07).
+  var category = 'beer';
 
   try {
-    var groupId = (process.env.MAILERLITE_WAITLIST_GROUP_ID || '').trim();
-    await mailerlite.addSubscriber(email, groupId ? [groupId] : []);
+    // D-03: the sheet write is authoritative and blocking. Exactly one
+    // add_waitlist_entry call is issued — no re-call wrapper of any kind
+    // (the admin proxy collapses upstream errors to 502, so a second call
+    // cannot distinguish "never happened" from "already happened" —
+    // RESEARCH.md Pitfall 4).
+    var sheetResult;
+    try {
+      sheetResult = await callAppsScript('add_waitlist_entry', { email: email, category: category });
+    } catch (writeErr) {
+      console.error('[waitlist] sheet write failed:', writeErr.message);
+      return res.status(503).json({ error: 'Waitlist is temporarily unavailable' });
+    }
+    if (!sheetResult || sheetResult.ok !== true) {
+      console.error('[waitlist] sheet write failed:', (sheetResult && sheetResult.error) || 'unknown error');
+      return res.status(503).json({ error: 'Waitlist is temporarily unavailable' });
+    }
+
+    var entryId = (sheetResult && sheetResult.id) || null;
+
+    // MailerLite is best-effort from here on — its outcome never changes
+    // the HTTP status (D-03). A failure/misconfiguration leaves the row's
+    // mailerlite_synced flag false, which is the persisted drift signal
+    // D-07 requires (a console.error alone would vanish on restart).
+    if (mailerlite.isConfigured()) {
+      var groupId = (process.env.MAILERLITE_WAITLIST_GROUP_ID || '').trim();
+      mailerlite.addSubscriber(email, groupId ? [groupId] : [])
+        .then(function () {
+          if (entryId) {
+            callAppsScript('update_waitlist_status', { id: entryId, mailerlite_synced: true })
+              .catch(function (err) { console.error('[waitlist] sync-flag write failed:', err.message); });
+          }
+        })
+        .catch(function (err) { console.error('[waitlist] MailerLite subscribe failed:', err.message); });
+    } else {
+      console.error('[waitlist] MAILERLITE_API_KEY not set — row recorded, marketing sync skipped');
+    }
+
     // Fire-and-forget staff heads-up — must not block or fail the signup.
     mailer.sendWaitlistNotification({ email: email })
       .catch(function (err) { console.error('[waitlist] staff notify failed:', err.message); });
+
+    // Identical response for a brand-new row and a dedupe hit — the
+    // middleware must never disclose whether the address was already
+    // listed (D-06).
     res.json({ success: true });
   } catch (err) {
-    console.error('[waitlist] MailerLite subscribe failed:', err.message);
-    res.status(500).json({ error: 'Could not join waitlist. Please try again.' });
+    console.error('[waitlist] unexpected error:', err.message);
+    res.status(503).json({ error: 'Waitlist is temporarily unavailable' });
   }
 });
 
