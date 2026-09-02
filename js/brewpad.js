@@ -881,6 +881,34 @@ function bpClassifyUnit(raw) {
   return { family: family, norm: norm };
 }
 
+// Units the recipe editor may offer for a line, given its catalog item's unit.
+// Constrained to the catalog unit's family: cross-family conversion needs a
+// per-substance density the system deliberately does not guess, so offering
+// (say) "L" for a kg-priced item would let the editor create a line that the
+// pricing path, the availability check and the save validator all reject.
+// An existing incompatible unit is surfaced FIRST so bad data stays visible
+// and repairable rather than silently swapped.
+function unitOptionsFor(catalogUnit, currentUnit) {
+  var family = bpClassifyUnit(catalogUnit).family;
+  var opts;
+  if (family === 'mass') {
+    opts = ['g', 'kg'];
+  } else if (family === 'volume') {
+    opts = ['ml', 'l'];
+  } else if (family === 'count') {
+    opts = BP_COUNT_UNITS.slice();
+  } else {
+    // Unknown/absent catalog unit — do not lock the row down; offer everything
+    // so the user can still correct it.
+    opts = ['g', 'kg', 'ml', 'l'].concat(BP_COUNT_UNITS);
+  }
+  var cur = (currentUnit || '').trim();
+  if (cur && opts.indexOf(cur) === -1 && opts.indexOf(cur.toLowerCase()) === -1) {
+    opts = [cur].concat(opts);
+  }
+  return opts;
+}
+
 // @param {Object} item - catalog view { unit, rate } — unit MUST be the catalog unit.
 // @param {Object} line - recipe-line view { unit, quantity } — unit MUST be the line unit.
 // @returns {{ ok: true, convertedQty: number, cost: number } | { ok: false, error: string }}
@@ -2611,7 +2639,13 @@ function bpIngredientLineCost(item, line) {
         html += '<input type="text" class="bp-input bp-ing-search" value="' + escapeHTML(ing.item_name || '') + '" placeholder="Search ingredient…" />';
         html += '</td>';
         html += '<td><input type="number" class="bp-input bp-ing-qty" value="' + escapeHTML(String(ing.quantity || '')) + '" step="0.01" min="0" inputmode="decimal" /></td>';
-        html += '<td class="bp-ing-unit">' + escapeHTML(ing.unit || '') + '</td>';
+        var unitOpts = unitOptionsFor(ing.catalog_unit, ing.unit);
+        html += '<td class="bp-ing-unit"><select class="bp-input bp-ing-unit-select" aria-label="Unit for ' + escapeHTML(ing.item_name || 'ingredient') + '">';
+        unitOpts.forEach(function (u) {
+          var sel = String(u).toLowerCase() === String(ing.unit || '').toLowerCase() ? ' selected' : '';
+          html += '<option value="' + escapeHTML(u) + '"' + sel + '>' + escapeHTML(u) + '</option>';
+        });
+        html += '</select></td>';
         html += '<td class="bp-ing-cost">' + (costEach > 0 ? (costResult.ok ? '$' + lineCost.toFixed(2) : '<span class="bp-ing-cost-unconvertible" title="' + escapeHTML(costResult.error || 'Cannot convert units') + '">N/A</span>') : '—') + '</td>';
         html += '<td class="bp-ing-retail">' + (retailEach > 0 ? (retailResult.ok ? '$' + lineRetail.toFixed(2) : '<span class="bp-ing-cost-unconvertible" title="' + escapeHTML(retailResult.error || 'Cannot convert units') + '">N/A</span>') : '—') + '</td>';
         html += '<td><span class="bp-ing-stock-hint">' + escapeHTML(stockText) + '</span></td>';
@@ -2681,6 +2715,21 @@ function bpIngredientLineCost(item, line) {
           if (retailEach > 0 && retailResult.ok) totalRetail += retailResult.cost;
         });
         updateIngredientTotalsBp(totalCost, totalRetail, _recipesState.currentIngredients.length);
+        updateActivateGuardrail();
+      });
+    });
+
+    // Unit change — re-render fully so cost/retail/availability recompute
+    // against the new unit (a unit edit can flip a line between priceable and
+    // N/A, which an inline totals update would not reflect).
+    tbody.querySelectorAll('.bp-ing-unit-select').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var row = sel.closest('.bp-recipes-ing-row');
+        var idx = parseInt(row && row.getAttribute('data-ing-idx'), 10);
+        if (!isNaN(idx) && _recipesState.currentIngredients[idx]) {
+          _recipesState.currentIngredients[idx].unit = sel.value;
+        }
+        renderIngredientRows(_recipesState.currentIngredients, _recipesState.availability);
         updateActivateGuardrail();
       });
     });
@@ -9478,7 +9527,8 @@ if (typeof module !== 'undefined' && module.exports) {
     bpScaleIngredients: bpScaleIngredients,
     // Phase 73-07: unit-aware editor cost helper (mirrors lib/recipe-scaling.js, CR-02)
     bpIngredientLineCost: bpIngredientLineCost,
-    bpClassifyUnit: bpClassifyUnit
+    bpClassifyUnit: bpClassifyUnit,
+    unitOptionsFor: unitOptionsFor
     // Plan 36-19: renderRecipeListHtml + bpCloneRecipePayload exported by the IIFE inner block above
     // Plan 36-22: afterBatchWrite + getStateForTest exported by the IIFE inner block above
     // State-dependent attach-flow exports are merged by Object.assign inside the IIFE above
