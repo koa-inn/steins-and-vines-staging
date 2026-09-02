@@ -3995,6 +3995,7 @@ var ADMIN_PROXY_ACTIONS = {
   get_vessels: true,
   get_ferm_schedules: true,
   get_tasks_upcoming: true,
+  get_waitlist: true,
   // writes
   create_batch: true,
   update_batch: true,
@@ -4006,7 +4007,8 @@ var ADMIN_PROXY_ACTIONS = {
   delete_plato_reading: true,
   create_ferm_schedule: true,
   update_ferm_schedule: true,
-  delete_ferm_schedule: true
+  delete_ferm_schedule: true,
+  update_waitlist_status: true
 };
 
 // Reads must be forwarded to Apps Script as GET (doGet has a generic server_token
@@ -4020,7 +4022,8 @@ var ADMIN_PROXY_READS = {
   get_batch_dashboard_summary: true,
   get_vessels: true,
   get_ferm_schedules: true,
-  get_tasks_upcoming: true
+  get_tasks_upcoming: true,
+  get_waitlist: true
 };
 
 router.post('/api/batch/admin-proxy', function (req, res) {
