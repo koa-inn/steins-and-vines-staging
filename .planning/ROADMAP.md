@@ -1443,7 +1443,9 @@ Plans:
 - **Criterion 4 (M18 — header-mapped `issueGiftCard` + bounded numerics)** → deferred to a follow-up phase.
 - **Criterion 5 (M15 — negative-taxable custom-line tax parity)** → **MOVED OUT of Phase 51 entirely.** It shares no code path with the gift-card ledger and was parked here by the audit; it belongs with the kiosk/tax work. Rehome before closing MONEY-03.
 
-**Chosen approach: append-only ledger.** A `GiftCardTransactions` sheet where the `tx_ref` row is written as a **claim before the balance changes**, with the idempotency guard reading the ledger instead of `last_tx_ref`. Also gives the durable `needs_manual_review` record criterion 2 requires — today that flag exists only as a middleware response value and a Redis sentinel, never persisted. See `51-CONTEXT.md` (D-01..D-11).
+**Chosen approach: append-only ledger.** A `GiftCardTransactions` sheet where the `tx_ref` row is written as a **claim before the balance changes**, with the idempotency guard reading the ledger instead of `last_tx_ref`. Also gives the durable `needs_manual_review` record criterion 2 requires — today that flag exists only as a middleware response value and a Redis sentinel, never persisted. See `51-CONTEXT.md` (D-01..D-12).
+
+> ⚠ **CLOSEOUT WARNING — do not mark MONEY-03 fully done when this phase completes.** `.planning/PROJECT.md:21` and `.planning/REQUIREMENTS.md:30,84` still describe MONEY-03 as covering M9, M15 and M18 in full. This phase deliberately covers only criteria 1, 2, 6 and 7. Either narrow those descriptions or track the M9/M18 follow-up and the M15 rehome before MONEY-03 is closed.
 
 ---
 
