@@ -58,6 +58,7 @@ var RECIPES_SHEET_NAME = 'Recipes';
 var RECIPE_INGREDIENTS_SHEET_NAME = 'RecipeIngredients';
 var GIFT_CARDS_SHEET_NAME = 'GiftCards';
 var GIFT_CARD_TRANSACTIONS_SHEET_NAME = 'GiftCardTransactions';
+var WAITLIST_SHEET_NAME = 'Waitlist';
 
 // Cal.com public booking page for the Bottling Appointment event type (Phase 25).
 // Customers self-book here; the brewpad "Send Bottling Invite" button emails this link.
@@ -4819,6 +4820,150 @@ function getGiftCards() {
       last_updated: gc.last_updated
     };
   });
+}
+
+// ─── Waitlist (Phase 78, D-01) ───────────────────────────────────────────────
+// A durable, staff-readable beer waitlist. Mirrors the GiftCardTransactions ledger's
+// bootstrap + pure-decision shape (Phase 51), but at the "addReservation" rigor level —
+// no LockService, no claim-before-mutate ceremony — because a waitlist signup moves no
+// money (RESEARCH.md Pitfall 5, 78-CONTEXT.md D-01's accepted concurrent-write risk).
+
+/**
+ * Run manually from the Apps Script editor to create the Waitlist tab. Safe to re-run —
+ * skips creation if the tab already exists, and reports any missing required columns on a
+ * pre-existing tab with drifted headers.
+ */
+function setupWaitlist() {
+  var result = ensureWaitlistSheet();
+  if (result.ok) {
+    Logger.log('Waitlist tab ready (7 columns).');
+  } else {
+    Logger.log('Waitlist tab is missing required columns: ' + result.missing.join(', '));
+  }
+}
+
+/**
+ * Self-healing AND fail-closed (same combination as ensureGiftCardLedgerSheet, Phase 51,
+ * D-10): if the Waitlist tab is absent, create it inline with the exact 7-column header row,
+ * bolded and frozen. If the tab exists but ANY required column is missing (drifted headers),
+ * return waitlist_unavailable rather than repair headers or fall back to a positional write.
+ * @returns {{ok: true, sheet: Object, headers: Array<string>, col: Object}
+ *          |{ok: false, error: string, missing: Array<string>}}
+ */
+function ensureWaitlistSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(WAITLIST_SHEET_NAME);
+
+  var headerNames = ['id', 'email', 'category', 'status', 'signed_up_at', 'mailerlite_synced', 'notes'];
+
+  if (!sheet) {
+    sheet = ss.insertSheet(WAITLIST_SHEET_NAME);
+    sheet.appendRow(headerNames);
+    sheet.getRange(1, 1, 1, headerNames.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    Logger.log('Created Waitlist tab with ' + headerNames.length + ' columns');
+  }
+
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var col = {};
+  var missing = [];
+  for (var i = 0; i < headerNames.length; i++) {
+    var name = headerNames[i];
+    var idx = headers.indexOf(name) + 1;
+    col[name] = idx;
+    if (idx === 0) missing.push(name);
+  }
+
+  if (missing.length > 0) {
+    return { ok: false, error: 'waitlist_unavailable', missing: missing };
+  }
+
+  return { ok: true, sheet: sheet, headers: headers, col: col };
+}
+
+/**
+ * Trim + lowercase an email for comparison, stripping at most ONE leading apostrophe (the
+ * formula-injection escape character written by waitlistCellSafe). '' for null/undefined.
+ * Mirrors normalizeCertNumber, but lowercases instead of uppercasing — email is
+ * case-insensitive and conventionally stored lowercase.
+ * @param {*} value
+ * @returns {string}
+ */
+function normalizeWaitlistEmail(value) {
+  if (value === null || value === undefined) return '';
+  var str = String(value);
+  if (str.charAt(0) === "'") str = str.slice(1);
+  return str.trim().toLowerCase();
+}
+
+/**
+ * Run sanitizeInput() first, then, if the result's first character is a Sheets formula-injection
+ * trigger (=, +, -, @), prefix it with a leading apostrophe so Google Sheets stores it as literal
+ * text rather than evaluating it as a formula. LOCAL mitigation for the new waitlist cells only —
+ * does NOT close M9 project-wide (RESEARCH.md Pitfall 6), and no other sanitizeInput call site
+ * changes in this plan.
+ * @param {*} value
+ * @returns {string}
+ */
+function waitlistCellSafe(value) {
+  var sanitized = sanitizeInput(value);
+  var firstChar = sanitized.charAt(0);
+  if (firstChar === '=' || firstChar === '+' || firstChar === '-' || firstChar === '@') {
+    return "'" + sanitized;
+  }
+  return sanitized;
+}
+
+/**
+ * Interpret a Waitlist mailerlite_synced cell value as a boolean flag. Sheets can hand back a
+ * real boolean, a string ('TRUE'/'true'/'yes'/'y'/'1'), or a number (1) depending on how the
+ * cell was written/edited (a D-04 backfill paste of TRUE vs. a code-written boolean true must
+ * read back identically). Mirrors ledgerFlagTrue.
+ * @param {*} value
+ * @returns {boolean}
+ */
+function waitlistSyncedTrue(value) {
+  if (value === true) return true;
+  if (value === 1) return true;
+  if (typeof value === 'string') {
+    var v = value.trim().toLowerCase();
+    return v === 'true' || v === 'yes' || v === 'y' || v === '1';
+  }
+  return false;
+}
+
+/**
+ * The D-06 idempotency decision. Takes the Waitlist rows as its FIRST parameter — it never
+ * reads the sheet itself; the caller is responsible for the read. PURE: zero references to
+ * SpreadsheetApp/LockService/Session/CacheService/Logger, and no reliance on module-level
+ * mutable state (_sheetCache). This is what makes it unit-testable via the `new Function`
+ * source-extraction harness in tests/frontend/adminapi-waitlist-pure.test.js.
+ *
+ * A row with status 'removed' STILL counts as a match — a removed customer re-signing up must
+ * not silently get a second row; the staff-facing fix for that case is flipping the existing
+ * row back via BrewPad, not duplicating them.
+ *
+ * @param {Array<Object>} rows - Waitlist rows, shaped like sheetToObjects() output
+ * @param {string} email
+ * @param {string} category
+ * @returns {{action: 'new'|'existing', row: (Object|null)}}
+ */
+function waitlistDedupeDecision(rows, email, category) {
+  var normEmail = normalizeWaitlistEmail(email);
+  var normCategory = String(category || '').trim().toLowerCase();
+
+  if (!normEmail) return { action: 'new', row: null };
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var rowEmail = normalizeWaitlistEmail(row.email);
+    var rowCategory = String(row.category || '').trim().toLowerCase();
+    if (rowEmail === normEmail && rowCategory === normCategory) {
+      return { action: 'existing', row: row };
+    }
+  }
+
+  return { action: 'new', row: null };
 }
 
 /**
