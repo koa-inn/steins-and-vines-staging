@@ -4606,6 +4606,23 @@ function redeemGiftCard(payload) {
  * Atomically increment a gift certificate balance (reload / top-up).
  * Restores status to 'active' if previously 'depleted'.
  * Cannot reload a voided certificate.
+ *
+ * Phase 51 (D-02/D-07/D-12) rewrite: mirrors redeemGiftCard's claim-before-mutate structure
+ * exactly, so the two stay reviewable side by side. This matters as much here as on redeem — the
+ * crash window this closes produces a duplicate CREDIT (the store gives away money for free),
+ * which is audit H7 and ROADMAP criterion 1.
+ *
+ * IMPORTANT: reloadGiftCard had NO idempotency guard of any kind before this phase. It only ever
+ * WROTE the last_tx_ref cell, never read it back — unlike redeemGiftCard's now-removed
+ * ref-comparison guard against that same cell. Every prior duplicate reload attempt credited the
+ * balance again with no guard whatsoever. The ledger decision below gives reload its first real
+ * idempotency guard.
+ *
+ * Note: decision [44-05]'s ordering (the MIDDLEWARE credits the balance before the Zoho invoice/
+ * payment, deliberately, to protect customer value) is untouched by this task — that ordering is
+ * between the middleware's own steps. This task changes only how the credit is recorded inside
+ * Apps Script, once the middleware has decided to call this function.
+ *
  * @param {Object} payload - { cert_number, amount, transaction_ref }
  */
 function reloadGiftCard(payload) {
@@ -4624,6 +4641,36 @@ function reloadGiftCard(payload) {
 
     var gc = result.data;
 
+    var ledger = ensureGiftCardLedgerSheet();
+    if (!ledger.ok) {
+      // Money must never move without a record — fail closed before any balance write.
+      return { ok: false, error: 'ledger_unavailable', needs_manual_review: true };
+    }
+
+    var decision = giftCardLedgerDecision(sheetToObjects(GIFT_CARD_TRANSACTIONS_SHEET_NAME), certNum, txRef);
+
+    if (decision.action === 'replay') {
+      return {
+        ok: true,
+        idempotent: true,
+        new_balance: parseFloat(gc.current_balance) || 0,
+        status: gc.status,
+        needs_manual_review: decision.unsettled
+      };
+    }
+
+    if (decision.action === 'blocked') {
+      flagGiftCardClaim(ledger, decision.row, 'Blocked duplicate reload attempt: incoming tx_ref=' + txRef + ', amount=' + amount);
+      return {
+        ok: false,
+        error: 'unsettled_claim',
+        needs_manual_review: true,
+        claim_tx_id: decision.row.tx_id,
+        claim_tx_ref: decision.row.tx_ref,
+        claim_created_at: decision.row.created_at
+      };
+    }
+
     // Cannot reload a voided certificate
     if (String(gc.status) === 'void') {
       return { ok: false, error: 'invalid_status', status: gc.status };
@@ -4633,6 +4680,15 @@ function reloadGiftCard(payload) {
     var newBalance = Math.round((balance + amount) * 100) / 100;
     var now = new Date().toISOString();
 
+    var claim = appendGiftCardClaim(ledger, certNum, txRef, 'reload', amount, balance);
+    if (!claim.ok) {
+      return { ok: false, error: 'claim_write_failed', needs_manual_review: true };
+    }
+    // appendGiftCardClaim returns a plain row-index number in `row`, not a sheetToObjects-shaped
+    // object — settleGiftCardClaim/flagGiftCardClaim both index via `row._row`. Wrap it once here
+    // so both later calls reference the same claim row consistently.
+    var claimRowRef = { _row: claim.row };
+
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(GIFT_CARDS_SHEET_NAME);
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     var balCol = headers.indexOf('current_balance') + 1;
@@ -4640,13 +4696,34 @@ function reloadGiftCard(payload) {
     var updatedCol = headers.indexOf('last_updated') + 1;
     var txRefCol = headers.indexOf('last_tx_ref') + 1;
 
-    sheet.getRange(result.row, balCol).setValue(newBalance);
-    sheet.getRange(result.row, statusCol).setValue('active');  // restore if depleted
-    sheet.getRange(result.row, updatedCol).setValue(now);
-    sheet.getRange(result.row, txRefCol).setValue(txRef);
+    try {
+      sheet.getRange(result.row, balCol).setValue(newBalance);
+      sheet.getRange(result.row, statusCol).setValue('active');  // restore if depleted
+      sheet.getRange(result.row, updatedCol).setValue(now);
+      sheet.getRange(result.row, txRefCol).setValue(txRef);
+    } catch (writeErr) {
+      flagGiftCardClaim(ledger, claimRowRef, 'balance write failed: ' + writeErr.message);
+      return { ok: false, error: 'write_failed', needs_manual_review: true, claim_tx_id: claim.tx_id };
+    }
+
+    // Do not let a settleGiftCardClaim exception propagate out of this function uncaught: the
+    // balance has already changed by this point, so an uncaught throw would surface as a generic
+    // Apps Script error and lose the durable needs_manual_review signal criterion 2 requires. The
+    // ledger row stays 'claimed' either way, so the next attempt is still BLOCKED — money safety
+    // holds regardless — but the operator-facing signal must not be dropped in this narrow window.
+    try {
+      var settled = settleGiftCardClaim(ledger, claimRowRef, claim.tx_id, newBalance);
+      if (!settled) {
+        flagGiftCardClaim(ledger, claimRowRef, 'settle failed: tx_id mismatch on claim row');
+        return { ok: false, error: 'settle_failed', needs_manual_review: true, claim_tx_id: claim.tx_id };
+      }
+    } catch (settleErr) {
+      flagGiftCardClaim(ledger, claimRowRef, 'settle threw: ' + settleErr.message);
+      return { ok: false, error: 'settle_failed', needs_manual_review: true, claim_tx_id: claim.tx_id };
+    }
 
     invalidateSheetCache(GIFT_CARDS_SHEET_NAME);
-    return { ok: true, new_balance: newBalance, status: 'active' };
+    return { ok: true, new_balance: newBalance, status: 'active', tx_id: claim.tx_id };
   } finally {
     lock.releaseLock();
   }
