@@ -275,11 +275,23 @@ decision) is recorded above:
 
 | Gate | Result |
 |---|---|
-| `npm test` | `<OWNER/EXECUTOR TO FILL IN>` |
-| `cd zoho-middleware && npm test` | `<OWNER/EXECUTOR TO FILL IN>` |
-| `npm run lint` | `<OWNER/EXECUTOR TO FILL IN>` |
-| `git push origin main` completed | `<OWNER TO FILL IN>` |
-| Staging middleware health check | `<OWNER TO FILL IN>` |
+| `npm test` | **PASS** — 97 suites, 1478 tests, exit 0 |
+| `cd zoho-middleware && npm test` | **PASS** — 104 suites, 1541 tests, exit 0 |
+| `npm run lint` | **PASS** — exit 0 in both root and `zoho-middleware/` |
+| `git push origin main` completed | **YES** — 2026-09-03, `dac7e521..b1a69395` |
+| Staging middleware health check | **PASS** — `https://svmiddleware-staging.up.railway.app/health` → 200 |
+
+**Scope note — the push carried three phases, not just 78.** `origin/main..HEAD` was 65 commits
+spanning phases **78** (waitlist), **51** (gift-card ledger idempotency, H6/H7 duplicate-credit
+fixes) and **79** (recipe write performance). All three modified `apps-script/adminApi.gs`, so
+**Task 1's redeploy already shipped 51's and 79's Apps Script changes to production** — the paste
+was the whole committed file, and one deployment serves both environments. That is done and is not
+reversible from the staging side. Phases 51 and 79 should be treated as needing their own staging
+UAT before their middleware/frontend halves go to production.
+
+**Staging frontend note:** `staging.steinsandvines.ca` sits behind Cloudflare, which returns 403 to
+non-browser user agents (302 with a browser UA). Automated curl checks of the staging frontend are
+therefore not meaningful — verify it in a real browser, which the UAT below does anyway.
 
 **Caveat to hold in mind throughout the UAT below: staging and production share ONE Google Sheet.**
 Every write made during UAT lands in the real `Waitlist` tab. Use a disposable address and clean
