@@ -95,10 +95,15 @@ the Apps Script editor's Run/Deploy buttons.**
 
 | Field | Value |
 |---|---|
-| Prior version number (rollback target) | `<OWNER TO FILL IN>` |
-| New version number (deployed) | `<OWNER TO FILL IN>` |
-| Deployment ID (must be unchanged) | `<OWNER TO FILL IN>` |
-| Date/time deployed | `<OWNER TO FILL IN>` |
+| Prior version number (rollback target) | `<OWNER TO FILL IN — still outstanding>` |
+| New version number (deployed) | `<OWNER TO FILL IN — still outstanding>` |
+| Deployment ID (must be unchanged) | `<OWNER TO FILL IN — still outstanding>` |
+| Date/time deployed | 2026-09-03, ~12:05 local (owner-confirmed; exact clock time not recorded) |
+
+> **Open gap:** the redeploy is confirmed live by the §3 probe, but the prior version number was
+> not captured at the time. Until the three fields above are filled in, the rollback procedure
+> below has no target to select. Recover them from **Deploy → Manage deployments → the active
+> deployment → Version dropdown** (the version history is retained) before relying on rollback.
 
 ### Rollback procedure
 
@@ -117,7 +122,30 @@ window — that is the intended failure mode, not a bug to route around.
 curl -sL "$APPS_SCRIPT_URL?action=get_waitlist&server_token=$APPS_SCRIPT_SERVER_TOKEN" | grep -q '"ok":true'
 ```
 
-Record the result here: `<OWNER TO FILL IN — PASS/FAIL>`
+Record the result here: **PASS** — 2026-09-03. Response: `{"ok":true,"data":[]}` (empty `data`, as
+expected pre-backfill). Run via `railway run -e production -s sv_middleware -- sh -c 'curl -sL
+"$APPS_SCRIPT_URL?action=get_waitlist&server_token=$APPS_SCRIPT_SERVER_TOKEN"'`, which injects both
+secrets from Railway rather than putting them in shell history.
+
+### Task 1 defect found and fixed during execution
+
+The first `setupWaitlist()` run failed with `Exception: The number of columns in the range must be
+at least 1.` at `ensureWaitlistSheet`. Cause: the spreadsheet already had a **blank** `Waitlist`
+tab, so the `if (!sheet)` header-write branch was skipped and the function then called
+`getRange(1, 1, 1, sheet.getLastColumn())` with `getLastColumn() === 0`. This would also have
+thrown on every live waitlist write, since all three handlers call `ensureWaitlistSheet`.
+
+Fixed in `6e07d652`: insert the sheet when absent, then write the header row whenever the sheet has
+no content at all — an empty sheet has nothing to clobber, so it is not the drifted-header case,
+which still fails closed with `waitlist_unavailable`. Regression coverage added in
+`tests/frontend/adminapi-waitlist-ensure-sheet.test.js` (injects a fake `SpreadsheetApp`/`Logger`
+so the bootstrap branches execute rather than being asserted by source shape). The fixed file was
+pasted into the editor and redeployed; the successful run logged both
+`Initialised Waitlist tab with 7 columns` and `Waitlist tab ready (7 columns).`
+
+**Note for whoever maintains this:** `ensureGiftCardLedgerSheet` (Phase 51) has the identical
+latent bug — same skip-if-exists structure, same zero-column read. Not fixed here (out of phase
+scope); it needs its own ticket.
 
 ---
 
