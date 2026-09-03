@@ -1,8 +1,8 @@
 # Phase 78 Cutover Runsheet — BrewPad Waitlist Tracking
 
-**Status:** DRAFT — awaiting owner action on Task 1 (Apps Script redeploy). Nothing below Task 1 has
-been executed. Do not treat any section past "Task 1" as complete until the owner has actually
-performed it and this file has been updated with the real recorded values.
+**Status:** IN PROGRESS — Task 1 (Apps Script redeploy) and Task 2 (MailerLite backfill) are DONE and
+verified against the live deployment (see §2–4). Task 3 (staging deploy + UAT) is still outstanding.
+Do not treat §5–6 as complete until the owner has performed them and recorded real values here.
 
 **Written by:** executor agent, plan 78-04, 2026-09-02.
 **Purpose:** a single ordered, repeatable runsheet for taking Phase 78 (plans 78-01/02/03) from
@@ -174,7 +174,7 @@ Log into MailerLite, open the beer waitlist group's subscriber list (the group r
 | Field | Value |
 |---|---|
 | Signup-date column available? | **YES** — gate passes, backfill proceeds |
-| Exact column label (if available) | `<OWNER TO FILL IN — pending>` |
+| Exact column label (if available) | `Subscribed` |
 | Sample value (copied verbatim) | `2026-08-27 19:16:30` |
 | Full timestamp or date-only? | Full timestamp, second resolution (`YYYY-MM-DD HH:MM:SS`) — no coarsening needed |
 | Timezone stated? Which one assumed if not? | **UTC** — owner-confirmed against the MailerLite account timezone setting, not assumed. Values map straight to ISO-8601 with a `T` and `.000Z`; no offset arithmetic. Note this is NOT the business timezone: the storefront renders in `America/Vancouver` (`js/brewpad.js:74`), so a backfilled row's displayed local time will read 7h (PDT) / 8h (PST) earlier than the stored stamp — expected, not drift. |
@@ -234,11 +234,29 @@ email addresses. Do not attach it to a commit, an issue, or a chat message.
 
 | Field | Value |
 |---|---|
-| CSV subscriber count | `<OWNER TO FILL IN>` |
-| Waitlist tab row count after paste | `<OWNER TO FILL IN>` |
-| Counts match? | `<OWNER TO FILL IN — YES/NO>` |
-| CSV deleted from local machine? | `<OWNER TO FILL IN — YES/NO>` |
-| If zero rows imported (Step 1 said NO): blocker description | `<OWNER TO FILL IN, if applicable>` |
+| CSV subscriber count | 6 |
+| Waitlist tab row count after paste | 6 |
+| Counts match? | **YES** |
+| CSV deleted from local machine? | `<OWNER TO FILL IN — pending>` |
+| If zero rows imported (Step 1 said NO): blocker description | n/a — gate passed, all 6 imported |
+
+Verified 2026-09-03 via the §3 probe. All assertions green: 6 rows; ids `ml-0001`..`ml-0006`
+sequential; every row `category=beer`, `status=waiting`, `notes` empty; every `signed_up_at` a
+STRING matching `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$` in ascending oldest-first order;
+every `mailerlite_synced` boolean `true`.
+
+### Paste traps hit during this backfill (both cost a full retry)
+
+1. **Sheets parsed the ISO timestamps into date serials.** Fixed by prefixing each timestamp with a
+   single apostrophe in the pasted block — Sheets stores it as text and strips the apostrophe. This
+   proved more reliable than pre-formatting the column as plain text. See the STEP 3 warning above.
+2. **Round-tripping the export through Excel.** The MailerLite CSV's own columns
+   (`Subscriber, Sent, Opens, Clicks, Subscribed, Location`) do NOT match the Waitlist tab's seven,
+   and copying from Excel silently overwrote the prepared clipboard block — landing 6 emails in
+   column B in the CSV's newest-first order with every other column blank. The export must be
+   TRANSFORMED into the 7-column shape first (id / cell-safe email / beer / waiting / ISO-UTC /
+   TRUE / blank, sorted oldest-first), then pasted directly. Do not open it in a spreadsheet app
+   and copy across, and do not copy anything else between preparing the block and pasting it.
 
 ---
 
