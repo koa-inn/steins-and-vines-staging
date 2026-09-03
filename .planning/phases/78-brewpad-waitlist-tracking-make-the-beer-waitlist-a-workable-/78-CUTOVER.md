@@ -306,20 +306,60 @@ Use a disposable address such as `phase78-probe@example.com` throughout. Check e
 
 | # | Leg | Expected result | Owner result |
 |---|---|---|---|
-| 1 | **Signup.** Submit the staging beer page's waitlist form with the probe address. | Form shows its normal success confirmation, no error toast. | `<FILL IN>` |
-| 2 | **Record (D-01/D-03).** Open the `Waitlist` tab. | A new row exists: `category`=`beer`, `status`=`waiting`, ISO `signed_up_at`, `mailerlite_synced` reflects whether MailerLite accepted it. | `<FILL IN>` |
-| 3 | **Idempotency (D-06).** Submit the SAME address a second time. | Same success confirmation, no disclosure of prior signup; `Waitlist` tab still holds exactly ONE row for it, original `signed_up_at` unchanged. | `<FILL IN>` |
-| 4 | **Fail-open on MailerLite (D-03), optional.** If safe: unset `MAILERLITE_API_KEY` on STAGING Railway only, submit a third distinct probe address. | Signup still succeeds (200, confirmation shown); row lands with `mailerlite_synced` FALSE. Restore the env var after. Skip and note if you'd rather not touch staging env vars — `waitlist-route.test.js` T2/T4 already cover the logic in CI. | `<FILL IN>` |
-| 5 | **BrewPad read.** Open BrewPad on staging, tap the sixth Waitlist tab (📋). | Rows ordered oldest-signup-first, backfilled MailerLite rows ahead of probe rows; `#` numbers only `waiting` rows (1-based, `—` for non-waiting); each row has a sync pill (`✓ Synced` / `⚠ Not synced`); no `Category` column rendered (all `beer`); filter chips read `All · Waiting · Contacted · Booked · Removed · Not Synced`; search placeholder `Search email…`; `Not Synced` chip isolates exactly the warning-pill rows; partial-email search narrows without a network round-trip. | `<FILL IN>` |
-| 6 | **Status (D-05).** Tap the probe row's status badge. | Confirm sheet reads `Mark phase78-probe@example.com as "Contacted"?` with **Confirm**; confirming shows `Status updated` toast, badge turns amber/Contacted, sheet's `status` cell reads `contacted`. Tap again → advances to Booked, confirm sheet again. | `<FILL IN>` |
-| 7 | **One-way (D-05 correctness deviation).** With the row `booked`, tap the badge again. | NOTHING happens — no confirm sheet, no toast, no write. Sheet cell still reads `booked`. If it flips back to `waiting`, that is a blocker (the wraparound bug this plan exists to avoid). | `<FILL IN>` |
-| 8 | **Remove (D-05).** Tap the row's `×`. | Danger confirm reads `Remove phase78-probe@example.com from the beer waitlist? This cannot be undone.` with **Remove**; confirming shows `Removed from waitlist` toast, sheet's `status` reads `removed`. ROW still exists — removal is a status change, not a deletion. | `<FILL IN>` |
-| 9 | **Notes (D-08).** Tap a row's `✎`, type `probe note`, press **Save**. | `Notes saved` toast, sheet's `notes` cell reads `probe note`. Edit again, press `×` (cancel) — nothing written. | `<FILL IN>` |
-| 10 | **Cleanup.** Delete the probe rows from the `Waitlist` tab; remove probe addresses from the MailerLite group if they reached it. | Shared production sheet has no leftover probe rows. | `<FILL IN>` |
+| 1 | **Signup.** Submit the staging beer page's waitlist form with the probe address. | Form shows its normal success confirmation, no error toast. | **PASS (function) / FAIL (visibility)** — submit succeeded, but see Bug #1/#2 below: the confirmation is invisible |
+| 2 | **Record (D-01/D-03).** Open the `Waitlist` tab. | A new row exists: `category`=`beer`, `status`=`waiting`, ISO `signed_up_at`, `mailerlite_synced` reflects whether MailerLite accepted it. | **PASS** — row landed `beer`/`waiting`/`2026-09-03T22:45:40.161Z`, `mailerlite_synced` true, 7th in queue behind the 6 backfilled |
+| 3 | **Idempotency (D-06).** Submit the SAME address a second time. | Same success confirmation, no disclosure of prior signup; `Waitlist` tab still holds exactly ONE row for it, original `signed_up_at` unchanged. | **PASS** — identical confirmation, no disclosure, still exactly 1 row, `signed_up_at` unchanged |
+| 4 | **Fail-open on MailerLite (D-03), optional.** If safe: unset `MAILERLITE_API_KEY` on STAGING Railway only, submit a third distinct probe address. | Signup still succeeds (200, confirmation shown); row lands with `mailerlite_synced` FALSE. Restore the env var after. Skip and note if you'd rather not touch staging env vars — `waitlist-route.test.js` T2/T4 already cover the logic in CI. | **SKIPPED** — needs a staging env-var change; `waitlist-route.test.js` T2/T4 cover the logic in CI |
+| 5 | **BrewPad read.** Open BrewPad on staging, tap the sixth Waitlist tab (📋). | Rows ordered oldest-signup-first, backfilled MailerLite rows ahead of probe rows; `#` numbers only `waiting` rows (1-based, `—` for non-waiting); each row has a sync pill (`✓ Synced` / `⚠ Not synced`); no `Category` column rendered (all `beer`); filter chips read `All · Waiting · Contacted · Booked · Removed · Not Synced`; search placeholder `Search email…`; `Not Synced` chip isolates exactly the warning-pill rows; partial-email search narrows without a network round-trip. | **PASS** — oldest-first, backfilled ahead of probe; `#` numbers only `waiting` rows; sync pill per row; no Category column; all 6 chips present; `Not Synced` → correct empty state; search narrowed with **0 fetch calls** (client-side) and preserved `#7` rather than renumbering |
+| 6 | **Status (D-05).** Tap the probe row's status badge. | Confirm sheet reads `Mark phase78-probe@example.com as "Contacted"?` with **Confirm**; confirming shows `Status updated` toast, badge turns amber/Contacted, sheet's `status` cell reads `contacted`. Tap again → advances to Booked, confirm sheet again. | **PASS** — confirm sheet read `Mark phase78-probe@example.com as “Contacted”?`; amber CONTACTED, `#` became `—`; second tap advanced to green BOOKED; both persisted to the sheet |
+| 7 | **One-way (D-05 correctness deviation).** With the row `booked`, tap the badge again. | NOTHING happens — no confirm sheet, no toast, no write. Sheet cell still reads `booked`. If it flips back to `waiting`, that is a blocker (the wraparound bug this plan exists to avoid). | **PASS — the one-way guard holds.** Tapping a `booked` badge produced no confirm sheet, no toast, and **no network call at all** (fetch count unchanged). Status stayed `booked`. The wraparound bug is genuinely prevented |
+| 8 | **Remove (D-05).** Tap the row's `×`. | Danger confirm reads `Remove phase78-probe@example.com from the beer waitlist? This cannot be undone.` with **Remove**; confirming shows `Removed from waitlist` toast, sheet's `status` reads `removed`. ROW still exists — removal is a status change, not a deletion. | **PASS** — danger sheet read `Remove phase78-probe@example.com from the beer waitlist? This cannot be undone.` with red destructive styling; status → `removed`; **row still present (7 rows)** — a status change, not a deletion |
+| 9 | **Notes (D-08).** Tap a row's `✎`, type `probe note`, press **Save**. | `Notes saved` toast, sheet's `notes` cell reads `probe note`. Edit again, press `×` (cancel) — nothing written. | **PASS** — `probe note` saved and persisted; re-opening pre-populated the existing value; `×` cancel discarded the edit with nothing written |
+| 10 | **Cleanup.** Delete the probe rows from the `Waitlist` tab; remove probe addresses from the MailerLite group if they reached it. | Shared production sheet has no leftover probe rows. | **OUTSTANDING — owner action required.** See cleanup block below |
 
 ### UAT outcome
 
-`<OWNER TO FILL IN — "approved" with results above, or list of failed legs with what was observed>`
+**9 of 10 legs PASS. No functional defect found in Phase 78's own surface.** Driven in Chrome against
+staging on 2026-09-03; every write verified server-side through the deployed `get_waitlist`, not by
+UI appearance alone. Leg 4 skipped (CI-covered), leg 10 outstanding.
+
+Deviation: legs 8 and 9 were run in the order 9-then-8, so the notes editor was exercised on a live
+`booked` row rather than an already-`removed` one. Strictly stronger coverage; no leg was skipped.
+
+### Leg 10 cleanup — STILL OPEN, owner action required
+
+1. **Delete the probe row** from the `Waitlist` tab (`phase78-probe@example.com`, the last row). There
+   is no delete action in the Apps Script API — removal is a status change by design — so this must be
+   done by hand in the spreadsheet. **This row is in the shared production sheet.**
+2. **Remove `phase78-probe@example.com` from the MailerLite beer waitlist group.** It came back
+   `mailerlite_synced: true`, so MailerLite accepted the `example.com` address and it is a live
+   subscriber there.
+
+### Defects found during UAT
+
+Both are **pre-existing in `beer.html`** — Phase 78 changed the `POST /api/waitlist` handler, not this
+markup — and both are the same root cause: foreground color `rgb(229,222,193)` is byte-identical to
+the body background `rgb(229,222,193)`, a measured **contrast ratio of 1.00** (WCAG AA requires 4.5).
+`.beer-waitlist-form` is styled for the dark green hero but rendered on the light beige body.
+
+- **Bug #1 — the email input's text is invisible.** A customer typing their address sees nothing. The
+  submit button is cream-on-cream too, so it reads as bare text rather than a button.
+- **Bug #2 — the success confirmation is invisible.** "Thanks! You're on the list — we'll be in touch
+  to book your session." renders `display:block`, `opacity:1`, inside the viewport, and cannot be seen.
+
+Net effect: invisible typing, an unstyled button, the form vanishes, no visible confirmation. Every cue
+says it failed, so the natural response is to submit again — landing in the D-06 dedupe path, which is
+also invisible. The backend now records signups correctly and **no customer can tell**. Recommend
+fixing before the production cutover; tracked separately from Phase 78's scope.
+
+### Polish notes (non-blocking)
+
+- The waitlist row's remove control carries the class **`bp-reading-del`**, borrowed from the Readings
+  feature rather than a `bp-waitlist-*` name. Restyling readings would silently restyle the waitlist.
+- Opening the notes editor puts the caret at position 0, so typing prepends to the existing note.
+  End-of-text or select-all would match the expectation.
+- The confirm/danger sheet renders partly below the fold at a 1457x844 viewport. Fine on an iPad, worth
+  a look at short viewport heights.
 
 ---
 
