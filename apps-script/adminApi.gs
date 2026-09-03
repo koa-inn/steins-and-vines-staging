@@ -4873,10 +4873,18 @@ function ensureWaitlistSheet() {
 
   if (!sheet) {
     sheet = ss.insertSheet(WAITLIST_SHEET_NAME);
+  }
+
+  // A wholly empty sheet reports getLastColumn() === 0, and getRange(1, 1, 1, 0) throws
+  // "The number of columns in the range must be at least 1." That covers both a tab we just
+  // inserted and one that already existed but was blank (hand-created, or left by a partial
+  // setupWaitlist run). Writing headers here clobbers nothing, so it is NOT the drifted-header
+  // case the fail-closed check below guards — that one still refuses to repair.
+  if (sheet.getLastColumn() === 0) {
     sheet.appendRow(headerNames);
     sheet.getRange(1, 1, 1, headerNames.length).setFontWeight('bold');
     sheet.setFrozenRows(1);
-    Logger.log('Created Waitlist tab with ' + headerNames.length + ' columns');
+    Logger.log('Initialised Waitlist tab with ' + headerNames.length + ' columns');
   }
 
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
