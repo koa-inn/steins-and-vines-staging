@@ -1426,17 +1426,10 @@ behold-widget {
   margin-bottom: 1.5rem;
 }
 
-.beer-waitlist-btn {
-  background: var(--color-cream);
-  color: var(--color-brown);
-  border-color: var(--color-cream);
-}
-
-.beer-waitlist-btn:hover {
-  background: var(--color-white);
-  border-color: var(--color-white);
-  color: var(--color-brown);
-}
+/* The submit button carries class `btn` in the markup and so inherits the burgundy primary
+   button, which is legible on the cream body. It deliberately has NO base override here — the
+   cream-on-cream fill it used to carry was invisible on the light background. Dark-banner
+   styling lives under `.beer-banner--green` below. */
 
 .beer-waitlist-form {
   display: flex;
@@ -1447,29 +1440,31 @@ behold-widget {
   margin: 0 auto;
 }
 
+/* Base styles assume the LIGHT cream body, which is where beer.html actually renders this form
+   (section.content#waitlist). Cream-on-cream text here measured 1.00:1 — invisible. */
 .beer-waitlist-form input[type="email"] {
   flex: 1;
   min-width: 200px;
   padding: 0.75rem 1rem;
   font-size: 1rem;
-  border: 2px solid var(--color-cream);
+  border: 2px solid var(--color-burgundy);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--color-cream);
+  background: var(--color-white);
+  color: var(--color-text);
 }
 
 .beer-waitlist-form input[type="email"]::placeholder {
-  color: rgba(229, 222, 193, 0.85);
+  color: var(--color-muted);
 }
 
 .beer-waitlist-form input[type="email"]:focus-visible {
-  outline: none;
-  background: rgba(255, 255, 255, 0.15);
-  border-color: var(--color-white);
+  outline: 2px solid var(--color-burgundy);
+  outline-offset: 2px;
+  background: var(--color-white);
 }
 
 .beer-waitlist-confirm {
-  color: var(--color-cream);
+  color: var(--color-text);
   font-size: 1.1rem;
   margin: 0;
 }
@@ -1492,8 +1487,21 @@ behold-widget {
   border-color: var(--color-white);
   color: var(--color-green);
 }
+/* Dark-banner context: restore the cream-on-dark treatment the base rules used to carry. Kept
+   with the other .beer-banner--green overrides so the pair stays coherent if the form is ever
+   placed inside the banner. */
 .beer-banner--green .beer-waitlist-form input[type="email"] {
   border-color: rgba(229, 222, 193, 0.5);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-cream);
+}
+
+.beer-banner--green .beer-waitlist-form input[type="email"]::placeholder {
+  color: rgba(229, 222, 193, 0.85);
+}
+
+.beer-banner--green .beer-waitlist-confirm {
+  color: var(--color-cream);
 }
 
 /* =====================================================
