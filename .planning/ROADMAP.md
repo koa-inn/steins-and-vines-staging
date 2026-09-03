@@ -1207,7 +1207,7 @@ Plans:
 
 **Depends on:** Phase 74 (which wired the form and made the waitlist the sole ferment-in-store route for beer). Independent of the Phase 74 production deploy.
 **Requirements**: No REQ-IDs mapped. Traceability runs through the locked CONTEXT.md decisions D-01..D-08, each cited in at least one plan's `must_haves`.
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 
@@ -1219,7 +1219,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 78-04-PLAN.md — Cutover: owner Apps Script redeploy, D-04 MailerLite timestamp gate + backfill, staging deploy and end-to-end UAT (D-01, D-04, D-05, D-07)
+- [x] 78-04-PLAN.md — Cutover: owner Apps Script redeploy, D-04 MailerLite timestamp gate + backfill, staging deploy and end-to-end UAT (D-01, D-04, D-05, D-07)
 
 ---
 
