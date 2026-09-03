@@ -237,7 +237,7 @@ email addresses. Do not attach it to a commit, an issue, or a chat message.
 | CSV subscriber count | 6 |
 | Waitlist tab row count after paste | 6 |
 | Counts match? | **YES** |
-| CSV deleted from local machine? | `<OWNER TO FILL IN — pending>` |
+| CSV deleted from local machine? | **YES** — 2026-09-03, along with the transformed working copy |
 | If zero rows imported (Step 1 said NO): blocker description | n/a — gate passed, all 6 imported |
 
 Verified 2026-09-03 via the §3 probe. All assertions green: 6 rows; ids `ml-0001`..`ml-0006`
