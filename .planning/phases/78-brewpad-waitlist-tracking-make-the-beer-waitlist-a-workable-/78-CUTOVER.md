@@ -173,11 +173,11 @@ Log into MailerLite, open the beer waitlist group's subscriber list (the group r
 
 | Field | Value |
 |---|---|
-| Signup-date column available? | `<OWNER TO FILL IN — YES/NO>` |
-| Exact column label (if available) | `<OWNER TO FILL IN>` |
-| Sample value (copied verbatim) | `<OWNER TO FILL IN>` |
-| Full timestamp or date-only? | `<OWNER TO FILL IN>` |
-| Timezone stated? Which one assumed if not? | `<OWNER TO FILL IN>` |
+| Signup-date column available? | **YES** — gate passes, backfill proceeds |
+| Exact column label (if available) | `<OWNER TO FILL IN — pending>` |
+| Sample value (copied verbatim) | `2026-08-27 19:16:30` |
+| Full timestamp or date-only? | Full timestamp, second resolution (`YYYY-MM-DD HH:MM:SS`) — no coarsening needed |
+| Timezone stated? Which one assumed if not? | **UTC** — owner-confirmed against the MailerLite account timezone setting, not assumed. Values map straight to ISO-8601 with a `T` and `.000Z`; no offset arithmetic. Note this is NOT the business timezone: the storefront renders in `America/Vancouver` (`js/brewpad.js:74`), so a backfilled row's displayed local time will read 7h (PDT) / 8h (PST) earlier than the stored stamp — expected, not drift. |
 
 ### STEP 2 — export (only if Step 1 found a usable date field)
 
