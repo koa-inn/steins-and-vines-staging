@@ -5078,6 +5078,33 @@ function getWaitlist() {
  *   three optional fields is required.
  * @returns {{ok:true, id:*, status:string}|{ok:false, error:string}}
  */
+/**
+ * D-05, server side: waitlist status is ONE-WAY. Returns true only if moving `current` to `next`
+ * is permitted. Pure — no Apps Script globals, so it is directly unit-testable.
+ *
+ * Forward along waiting -> contacted -> booked (skipping a step is still forward), removal from
+ * any active status, and a no-op re-set (so a retried write is idempotent). Everything else is
+ * refused, including resurrecting a `removed` row, which has no UI or handler support today.
+ * Unknown statuses on either side fail closed rather than defaulting to allow.
+ *
+ * The client mirrors this in js/brewpad.js (WAITLIST_STATUS_ORDER / nextWaitlistStatus), but the
+ * client is not the record — anything reaching the admin proxy must be checked here too.
+ */
+function waitlistTransitionAllowed(current, next) {
+  var ORDER = ['waiting', 'contacted', 'booked'];
+  var cur = String(current === null || current === undefined ? '' : current).trim().toLowerCase();
+  var nxt = String(next === null || next === undefined ? '' : next).trim().toLowerCase();
+
+  var known = ORDER.concat(['removed']);
+  if (known.indexOf(cur) === -1 || known.indexOf(nxt) === -1) return false;
+
+  if (cur === nxt) return true;
+  if (nxt === 'removed') return true;
+  if (cur === 'removed') return false;
+
+  return ORDER.indexOf(nxt) > ORDER.indexOf(cur);
+}
+
 function updateWaitlistStatus(payload) {
   var ensured = ensureWaitlistSheet();
   if (!ensured.ok) return ensured;
@@ -5101,6 +5128,12 @@ function updateWaitlistStatus(payload) {
 
   var result = findRowById(WAITLIST_SHEET_NAME, String(id).trim());
   if (result.row === -1) return { ok: false, error: 'not_found' };
+
+  // D-05 one-way guard. Checked against the CURRENT status on the sheet, not against anything the
+  // caller supplied, and before any setValue — a rejected transition must write nothing at all.
+  if (hasStatus && !waitlistTransitionAllowed(result.data.status, payload.status)) {
+    return { ok: false, error: 'invalid_transition' };
+  }
 
   var sheet = ensured.sheet;
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
