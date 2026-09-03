@@ -185,6 +185,23 @@ Toggle the date column on, export the beer waitlist group to CSV.
 
 ### STEP 3 — paste
 
+> **BEFORE PASTING: format column E (`signed_up_at`) as Format → Number → Plain text.**
+> Hit live during this cutover. Sheets otherwise parses the ISO timestamps into date values and
+> stores serials (`2026-08-27 19:16:30` → `46261.803125`), which breaks two ways and never errors:
+>
+> - **Read back as a number:** `sheetToObjects` only converts `Date` instances
+>   (`if (val instanceof Date)`), so a serial passes through untouched. `sortWaitlistRows`
+>   (`js/brewpad.js:991`) requires `typeof signed_up_at === 'string'`, so every backfilled row is
+>   treated as UNDATED and sorts **last** — the exact inverse of what D-04 requires. `fmtShortDate`
+>   renders the cell as `46261.8031`.
+> - **Read back as a date value:** `toISOString()` fires, but Sheets re-interprets the wall-clock
+>   time in the SPREADSHEET's timezone, shifting every stamp by the UTC offset (7h in Aug) and
+>   desynchronising backfilled rows from live signups, which write true-UTC strings.
+>
+> Formatting the column after pasting does not fix it — that changes the display, not the stored
+> value. Undo, format, re-paste. Verify by eye: correct values are **left-aligned**. If Sheets still
+> grabs them, prefix each with a single apostrophe (same guard `waitlistCellSafe` uses for emails).
+
 In the `Waitlist` tab, append one row per subscriber below the header, in ascending signup order
 (oldest first):
 
