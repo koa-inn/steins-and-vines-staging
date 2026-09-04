@@ -955,6 +955,23 @@ var WAITLIST_STATUS_LABELS = { waiting: 'Waiting', contacted: 'Contacted', booke
 // Mirrors the .bp-status-badge--{neutral,warning,success,danger} classes already shipped.
 var WAITLIST_STATUS_COLORS = { waiting: 'neutral', contacted: 'warning', booked: 'success', removed: 'danger' };
 
+// TODO(80-CUTOVER §1a): set this to the beer-waitlist Cal.com event type's slug.
+//
+// WR-04. The Contact sheet used to take result.data.services[0] -- whichever event
+// type bookings.js happened to list first, which today is CALCOM_EVENT_TYPE_FERMENT_KIT.
+// The owner overturned the `eventtype` default: the contact flow must NOT resolve to
+// the ferment-kit or bottling event type, it needs a new beer/waitlist-specific one.
+// That event type does not exist yet (§1a steps (a)/(b) are the owner's to perform), so
+// its slug is genuinely unknowable here and is deliberately NOT invented.
+//
+// Left null on purpose. An unmatched lookup falls through to the existing
+// "Could not prepare the booking link" error path, so the flow fails LOUDLY and
+// CLOSED rather than silently mailing waitlist customers a ferment-kit link.
+// UAT leg 7 is already marked BLOCKED ON §1a, so this turns a procedural
+// prerequisite into an enforced one. Fill this in as part of §1a step (d),
+// together with the bookings.js change in step (c).
+var WAITLIST_BOOKING_SLUG = null;
+
 // D-05 ONE-WAY: returns the next status in WAITLIST_STATUS_ORDER, or null when there is
 // none (booked, removed, or any unrecognized value). Deliberately does NOT use
 // `% WAITLIST_STATUS_ORDER.length` -- the batch-status handler wraps around
@@ -8946,7 +8963,18 @@ function parseWaitlistRecipeIds(value) {
     return fetch(mwUrl() + '/api/bookings/services', { credentials: 'include' })
       .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data || {} }; }); })
       .then(function (result) {
-        var svc = result.ok && result.data.services && result.data.services[0];
+        // WR-04: select the beer-waitlist service EXPLICITLY, never positionally.
+        // A null/unmatched WAITLIST_BOOKING_SLUG yields no service, so bookingUrl
+        // stays falsy and the catch below shows "Could not prepare the booking
+        // link" -- fail closed. See WAITLIST_BOOKING_SLUG's TODO(80-CUTOVER §1a).
+        var services = (result.ok && result.data && result.data.services) || [];
+        var svc = null;
+        for (var si = 0; si < services.length; si++) {
+          if (services[si] && WAITLIST_BOOKING_SLUG && services[si].slug === WAITLIST_BOOKING_SLUG) {
+            svc = services[si];
+            break;
+          }
+        }
         var bookingUrl = svc && svc.bookingUrl;
         var bodyEl = document.getElementById('bp-waitlist-contact-body');
         if (!bodyEl) return;
