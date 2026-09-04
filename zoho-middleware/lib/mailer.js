@@ -389,6 +389,67 @@ function sendBottlingInvite(data) {
   });
 }
 
+/**
+ * Send a staff-composed contact email to a waitlist customer, inviting them to
+ * book via a pre-resolved Cal.com link. Unlike sendBottlingInvite, this
+ * function does NOT build the subject/body template — staff already reviewed
+ * (and possibly edited) both in BrewPad before this is called, so the only
+ * job here is "send exactly what was given." The bookingUrl is likewise
+ * pre-resolved by the caller (from GET /api/bookings/services' listEventType-
+ * backed cache) — this function must never construct one itself and must
+ * never read CALCOM_BOTTLING_BOOKING_URL (Phase 80 D-06).
+ *
+ * @param {Object} data
+ * @param {string} data.to         - Customer email address (required; validated)
+ * @param {string} data.subject    - Staff-composed subject line (required)
+ * @param {string} data.body       - Staff-composed plaintext body (required)
+ * @param {string} data.bookingUrl - Pre-resolved Cal.com booking URL (required)
+ */
+function sendWaitlistContact(data) {
+  data = data || {};
+  var to = (data.to || '').trim();
+  var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!to || !emailRegex.test(to)) {
+    return Promise.reject(new Error('Invalid or missing recipient email'));
+  }
+
+  var subject = (data.subject || '').trim();
+  if (!subject) {
+    return Promise.reject(new Error('Missing email subject'));
+  }
+
+  var body = data.body || '';
+  if (!body.trim()) {
+    return Promise.reject(new Error('Missing email body'));
+  }
+
+  var bookingUrl = (data.bookingUrl || '').trim();
+  if (!bookingUrl) {
+    return Promise.reject(new Error('Missing booking URL'));
+  }
+
+  var paragraphs = body.split(/\n+/).map(function (p) {
+    return '<p>' + htmlEscape(p) + '</p>';
+  }).join('');
+
+  var htmlBody =
+    '<div style="font-family:Arial,sans-serif;font-size:15px;color:#2c2c2c;line-height:1.6;">' +
+    paragraphs +
+    '<p style="margin:24px 0;"><a href="' + bookingUrl + '" ' +
+    'style="background:#4a6f4b;color:#ffffff;text-decoration:none;padding:12px 22px;' +
+    'border-radius:6px;font-weight:bold;display:inline-block;">Book your appointment</a></p>' +
+    '<p style="font-size:13px;color:#5f5f5f;">Or paste this link into your browser:<br>' + htmlEscape(bookingUrl) + '</p>' +
+    '<p>Cheers,<br>Steins &amp; Vines</p></div>';
+
+  return sendViaResend({
+    to: to,
+    replyTo: 'hello@steinsandvines.ca',
+    subject: subject,
+    html: htmlBody,
+    text: body
+  });
+}
+
 module.exports = {
   isConfigured: isConfigured,
   verifyTransport: verifyTransport,
@@ -398,5 +459,6 @@ module.exports = {
   sendCustomerConfirmation: sendCustomerConfirmation,
   sendContactMessage: sendContactMessage,
   sendBottlingInvite: sendBottlingInvite,
-  sendWaitlistNotification: sendWaitlistNotification
+  sendWaitlistNotification: sendWaitlistNotification,
+  sendWaitlistContact: sendWaitlistContact
 };
