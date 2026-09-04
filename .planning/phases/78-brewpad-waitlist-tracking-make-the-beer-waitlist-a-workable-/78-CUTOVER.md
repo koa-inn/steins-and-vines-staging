@@ -407,9 +407,40 @@ curl -sL -d 'action=update_waitlist_status&server_token=REDACTED&id=<a booked ro
 
 | Field | Value |
 |---|---|
-| Second redeploy completed? | `<OWNER TO FILL IN>` |
-| Backward transition refused? | `<OWNER TO FILL IN>` |
-| Removed-row re-signup reinstates? | `<OWNER TO FILL IN>` |
+| Second redeploy completed? | **YES** — 2026-09-04, owner-confirmed |
+| Backward transition refused? | **YES** — see probe log below |
+| Removed-row re-signup reinstates? | **YES** — see probe log below |
+
+### Post-redeploy probe log (2026-09-04, against the live deployment)
+
+**CR-02 — reinstate, driven through the real customer path** (`POST /api/waitlist` on the staging
+middleware, the same endpoint the beer page calls):
+
+```
+POST /api/waitlist {"email":"phase78-probe@example.com"}   (row was `removed`)
+  -> HTTP 200 {"success":true}
+```
+Sheet after: still **7 rows** (no duplicate), probe row `status: waiting`, `signed_up_at` refreshed
+`2026-09-03T22:45:40.161Z` -> `2026-09-04T01:26:56.307Z`, `notes` preserved. The response is byte
+-identical to a new signup, so D-06 non-disclosure holds on the wire, not just in the handler.
+
+**CR-01 — the one-way guard, tested by direct API call.** This is the check the original UAT could
+not perform: leg 7 proved the client issues no request, so only a direct call can exercise the
+server. Backward transitions previously SUCCEEDED here.
+
+| Call | Response |
+|---|---|
+| `contacted -> booked` (forward) | `{"ok":true,...,"status":"booked"}` |
+| `booked -> waiting` (backward) | `{"ok":false,"error":"invalid_transition"}` |
+| `booked -> contacted` (backward) | `{"ok":false,"error":"invalid_transition"}` |
+| `booked -> booked` (no-op) | `{"ok":true}` — retried writes stay idempotent |
+
+Row status after both rejected attempts: **`booked`**, row count **7** — a rejected transition
+writes nothing, as designed.
+
+Note on method: these used `curl -sL -d ...` **without** `-X POST`. curl downgrades POST to GET on
+the 302, matching the middleware's `axios.post(..., {maxRedirects: 5})`. Forcing `-X POST -L` is the
+documented double-write trap (§2 step 5).
 
 ---
 
@@ -418,6 +449,6 @@ curl -sL -d 'action=update_waitlist_status&server_token=REDACTED&id=<a booked ro
 - [ ] Task 1: owner runs `setupWaitlist()`, redeploys Apps Script, records rollback version, confirms probe.
 - [ ] Task 2: owner confirms MailerLite timestamp column, backfills (or reports zero-import blocker).
 - [ ] Task 3: gates green, `git push origin main`, eleven-leg staging UAT, probe rows cleaned up.
-- [ ] **Second Apps Script redeploy (§7b) — REQUIRED. Both Critical code-review fixes are not live until this happens.**
+- [x] **Second Apps Script redeploy (§7b) — DONE 2026-09-04, both Critical fixes verified live against the deployment.**
 - [ ] Recover the Task 1 rollback version numbers (§2) — the rollback procedure has no target without them.
 - [ ] Production cutover (out of scope here, batched with Phases 73/75/76).
