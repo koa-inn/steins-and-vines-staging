@@ -5156,12 +5156,23 @@ function getWaitlist() {
 }
 
 /**
- * Update a waitlist row's status / notes / mailerlite_synced flag. Called from BrewPad via
- * /api/batch/admin-proxy (session-tier only). No acquireScriptLock() — see addWaitlistEntry's
- * comment; this is not a money-adjacent write.
+ * Update a waitlist row's status / notes / mailerlite_synced flag, plus (Phase 80, D-17) the six
+ * new optional fields. Called from BrewPad via /api/batch/admin-proxy (session-tier only) and
+ * the new /api/waitlist/:id/contact middleware endpoint (plan 80-02, for status:'contacted' +
+ * contacted_at together).
  *
- * @param {Object} payload - { id, status?, notes?, mailerlite_synced? } — at least one of the
- *   three optional fields is required.
+ * WR-02 (78-REVIEW.md): this handler deliberately has NO optimistic locking (no
+ * acquireScriptLock(), no expectedVersion/last_updated check), unlike updateReservation/
+ * updateHold elsewhere in this file. Accepted carry-forward, not closed here: Phase 80 widened
+ * the per-row concurrent-write surface from two independently-editable fields (status, notes) to
+ * nine, which raises the odds of two staff edits racing on the same row and one silently
+ * clobbering the other's write. Closing it needs a 14th `last_updated` column, which D-17/D-20
+ * deliberately scope out of this migration (one phase, one redeploy). See RESEARCH.md Pitfall 4
+ * / Assumption A3 for the reasoning, and 80-06 Task 2 for where the owner can amend this.
+ *
+ * @param {Object} payload - { id, status?, notes?, mailerlite_synced?, zoho_contact_id?,
+ *   customer_name?, customer_phone?, recipe_ids?, position?, contacted_at? } — at least one of
+ *   the nine optional fields is required.
  * @returns {{ok:true, id:*, status:string}|{ok:false, error:string}}
  */
 /**
@@ -5201,8 +5212,15 @@ function updateWaitlistStatus(payload) {
   var hasStatus = Object.prototype.hasOwnProperty.call(payload, 'status');
   var hasNotes = Object.prototype.hasOwnProperty.call(payload, 'notes');
   var hasSynced = Object.prototype.hasOwnProperty.call(payload, 'mailerlite_synced');
+  var hasZohoContactId = Object.prototype.hasOwnProperty.call(payload, 'zoho_contact_id');
+  var hasCustomerName = Object.prototype.hasOwnProperty.call(payload, 'customer_name');
+  var hasCustomerPhone = Object.prototype.hasOwnProperty.call(payload, 'customer_phone');
+  var hasRecipeIds = Object.prototype.hasOwnProperty.call(payload, 'recipe_ids');
+  var hasPosition = Object.prototype.hasOwnProperty.call(payload, 'position');
+  var hasContactedAt = Object.prototype.hasOwnProperty.call(payload, 'contacted_at');
 
-  if (!hasStatus && !hasNotes && !hasSynced) {
+  if (!hasStatus && !hasNotes && !hasSynced && !hasZohoContactId && !hasCustomerName &&
+      !hasCustomerPhone && !hasRecipeIds && !hasPosition && !hasContactedAt) {
     return { ok: false, error: 'no_fields' };
   }
 
@@ -5210,6 +5228,23 @@ function updateWaitlistStatus(payload) {
   var validStatuses = ['waiting', 'contacted', 'booked', 'removed'];
   if (hasStatus && validStatuses.indexOf(payload.status) === -1) {
     return { ok: false, error: 'invalid_status' };
+  }
+
+  // Phase 80, D-10/D-12, ASVS V5: position is server-validated BEFORE any setValue — a rejected
+  // value writes nothing. '' / null / undefined is the explicit unpin case; anything else must be
+  // an integer >= 1 after Number() coercion. The client's type="number" input is not a
+  // server-side guarantee.
+  var validatedPosition;
+  if (hasPosition) {
+    if (payload.position === '' || payload.position === null || payload.position === undefined) {
+      validatedPosition = '';
+    } else {
+      var posNum = Number(payload.position);
+      if (!isFinite(posNum) || Math.floor(posNum) !== posNum || posNum < 1) {
+        return { ok: false, error: 'invalid_position' };
+      }
+      validatedPosition = posNum;
+    }
   }
 
   var result = findRowById(WAITLIST_SHEET_NAME, String(id).trim());
@@ -5226,7 +5261,10 @@ function updateWaitlistStatus(payload) {
 
   if (hasStatus) {
     var statusCol = headers.indexOf('status') + 1;
-    sheet.getRange(result.row, statusCol).setValue(payload.status);
+    // IN-01 (78-REVIEW.md) fold-in: route status through waitlistCellSafe() same as every other
+    // free-text write below — the injection guard no longer depends on nobody ever adding an
+    // enum value starting with =+-@.
+    sheet.getRange(result.row, statusCol).setValue(waitlistCellSafe(payload.status));
   }
   if (hasNotes) {
     var notesCol = headers.indexOf('notes') + 1;
@@ -5235,6 +5273,30 @@ function updateWaitlistStatus(payload) {
   if (hasSynced) {
     var syncedCol = headers.indexOf('mailerlite_synced') + 1;
     sheet.getRange(result.row, syncedCol).setValue(waitlistSyncedTrue(payload.mailerlite_synced));
+  }
+  if (hasZohoContactId) {
+    var zohoContactIdCol = headers.indexOf('zoho_contact_id') + 1;
+    sheet.getRange(result.row, zohoContactIdCol).setValue(waitlistCellSafe(payload.zoho_contact_id));
+  }
+  if (hasCustomerName) {
+    var customerNameCol = headers.indexOf('customer_name') + 1;
+    sheet.getRange(result.row, customerNameCol).setValue(waitlistCellSafe(payload.customer_name));
+  }
+  if (hasCustomerPhone) {
+    var customerPhoneCol = headers.indexOf('customer_phone') + 1;
+    sheet.getRange(result.row, customerPhoneCol).setValue(waitlistCellSafe(payload.customer_phone));
+  }
+  if (hasRecipeIds) {
+    var recipeIdsCol = headers.indexOf('recipe_ids') + 1;
+    sheet.getRange(result.row, recipeIdsCol).setValue(waitlistCellSafe(payload.recipe_ids));
+  }
+  if (hasPosition) {
+    var positionCol = headers.indexOf('position') + 1;
+    sheet.getRange(result.row, positionCol).setValue(validatedPosition);
+  }
+  if (hasContactedAt) {
+    var contactedAtCol = headers.indexOf('contacted_at') + 1;
+    sheet.getRange(result.row, contactedAtCol).setValue(payload.contacted_at);
   }
 
   invalidateSheetCache(WAITLIST_SHEET_NAME);
