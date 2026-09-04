@@ -132,7 +132,7 @@ of an already-shipped CSS custom-property pair at an already-verified contrast r
 | Search placeholder | **"Search recipes…"** — verbatim reuse of `#bp-recipe-attach-input` (`js/brewpad.js:5133`) |
 | Empty search result | **"No recipes found"** — verbatim reuse (`js/brewpad.js:5163`) |
 | Loading | **"Loading recipes…"** — verbatim reuse (`js/brewpad.js:5147`) |
-| Chip remove | **"×"** — same glyph as every other remove control in BrewPad |
+| Chip remove | **"×"** — same glyph as every other remove control in BrewPad. Icon-only, so it carries **`aria-label="Remove {recipe name}"`** (e.g. `Remove Cascade Pale Ale`) — consistent with the pin/clear-pin controls in this same phase, which are also icon-only and labelled |
 | Empty state (no recipes attached) | **"No recipes attached"** — muted, `--ink-muted`, matches the em-dash-adjacent tone of other empty-field copy without literally being an em dash (a recipe list is a list, not a single value) |
 | Toast — attached | **"Recipe attached"** (success) |
 | Toast — removed | **"Recipe removed"** (success) |
@@ -183,7 +183,7 @@ of an already-shipped CSS custom-property pair at an already-verified contrast r
 | Primary action | **"Add to Waitlist"** — `.btn` |
 | Secondary action | **"Cancel"** — `.btn-secondary` |
 | Success (new row created) | Sheet closes. Toast: **"Added to waitlist"** (success). List refreshes. |
-| **D-23 disclosure (already on the list) — MUST be plain, MUST name when they signed up** | Sheet does **not** close silently. It transitions in place to a disclosure message (see Phase-Specific Decision 4): **"{email} is already on the beer waitlist — signed up {signed-up date}, currently {Status label}."** Single **"OK"** button (`.btn-secondary`) dismisses and closes the sheet; list refreshes so the existing row is visible. |
+| **D-23 disclosure (already on the list) — MUST be plain, MUST name when they signed up** | Sheet does **not** close silently. It transitions in place to a disclosure message (see Phase-Specific Decision 4): **"{email} is already on the beer waitlist — signed up {signed-up date}, currently {Status label}."** Single **"Got It"** button (`.btn-secondary`) dismisses and closes the sheet; list refreshes so the existing row is visible. |
 | Write failure (network/server error) | **"Failed: " + err.message** — sitewide convention, inline in the sheet (not a toast — the sheet must stay open so the staff member doesn't lose what they typed) |
 
 ---
@@ -208,14 +208,14 @@ N/A — no component registry; hand-written CSS. Zero new npm packages (confirme
 | Create-customer POST | **Reuse the exact `{name, first_name, last_name, email, phone}` → `POST /api/contacts` shape** already used by the reassign add-new form | `js/brewpad.js` (reassign new-save handler, `:6166-6180` region) |
 | Customer-link inline row-edit | **Composed** — the Customer table cell collapses into the reused search panel above, in place, using the exact `.bp-inline-input`-becomes-editor transform already established by `openWaitlistNotesEdit()` | `js/brewpad.js:8401-8410` (pattern) |
 | Recipe multi-select search | **Reuse the Batches-tab attach dropdown's own-lazy-fetch shape** (`GET /api/recipes?status=active`, `.bp-vessel-option` result rows) — **adapted from single-select-with-resolve to multi-select-display-only** (D-16: no ingredient resolve, no `/api/recipes/{id}` detail fetch — selecting an option just appends `{recipe_id, name}` to the row's attached list) | `js/brewpad.js:5140-5188` (Pattern 3 in 80-RESEARCH.md) |
-| Recipe chip | **Reuse `.bp-batch-chip-inline` verbatim** for each attached recipe name, with an appended `×` (`.bp-reading-del` sizing) for remove | `css/brewpad.css:1519-1522` |
+| Recipe chip | **Reuse `.bp-batch-chip-inline` verbatim** for each attached recipe name, with an appended `×` (`.bp-reading-del` sizing) for remove, carrying `aria-label="Remove {recipe name}"` | `css/brewpad.css:1519-1522` |
 | Recipe attach list (chips + "+ Attach recipe" trigger) | **Composed** — net-new small flex-wrap chip row (`gap:4px`, matching `.bp-tab` gap token) housing the reused chip class; no new spacing/color introduced | New markup, existing tokens only |
 | Contact review sheet | **Reuse `.bp-create-sheet`/`.bp-create-sheet-inner`/`.bp-form-group`/`.bp-form-actions` verbatim**, re-id'd `bp-waitlist-contact-sheet` — same shape as the "Create Recipe from Batch" sheet | `js/brewpad.js:5241-5297`; CSS `css/brewpad.css:1201-1290` |
 | Contact body textarea | **Reuse `.bp-notes-input` verbatim** (existing multi-line resizable textarea class) | `css/brewpad.css:858` region |
 | Contact trigger button | **Reuse `.btn bp-btn-sm` verbatim** — same classes as `#bp-recipe-create-btn` | `js/brewpad.js:5222` |
 | Manual Add sheet | **Reuse `.bp-create-sheet` shape verbatim**, re-id'd `bp-waitlist-add-sheet` — same header/body/`.bp-form-group`/`.bp-form-actions` shape as the recipe-create sheet | Same source as above |
 | Manual Add toolbar trigger | **Reuse `.btn bp-new-batch-btn` verbatim** | `js/brewpad.js:4049`; CSS `css/brewpad.css:596-602` |
-| D-23 disclosure state | **Composed** — the Manual Add sheet body swaps its form-fields `innerHTML` for a message paragraph + single `.btn-secondary` "OK", inside the same `.bp-create-sheet-body` container (no new sheet, no new modal-on-modal) | New markup, existing tokens only |
+| D-23 disclosure state | **Composed** — the Manual Add sheet body swaps its form-fields `innerHTML` for a message paragraph + single `.btn-secondary` "Got It", inside the same `.bp-create-sheet-body` container (no new sheet, no new modal-on-modal) | New markup, existing tokens only |
 | Pin icon button | **Composed** — reuses `.bp-reading-edit`'s icon-button sizing/hover treatment (font-size 1rem, padding 2px 5px, `color` transition) with a `📌` glyph instead of `✎` | `css/brewpad.css:1476-1480` (pattern) |
 | Clear-pin button | **Reuse `.bp-reading-del` verbatim** | `css/brewpad.css:1476,1481` |
 | Set-position inline editor | **Reuse the notes inline-editor shape verbatim** (`.bp-inline-input` + Save/× buttons) | `js/brewpad.js:8401-8410` (pattern) |
@@ -271,7 +271,7 @@ worked around in the UI.
 A toast is transient (a few seconds) and this message exists specifically so staff do not conclude an
 add silently failed — the exact failure mode a toast risks reproducing if missed. **Decision:** on a
 dedupe-match response, the Manual Add sheet's body area (`#bp-waitlist-add-sheet` → `.bp-create-sheet-
-body`) swaps its `innerHTML` from the form to the disclosure message + a single `.btn-secondary` "OK",
+body`) swaps its `innerHTML` from the form to the disclosure message + a single `.btn-secondary` "Got It",
 staying open until the staff member deliberately dismisses it. This reuses the sheet shell (header,
 close ×, backdrop-tap-to-dismiss) with zero new chrome — only the body content changes, exactly as
 `renderWaitlist()` already swaps `#bp-panel-waitlist`'s inner content between loading/empty/populated
@@ -350,6 +350,19 @@ planning.)*
 
 ---
 
+## Checker Recommendations — Dispositions
+
+Recorded from the `gsd-ui-checker` pass so each is a decision, not an oversight.
+
+| # | Checker finding | Disposition |
+|---|-----------------|-------------|
+| BLOCK, Dim 1 | D-23 disclosure dismiss button labelled **"OK"** — generic, and ambiguous here (could read as "OK, add them anyway") | **Fixed.** Relabelled **"Got It"**. Deliberately not "Confirm" — the existing `showConfirmSheet` "Confirm" convention means *proceed with an action*, and reusing it here would reintroduce exactly the "OK, add them anyway" ambiguity the finding identifies. This control only acknowledges and dismisses. |
+| FLAG, Dim 2 | Recipe-chip remove `×` had no declared `aria-label`, unlike the pin controls | **Fixed.** Now carries `aria-label="Remove {recipe name}"`, declared in the Copywriting Contract, the Component Inventory, and the Accessibility Contract. |
+| FLAG, Dim 1 | Contact row-trigger CTA is the bare verb **"Contact"**; suggested "Contact Customer" / "Send Email" | **Not taken — deliberate.** Phase-Specific Decision 1 already documents that this table grows to as many as 9 columns and needs a horizontal-scroll wrapper at BrewPad's iPad-landscape width. Widening this button's label works directly against a column-density constraint this spec already identified and mitigated. The row supplies the object noun in context (the Customer cell renders the name/email/phone immediately to its left), and the sheet it opens is titled "Contact {customer_name or email}", so the target is unambiguous one tap later. Revisit only if the scroll wrapper is dropped. |
+| FLAG, Dim 4 | Combined with Phase 78's base rows, this panel surfaces 0.72–1.1rem sizes; four values (0.75/0.78/0.8/0.82rem) sit within ~0.3px of each other at a 16px root | **Accepted as an executor check, not a spec change.** Every one of those sizes is a verbatim reuse of an already-shipped BrewPad class — none is a new CSS declaration, so this introduces no new design debt. **Executor action:** during iPad UAT, confirm the Manual Add form label (0.82rem) and the small text-link (0.75–0.78rem) remain visually distinguishable from body text (0.8rem) when rendered in the same row; if they do not, collapse the closest pair to an existing neighbouring size rather than introducing a new one. |
+
+---
+
 ## Responsive / Accessibility Contract
 
 *(Extends Phase 78's contract — only new elements listed; everything Phase 78 already established
@@ -373,7 +386,8 @@ for the tab, the table shell, the status badges, the confirm sheet, and focus st
   reuse existing labelled-input patterns (`placeholder` text doubling as the accessible name, matching
   every other BrewPad inline search input — no new labelling convention introduced). The pin icon
   button carries `aria-label="Pin this row's position"` / the clear control
-  `aria-label="Clear pin"` / the Contact button (when disabled) needs no extra `aria-label` beyond the
+  `aria-label="Clear pin"` / each recipe chip's remove `×` carries `aria-label="Remove {recipe name}"`
+  / the Contact button (when disabled) needs no extra `aria-label` beyond the
   native `disabled` state, which screen readers already announce.
 - **iPad Safari:** no new pinch/swipe interaction; `body { touch-action: pan-x pan-y }` (`:104`) is
   unaffected. The one genuinely new interaction shape (horizontal table scroll) is a **native browser
@@ -391,11 +405,16 @@ explicitly per CLAUDE.md rule 12 — this phase's impact is none, same conclusio
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: N/A (no component registry in this stack)
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: FLAG (accepted, non-blocking — see Dispositions)
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: N/A (no component registry in this stack)
 
-**Approval:** pending
+**Approval:** APPROVED by `gsd-ui-checker`, revision 1 (2026-09-04). 5 PASS / 1 accepted FLAG / 0 BLOCK.
+
+**Carried into execution (non-blocking):**
+- Confirm at iPad UAT that the Manual Add form label (0.82rem), the small text-link (0.75-0.78rem),
+  and body text (0.8rem) remain visually distinguishable in the same row. If they do not, collapse to
+  an existing neighbouring size - never introduce a new one.
