@@ -105,7 +105,7 @@ describe('sortWaitlistRows — position merge-insert (D-10-D-14)', function () {
     // 'str2' (numeric string) IS a valid pin per parseWaitlistPosition -- pins at index 1.
     // Everything else stays chronological, unpinned.
     expect(sorted.map(function (r) { return r.id; })).toEqual([
-      'num-null', 'str2', 'empty', 'zero', 'negative', 'abc'
+      'num-null', 'str2', 'empty', 'undef', 'zero', 'negative', 'abc'
     ]);
   });
 

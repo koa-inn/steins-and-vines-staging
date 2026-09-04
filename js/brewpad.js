@@ -978,15 +978,44 @@ function isWaitlistSynced(value) {
   return false;
 }
 
+// D-10: returns a positive integer when `value` coerces to one (accepting the numeric
+// string form the sheet may return, e.g. '2'), otherwise null. Only a positive integer
+// pins a row -- everything else (0, negative, non-integer, non-numeric, empty, null,
+// undefined) is treated as unpinned. ES5 only.
+function parseWaitlistPosition(value) {
+  if (value === null || value === undefined || value === '') return null;
+  var n = Number(value);
+  if (isNaN(n) || !isFinite(n)) return null;
+  if (n !== Math.floor(n)) return null;
+  if (n <= 0) return null;
+  return n;
+}
+
 // Returns a NEW array (never mutates `rows`) sorted by signed_up_at ascending (oldest
 // first), comparing the raw ISO strings. A row with a missing/unparseable signed_up_at
 // sorts LAST, in its original relative order, so a backfilled undated row never
 // displaces a dated one from the front of the queue (UI-SPEC.md §3).
+//
+// D-10 EXTENSION (Phase 80-03): rows carrying a positive-integer `position`
+// (parseWaitlistPosition) are pinned -- split out, sorted by ascending position with an
+// original-index tiebreak, then merge-inserted into the unpinned output at their target
+// 1-based rank (clamped to the end so an out-of-range position never drops the row or
+// creates a gap). Unpinned rows keep the EXACT existing chronological comparator above,
+// byte-for-byte -- this is a pure render-time splice; no cell is ever rewritten.
 function sortWaitlistRows(rows) {
   var input = rows || [];
-  var indexed = [];
-  for (var i = 0; i < input.length; i++) indexed.push({ row: input[i], i: i });
-  indexed.sort(function (a, b) {
+  var pinned = [];
+  var unpinned = [];
+  for (var i = 0; i < input.length; i++) {
+    var row = input[i];
+    var pos = parseWaitlistPosition(row && row.position);
+    if (pos !== null) {
+      pinned.push({ row: row, pos: pos, i: i });
+    } else {
+      unpinned.push({ row: row, i: i });
+    }
+  }
+  unpinned.sort(function (a, b) {
     var sa = a.row && a.row.signed_up_at;
     var sb = b.row && b.row.signed_up_at;
     var aValid = typeof sa === 'string' && sa !== '' && !isNaN(Date.parse(sa));
@@ -998,7 +1027,20 @@ function sortWaitlistRows(rows) {
     if (sa > sb) return 1;
     return a.i - b.i;
   });
-  return indexed.map(function (x) { return x.row; });
+  pinned.sort(function (a, b) { return a.pos - b.pos || a.i - b.i; });
+  var out = unpinned.map(function (x) { return x.row; });
+  // lastIdx guards against two rows pinned to the same slot landing in reverse order:
+  // pinned is already sorted ascending (pos, then original index), so if this row's
+  // clamped target collides with (or falls behind) the previous insertion, place it
+  // immediately after instead -- preserving the ascending-index stable tiebreak.
+  var lastIdx = -1;
+  pinned.forEach(function (p) {
+    var idx = Math.max(0, Math.min(p.pos - 1, out.length));
+    if (idx <= lastIdx) idx = lastIdx + 1;
+    out.splice(idx, 0, p.row);
+    lastIdx = idx;
+  });
+  return out;
 }
 
 // Ranks each row (1-based) among rows whose status === 'waiting', in the order given
@@ -9898,7 +9940,9 @@ if (typeof module !== 'undefined' && module.exports) {
     sortWaitlistRows: sortWaitlistRows,
     computeWaitlistQueuePositions: computeWaitlistQueuePositions,
     filterWaitlistRows: filterWaitlistRows,
-    shouldShowWaitlistCategoryColumn: shouldShowWaitlistCategoryColumn
+    shouldShowWaitlistCategoryColumn: shouldShowWaitlistCategoryColumn,
+    // Phase 80-03 (D-10-D-14): position-aware merge-insert helper.
+    parseWaitlistPosition: parseWaitlistPosition
     // Plan 36-19: renderRecipeListHtml + bpCloneRecipePayload exported by the IIFE inner block above
     // Plan 36-22: afterBatchWrite + getStateForTest exported by the IIFE inner block above
     // State-dependent attach-flow exports are merged by Object.assign inside the IIFE above
