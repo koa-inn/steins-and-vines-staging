@@ -285,20 +285,30 @@ Expect `"ok":true` and each row object now carrying `zoho_contact_id`, `customer
 for the pre-existing rows).
 
 **b. Position validation probe** (use a disposable row id — see §6 cleanup)
+**`doPost` does `JSON.parse(e.postData.contents)` (`adminApi.gs:251`) — the body MUST be JSON.**
+A form-encoded `-d 'action=...'` fails with
+`{"ok":false,"error":"server_error","message":"Unexpected token 'a', \"action=upd\"... is not valid JSON"}`
+before any auth check or write (harmless, but it proves nothing). Corrected 2026-09-04 after the
+owner hit exactly this during the live run.
+
+Use `-d` WITHOUT `-X POST`: `-d` already implies POST, and curl downgrades to GET when following
+`/exec`'s 302 — which is required. Adding `-X POST` forces POST through the redirect and lands on a
+Drive error page AFTER the write executed (the double-write trap warned about above).
+
 ```bash
 # Valid write:
-curl -sL -d 'action=update_waitlist_status&server_token=REDACTED&id=<disposable row id>&position=2' "$APPS_SCRIPT_URL"
+railway run -e production -s sv_middleware -- sh -c 'curl -sL -H "Content-Type: application/json" -d "{\"action\":\"update_waitlist_status\",\"server_token\":\"$APPS_SCRIPT_SERVER_TOKEN\",\"id\":\"<disposable row id>\",\"position\":2}" "$APPS_SCRIPT_URL"'
 # Expect: {"ok":true,"id":"...","status":"..."}
 
 # Invalid write — must be refused, zero cells touched:
-curl -sL -d 'action=update_waitlist_status&server_token=REDACTED&id=<disposable row id>&position=0' "$APPS_SCRIPT_URL"
+railway run -e production -s sv_middleware -- sh -c 'curl -sL -H "Content-Type: application/json" -d "{\"action\":\"update_waitlist_status\",\"server_token\":\"$APPS_SCRIPT_SERVER_TOKEN\",\"id\":\"<disposable row id>\",\"position\":0}" "$APPS_SCRIPT_URL"'
 # Expect: {"ok":false,"error":"invalid_position"}
 ```
 
 **c. One-way transition guard probe, against a `booked` row** (proves CR-01's Phase-78 guard
 survived the 80-01 rewrite of `updateWaitlistStatus`)
 ```bash
-curl -sL -d 'action=update_waitlist_status&server_token=REDACTED&id=<a booked row id>&status=waiting' "$APPS_SCRIPT_URL"
+railway run -e production -s sv_middleware -- sh -c 'curl -sL -H "Content-Type: application/json" -d "{\"action\":\"update_waitlist_status\",\"server_token\":\"$APPS_SCRIPT_SERVER_TOKEN\",\"id\":\"<a booked row id>\",\"status\":\"waiting\"}" "$APPS_SCRIPT_URL"'
 # Expect: {"ok":false,"error":"invalid_transition"}
 ```
 
