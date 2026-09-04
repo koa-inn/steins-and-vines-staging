@@ -143,6 +143,14 @@ beforeEach(function () {
   session.getSession.mockResolvedValue(null);
   axios.post.mockReset();
   axios.get.mockReset();
+  // CR-03 pre-flight: /api/waitlist/:id/contact now reads the row before sending,
+  // so every contact test needs a resolvable get_waitlist. Default to the row the
+  // contact suite addresses ('w-1', still 'waiting', so the advance is legal) —
+  // individual tests override this to exercise not_found/invalid_transition.
+  // This only restores reachability; no assertion below is relaxed by it.
+  axios.get.mockResolvedValue({
+    data: { ok: true, data: [{ id: 'w-1', email: 'jane@example.com', status: 'waiting' }] }
+  });
   mailer.sendWaitlistContact.mockReset();
   mailer.sendWaitlistContact.mockResolvedValue();
   mailerlite.isConfigured.mockReset();
