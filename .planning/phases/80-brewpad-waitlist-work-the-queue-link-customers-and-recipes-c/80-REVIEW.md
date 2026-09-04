@@ -39,7 +39,7 @@ fix_outcome:
   WR-02: fixed (cd731469) — ships with the pending Apps Script redeploy
   WR-03: fixed (01fcb16c)
   WR-04: fixed (99fa1cdd + 6fe0d7a1) — provisional slug, confirm in 80-CUTOVER 1a step (d)
-  WR-05: partial (f9675b18) — stale status fixed; dedupe write behavior deferred, needs owner decision
+  WR-05: fixed (f9675b18 + 35001381) — stale status fixed; owner decided 2026-09-04 to keep discarding typed fields, disclosure now states it plainly
   IN-01..IN-04: not attempted (Info out of default --fix scope)
 post_fix_tests:
   frontend: 1643/1643 (108 suites)
