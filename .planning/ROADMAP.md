@@ -1294,15 +1294,15 @@ Plans:
 3. **Manual reorder contradicts the customer-facing promise.** `beer.html` says "we work through the list in order", and D-04 exists so backfilled rows sit in true signup order. An override needs a rule for where new signups land, whether `signed_up_at` stays the tiebreaker, and whether staff can see that the order is no longer purely chronological.
 4. **D-06 non-disclosure still binds** — nothing added here may reveal to a customer whether they were already on the list.
 
-**Plans:** 6 plans across 4 waves
+**Plans:** 3/6 plans executed
 
 Plans:
 
 **Wave 1** (parallel — disjoint files: Apps Script / middleware / frontend)
 
-- [ ] 80-01-PLAN.md — Apps Script: 13-column Waitlist schema (D-17), header-driven addWaitlistEntry (fixes the positional-append bug), 6 new optional fields on updateWaitlistStatus with waitlistCellSafe (D-19), recipe-id parse/serialize helpers, IN-01 folded in, WR-02 documented as carried forward, docs/APPS_SCRIPT.md corrected
-- [ ] 80-02-PLAN.md — Middleware: sendWaitlistContact via Resend (D-04), staff-tier POST /api/waitlist/:id/contact with fail-closed send-then-write (D-07/D-08), POST /api/waitlist/:id/mailerlite-sync (D-24), add_waitlist_entry added to ADMIN_PROXY_ACTIONS only (D-21) with the superseded Phase 78 assertion deliberately flipped
-- [ ] 80-03-PLAN.md — BrewPad: position-aware sortWaitlistRows merge-insert, pin marker + inline position editor + clear-pin (D-10..D-13), widened table with Customer and Recipes cells and a horizontal-scroll wrapper
+- [x] 80-01-PLAN.md — Apps Script: 13-column Waitlist schema (D-17), header-driven addWaitlistEntry (fixes the positional-append bug), 6 new optional fields on updateWaitlistStatus with waitlistCellSafe (D-19), recipe-id parse/serialize helpers, IN-01 folded in, WR-02 documented as carried forward, docs/APPS_SCRIPT.md corrected
+- [x] 80-02-PLAN.md — Middleware: sendWaitlistContact via Resend (D-04), staff-tier POST /api/waitlist/:id/contact with fail-closed send-then-write (D-07/D-08), POST /api/waitlist/:id/mailerlite-sync (D-24), add_waitlist_entry added to ADMIN_PROXY_ACTIONS only (D-21) with the superseded Phase 78 assertion deliberately flipped
+- [x] 80-03-PLAN.md — BrewPad: position-aware sortWaitlistRows merge-insert, pin marker + inline position editor + clear-pin (D-10..D-13), widened table with Customer and Recipes cells and a horizontal-scroll wrapper
 
 **Wave 2**
 
