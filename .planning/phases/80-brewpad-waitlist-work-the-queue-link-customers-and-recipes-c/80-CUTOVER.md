@@ -252,9 +252,9 @@ Apps Script editor's Run/Deploy buttons.**
    | Field | Value |
    |---|---|
    | Prior version number (the rollback target) | **54** — "Version 54 on Sep 3, 2026, 6:25 PM", confirmed active in the Edit-deployment version dropdown by the owner 2026-09-04 before redeploying |
-   | New version number (just deployed) | `<OWNER TO FILL IN — expected 55>` |
+   | New version number (just deployed) | **55** — deployed 2026-09-04 |
    | Deployment ID (must be UNCHANGED from before this redeploy) | `<OWNER TO FILL IN — AKfycb... from Manage deployments; capture BEFORE and AFTER and confirm identical>` |
-   | Date/time deployed | `<OWNER TO FILL IN>` |
+   | Date/time deployed | 2026-09-04 (repo `adminApi.gs` @ 5,325 lines pasted wholesale into the editor, then Version → New version) |
 
    > Rollback target 54 is recorded BEFORE the redeploy — this is the value Phase 78 lost across
    > both of its redeploys, leaving its rollback procedure with no target. Do not proceed past this
@@ -333,11 +333,22 @@ physical position relative to the OLD code's positional write that ran during th
 
 | Probe | Result | Response body (key excerpt) |
 |---|---|---|
-| a. Read — 13-field shape | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN>` |
+| a. Read — 13-field shape | **PASS** (2026-09-04, against v55) | `{"ok":true,"data":[...6 rows...]}` — every row carries all six new keys as empty strings; all `signed_up_at` values are well-formed ISO-8601, no date-serial corruption. Customer emails intentionally not reproduced here. |
 | b. Position — valid (2) | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN>` |
 | b. Position — invalid (0) | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN — expect invalid_position>` |
 | c. Transition — booked→waiting | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN — expect invalid_transition>` |
 | d. Public signup — status/signed_up_at | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN>` |
+
+> **Probe ORDER CORRECTION — recorded 2026-09-04 from probe a's real output.** Run **d BEFORE b and
+> c**. Probe a shows the sheet holds six rows, all belonging to real customers and all with
+> `status: waiting`:
+> - there is **no `booked` row**, so c cannot run as written; and
+> - b writes `position`, so it must not be aimed at a real customer's row.
+>
+> Running d first creates the disposable `phase80-probe@example.com` row, which then serves as the
+> target for both b and c. For c, advance that disposable row forward (`waiting` → `contacted` →
+> `booked`, all legal one-way moves) and only then assert that `booked` → `waiting` is refused.
+> §6's cleanup leg removes the probe row afterwards.
 
 ---
 
