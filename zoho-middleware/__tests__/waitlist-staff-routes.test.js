@@ -310,6 +310,46 @@ describe('POST /api/waitlist/:id/mailerlite-sync (Phase 80-02, D-24)', function 
     });
   });
 
+  // WR-03 regression. email was passed straight to mailerlite.addSubscriber with no
+  // format check. Because the route is fire-and-forget and always answers {ok:true}
+  // (D-24), every malformed-input failure was silent to caller and operator alike --
+  // an empty email produced a MailerLite API error that was caught, logged and
+  // discarded, indistinguishable from success at the HTTP layer. D-24's
+  // fire-and-forget contract covers the MailerLite OUTCOME, not malformed input.
+  test.each([
+    ['missing', undefined],
+    ['empty', ''],
+    ['whitespace only', '   '],
+    ['no @', 'not-an-email'],
+    ['no domain dot', 'jane@example'],
+    ['spaces inside', 'ja ne@example.com']
+  ])('WR-03: %s email -> 400 invalid_request, addSubscriber never called', function (_label, badEmail) {
+    session.getSession.mockResolvedValue({ email: 'staff@steinsandvines.ca' });
+
+    var req = { headers: SESSION_HEADERS, params: { id: 'w-1' }, body: { email: badEmail } };
+    return callHandler('POST', '/api/waitlist/:id/mailerlite-sync', req).then(function (res) {
+      expect(res._status).toBe(400);
+      expect(res._body).toEqual({ ok: false, error: 'invalid_request' });
+      expect(mailerlite.addSubscriber).not.toHaveBeenCalled();
+      return flushPromises();
+    }).then(function () {
+      // Critically: no mailerlite_synced flag stamped onto the row either.
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+  });
+
+  test('WR-03: a valid email is trimmed before being handed to MailerLite', function () {
+    session.getSession.mockResolvedValue({ email: 'staff@steinsandvines.ca' });
+    axios.post.mockResolvedValue({ data: { ok: true } });
+
+    var req = { headers: SESSION_HEADERS, params: { id: 'w-1' }, body: { email: '  jane@example.com  ' } };
+    return callHandler('POST', '/api/waitlist/:id/mailerlite-sync', req).then(function (res) {
+      expect(res._body).toEqual({ ok: true });
+      expect(mailerlite.addSubscriber).toHaveBeenCalledTimes(1);
+      expect(mailerlite.addSubscriber.mock.calls[0][0]).toBe('jane@example.com');
+    });
+  });
+
   test('MAILERLITE_API_KEY unset (isConfigured false): 200 {ok:true}, neither addSubscriber nor axios called', function () {
     session.getSession.mockResolvedValue({ email: 'staff@steinsandvines.ca' });
     mailerlite.isConfigured.mockReturnValue(false);

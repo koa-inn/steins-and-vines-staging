@@ -4143,7 +4143,16 @@ router.post('/api/waitlist/:id/contact', function (req, res) {
 router.post('/api/waitlist/:id/mailerlite-sync', function (req, res) {
   authTiers.requireTiers(['legacy', 'session'])(req, res, function () {
   var id = req.params.id;
-  var email = (req.body && req.body.email) || '';
+  var email = ((req.body && req.body.email) || '').trim();
+
+  // WR-03: validate before dispatching. D-24's fire-and-forget contract covers the
+  // MailerLite OUTCOME, not malformed input -- without this, an empty or malformed
+  // address produced a MailerLite error that was caught, logged and discarded while
+  // the route still answered {ok:true}, making the failure invisible to both the
+  // caller and the operator, and leaving the row's sync flag silently unset.
+  if (!id || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ ok: false, error: 'invalid_request' });
+  }
 
   if (mailerlite.isConfigured()) {
     var groupId = (process.env.MAILERLITE_WAITLIST_GROUP_ID || '').trim();
