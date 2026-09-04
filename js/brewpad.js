@@ -9266,9 +9266,38 @@ function parseWaitlistRecipeIds(value) {
         // missing disclosure (staff simply re-check the list) -- never a
         // leak, since the public path is structurally unaffected either way.
         if (Object.prototype.hasOwnProperty.call(existingById, String(newId))) {
-          showWaitlistAddDisclosure(email, existingById[String(newId)], closeAddSheet);
-          submitBtn.disabled = false;
-          return null;
+          // WR-05 (1): the typed optional fields are still deliberately NOT written
+          // to a matched row -- applying them would change the D-23/D-06 disclosure
+          // semantics. But dropping them silently read as "the details were merged",
+          // so the sheet now says outright which ones were discarded.
+          var droppedFields = [];
+          if (name) droppedFields.push('name');
+          if (phone) droppedFields.push('phone');
+          if (selectedRecipes.length) droppedFields.push('recipes');
+
+          // WR-05 (2): the snapshot's status is the PRE-write value and may already
+          // be wrong -- addWaitlistEntry reinstates a matched `removed` row to
+          // `waiting` server-side, so the snapshot would claim "currently Removed"
+          // for a row that is now Waiting. Re-read for the status only.
+          // signed_up_at deliberately keeps using the pre-write value: the
+          // post-write one is refreshed by the reinstate, and the honest answer to
+          // "when did they sign up" is the original.
+          return adminApiGet('get_waitlist')
+            .then(function (fresh) {
+              var freshRows = (fresh && fresh.data) || [];
+              for (var fi = 0; fi < freshRows.length; fi++) {
+                if (freshRows[fi] && String(freshRows[fi].id) === String(newId)) return freshRows[fi];
+              }
+              return null;
+            })
+            .catch(function () { return null; })
+            .then(function (freshRow) {
+              showWaitlistAddDisclosure(
+                email, existingById[String(newId)], closeAddSheet, freshRow, droppedFields
+              );
+              submitBtn.disabled = false;
+              return null;
+            });
         }
 
         var optionalUpdates = {};
@@ -9307,17 +9336,34 @@ function parseWaitlistRecipeIds(value) {
 
   // D-23: the dedupe-hit disclosure swaps the sheet BODY's innerHTML in
   // place (UI-SPEC Phase-Specific Decision 4) -- no new sheet, no toast, so
-  // the message is durable until staff deliberately dismiss it. Uses the
-  // pre-write snapshot's signed_up_at/status, never a post-write re-read
-  // (a reinstated `removed` row's timestamp refreshes server-side, and the
-  // honest answer to "when did they sign up" is the pre-write value).
-  function showWaitlistAddDisclosure(email, existingRow, closeAddSheet) {
+  // the message is durable until staff deliberately dismiss it.
+  //
+  // signed_up_at comes from the PRE-write snapshot on purpose: a reinstated
+  // `removed` row's timestamp refreshes server-side, and the honest answer to
+  // "when did they sign up" is the pre-write value.
+  //
+  // WR-05: `status` does NOT get that same treatment. The pre-write snapshot can
+  // already be wrong by the time this renders (a matched `removed` row has just
+  // been reinstated to `waiting`), so freshRow -- a post-write re-read -- wins
+  // when it is available, falling back to the snapshot when the re-read failed.
+  function showWaitlistAddDisclosure(email, existingRow, closeAddSheet, freshRow, droppedFields) {
     var bodyEl = document.getElementById('bp-waitlist-add-body');
     if (!bodyEl) return;
-    var statusLabel = WAITLIST_STATUS_LABELS[existingRow.status] || existingRow.status;
+    var currentStatus = (freshRow && freshRow.status) || existingRow.status;
+    var statusLabel = WAITLIST_STATUS_LABELS[currentStatus] || currentStatus;
+    var droppedNote = '';
+    if (droppedFields && droppedFields.length) {
+      // Say plainly that these were discarded -- "already on the list" on its own
+      // reads as though the typed details were merged into the existing row.
+      droppedNote = '<p>The ' + escapeHTML(droppedFields.join(', ')) +
+        ' you entered ' + (droppedFields.length > 1 ? 'were' : 'was') +
+        ' not saved. Edit the existing row if you need to update ' +
+        (droppedFields.length > 1 ? 'them' : 'it') + '.</p>';
+    }
     bodyEl.innerHTML =
       '<p>' + escapeHTML(email) + ' is already on the beer waitlist — signed up ' +
       escapeHTML(fmtShortDate(existingRow.signed_up_at)) + ', currently ' + escapeHTML(statusLabel) + '.</p>' +
+      droppedNote +
       '<div class="bp-form-actions">' +
       '<button type="button" class="btn-secondary" id="bp-waitlist-add-gotit">Got It</button>' +
       '</div>';

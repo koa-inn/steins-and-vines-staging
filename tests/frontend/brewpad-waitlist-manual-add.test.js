@@ -84,6 +84,10 @@ function flushPromises() {
 // Routes global.fetch by request shape so unrelated calls never reject.
 function mockFetch(opts) {
   opts = opts || {};
+  // WR-05: lets a test distinguish the PRE-write get_waitlist snapshot from the
+  // POST-write re-read. Purely additive -- when snapshotAfter is not supplied
+  // every get_waitlist call returns opts.snapshot exactly as before.
+  var getWaitlistCalls = 0;
   global.fetch.mockImplementation(function (url, options) {
     var u = String(url);
 
@@ -102,9 +106,13 @@ function mockFetch(opts) {
       var body = {};
       try { body = JSON.parse(options.body); } catch (e) {}
       if (body.action === 'get_waitlist') {
+        getWaitlistCalls += 1;
+        var rows = (getWaitlistCalls > 1 && opts.snapshotAfter)
+          ? opts.snapshotAfter
+          : (opts.snapshot || []);
         return Promise.resolve({
           ok: true,
-          json: function () { return Promise.resolve({ ok: true, data: opts.snapshot || [] }); }
+          json: function () { return Promise.resolve({ ok: true, data: rows }); }
         });
       }
       if (body.action === 'add_waitlist_entry') {
@@ -289,6 +297,76 @@ describe('D-23 disclosure (dedupe hit)', function () {
       expect(actions.indexOf('update_waitlist_status')).toBe(-1);
       var syncCalls = global.fetch.mock.calls.filter(function (c) { return String(c[0]).indexOf('/mailerlite-sync') !== -1; });
       expect(syncCalls.length).toBe(0);
+    });
+  });
+
+  // WR-05 problem (2). The disclosure printed existingRow.status from the PRE-write
+  // snapshot, but addWaitlistEntry has already run by then -- a matched `removed` row
+  // has been reinstated to `waiting` server-side. The sheet claimed "currently
+  // Removed" while the row was actually Waiting. signed_up_at legitimately stays on
+  // the pre-write value; status does not.
+  test('WR-05: a reinstated row shows its POST-write status, not the stale snapshot one', function () {
+    var removedRow = Object.assign({}, EXISTING_ROW, { status: 'removed' });
+    var reinstatedRow = Object.assign({}, EXISTING_ROW, { status: 'waiting' });
+    mockFetch({
+      snapshot: [removedRow],
+      snapshotAfter: [reinstatedRow],
+      newId: EXISTING_ROW.id
+    });
+    renderWithRows([]);
+    bp._openWaitlistAddSheetForTest();
+    document.getElementById('bp-waitlist-add-email').value = 'existing@example.com';
+    document.getElementById('bp-waitlist-add-submit').click();
+    return flushPromises().then(function () {
+      return flushPromises();
+    }).then(function () {
+      return flushPromises();
+    }).then(function () {
+      var body = document.getElementById('bp-waitlist-add-body');
+      expect(body.textContent).toContain('existing@example.com is already on the beer waitlist');
+      expect(body.textContent).toContain('Waiting');
+      expect(body.textContent).not.toContain('Removed');
+    });
+  });
+
+  // WR-05 problem (1), copy-only half. The typed optional fields are still
+  // deliberately NOT written on a dedupe hit (that would change D-23/D-06
+  // disclosure semantics the owner has locked). But silently discarding them read
+  // as "the details were merged" -- so the sheet now says so outright.
+  test('WR-05: the disclosure states that typed name/phone/recipes were not saved', function () {
+    mockFetch({ snapshot: [EXISTING_ROW], newId: EXISTING_ROW.id });
+    renderWithRows([]);
+    bp._openWaitlistAddSheetForTest();
+    document.getElementById('bp-waitlist-add-email').value = 'existing@example.com';
+    document.getElementById('bp-waitlist-add-name').value = 'Should Not Write';
+    document.getElementById('bp-waitlist-add-phone').value = '604-555-1234';
+    document.getElementById('bp-waitlist-add-submit').click();
+    return flushPromises().then(function () {
+      return flushPromises();
+    }).then(function () {
+      return flushPromises();
+    }).then(function () {
+      var body = document.getElementById('bp-waitlist-add-body');
+      expect(body.textContent).toContain('not saved');
+      // And the write really did not happen.
+      var actions = proxyBodies().map(function (b) { return b.action; });
+      expect(actions.indexOf('update_waitlist_status')).toBe(-1);
+    });
+  });
+
+  test('WR-05: with no optional fields typed, no "not saved" notice is shown', function () {
+    mockFetch({ snapshot: [EXISTING_ROW], newId: EXISTING_ROW.id });
+    renderWithRows([]);
+    bp._openWaitlistAddSheetForTest();
+    document.getElementById('bp-waitlist-add-email').value = 'existing@example.com';
+    document.getElementById('bp-waitlist-add-submit').click();
+    return flushPromises().then(function () {
+      return flushPromises();
+    }).then(function () {
+      return flushPromises();
+    }).then(function () {
+      var body = document.getElementById('bp-waitlist-add-body');
+      expect(body.textContent).not.toContain('not saved');
     });
   });
 
