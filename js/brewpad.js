@@ -1101,6 +1101,15 @@ function shouldShowWaitlistCategoryColumn(rows) {
   return count > 1;
 }
 
+// D-15/D-16: client-side mirror of the Apps Script `parseWaitlistRecipeIds` helper.
+// `recipe_ids` is stored as a pipe-delimited string (recipe ids look like
+// 'SV-R-000003' and contain no pipes). Splits on '|', drops empty segments (so a
+// leading/trailing/double pipe never produces a phantom chip), and preserves order.
+function parseWaitlistRecipeIds(value) {
+  if (!value) return [];
+  return String(value).split('|').filter(function (id) { return id !== ''; });
+}
+
 (function () {
   'use strict';
 
@@ -8327,8 +8336,12 @@ function shouldShowWaitlistCategoryColumn(rows) {
     } else if (filtered.length === 0) {
       html += '<p class="bp-empty-state">No entries match this filter.</p>';
     } else {
+      // UI-SPEC Phase-Specific Decision 1: up to 9 columns at BrewPad's iPad-landscape
+      // width would compress uncomfortably -- wrap in a horizontal-scroll wrapper
+      // (copies #bp-recipes-ingredients-editor's pattern) rather than shrinking cells.
+      html += '<div class="bp-waitlist-table-wrap">';
       html += '<table class="bp-active-batches-table" aria-label="Beer waitlist">';
-      html += '<thead><tr><th>#</th><th>Email</th>';
+      html += '<thead><tr><th>#</th><th>Customer</th><th>Recipes</th>';
       if (showCategory) html += '<th>Category</th>';
       html += '<th>Signed up</th><th>Status</th><th>Notes</th><th></th></tr></thead>';
       html += '<tbody>';
@@ -8345,9 +8358,33 @@ function shouldShowWaitlistCategoryColumn(rows) {
           ? '<span class="bp-sync-badge">✓ Synced</span>'
           : '<span class="bp-sync-badge bp-sync-badge--warning">⚠ Not synced</span>';
 
+        // D-02 Customer cell: linked rows show "{name} — {email} — {phone}" (phone
+        // segment AND its leading separator omitted when customer_phone is empty).
+        // Unlinked rows keep today's exact bare-email + sync-badge rendering.
+        // No trigger link in this plan -- 80-04 adds "Link customer"/"Change".
+        var customerCell;
+        if (row.zoho_contact_id) {
+          var custBits = [escapeHTML(row.customer_name || ''), escapeHTML(row.email)];
+          if (row.customer_phone) custBits.push(escapeHTML(row.customer_phone));
+          customerCell = custBits.join(' — ') + syncBadge;
+        } else {
+          customerCell = escapeHTML(row.email) + syncBadge;
+        }
+
+        // D-15/D-16 Recipes cell: one display-only chip per attached recipe id, in
+        // stored order. No remove '×', no attach trigger in this plan -- 80-04 adds
+        // both and swaps the label from the raw id to the catalog-resolved name.
+        var recipeIds = parseWaitlistRecipeIds(row.recipe_ids);
+        var recipesCell = recipeIds.length === 0
+          ? '<span class="bp-waitlist-no-recipes">No recipes attached</span>'
+          : recipeIds.map(function (rid) {
+            return '<span class="bp-batch-chip-inline">' + escapeHTML(rid) + '</span>';
+          }).join(' ');
+
         html += '<tr>';
         html += '<td class="bp-waitlist-pos">' + (pos != null ? pos : '—') + '</td>'; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
-        html += '<td>' + escapeHTML(row.email) + syncBadge + '</td>';
+        html += '<td>' + customerCell + '</td>';
+        html += '<td>' + recipesCell + '</td>';
         if (showCategory) html += '<td>' + escapeHTML(row.category || '—') + '</td>';
         html += '<td>' + fmtShortDate(row.signed_up_at) + '</td>';
         html += '<td><span class="bp-status-badge bp-status-badge--' + color + (actionable ? ' bp-status-clickable' : '') +
@@ -8358,6 +8395,7 @@ function shouldShowWaitlistCategoryColumn(rows) {
         html += '</tr>';
       });
       html += '</tbody></table>';
+      html += '</div>';
     }
 
     html += '</div>';
@@ -9844,6 +9882,16 @@ function shouldShowWaitlistCategoryColumn(rows) {
       sendBottlingInviteForBatch: sendBottlingInviteForBatch,
       // Test-only: render the batch-detail pane (bottling-invite send-tracking UI).
       _renderBatchDetailForTest: renderBatchDetail,
+      // Phase 80-03: test-only seams for renderWaitlist -- sets the IIFE-scoped
+      // _waitlistRows/_waitlistFilter/_waitlistSearch state, then renders into
+      // #bp-panel-waitlist so a jsdom test can inspect the resulting markup.
+      renderWaitlist: renderWaitlist,
+      _setWaitlistStateForTest: function (patch) {
+        patch = patch || {};
+        if ('rows' in patch) _waitlistRows = patch.rows;
+        if ('filter' in patch) _waitlistFilter = patch.filter;
+        if ('search' in patch) _waitlistSearch = patch.search;
+      },
       // Plan 36-22: test-only state accessors for the cache-bust state vars
       getStateForTest: function () {
         return {
@@ -9942,7 +9990,9 @@ if (typeof module !== 'undefined' && module.exports) {
     filterWaitlistRows: filterWaitlistRows,
     shouldShowWaitlistCategoryColumn: shouldShowWaitlistCategoryColumn,
     // Phase 80-03 (D-10-D-14): position-aware merge-insert helper.
-    parseWaitlistPosition: parseWaitlistPosition
+    parseWaitlistPosition: parseWaitlistPosition,
+    // Phase 80-03 (D-15/D-16): client-side recipe_ids parser (display-only chips).
+    parseWaitlistRecipeIds: parseWaitlistRecipeIds
     // Plan 36-19: renderRecipeListHtml + bpCloneRecipePayload exported by the IIFE inner block above
     // Plan 36-22: afterBatchWrite + getStateForTest exported by the IIFE inner block above
     // State-dependent attach-flow exports are merged by Object.assign inside the IIFE above

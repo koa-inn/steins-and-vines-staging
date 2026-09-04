@@ -1506,6 +1506,20 @@ img { max-width: 100%; height: auto; display: block; }
 .bp-active-batches-table tr[data-batch-id] { cursor: pointer; }
 .bp-active-batches-table tr[data-batch-id]:active { background: var(--cellar-canvas); }
 
+/* ===== Waitlist table horizontal-scroll wrap (Phase 80-03, UI-SPEC Phase-Specific
+   Decision 1) — copies #bp-recipes-ingredients-editor's pattern verbatim. Scoped to
+   .bp-waitlist-table-wrap so no other .bp-active-batches-table user is affected. ===== */
+.bp-waitlist-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.bp-waitlist-table-wrap .bp-active-batches-table {
+  min-width: 960px;
+}
+.bp-waitlist-no-recipes {
+  color: var(--ink-muted);
+}
+
 /* ===== Dashboard today's tasks / workload expand (Item 5b, 5c) ===== */
 .bp-dash-task-list { margin-bottom: 16px; }
 .bp-wl-day--expanded { background: rgba(55,14,19,0.06); border-radius: 4px; }
