@@ -380,9 +380,44 @@ not pushed to production independently. **This runsheet does not authorize or pe
 
 ---
 
+## 7b. REQUIRED — second Apps Script redeploy (added 2026-09-03, after code review)
+
+**The live Web App is STALE.** `/gsd:code-review` found two Critical defects, both fixed in
+`apps-script/adminApi.gs` after the Task 1 redeploy. Apps Script has no CI deploy path, so the
+deployed script still serves the pre-fix code:
+
+- **CR-01** (`a706d7b8`) — `updateWaitlistStatus` never compared the incoming status against the
+  row's current one, so D-05's one-way rule was client-side only. A direct admin-proxy call could
+  move a `booked` row back to `waiting`. Now guarded by `waitlistTransitionAllowed`, checked
+  against the sheet's status and evaluated before any write.
+- **CR-02** (`7cbccf41`) — a `removed` customer signing up again got `{ok:true}` with no sheet
+  change: silently ineffective. Now reinstated to `waiting` with a refreshed `signed_up_at`.
+
+**Redeploy using the same procedure as §2 steps 1–5** (paste the committed file, Deploy → Manage
+deployments → pencil → New version → Deploy; do NOT create a new deployment). `setupWaitlist()`
+does NOT need re-running — the tab already exists and its headers are unchanged.
+
+Post-redeploy probe — the backward transition must now be REFUSED, which the original UAT could
+not prove because the client never issued the request:
+
+```
+# expect {"ok":false,"error":"invalid_transition"} against a booked row
+curl -sL -d 'action=update_waitlist_status&server_token=REDACTED&id=<a booked row id>&status=waiting' "$APPS_SCRIPT_URL"
+```
+
+| Field | Value |
+|---|---|
+| Second redeploy completed? | `<OWNER TO FILL IN>` |
+| Backward transition refused? | `<OWNER TO FILL IN>` |
+| Removed-row re-signup reinstates? | `<OWNER TO FILL IN>` |
+
+---
+
 ## 8. Summary of what remains open as of this write-up
 
 - [ ] Task 1: owner runs `setupWaitlist()`, redeploys Apps Script, records rollback version, confirms probe.
 - [ ] Task 2: owner confirms MailerLite timestamp column, backfills (or reports zero-import blocker).
 - [ ] Task 3: gates green, `git push origin main`, eleven-leg staging UAT, probe rows cleaned up.
+- [ ] **Second Apps Script redeploy (§7b) — REQUIRED. Both Critical code-review fixes are not live until this happens.**
+- [ ] Recover the Task 1 rollback version numbers (§2) — the rollback procedure has no target without them.
 - [ ] Production cutover (out of scope here, batched with Phases 73/75/76).
