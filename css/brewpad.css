@@ -1529,6 +1529,14 @@ img { max-width: 100%; height: auto; display: block; }
   margin-top: 2px;
 }
 
+/* ===== Phase 80-04: host the reused customer-link panel (.bp-reassign-*) inside
+   a Waitlist table cell — width/positioning only, no new spacing/font-size/color
+   token (UI-SPEC Task 1 <action>). Customer is the 2nd column (see renderWaitlist's
+   <thead>). ===== */
+.bp-waitlist-table-wrap td:nth-child(2) {
+  min-width: 220px;
+}
+
 /* ===== Dashboard today's tasks / workload expand (Item 5b, 5c) ===== */
 .bp-dash-task-list { margin-bottom: 16px; }
 .bp-wl-day--expanded { background: rgba(55,14,19,0.06); border-radius: 4px; }

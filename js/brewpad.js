@@ -8377,14 +8377,17 @@ function parseWaitlistRecipeIds(value) {
         // D-02 Customer cell: linked rows show "{name} — {email} — {phone}" (phone
         // segment AND its leading separator omitted when customer_phone is empty).
         // Unlinked rows keep today's exact bare-email + sync-badge rendering.
-        // No trigger link in this plan -- 80-04 adds "Link customer"/"Change".
+        // Phase 80-04 (D-01): a "Link customer"/"Change" trigger opens the per-row
+        // customer-link panel in place of this cell -- see openWaitlistLinkPanel.
+        var linkTriggerHtml = ' <button type="button" class="bp-so-change-btn" data-waitlist-link-trigger="' +
+          escapeHTML(row.id) + '">' + (row.zoho_contact_id ? 'Change' : 'Link customer') + '</button>';
         var customerCell;
         if (row.zoho_contact_id) {
           var custBits = [escapeHTML(row.customer_name || ''), escapeHTML(row.email)];
           if (row.customer_phone) custBits.push(escapeHTML(row.customer_phone));
-          customerCell = custBits.join(' — ') + syncBadge;
+          customerCell = custBits.join(' — ') + syncBadge + linkTriggerHtml;
         } else {
-          customerCell = escapeHTML(row.email) + syncBadge;
+          customerCell = escapeHTML(row.email) + syncBadge + linkTriggerHtml;
         }
 
         // D-15/D-16 Recipes cell: one display-only chip per attached recipe id, in
@@ -8574,6 +8577,162 @@ function parseWaitlistRecipeIds(value) {
         showToast('Pin cleared', 'success');
       })
       .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // ===== Phase 80-04: per-row customer-link panel (D-01/D-02/D-03/D-03a) =====
+  //
+  // Reuse-not-rebuild: verbatim reuse of the reassign panel markup/CSS
+  // (js/brewpad.js:5556-5572 region, css/brewpad.css:1977-2021 .bp-reassign-*)
+  // and fetchReassignSearch's exact fetch shape (js/brewpad.js:2139), re-id'd per
+  // row so two rows can never collide (bp-waitlist-link-{id}-*). The cell-becomes-
+  // editor transform mirrors openWaitlistNotesEdit above.
+
+  var _waitlistLinkSearchTimer = null;
+
+  // Opens the search panel in place of the Customer cell. No sheet, no navigation.
+  function openWaitlistLinkPanel(cellEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    cellEl.innerHTML =
+      '<div class="bp-reassign-panel">' +
+      '<div class="bp-so-search-wrap bp-reassign-search-wrap">' +
+      '<input type="text" id="bp-waitlist-link-' + escapeHTML(id) + '-search-input" class="bp-inline-input" placeholder="Search by name, email or phone…" autocomplete="off">' +
+      '<button type="button" class="bp-so-dismiss-link" data-waitlist-link-cancel="' + escapeHTML(id) + '">Cancel</button>' +
+      '</div>' +
+      '<div class="bp-so-results bp-reassign-results" id="bp-waitlist-link-' + escapeHTML(id) + '-results"></div>' +
+      '<button type="button" class="bp-reassign-addnew-toggle" data-waitlist-link-addnew-toggle="' + escapeHTML(id) + '">+ Add new customer</button>' +
+      '<div id="bp-waitlist-link-' + escapeHTML(id) + '-addnew" class="bp-reassign-addnew" style="display:none;">' +
+      '<input type="text" id="bp-waitlist-link-' + escapeHTML(id) + '-new-name" class="bp-inline-input" placeholder="Full name *" autocomplete="off">' +
+      '<input type="email" id="bp-waitlist-link-' + escapeHTML(id) + '-new-email" class="bp-inline-input" placeholder="Email" autocomplete="off">' +
+      '<input type="tel" id="bp-waitlist-link-' + escapeHTML(id) + '-new-phone" class="bp-inline-input" placeholder="Phone" autocomplete="off">' +
+      '<button type="button" class="btn bp-btn-sm" data-waitlist-link-new-save="' + escapeHTML(id) + '">Save New Customer</button>' +
+      '</div>' +
+      '</div>';
+
+    var searchInput = document.getElementById('bp-waitlist-link-' + id + '-search-input');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.addEventListener('input', function () {
+        var term = searchInput.value.trim();
+        clearTimeout(_waitlistLinkSearchTimer);
+        if (!term || term.length < 2) {
+          var resultsEl = document.getElementById('bp-waitlist-link-' + id + '-results');
+          if (resultsEl) resultsEl.innerHTML = '';
+          return;
+        }
+        _waitlistLinkSearchTimer = setTimeout(function () {
+          fetchWaitlistLinkSearch(id, term);
+        }, 400);
+      });
+    }
+  }
+
+  // Reuses fetchReassignSearch's exact /api/contacts/search?q= fetch shape
+  // (js/brewpad.js:2139), rendering into this row's namespaced results container.
+  function fetchWaitlistLinkSearch(id, term) {
+    var resultsEl = document.getElementById('bp-waitlist-link-' + id + '-results');
+    if (!resultsEl) return;
+    resultsEl.innerHTML = '<div class="bp-so-result-item" style="color:var(--ink-muted);">Searching…</div>';
+
+    return fetch(mwUrl() + '/api/contacts/search?q=' + encodeURIComponent(term), {
+      credentials: 'include'
+    }).then(function (r) { return r.json(); })
+      .then(function (data) {
+        var contacts = data.contacts || [];
+        if (contacts.length === 0) {
+          resultsEl.innerHTML = '<div class="bp-so-result-item" style="color:var(--ink-muted);">No matching customers found</div>';
+          return;
+        }
+        var html = '';
+        for (var i = 0; i < contacts.length; i++) {
+          var c = contacts[i];
+          html += '<div class="bp-so-result-item bp-reassign-result-item"'
+               + ' data-contact-id="' + escapeHTML(c.contact_id || '') + '"'
+               + ' data-name="' + escapeHTML(c.contact_name || '') + '"'
+               + ' data-email="' + escapeHTML(c.email || '') + '"'
+               + ' data-phone="' + escapeHTML(c.phone || '') + '">';
+          html += '<span class="bp-so-result-name">' + escapeHTML(c.contact_name || '') + '</span>';
+          if (c.email || c.phone) {
+            html += '<span class="bp-so-result-meta">' + escapeHTML(c.email || '') + (c.email && c.phone ? ' · ' : '') + escapeHTML(c.phone || '') + '</span>';
+          }
+          html += '</div>';
+        }
+        resultsEl.innerHTML = html;
+
+        var items = resultsEl.querySelectorAll('.bp-reassign-result-item[data-contact-id]');
+        for (var j = 0; j < items.length; j++) {
+          items[j].addEventListener('click', function () {
+            linkWaitlistCustomer(id, {
+              contact_id: this.getAttribute('data-contact-id'),
+              name: this.getAttribute('data-name'),
+              email: this.getAttribute('data-email'),
+              phone: this.getAttribute('data-phone')
+            });
+          });
+        }
+      })
+      .catch(function () {
+        resultsEl.innerHTML = '<div class="bp-so-result-item" style="color:var(--ink-muted);">Search unavailable — check connection</div>';
+      });
+  }
+
+  // D-02 write-through: one adminApiPost carrying id, zoho_contact_id, customer_name
+  // and -- ONLY when the row's current customer_phone is empty -- customer_phone
+  // (D-03a: a hand-typed phone from a manual add, plan 80-05, must never be
+  // clobbered by a later contact link). Reads the current value from
+  // findWaitlistRow(id); does not re-fetch.
+  function linkWaitlistCustomer(id, picked) {
+    var row = findWaitlistRow(id);
+    if (!row || !picked) return;
+    var payload = { id: id, zoho_contact_id: picked.contact_id, customer_name: picked.name || '' };
+    if (!row.customer_phone) payload.customer_phone = picked.phone || '';
+    return adminApiPost('update_waitlist_status', payload)
+      .then(function () {
+        row.zoho_contact_id = picked.contact_id;
+        row.customer_name = picked.name || '';
+        if (!row.customer_phone) row.customer_phone = picked.phone || '';
+        renderWaitlist();
+        showToast('Customer linked', 'success');
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // Create-inline: reuses the existing POST /api/contacts {name, first_name,
+  // last_name, email, phone} shape (js/brewpad.js reassign new-save handler,
+  // :6217-6233 region), splitting the typed full name into first/last exactly as
+  // that handler does. On a contact_id response, treats it identically to
+  // selecting a search result. A failure toasts and leaves the panel/typed values
+  // untouched (no re-render).
+  function saveWaitlistNewCustomer(id) {
+    var nameInput = document.getElementById('bp-waitlist-link-' + id + '-new-name');
+    var emailInput = document.getElementById('bp-waitlist-link-' + id + '-new-email');
+    var phoneInput = document.getElementById('bp-waitlist-link-' + id + '-new-phone');
+    var name = nameInput ? nameInput.value.trim() : '';
+    var email = emailInput ? emailInput.value.trim() : '';
+    var phone = phoneInput ? phoneInput.value.trim() : '';
+    if (!name) {
+      showToast('Name is required to add a new customer', 'error');
+      return;
+    }
+    var nameParts = name.split(/\s+/);
+    var firstName = nameParts[0] || '';
+    var lastName = nameParts.slice(1).join(' ') || '';
+
+    return fetch(mwUrl() + '/api/contacts', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, first_name: firstName, last_name: lastName, email: email, phone: phone })
+    }).then(function (r) {
+      return r.json().then(function (data) { return { ok: r.ok, data: data || {} }; });
+    }).then(function (result) {
+      if (!result.ok || !result.data.contact_id) {
+        throw new Error((result.data && (result.data.message || result.data.error)) || 'Unable to create contact');
+      }
+      return linkWaitlistCustomer(id, { contact_id: result.data.contact_id, name: name, email: email, phone: phone });
+    }).catch(function (err) {
+      showToast('Failed: ' + err.message, 'error');
+    });
   }
 
   // ===== Schedule Template Editor =====
@@ -9439,6 +9598,36 @@ function parseWaitlistRecipeIds(value) {
           var positionCellEl = positionSaveBtn.closest('td');
           var positionInput = positionCellEl ? positionCellEl.querySelector('[data-waitlist-position-input]') : null;
           saveWaitlistPosition(positionCellEl, positionId, positionInput ? positionInput.value : '');
+          return;
+        }
+        // Phase 80-04: per-row customer-link panel (D-01/D-02/D-03a).
+        var linkTrigger = e.target.closest('[data-waitlist-link-trigger]');
+        if (linkTrigger) {
+          openWaitlistLinkPanel(linkTrigger.closest('td'), linkTrigger.getAttribute('data-waitlist-link-trigger'));
+          return;
+        }
+        var linkCancelBtn = e.target.closest('[data-waitlist-link-cancel]');
+        if (linkCancelBtn) {
+          renderWaitlist();
+          return;
+        }
+        var linkAddNewToggle = e.target.closest('[data-waitlist-link-addnew-toggle]');
+        if (linkAddNewToggle) {
+          var linkRowId = linkAddNewToggle.getAttribute('data-waitlist-link-addnew-toggle');
+          var linkAddNewForm = document.getElementById('bp-waitlist-link-' + linkRowId + '-addnew');
+          if (linkAddNewForm) {
+            var linkAddNewVisible = linkAddNewForm.style.display !== 'none';
+            linkAddNewForm.style.display = linkAddNewVisible ? 'none' : '';
+            if (!linkAddNewVisible) {
+              var linkNameInput = document.getElementById('bp-waitlist-link-' + linkRowId + '-new-name');
+              if (linkNameInput) linkNameInput.focus();
+            }
+          }
+          return;
+        }
+        var linkNewSaveBtn = e.target.closest('[data-waitlist-link-new-save]');
+        if (linkNewSaveBtn) {
+          saveWaitlistNewCustomer(linkNewSaveBtn.getAttribute('data-waitlist-link-new-save'));
         }
       });
     }
@@ -9998,6 +10187,12 @@ function parseWaitlistRecipeIds(value) {
       _openWaitlistPositionEditForTest: openWaitlistPositionEdit,
       _saveWaitlistPositionForTest: saveWaitlistPosition,
       _clearWaitlistPinForTest: clearWaitlistPin,
+      // Phase 80-04: test-only seams for the customer-link panel (D-01/D-02/D-03a) --
+      // same rationale as the 80-03 seams above (initDelegation never fires under Jest).
+      _openWaitlistLinkPanelForTest: openWaitlistLinkPanel,
+      _fetchWaitlistLinkSearchForTest: fetchWaitlistLinkSearch,
+      _linkWaitlistCustomerForTest: linkWaitlistCustomer,
+      _saveWaitlistNewCustomerForTest: saveWaitlistNewCustomer,
       // Plan 36-22: test-only state accessors for the cache-bust state vars
       getStateForTest: function () {
         return {
