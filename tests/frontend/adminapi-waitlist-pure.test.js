@@ -35,7 +35,9 @@ function loadAdminApi() {
       'normalizeWaitlistEmail: (typeof normalizeWaitlistEmail !== "undefined" ? normalizeWaitlistEmail : undefined),' +
       'waitlistCellSafe: (typeof waitlistCellSafe !== "undefined" ? waitlistCellSafe : undefined),' +
       'waitlistSyncedTrue: (typeof waitlistSyncedTrue !== "undefined" ? waitlistSyncedTrue : undefined),' +
-      'waitlistDedupeDecision: (typeof waitlistDedupeDecision !== "undefined" ? waitlistDedupeDecision : undefined)' +
+      'waitlistDedupeDecision: (typeof waitlistDedupeDecision !== "undefined" ? waitlistDedupeDecision : undefined),' +
+      'serializeWaitlistRecipeIds: (typeof serializeWaitlistRecipeIds !== "undefined" ? serializeWaitlistRecipeIds : undefined),' +
+      'parseWaitlistRecipeIds: (typeof parseWaitlistRecipeIds !== "undefined" ? parseWaitlistRecipeIds : undefined)' +
       '};'
   );
   _cachedApi = factory();
@@ -215,6 +217,61 @@ describe('waitlistDedupeDecision', function () {
     var rows = [waitlistRow({ status: 'removed' })];
     var result = api.waitlistDedupeDecision(rows, 'jane@example.com', 'beer');
     expect(result.action).toBe('existing');
+  });
+});
+
+// ─── Phase 80, D-15: recipe_ids pure parse/serialize helpers ────────────────────────────────
+describe('serializeWaitlistRecipeIds', function () {
+  test.each([
+    [[]],
+    [null],
+    [undefined]
+  ])('%p -> empty string', function (value) {
+    var api = loadAdminApi();
+    expect(api.serializeWaitlistRecipeIds(value)).toBe('');
+  });
+
+  test("['SV-R-000003'] -> 'SV-R-000003'", function () {
+    var api = loadAdminApi();
+    expect(api.serializeWaitlistRecipeIds(['SV-R-000003'])).toBe('SV-R-000003');
+  });
+
+  test("['SV-R-000003','SV-R-000007'] -> 'SV-R-000003|SV-R-000007', order preserved", function () {
+    var api = loadAdminApi();
+    expect(api.serializeWaitlistRecipeIds(['SV-R-000003', 'SV-R-000007'])).toBe('SV-R-000003|SV-R-000007');
+  });
+
+  test("['a','',null,'b'] -> 'a|b' (falsy entries dropped)", function () {
+    var api = loadAdminApi();
+    expect(api.serializeWaitlistRecipeIds(['a', '', null, 'b'])).toBe('a|b');
+  });
+});
+
+describe('parseWaitlistRecipeIds', function () {
+  test.each([
+    [''],
+    [null],
+    [undefined]
+  ])('%p -> []', function (value) {
+    var api = loadAdminApi();
+    expect(api.parseWaitlistRecipeIds(value)).toEqual([]);
+  });
+
+  test("'SV-R-000003|SV-R-000007' -> both ids in order", function () {
+    var api = loadAdminApi();
+    expect(api.parseWaitlistRecipeIds('SV-R-000003|SV-R-000007')).toEqual(['SV-R-000003', 'SV-R-000007']);
+  });
+});
+
+describe('serializeWaitlistRecipeIds / parseWaitlistRecipeIds round-trip', function () {
+  test.each([
+    [[]],
+    [['SV-R-000003']],
+    [['SV-R-000003', 'SV-R-000007']]
+  ])('parse(serialize(%p)) deep-equals the original list', function (list) {
+    var api = loadAdminApi();
+    var serialized = api.serializeWaitlistRecipeIds(list);
+    expect(api.parseWaitlistRecipeIds(serialized)).toEqual(list);
   });
 });
 

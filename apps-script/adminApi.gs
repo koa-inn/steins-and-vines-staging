@@ -5007,6 +5007,33 @@ function waitlistDedupeDecision(rows, email, category) {
 }
 
 /**
+ * Phase 80, D-15: serialize a list of recipe ids (e.g. `SV-R-000003`, from
+ * generateNextId(RECIPES_SHEET_NAME, 'SV-R-', 6), adminApi.gs:3629) into the Waitlist sheet's
+ * `recipe_ids` cell value. Pipe-delimited, no spaces — a pipe can never occur inside a
+ * `SV-R-XXXXXX` id, so it is a safe, unambiguous separator. Drops falsy entries so a stray
+ * `null`/`''`/`undefined` in the array never corrupts the round trip. PURE: zero references to
+ * SpreadsheetApp/LockService/Session/CacheService/Logger/Utilities (same purity contract as
+ * waitlistDedupeDecision/waitlistShouldReinstate).
+ * @param {Array<string>} ids
+ * @returns {string} '' for null/undefined/empty
+ */
+function serializeWaitlistRecipeIds(ids) {
+  return (ids || []).filter(function (id) { return id; }).join('|');
+}
+
+/**
+ * Phase 80, D-15: parse a Waitlist `recipe_ids` cell value back into an array of recipe ids.
+ * Inverse of serializeWaitlistRecipeIds — drops empty segments so a stored '' round-trips to
+ * [], and preserves order. PURE, same contract as serializeWaitlistRecipeIds above.
+ * @param {*} value - the stored cell value
+ * @returns {Array<string>} [] for null/undefined/empty
+ */
+function parseWaitlistRecipeIds(value) {
+  if (!value) return [];
+  return String(value).split('|').filter(function (s) { return s !== ''; });
+}
+
+/**
  * Add a new waitlist signup (or no-op on a D-06 dedupe hit). Called via server_token auth
  * (Railway middleware, POST /api/waitlist) — deliberately absent from both admin-proxy
  * whitelists, staff never add rows directly.
