@@ -212,6 +212,10 @@ describe('new-row path', function () {
     return flushPromises().then(function () {
       return flushPromises();
     }).then(function () {
+      // The sheet's close animation defers actual DOM removal by 180ms
+      // (matches openRecipeFromBatchSheet's closeRcSheet timing) -- wait past it.
+      return new Promise(function (resolve) { setTimeout(resolve, 200); });
+    }).then(function () {
       var actions = proxyBodies().map(function (b) { return b.action; });
       expect(actions.indexOf('update_waitlist_status')).toBe(-1);
       var syncCalls = global.fetch.mock.calls.filter(function (c) { return String(c[0]).indexOf('/mailerlite-sync') !== -1; });
@@ -314,7 +318,10 @@ describe('write failure', function () {
     document.getElementById('bp-waitlist-add-name').value = 'Oops Person';
     document.getElementById('bp-waitlist-add-submit').click();
     return flushPromises().then(function () {
-      return flushPromises();
+      // adminApiPost's fetchWithRetry retries once on a network-level
+      // rejection with a 1000ms backoff (js/brewpad.js:1691-1710) -- wait
+      // past it with real timers rather than mocking the retry away.
+      return new Promise(function (resolve) { setTimeout(resolve, 1200); });
     }).then(function () {
       expect(document.getElementById('bp-waitlist-add-sheet')).not.toBeNull();
       var errEl = document.getElementById('bp-waitlist-add-error');
