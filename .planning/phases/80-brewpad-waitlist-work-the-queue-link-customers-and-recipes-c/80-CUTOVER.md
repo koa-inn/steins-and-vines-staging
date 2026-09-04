@@ -1,10 +1,12 @@
 # Phase 80 Cutover Runsheet — BrewPad Waitlist: Work the Queue
 
-**Status:** PREPARED, NOT STARTED. Task 1 (this document) is complete. Task 2 (owner approval of
-five open items) and Task 3 (migration → redeploy → probes → staging → UAT) are both still open and
-require the owner's hands — there is no CLI or API path to the Google Sheet header row, the Apps
-Script editor's Run/Deploy buttons, or a live Cal.com event type / email template. Do not treat any
-section below as complete until the owner has performed it and recorded real values here.
+**Status:** Task 1 (this document) and Task 2 (owner approval of five open items) are complete — all
+five verdicts are recorded below. Task 2 also surfaced a new blocking prerequisite (§1a: a new
+Cal.com event type the `eventtype` verdict requires, which does not exist yet) that gates the
+contact-email flow only — §2 and §3 are unaffected. Task 3 (migration → redeploy → probes → staging →
+UAT) is still open and requires the owner's hands — there is no CLI or API path to the Google Sheet
+header row, the Apps Script editor's Run/Deploy buttons, or a live Cal.com event type. Do not treat
+any section below as complete until the owner has performed it and recorded real values here.
 
 **Written by:** executor agent, plan 80-06, 2026-09-04.
 **Purpose:** a single ordered, repeatable runsheet for taking Phase 80 (plans 80-01..80-05) from
@@ -71,6 +73,82 @@ things until §2/§3 below happen by hand.
 
 Gates on the fully merged tree at the time this runsheet was written: frontend **1633/1633** (108
 suites), middleware **1562/1562** (106 suites), both linters clean, no secrets under `js/`.
+
+---
+
+## 1a. BLOCKING PREREQUISITE — new Cal.com event type for the beer waitlist
+
+**Added at Task 2 (`eventtype` verdict, recorded above). Not covered by any plan in this phase.**
+
+The owner overturned the `eventtype` default. The contact-email flow must NOT resolve its booking
+link to `CALCOM_EVENT_TYPE_FERMENT_KIT` or `CALCOM_EVENT_TYPE_BOTTLING` — it needs a **new,
+beer/waitlist-specific Cal.com event type** that does not exist yet as of this writing. Because it
+doesn't exist, its numeric event-type ID is unknowable right now, so nothing below invents one. This
+section stages the work as an ordered prerequisite; it does not perform or implement any of it.
+
+**Established facts this section relies on (verified in code, not re-derived here):**
+- `GET /api/bookings/services` (`zoho-middleware/routes/bookings.js:141-144`) reads exactly two env
+  vars — `CALCOM_EVENT_TYPE_FERMENT_KIT` and `CALCOM_EVENT_TYPE_BOTTLING` — into an `ids` array,
+  filtering out any that are unset. A third event type cannot surface through that endpoint without a
+  middleware code change.
+- `js/brewpad.js`'s Contact sheet (`openWaitlistContactSheet`, ~line 8949) currently selects
+  `result.data.services[0]` — the first entry in that array — which today resolves to
+  `CALCOM_EVENT_TYPE_FERMENT_KIT`. It has no concept of "the beer/waitlist service" yet; it just takes
+  whatever is first.
+
+### CRITICAL SEQUENCING — read this before touching §2 or §3
+
+- **§2 (Sheet migration) and §3 (Apps Script redeploy) are entirely about the 13-column schema and
+  are Cal.com-independent. They are NOT blocked by this prerequisite and may proceed on their own
+  schedule**, in the order already specified (§2 before §3).
+- **The contact-email flow — and any UAT leg that exercises it — IS blocked** until steps (a)-(e)
+  below have landed. §6 leg 7 ("Contact a `waiting` row, end to end") is marked
+  `BLOCKED ON §1a PREREQUISITE` below rather than deleted; do not run it until this section's to-fill
+  table is complete and the code changes in (c)/(d) have shipped.
+
+### Steps, in order
+
+**(a) Owner creates the new event type in Cal.com.** Cal.com Dashboard → Event Types → + New event
+type. Name it for the beer waitlist specifically (e.g. "Beer Waitlist — Fermentation Booking") so
+it's distinguishable from the existing Ferment Kit and Bottling event types in the dashboard list.
+Record its numeric event-type ID (visible in the event type's settings URL, e.g.
+`https://app.cal.com/event-types/<ID>`, or via the Cal.com API) in the to-fill table below.
+
+**(b) Owner adds a Railway env var.** On the `sv_middleware` service, both `staging` and `production`
+environments: add `CALCOM_EVENT_TYPE_BEER_WAITLIST` (proposed name — confirm or rename in the table
+below) set to the numeric ID from (a).
+
+**(c) Code change — NOT done in this plan.** Extend the `ids` array in
+`zoho-middleware/routes/bookings.js` (~line 141) to add `process.env.CALCOM_EVENT_TYPE_BEER_WAITLIST`
+as a third element, filtered the same way as the existing two.
+
+**(d) Code change — NOT done in this plan.** `js/brewpad.js`'s Contact sheet must stop taking
+`result.data.services[0]` positionally and instead select the beer-waitlist service explicitly (e.g.
+by matching on `slug` or `id` against the value recorded in the to-fill table), so it cannot
+accidentally keep resolving to the ferment-kit event once a third service is present in the array.
+
+**(e) Deploy.** Once (c) is committed: middleware redeploys to Railway automatically on
+`git push origin main` (per §5 below); frontend requires `npm run build` plus the same push, following
+the existing staging deploy flow. This does NOT require a new Apps Script redeploy — it is a
+middleware/frontend-only change.
+
+**Do NOT implement (c) or (d) speculatively.** The event-type ID does not exist yet, so the change
+cannot be tested, and this is scope beyond plan 80-06. Once (a) and (b) are done, raise (c)/(d)/(e) as
+their own small plan.
+
+### To-fill table (same style as §3's rollback table)
+
+| Field | Value |
+|---|---|
+| New Cal.com event type name/title | `<OWNER TO FILL IN>` |
+| New Cal.com event type numeric ID | `<OWNER TO FILL IN>` |
+| Railway env var name | `CALCOM_EVENT_TYPE_BEER_WAITLIST` (proposed — confirm or rename here: `<OWNER TO FILL IN>`) |
+| Railway env var value set on staging | `<OWNER TO FILL IN>` |
+| Railway env var value set on production | `<OWNER TO FILL IN>` |
+| Resulting Cal.com booking URL | `<OWNER TO FILL IN>` |
+| Commit implementing (c) `bookings.js` ids array | `<OWNER/EXECUTOR TO FILL IN — separate plan>` |
+| Commit implementing (d) `brewpad.js` explicit selection | `<OWNER/EXECUTOR TO FILL IN — separate plan>` |
+| Date/time (c)+(d) redeployed | `<OWNER/EXECUTOR TO FILL IN>` |
 
 ---
 
@@ -302,7 +380,7 @@ through the deployed `get_waitlist`**, not by UI appearance alone.
 | 4 | **Recipe attach.** Attach two recipes to a row, then remove one. | Two chips appear, then one; `get_waitlist`'s `recipe_ids` reflects exactly the remaining one, pipe-delimited if more than one remained. | `<OWNER TO FILL IN>` |
 | 5 | **Pin to position.** Pin a row to position 2. | Queue visually reorders so that row renders at rank 2; `get_waitlist`'s `position` cell for that row reads `2`; other rows' `signed_up_at` cells are unchanged. | `<OWNER TO FILL IN>` |
 | 6 | **Clear pin.** Clear the position set in leg 5. | Row returns to its natural chronological (signup-order) position; `get_waitlist`'s `position` cell for that row is empty. | `<OWNER TO FILL IN>` |
-| 7 | **Contact a `waiting` row, end to end.** Tap Contact, review the pre-filled subject/body (booking link resolved), send. | The probe address receives the email; `get_waitlist` shows the row's `status` advanced to `contacted` and `contacted_at` holds an ISO timestamp. | `<OWNER TO FILL IN>` |
+| 7 | **BLOCKED ON §1a PREREQUISITE.** Contact a `waiting` row, end to end. Tap Contact, review the pre-filled subject/body (booking link resolved), send. | The probe address receives the email; `get_waitlist` shows the row's `status` advanced to `contacted` and `contacted_at` holds an ISO timestamp. | `BLOCKED — do not run until §1a steps (a)-(e) land; running this today would exercise the wrong (ferment-kit) event type, not the owner-approved beer-waitlist one` |
 | 8 | **D-08 fail-closed send — THE SINGLE MOST IMPORTANT LEG.** Temporarily unset `RESEND_API_KEY` on STAGING Railway only (or address a Resend-rejected address), attempt a Contact send. | Sheet stays open, shows the inline `--batch-danger` error ("Could not send. Please try again."), Send re-enables. **The row's `status` is UNCHANGED** in `get_waitlist` — no partial write. Restore `RESEND_API_KEY` after. | `<OWNER TO FILL IN — must explicitly confirm status UNCHANGED>` |
 | 9 | **Contact button disabled on a `booked` row.** Find or advance a row to `booked`, observe the Contact button. | Button renders disabled (`.btn:disabled`, opacity 0.6, `pointer-events:none`); no request is possible. | `<OWNER TO FILL IN>` |
 | 10 | **Manual add — brand-new address.** Use `+ Add to Waitlist`, submit a never-before-seen disposable address. | Sheet closes, toast "Added to waitlist"; `get_waitlist` shows a new row, `status:waiting`, `signed_up_at` = now (not backdated). | `<OWNER TO FILL IN>` |
@@ -337,9 +415,13 @@ pushed to production independently. **This runsheet does not authorize or perfor
 
 ## 8. Open items checklist
 
-- [ ] Task 2 — owner decision on the five open items (template wording, Cal.com event type, Contact-
+- [x] Task 2 — owner decision on the five open items (template wording, Cal.com event type, Contact-
       disabled-on-booked/removed, pin-available-on-every-row, WR-02 carry-forward vs fold-in). See
-      the `## Owner decisions` section below — currently unfilled, blocking §2 onward.
+      the `## Owner decisions` section below — all five verdicts recorded.
+- [ ] §1a — NEW blocking prerequisite from the `eventtype` overturn: create the beer-waitlist Cal.com
+      event type, add its Railway env var, extend `bookings.js`'s `ids` array, point `brewpad.js`'s
+      Contact sheet at it explicitly, redeploy. Blocks the contact-email flow and §6 leg 7 only — does
+      NOT block §2 or §3.
 - [ ] §2 — sheet migration (six columns H..M) + read probe against the STILL-OLD deployment
 - [ ] §3 — Apps Script redeploy + four-row rollback table filled with real values
 - [ ] §4 — all four probes recorded with real response bodies
@@ -356,10 +438,11 @@ pushed to production independently. **This runsheet does not authorize or perfor
 
 ## Owner decisions
 
-**Status: PENDING — this is Task 2 of plan `80-06`, a blocking checkpoint. None of §2 onward may
-proceed until all five verdicts below are recorded.** Five items `80-CONTEXT.md` and `80-UI-SPEC.md`
-deliberately left for the owner. The recommended/default option (already implemented as the shipped
-default in plans 80-01..80-05) is shown for each; the owner may approve as-is or overturn.
+**Status: RECORDED — all five verdicts below were returned by the owner and are recorded verbatim.**
+Four of five approve the shipped default with no code change required. The fifth (`eventtype`) is
+OVERTURNED and introduces a new blocking prerequisite — see **§1a** below, inserted before §2 because
+it gates the contact-email flow. §2 (sheet migration) and §3 (Apps Script redeploy) are NOT blocked by
+it; they proceed independently on the 13-column schema.
 
 ### 1. `template` — Contact email subject and body
 
@@ -383,21 +466,27 @@ default in plans 80-01..80-05) is shown for each; the owner may approve as-is or
 
 Mirrors `sendBottlingInvite`'s tone; staff can still edit per send (D-05) regardless of this default.
 
-**Verdict:** `<OWNER TO FILL IN — approve as-is, or provide replacement subject/body verbatim>`
+**Verdict:** APPROVED AS DRAFTED. No code change, no test rerun, no rebuild needed.
 
 **If reworded:** update the pre-fill strings in `js/brewpad.js`'s contact sheet (plan 80-05 Task 1),
 rerun `npx jest --config jest.config.js tests/frontend/brewpad-waitlist-contact.test.js`, run
-`npm run build`, and record the new test result here: `<OWNER/EXECUTOR TO FILL IN IF REWORDED>`.
+`npm run build`, and record the new test result here: N/A — template approved as-is, this branch does
+not apply.
 
 ### 2. `eventtype` — Which Cal.com event type the booking link resolves to
 
 **Default:** `CALCOM_EVENT_TYPE_FERMENT_KIT` — beer batches book into the existing ferment-in-store
 flow; no beer- or waitlist-specific event type exists in the codebase today.
 
-**Verdict:** `<OWNER TO FILL IN — approve default, or name the different/new event type to use>`
+**Verdict:** OVERTURNED. The owner wants a NEW beer/waitlist-specific Cal.com event type — not
+`CALCOM_EVENT_TYPE_FERMENT_KIT` and not `CALCOM_EVENT_TYPE_BOTTLING`. This event type does not exist
+yet. See the new **§1a — BLOCKING PREREQUISITE** section below (inserted before §2 at Task 2) for the
+staged, ordered steps to create it, wire it in, and the to-fill table for its real values. §2 and §3
+below are NOT blocked by this — only the contact-email flow and its UAT leg are.
 
 **If changed:** update which service's `bookingUrl` the contact sheet selects from
-`GET /api/bookings/services` and note the change here: `<OWNER/EXECUTOR TO FILL IN IF CHANGED>`.
+`GET /api/bookings/services` and note the change here: staged in §1a, not implemented in this plan —
+the event-type ID does not exist yet and the change cannot be tested speculatively.
 
 ### 3. `contactdisabled` — Contact button disabled on booked/removed rows (UI-SPEC Decision 3)
 
@@ -406,21 +495,21 @@ flow; no beer- or waitlist-specific event type exists in the codebase today.
 refused by `waitlistTransitionAllowed` (`booked → contacted` is a backward transition) — an email
 sent with no record of it.
 
-**Verdict:** `<OWNER TO FILL IN — approve default, or request re-send capability on booked rows>`
+**Verdict:** APPROVED AS DEFAULT. Contact stays disabled on `booked`/`removed` rows.
 
 **If overturned:** this needs a **paired backend decision** (skip the post-send status write rather
 than attempt and fail it, when the row is already past `contacted`) — do NOT work around this in the
-frontend alone. Record the resulting design here: `<OWNER/EXECUTOR TO FILL IN IF OVERTURNED>`.
+frontend alone. Record the resulting design here: N/A — default approved, this branch does not apply.
 
 ### 4. `pinallrows` — Pin control on every row vs waiting-only (UI-SPEC Decision 5)
 
 **Default:** every row, so a VIP mid-conversation stays visible near the top of the visual list even
 after being contacted.
 
-**Verdict:** `<OWNER TO FILL IN — approve default, or restrict to status === 'waiting'>`
+**Verdict:** APPROVED AS DEFAULT. Pin control stays available on every row.
 
 **If restricted:** one-line render guard on `status === 'waiting'` in the pin-icon render condition.
-Record the change here: `<OWNER/EXECUTOR TO FILL IN IF RESTRICTED>`.
+Record the change here: N/A — default approved, this branch does not apply.
 
 ### 5. `wr02` — WR-02 optimistic locking: carried forward, not fixed
 
@@ -428,7 +517,8 @@ Record the change here: `<OWNER/EXECUTOR TO FILL IN IF RESTRICTED>`.
 `updateWaitlistStatus`, citing `78-REVIEW.md`). Closing it needs a 14th `last_updated` column, which
 D-17 does not list and D-20's one-migration framing forbids adding silently without amendment.
 
-**Verdict:** `<OWNER TO FILL IN — accept carry-forward, or request WR-02 closed>`
+**Verdict:** APPROVED AS CARRY-FORWARD. Keep the existing code comment citing `78-REVIEW.md`. Do NOT
+add a 14th column. Do NOT halt for replanning on this item.
 
 **If the owner wants WR-02 closed:** this is an **architectural change requiring a second redeploy**
 and CANNOT be retrofitted after §3's redeploy runs. It requires, in order: (a) explicit amendment of
@@ -436,7 +526,7 @@ D-17 to add a 14th column; (b) adding `last_updated` as column N to §2's migrat
 redeploy; (c) extending plan 80-01's `updateWaitlistStatus` with `expectedVersion` handling mirroring
 `updateReservation`. If chosen, STOP this runsheet, do not proceed past this Owner decisions section,
 and route back through plan authoring for the added scope. Record the decision and next step here:
-`<OWNER/EXECUTOR TO FILL IN IF WR-02 IS TO BE CLOSED>`.
+N/A — carry-forward approved, this branch does not apply.
 
 ---
 
