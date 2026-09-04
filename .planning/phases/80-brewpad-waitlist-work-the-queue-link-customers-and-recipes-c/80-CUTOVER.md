@@ -420,23 +420,74 @@ through the deployed `get_waitlist`**, not by UI appearance alone.
 
 | # | Leg | Expected result | Owner result |
 |---|---|---|---|
-| 1 | **Customer link — existing contact.** On a waitlist row, tap "Link customer", search for an existing Zoho contact, select it. | Row's Customer cell renders `{Name} — {email} — {phone}`; `get_waitlist` shows `zoho_contact_id`/`customer_name`/`customer_phone` populated on that row. | `<OWNER TO FILL IN>` |
-| 2 | **Customer link — inline create.** On a different row, tap "Link customer" → "+ Add new customer", fill name/email/phone, save. | New Zoho contact created; row links to it the same as leg 1; `get_waitlist` confirms. | `<OWNER TO FILL IN>` |
-| 3 | **D-03a guard.** On a row that already has a hand-typed `customer_phone` (from a manual add, leg 9), link an existing Zoho contact whose phone differs. | The row's `customer_phone` is **unchanged** — linking a contact must not silently overwrite a non-empty manually-entered phone. | `<OWNER TO FILL IN>` |
-| 4 | **Recipe attach.** Attach two recipes to a row, then remove one. | Two chips appear, then one; `get_waitlist`'s `recipe_ids` reflects exactly the remaining one, pipe-delimited if more than one remained. | `<OWNER TO FILL IN>` |
-| 5 | **Pin to position.** Pin a row to position 2. | Queue visually reorders so that row renders at rank 2; `get_waitlist`'s `position` cell for that row reads `2`; other rows' `signed_up_at` cells are unchanged. | `<OWNER TO FILL IN>` |
-| 6 | **Clear pin.** Clear the position set in leg 5. | Row returns to its natural chronological (signup-order) position; `get_waitlist`'s `position` cell for that row is empty. | `<OWNER TO FILL IN>` |
+| 1 | **Customer link — existing contact.** On a waitlist row, tap "Link customer", search for an existing Zoho contact, select it. | Row's Customer cell renders `{Name} — {email} — {phone}`; `get_waitlist` shows `zoho_contact_id`/`customer_name`/`customer_phone` populated on that row. | **PASS** (2026-09-04, Chrome, driven by Claude). Toast "Customer linked"; Customer cell renders `test — phase80-uat1@example.com — 604-555-0101` (exact D-02 em-dash format); trigger flipped "Link customer" → "Change". `get_waitlist`: `zoho_contact_id=109900000000374001`, `customer_name="test"`. |
+| 2 | **Customer link — inline create.** On a different row, tap "Link customer" → "+ Add new customer", fill name/email/phone, save. | New Zoho contact created; row links to it the same as leg 1; `get_waitlist` confirms. | **NOT RUN — needs owner approval.** Creates a real, outward-facing contact record in Zoho Books. Deliberately not performed autonomously. |
+| 3 | **D-03a guard.** On a row that already has a hand-typed `customer_phone` (from a manual add, leg 9), link an existing Zoho contact whose phone differs. | The row's `customer_phone` is **unchanged** — linking a contact must not silently overwrite a non-empty manually-entered phone. | **INCONCLUSIVE — not a pass.** Row kept its hand-typed `604-555-0101` after linking, BUT the Zoho contact used (`test`, id 109900000000374001) has `phone:""` and `mobile:""`, so the guard was never actually exercised — nothing was available to overwrite with. A valid test needs a Zoho contact carrying a DIFFERENT non-empty phone. Re-run before trusting D-03a. |
+| 4 | **Recipe attach.** Attach two recipes to a row, then remove one. | Two chips appear, then one; `get_waitlist`'s `recipe_ids` reflects exactly the remaining one, pipe-delimited if more than one remained. | **PARTIAL PASS.** Attach: toast "Recipe attached", chip "Czech Lager ×" renders in `--cellar-green` per spec, `get_waitlist` `recipe_ids="SV-R-000002"`. Remove: toast "Recipe removed", `recipe_ids` cleared. **Untestable half:** only ONE active recipe exists in the catalogue (`/api/recipes?status=active` returns just Czech Lager), so "attach two, remove one" and the pipe-delimited multi-value assertion could not be exercised. |
+| 5 | **Pin to position.** Pin a row to position 2. | Queue visually reorders so that row renders at rank 2; `get_waitlist`'s `position` cell for that row reads `2`; other rows' `signed_up_at` cells are unchanged. | **PASS.** Toast "Pinned to position 2" (exact spec copy); row moved rank 7 → renders 3rd; `#` cell shows `📌 2 ×` (spec-correct `📌 {position}` for a waiting row). `get_waitlist`: `position=2`, and **all six real customers' `signed_up_at` verified UNCHANGED**. |
+| 6 | **Clear pin.** Clear the position set in leg 5. | Row returns to its natural chronological (signup-order) position; `get_waitlist`'s `position` cell for that row is empty. | **PASS.** Toast "Pin cleared"; row returned to chronological rank 7; `#` cell back to a plain number; `position` empty in `get_waitlist`. |
 | 7 | **BLOCKED ON §1a PREREQUISITE.** Contact a `waiting` row, end to end. Tap Contact, review the pre-filled subject/body (booking link resolved), send. | The probe address receives the email; `get_waitlist` shows the row's `status` advanced to `contacted` and `contacted_at` holds an ISO timestamp. | `BLOCKED — do not run until §1a steps (a)-(e) land; running this today would exercise the wrong (ferment-kit) event type, not the owner-approved beer-waitlist one` |
-| 8 | **D-08 fail-closed send — THE SINGLE MOST IMPORTANT LEG.** Temporarily unset `RESEND_API_KEY` on STAGING Railway only (or address a Resend-rejected address), attempt a Contact send. | Sheet stays open, shows the inline `--batch-danger` error ("Could not send. Please try again."), Send re-enables. **The row's `status` is UNCHANGED** in `get_waitlist` — no partial write. Restore `RESEND_API_KEY` after. | `<OWNER TO FILL IN — must explicitly confirm status UNCHANGED>` |
-| 9 | **Contact button disabled on a `booked` row.** Find or advance a row to `booked`, observe the Contact button. | Button renders disabled (`.btn:disabled`, opacity 0.6, `pointer-events:none`); no request is possible. | `<OWNER TO FILL IN>` |
-| 10 | **Manual add — brand-new address.** Use `+ Add to Waitlist`, submit a never-before-seen disposable address. | Sheet closes, toast "Added to waitlist"; `get_waitlist` shows a new row, `status:waiting`, `signed_up_at` = now (not backdated). | `<OWNER TO FILL IN>` |
-| 11 | **Manual add — already-on-list disclosure (D-23).** Use `+ Add to Waitlist` again with the SAME address from leg 10 (or any existing row's email). | Sheet does NOT close silently — it swaps to the disclosure message naming the signup date and current status, single "Got It" dismissal; no duplicate row created; no optional-field write; no MailerLite sync attempted. | `<OWNER TO FILL IN>` |
-| 12 | **Public signup unchanged (D-14, Phase 78 D-06).** Submit `beer.html`'s waitlist form with a fresh disposable address. | Normal success confirmation, no error; response/copy identical to pre-Phase-80 behavior; no disclosure of any prior state. | `<OWNER TO FILL IN>` |
-| 13 | **Cleanup.** Delete every probe row created during §4/§6 from the `Waitlist` tab by hand; remove every probe address from the MailerLite beer waitlist group. | Shared production sheet has no leftover probe rows or MailerLite subscribers. | `<OWNER TO FILL IN>` |
+| 8 | **D-08 fail-closed send — THE SINGLE MOST IMPORTANT LEG.** Temporarily unset `RESEND_API_KEY` on STAGING Railway only (or address a Resend-rejected address), attempt a Contact send. | Sheet stays open, shows the inline `--batch-danger` error ("Could not send. Please try again."), Send re-enables. **The row's `status` is UNCHANGED** in `get_waitlist` — no partial write. Restore `RESEND_API_KEY` after. | **NOT RUN — needs owner.** Requires unsetting `RESEND_API_KEY` on staging Railway; environment variables were deliberately not modified autonomously. Claude can drive the send attempt and verify status-unchanged once the owner toggles the key. |
+| 9 | **Contact button disabled on a `booked` row.** Find or advance a row to `booked`, observe the Contact button. | Button renders disabled (`.btn:disabled`, opacity 0.6, `pointer-events:none`); no request is possible. | **PASS — verified in the DOM, not by eye.** Booked row's Contact button: `disabled=true`, `opacity:0.6`, `pointer-events:none`, class `.btn bp-btn-sm` — exactly the spec treatment. All six waiting rows: `disabled=false`, `opacity:1`. |
+| 10 | **Manual add — brand-new address.** Use `+ Add to Waitlist`, submit a never-before-seen disposable address. | Sheet closes, toast "Added to waitlist"; `get_waitlist` shows a new row, `status:waiting`, `signed_up_at` = now (not backdated). | **PASS.** Sheet closed; new row `52fefa22-8892-4616-be56-00fb7198dd17`, `status:waiting`, `signed_up_at:2026-09-04T21:07:19.790Z` (now, not backdated), `customer_name:"UAT Probe One"`, `customer_phone:"604-555-0101"`, `mailerlite_synced:true`. See Finding F-1 re: the transient "Not synced" render. |
+| 11 | **Manual add — already-on-list disclosure (D-23).** Use `+ Add to Waitlist` again with the SAME address from leg 10 (or any existing row's email). | Sheet does NOT close silently — it swaps to the disclosure message naming the signup date and current status, single "Got It" dismissal; no duplicate row created; no optional-field write; no MailerLite sync attempted. | **PASS — and it validates the WR-05 fix live.** Sheet swapped to the disclosure (did not close): *"…already on the beer waitlist — signed up Sep 4, currently Waiting."* + *"**The name and phone you entered were not saved.** Nothing on the existing row was changed…"*, single "Got It". Server-side: exactly ONE row for that address (no duplicate), `customer_name` still `"UAT Probe One"` (NOT "Should Be Discarded") and phone still `604-555-0101` (NOT ...9999) — the typed fields were genuinely discarded. |
+| 12 | **Public signup unchanged (D-14, Phase 78 D-06).** Submit `beer.html`'s waitlist form with a fresh disposable address. | Normal success confirmation, no error; response/copy identical to pre-Phase-80 behavior; no disclosure of any prior state. | **PASS.** Fresh address `phase80-uat2@example.com` → "Thanks! You're on the list — we'll be in touch to book your session." No error. **Bonus D-06/D-23 asymmetry check (not in the original leg):** re-submitting the ALREADY-LISTED `phase80-uat1@example.com` through the public form returned the IDENTICAL copy with no signup date, no status, no hint of prior state — and created no duplicate row. Public non-disclosure holds while staff-side disclosure fires. D-14 also confirmed: `beer.html` copy unchanged, "we work through the list in order" still present. |
+| 13 | **Cleanup.** Delete every probe row created during §4/§6 from the `Waitlist` tab by hand; remove every probe address from the MailerLite beer waitlist group. | Shared production sheet has no leftover probe rows or MailerLite subscribers. | **NOT RUN — owner must perform.** Claude has no Google Sheets or MailerLite access. Exact cleanup list in the UAT outcome block below. |
 
 ### UAT outcome
 
-`<OWNER TO FILL IN — N of 13 legs PASS, summary of any failures, date UAT was driven, browser used>`
+**Driven 2026-09-04 in Chrome (desktop, 1457px) by Claude on `staging.steinsandvines.ca/brewpad.html`,
+signed in as `hello@steinsandvines.ca`. Every write verified server-side through the deployed
+`get_waitlist`, never by UI appearance alone.**
+
+**8 PASS · 1 PARTIAL · 1 INCONCLUSIVE · 3 NOT RUN · 0 FAIL**
+
+| Outcome | Legs |
+|---|---|
+| PASS | 1, 5, 6, 9, 10, 11, 12 (+ bonus D-06 asymmetry check) |
+| PARTIAL | 4 — attach/remove pass; multi-recipe untestable (one active recipe) |
+| INCONCLUSIVE | 3 — D-03a guard never exercised (linked contact had no phone) |
+| NOT RUN | 2 (creates a real Zoho contact), 8 (needs Railway env toggle), 13 (owner cleanup) |
+| BLOCKED | 7 — §1a prerequisite |
+| FAIL | none |
+
+**No leg failed.** Notably, leg 11 confirmed the WR-05 code-review fix live, leg 9 was verified in the
+DOM rather than visually, and leg 5 confirmed pinning does not disturb any real customer's
+`signed_up_at`.
+
+### Findings raised during UAT (none blocking)
+
+**F-1 — Manual-add row shows "⚠ Not synced" until a manual Refresh.** After leg 10 the new row
+rendered with the not-synced pill even though `mailerlite_synced` was already `true` server-side;
+clicking Refresh corrected it to "✓Synced". The sheet closes and re-renders before the async
+MailerLite leg resolves, and nothing re-fetches. Cosmetic, but it invites staff to re-sync a row that
+is already synced. *Suggested fix: re-render that row (or refetch) when the sync promise settles.*
+
+**F-2 — A manually-entered name/phone is stored but invisible until the row is linked.** Leg 10 wrote
+`customer_name`/`customer_phone` correctly, but the Customer cell showed only the bare email. This is
+**spec-correct** — `80-UI-SPEC.md` line 116 says "If unlinked, unchanged from Phase 78: just `{email}`
++ sync badge" — but it means staff get no confirmation that what they typed was saved. Worth an owner
+decision on whether unlinked rows should surface a stored name.
+
+**F-3 — Pinned NON-waiting rows render `📌 —` instead of `📌 {position}`.** `js/brewpad.js` branches:
+waiting rows get `📌 {position}` (spec-correct per UI-SPEC line 164), while contacted/booked/removed
+rows get `📌 —`. Defensible (a booked row has no queue rank) and D-13 is still satisfied — the row is
+visibly marked and the clear control is present — but the carve-out is **not documented** in
+`80-03-PLAN.md`, `80-03-SUMMARY.md`, or the UI-SPEC, whose line 164 reads unconditionally.
+
+### Cleanup list for leg 13 (owner)
+
+Delete these three rows from the `Waitlist` tab, and remove the same three addresses from the
+MailerLite beer-waitlist group (all three have `mailerlite_synced: true`):
+
+| Email | Row id | Left in state |
+|---|---|---|
+| `phase80-probe@example.com` | `e71a5aa6-34c1-46a3-8399-96ef479d3054` | `booked`, `position=2`, `contacted_at="=1+1"` (CR-02 probe) |
+| `phase80-uat1@example.com` | `52fefa22-8892-4616-be56-00fb7198dd17` | `waiting`, linked to Zoho contact `109900000000374001` |
+| `phase80-uat2@example.com` | `b1cb7637-021e-43e6-ae70-bfc80162dd70` | `waiting` |
+
+Sheet held 9 rows at end of UAT (6 real customers + these 3). No duplicate emails. No real customer
+row was written to at any point except the verified-unchanged `signed_up_at` check in leg 5.
 
 ---
 
