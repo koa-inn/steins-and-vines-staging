@@ -7,6 +7,7 @@ var log = require('../lib/logger');
 var eventLog = require('../lib/eventLog');
 var authTiers = require('../lib/authTiers');
 var mailer = require('../lib/mailer');
+var mailerlite = require('../lib/mailerlite');
 var ledger = require('../lib/inventory-ledger');
 var C = require('../lib/constants');
 var brewpadIntegration = require('../lib/brewpad-integration');
@@ -4063,6 +4064,104 @@ router.post('/api/batch/admin-proxy', function (req, res) {
       log.error('[batch/admin-proxy] ' + action + ' failed: ' + (err && err.message));
       res.status(502).json({ ok: false, error: 'server_error' });
     });
+  });
+});
+
+// Phase 80 D-04-D-09: contact a waitlist customer via Resend, THEN AND ONLY
+// THEN advance the row to 'contacted'. Staff-tier (device rejected), mirrors
+// /api/batch/reassign-customer's auth gate. RESEND_API_KEY/CALCOM_API_KEY
+// never reach the browser — the send is entirely server-orchestrated here.
+router.post('/api/waitlist/:id/contact', function (req, res) {
+  authTiers.requireTiers(['legacy', 'session'])(req, res, function () {
+  var id = req.params.id;
+  var body = req.body || {};
+  var to = body.to;
+  var subject = body.subject;
+  var emailBody = body.body;
+  var bookingUrl = body.bookingUrl;
+
+  if (!id || !to || !subject || !emailBody || !bookingUrl) {
+    return res.status(400).json({ ok: false, error: 'invalid_request' });
+  }
+
+  mailer.sendWaitlistContact({ to: to, subject: subject, body: emailBody, bookingUrl: bookingUrl })
+    .then(function () {
+      // D-08: the status write happens ONLY inside this resolved-send branch —
+      // there is no code path that writes status outside it. This inner chain
+      // fully owns and handles its own errors (never re-throws) so a write
+      // failure can never be misreported by the outer .catch as a send failure.
+      var contactedAt = new Date().toISOString();
+      return axios.post(process.env.APPS_SCRIPT_URL, JSON.stringify({
+        action: 'update_waitlist_status',
+        server_token: process.env.APPS_SCRIPT_SERVER_TOKEN,
+        id: id,
+        status: 'contacted',
+        contacted_at: contactedAt
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 15000,
+        maxRedirects: 5
+      }).then(function (resp) {
+        var data = resp && resp.data;
+        if (!data || data.ok !== true) {
+          log.error('[waitlist/contact] status write refused for id=' + id + ': ' + JSON.stringify(data));
+          var payload = { ok: false, error: 'contact_write_failed' };
+          if (data && data.error === 'invalid_transition') {
+            payload.upstream = 'invalid_transition';
+          }
+          return res.status(502).json(payload);
+        }
+        res.json({ ok: true, contacted_at: contactedAt });
+      }).catch(function (writeErr) {
+        log.error('[waitlist/contact] status write failed for id=' + id + ': ' + (writeErr && writeErr.message));
+        res.status(502).json({ ok: false, error: 'contact_write_failed' });
+      });
+    })
+    .catch(function (sendErr) {
+      // Only reached when sendWaitlistContact itself rejects — the write
+      // branch above fully handles its own errors and never re-throws into
+      // this one.
+      if (res.headersSent) return;
+      log.error('[waitlist/contact] send failed for id=' + id + ': ' + (sendErr && sendErr.message));
+      res.status(502).json({ ok: false, error: 'contact_failed' });
+    });
+  });
+});
+
+// Phase 80 D-24: staff manual-add's MailerLite leg, lifted verbatim from the
+// public POST /api/waitlist fire-and-forget block (server.js). The row write
+// itself goes through the admin proxy's add_waitlist_entry action — this
+// route's only job is the MailerLite subscribe + mailerlite_synced flag.
+router.post('/api/waitlist/:id/mailerlite-sync', function (req, res) {
+  authTiers.requireTiers(['legacy', 'session'])(req, res, function () {
+  var id = req.params.id;
+  var email = (req.body && req.body.email) || '';
+
+  if (mailerlite.isConfigured()) {
+    var groupId = (process.env.MAILERLITE_WAITLIST_GROUP_ID || '').trim();
+    mailerlite.addSubscriber(email, groupId ? [groupId] : [])
+      .then(function () {
+        return axios.post(process.env.APPS_SCRIPT_URL, JSON.stringify({
+          action: 'update_waitlist_status',
+          server_token: process.env.APPS_SCRIPT_SERVER_TOKEN,
+          id: id,
+          mailerlite_synced: true
+        }), {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 15000,
+          maxRedirects: 5
+        });
+      })
+      .catch(function (err) {
+        log.error('[waitlist/mailerlite-sync] failed for id=' + id + ': ' + (err && err.message));
+      });
+  } else {
+    log.error('[waitlist/mailerlite-sync] MAILERLITE_API_KEY not set — sync skipped for id=' + id);
+  }
+
+  // Fire-and-forget: the MailerLite outcome never changes the HTTP status,
+  // matching the public path exactly (D-24).
+  res.json({ ok: true });
   });
 });
 
