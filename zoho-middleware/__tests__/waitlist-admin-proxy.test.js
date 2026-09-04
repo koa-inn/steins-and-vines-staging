@@ -179,15 +179,51 @@ describe('POST /api/batch/admin-proxy — waitlist actions (Phase 78-02)', funct
     });
   });
 
-  test('add_waitlist_entry is rejected 400 invalid_action — never reachable from BrewPad', function () {
+  // Phase 78 deliberately excluded add_waitlist_entry from ADMIN_PROXY_ACTIONS
+  // (staff could not create waitlist rows from BrewPad — signups only arrived
+  // via the public POST /api/waitlist path). Phase 80 D-21 reverses that
+  // premise: staff manual-add now reaches this same action through the admin
+  // proxy. This assertion is flipped knowingly, not broken accidentally.
+  test('add_waitlist_entry is allow-listed as a WRITE — Phase 80 D-21', function () {
     session.getSession.mockResolvedValue({ email: 'staff@steinsandvines.ca' });
+    axios.post.mockResolvedValue({ data: { ok: true, id: 'w-42' } });
 
-    var req = { headers: SESSION_HEADERS, body: { action: 'add_waitlist_entry', email: 'x@example.com' } };
+    var req = {
+      headers: SESSION_HEADERS,
+      body: { action: 'add_waitlist_entry', email: 'x@example.com', token: 'client-google-token' }
+    };
     return callHandler('POST', '/api/batch/admin-proxy', req).then(function (res) {
-      expect(res._status).toBe(400);
-      expect(res._body).toEqual({ ok: false, error: 'invalid_action' });
+      expect(res._status).not.toBe(400);
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(axios.get).not.toHaveBeenCalled();
+      var payload = JSON.parse(axios.post.mock.calls[0][1]);
+      expect(payload.action).toBe('add_waitlist_entry');
+      expect(payload.server_token).toBe(process.env.APPS_SCRIPT_SERVER_TOKEN);
+      expect(payload.token).toBeUndefined();
+    });
+  });
+
+  test('add_waitlist_entry with no credential -> 401, calls neither axios.get nor axios.post', function () {
+    var req = { headers: {}, body: { action: 'add_waitlist_entry', email: 'x@example.com' } };
+    return callHandler('POST', '/api/batch/admin-proxy', req).then(function (res) {
+      expect(res._status).toBe(401);
       expect(axios.get).not.toHaveBeenCalled();
       expect(axios.post).not.toHaveBeenCalled();
+    });
+  });
+
+  // ADMIN_PROXY_READS is a module-private var (not exported), so this is
+  // pinned behaviorally: even with axios.get wired to succeed, a session-tier
+  // add_waitlist_entry call must never dispatch a GET — it is a write-only
+  // allow-list entry, absent from ADMIN_PROXY_READS.
+  test('add_waitlist_entry is NOT forwarded as a read — axios.get never called under any tier', function () {
+    session.getSession.mockResolvedValue({ email: 'staff@steinsandvines.ca' });
+    axios.get.mockResolvedValue({ data: { ok: true, waitlist: [] } });
+    axios.post.mockResolvedValue({ data: { ok: true, id: 'w-42' } });
+
+    var req = { headers: SESSION_HEADERS, body: { action: 'add_waitlist_entry', email: 'x@example.com' } };
+    return callHandler('POST', '/api/batch/admin-proxy', req).then(function () {
+      expect(axios.get).not.toHaveBeenCalled();
     });
   });
 
