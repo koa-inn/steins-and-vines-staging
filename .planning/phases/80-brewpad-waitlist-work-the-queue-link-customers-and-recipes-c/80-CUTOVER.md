@@ -253,7 +253,7 @@ Apps Script editor's Run/Deploy buttons.**
    |---|---|
    | Prior version number (the rollback target) | **54** — "Version 54 on Sep 3, 2026, 6:25 PM", confirmed active in the Edit-deployment version dropdown by the owner 2026-09-04 before redeploying |
    | New version number (just deployed) | **55** — deployed 2026-09-04 |
-   | Deployment ID (must be UNCHANGED from before this redeploy) | `<OWNER TO FILL IN — AKfycb... from Manage deployments; capture BEFORE and AFTER and confirm identical>` |
+   | Deployment ID (must be UNCHANGED from before this redeploy) | `AKfycbw_t1zzpa3AQxvzPqo2wAg-cBU3IdevmyEz8P-dL205VrO2jx4s3DP30WxYoVUSDI968g` — **VERIFIED UNCHANGED** 2026-09-04: byte-identical to the id already committed in `js/admin-config.js`'s `ADMIN_API_URL` (last touched in `51a84907`, long before this redeploy). An existing deployment was updated, not a new one created, so no `admin-config.js` edit and no Railway `APPS_SCRIPT_URL` change are required. |
    | Date/time deployed | 2026-09-04 (repo `adminApi.gs` @ 5,325 lines pasted wholesale into the editor, then Version → New version) |
 
    > Rollback target 54 is recorded BEFORE the redeploy — this is the value Phase 78 lost across
