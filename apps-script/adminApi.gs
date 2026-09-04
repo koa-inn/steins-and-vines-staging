@@ -5083,6 +5083,15 @@ function addWaitlistEntry(payload) {
       ensured.sheet.getRange(decision.row._row, ensured.col.status).setValue('waiting');
       ensured.sheet.getRange(decision.row._row, ensured.col.signed_up_at)
         .setValue(new Date().toISOString());
+      // WR-02 / D-11: a reinstated signup is never pinned and has not been contacted
+      // since. sortWaitlistRows merge-inserts on `position` irrespective of
+      // signed_up_at, so leaving a stale pin here would put a re-signing customer
+      // straight back at their old slot ahead of everyone who has been waiting --
+      // the exact opposite of the "land at the back of the queue" intent above. A
+      // retained contacted_at would likewise leave a freshly `waiting` row carrying
+      // a timestamp from a prior contact it has not received since re-signing.
+      ensured.sheet.getRange(decision.row._row, ensured.col.position).setValue('');
+      ensured.sheet.getRange(decision.row._row, ensured.col.contacted_at).setValue('');
       invalidateSheetCache(WAITLIST_SHEET_NAME);
     }
     return { ok: true, id: decision.row.id };

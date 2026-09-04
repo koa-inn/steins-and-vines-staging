@@ -131,6 +131,27 @@ describe('addWaitlistEntry — reinstate wiring (source shape)', function () {
     expect(fnSrc).toMatch(/invalidateSheetCache\(/);
   });
 
+  // WR-02 regression. The reinstate path predates Phase 80 but `position` and
+  // `contacted_at` do not. sortWaitlistRows merge-inserts on `position`
+  // regardless of signed_up_at, so a customer pinned to slot 2, then removed,
+  // then re-signing-up was put straight back at slot 2 ahead of everyone who
+  // had been waiting -- defeating the stated "land at the back of the queue"
+  // intent two lines above. A retained contacted_at likewise left a freshly
+  // `waiting` row claiming it had already been contacted.
+  test('clears position and contacted_at when reinstating (D-11: not pinned, not contacted)', function () {
+    var at = fnSrc.indexOf('waitlistShouldReinstate(');
+    expect(at).toBeGreaterThan(-1);
+    // Scope strictly to the reinstate branch: it ends at that branch's
+    // `return {ok:true, id: decision.row.id}`. Slicing to end-of-function would
+    // wrongly match the NEW-ROW builder further down, which legitimately
+    // references col.position / col.contacted_at.
+    var end = fnSrc.indexOf('decision.row.id', at);
+    expect(end).toBeGreaterThan(at);
+    var block = fnSrc.slice(at, end);
+    expect(block).toMatch(/col\.position/);
+    expect(block).toMatch(/col\.contacted_at/);
+  });
+
   // D-06: the response must not reveal whether this was a new row, a plain dedupe hit, or a
   // reinstatement. All three return the same key set.
   test('every return path yields only {ok, id} — no disclosing field', function () {
