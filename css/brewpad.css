@@ -1529,11 +1529,13 @@ img { max-width: 100%; height: auto; display: block; }
   margin-top: 2px;
 }
 
-/* ===== Phase 80-04: host the reused customer-link panel (.bp-reassign-*) inside
-   a Waitlist table cell — width/positioning only, no new spacing/font-size/color
-   token (UI-SPEC Task 1 <action>). Customer is the 2nd column (see renderWaitlist's
+/* ===== Phase 80-04: host the reused customer-link panel (.bp-reassign-*) and
+   recipe-attach picker (.bp-vessel-*) inside a Waitlist table cell — width/
+   positioning only, no new spacing/font-size/color token (UI-SPEC Task 1/2
+   <action>). Customer is the 2nd column, Recipes the 3rd (see renderWaitlist's
    <thead>). ===== */
-.bp-waitlist-table-wrap td:nth-child(2) {
+.bp-waitlist-table-wrap td:nth-child(2),
+.bp-waitlist-table-wrap td:nth-child(3) {
   min-width: 220px;
 }
 
