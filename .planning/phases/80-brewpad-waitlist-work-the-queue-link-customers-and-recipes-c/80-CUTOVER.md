@@ -251,10 +251,14 @@ Apps Script editor's Run/Deploy buttons.**
 
    | Field | Value |
    |---|---|
-   | Prior version number (the rollback target) | `<OWNER TO FILL IN>` |
-   | New version number (just deployed) | `<OWNER TO FILL IN>` |
-   | Deployment ID (must be UNCHANGED from before this redeploy) | `<OWNER TO FILL IN>` |
+   | Prior version number (the rollback target) | **54** — "Version 54 on Sep 3, 2026, 6:25 PM", confirmed active in the Edit-deployment version dropdown by the owner 2026-09-04 before redeploying |
+   | New version number (just deployed) | `<OWNER TO FILL IN — expected 55>` |
+   | Deployment ID (must be UNCHANGED from before this redeploy) | `<OWNER TO FILL IN — AKfycb... from Manage deployments; capture BEFORE and AFTER and confirm identical>` |
    | Date/time deployed | `<OWNER TO FILL IN>` |
+
+   > Rollback target 54 is recorded BEFORE the redeploy — this is the value Phase 78 lost across
+   > both of its redeploys, leaving its rollback procedure with no target. Do not proceed past this
+   > table with the first row still blank.
 
 ### Rollback procedure
 
