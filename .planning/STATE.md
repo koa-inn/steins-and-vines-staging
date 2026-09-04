@@ -4,13 +4,13 @@ milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
 stopped_at: Phase 80 UI-SPEC approved
-last_updated: "2026-09-04T16:40:20.783Z"
+last_updated: "2026-09-04T17:56:30.267Z"
 last_activity: 2026-09-04 -- Phase 80 execution started
 progress:
   total_phases: 66
   completed_phases: 26
   total_plans: 151
-  completed_plans: 146
+  completed_plans: 151
   percent: 39
 ---
 
@@ -163,6 +163,7 @@ Last activity: 2026-09-04 -- Phase 80 execution started
 - BEER_SALES_ENABLED is now `true` in Railway production (confirmed live 2026-06-26, intentionally enabled) — kiosk recipe sales + recipe discounts are active. (Was previously held false pending the federal brewing licence; ensure the licence status supports live beer sales at the kiosk POS.)
 - Apps Script changes require manual redeploy (not in CI) — plan authors must flag this
 - 36-02 BLOCKED: Apps Script create_batch handler must accept + persist target_volume_l and scale_factor; manual redeploy needed before SEL-02 is fully closed
+- 80-06 Task 3: live Google Sheet migration + Apps Script redeploy + new Cal.com event-type creation awaiting owner action
 
 ## Session Continuity
 
