@@ -1280,7 +1280,7 @@ Plans:
 
 **Depends on:** Phase 78 (the `Waitlist` tab, its three Apps Script handlers, the admin-proxy allow-list, and the BrewPad tab this extends)
 
-**Requirements**: TBD — confirm at discuss-phase
+**Requirements**: No REQ-IDs map to this phase. Coverage unit is `80-CONTEXT.md` decisions **D-01 through D-25** (all locked at discuss-phase); every one is referenced by at least one plan.
 
 **Scope sketch (confirm at discuss-phase):**
 - **Customer link** — associate a row with a Zoho contact. `/api/contacts/search` already exists (used by POS). Needs an identity rule for signups whose email matches no contact, which Phase 78 deferred explicitly as needing its own decision.
@@ -1294,10 +1294,27 @@ Plans:
 3. **Manual reorder contradicts the customer-facing promise.** `beer.html` says "we work through the list in order", and D-04 exists so backfilled rows sit in true signup order. An override needs a rule for where new signups land, whether `signed_up_at` stays the tiebreaker, and whether staff can see that the order is no longer purely chronological.
 4. **D-06 non-disclosure still binds** — nothing added here may reveal to a customer whether they were already on the list.
 
-**Plans:** 0 plans
+**Plans:** 6 plans across 4 waves
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 80 to break down)
+
+**Wave 1** (parallel — disjoint files: Apps Script / middleware / frontend)
+
+- [ ] 80-01-PLAN.md — Apps Script: 13-column Waitlist schema (D-17), header-driven addWaitlistEntry (fixes the positional-append bug), 6 new optional fields on updateWaitlistStatus with waitlistCellSafe (D-19), recipe-id parse/serialize helpers, IN-01 folded in, WR-02 documented as carried forward, docs/APPS_SCRIPT.md corrected
+- [ ] 80-02-PLAN.md — Middleware: sendWaitlistContact via Resend (D-04), staff-tier POST /api/waitlist/:id/contact with fail-closed send-then-write (D-07/D-08), POST /api/waitlist/:id/mailerlite-sync (D-24), add_waitlist_entry added to ADMIN_PROXY_ACTIONS only (D-21) with the superseded Phase 78 assertion deliberately flipped
+- [ ] 80-03-PLAN.md — BrewPad: position-aware sortWaitlistRows merge-insert, pin marker + inline position editor + clear-pin (D-10..D-13), widened table with Customer and Recipes cells and a horizontal-scroll wrapper
+
+**Wave 2**
+
+- [ ] 80-04-PLAN.md — BrewPad: per-row Zoho customer link (search or create inline, D-01/D-02) with the D-03a phone-preservation guard, and per-row recipe multi-select with removable chips (D-15/D-16)
+
+**Wave 3**
+
+- [ ] 80-05-PLAN.md — BrewPad: Contact column + review sheet with Cal.com booking link and fail-closed inline error (D-05..D-08), manual-add sheet with client-derived D-23 disclosure and MailerLite sync (D-21..D-25)
+
+**Wave 4** (owner cutover — checkpoints)
+
+- [ ] 80-06-PLAN.md — 80-CUTOVER.md runsheet, owner approval of the email template / Cal.com event type / three UI-SPEC open items, then the gated columns-first migration (D-18), the single Apps Script redeploy with recorded rollback versions (D-20), probes, staging deploy and UAT
 
 ---
 
