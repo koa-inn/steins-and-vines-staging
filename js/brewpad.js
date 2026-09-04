@@ -9014,10 +9014,15 @@ function parseWaitlistRecipeIds(value) {
             showToast('Email sent — marked Contacted', 'success');
           })
           .catch(function (err) {
-            sendBtn.disabled = false;
+            var writeFailed = !!(err && err.writeFailed);
+            // WR-01: on contact_write_failed the email HAS already gone out --
+            // only the row advance failed. Re-arming Send would put "send a
+            // duplicate" one tap away in exactly the state where D-07/D-08 say
+            // no path may send twice. Leave Send dead; Cancel is the way out.
+            sendBtn.disabled = writeFailed;
             if (errEl) {
               var msg = 'Could not send. Please try again.';
-              if (err && err.writeFailed) msg += ' The email went out, but the row was not advanced — do not re-send.';
+              if (writeFailed) msg += ' The email went out, but the row was not advanced — do not re-send.';
               errEl.textContent = msg;
               errEl.style.display = '';
             }

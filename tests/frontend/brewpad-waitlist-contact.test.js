@@ -351,6 +351,23 @@ describe('send (D-05, D-07, D-08)', function () {
     });
   });
 
+  // WR-01 regression. On contact_write_failed the email HAS gone out — only the
+  // row advance failed. Re-arming Send puts "send a duplicate" one tap away in
+  // exactly the state where the phase knows a duplicate must not be sent. Send
+  // must stay dead; Cancel remains the way out.
+  test('WR-01: on contact_write_failed the Send button stays DISABLED — the mail already went out', function () {
+    mockFetch({ sendWriteFailed: true });
+    return openAndFlush(WAITING_ROW).then(function () {
+      document.getElementById('bp-waitlist-contact-send').click();
+      return flushPromises();
+    }).then(function () {
+      var sendBtn = document.getElementById('bp-waitlist-contact-send');
+      expect(sendBtn.disabled).toBe(true);
+      // Cancel must still be available so the sheet is not a dead end.
+      expect(document.getElementById('bp-waitlist-contact-cancel')).not.toBeNull();
+    });
+  });
+
   test('a contact_write_failed response is distinguishable from a contact_failed one', function () {
     mockFetch({ sendWriteFailed: true });
     return openAndFlush(WAITING_ROW).then(function () {
