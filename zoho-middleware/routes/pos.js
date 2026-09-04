@@ -4092,7 +4092,66 @@ router.post('/api/waitlist/:id/contact', function (req, res) {
     return res.status(400).json({ ok: false, error: 'invalid_request' });
   }
 
-  mailer.sendWaitlistContact({ to: to, subject: subject, body: emailBody, bookingUrl: bookingUrl })
+  // CR-03 pre-flight. The route used to send before it had ever read the row, so
+  // at send time it knew neither whether the row existed, nor its email, nor
+  // whether it could legally advance to 'contacted' — the invalid_transition
+  // branch below was only reachable AFTER the mail had gone out. D-08 guarantees
+  // "never advance on a failed send"; this is the missing converse, "never send
+  // when the advance is impossible".
+  //
+  // This ADDS a gate before the send. It does not reorder send-then-write: the
+  // status write still happens only inside the resolved-send branch.
+  //
+  // `body.to` is deliberately NOT the recipient. It is still required above for
+  // request-shape compatibility, but the address actually mailed is read from
+  // the row, so a staff-tier credential cannot aim a store-branded, Resend-
+  // signed email at an arbitrary address.
+  axios.get(process.env.APPS_SCRIPT_URL, {
+    params: {
+      action: 'get_waitlist',
+      server_token: process.env.APPS_SCRIPT_SERVER_TOKEN
+    },
+    timeout: 15000,
+    maxRedirects: 5
+  })
+    .then(function (resp) {
+      var rows = (resp && resp.data && resp.data.data) || [];
+      var row = null;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i] && String(rows[i].id) === String(id)) { row = rows[i]; break; }
+      }
+      if (!row) {
+        return res.status(404).json({ ok: false, error: 'not_found' });
+      }
+      // Mirrors waitlistTransitionAllowed's terminal states: 'booked' and
+      // 'removed' can never advance to 'contacted'.
+      if (row.status === 'booked' || row.status === 'removed') {
+        return res.status(409).json({ ok: false, error: 'invalid_transition' });
+      }
+      var recipient = String(row.email || '').trim();
+      if (!recipient) {
+        return res.status(409).json({ ok: false, error: 'invalid_transition' });
+      }
+
+      return sendWaitlistContactAndAdvance(res, id, recipient, subject, emailBody, bookingUrl);
+    })
+    .catch(function (preflightErr) {
+      // Fail CLOSED: if we cannot establish that the row is eligible, nothing is sent.
+      if (res.headersSent) return;
+      log.error('[waitlist/contact] eligibility read failed for id=' + id + ': ' +
+        (preflightErr && preflightErr.message));
+      res.status(502).json({ ok: false, error: 'contact_precheck_failed' });
+    });
+  });
+});
+
+/**
+ * The original send-then-write chain (D-08), extracted verbatim so the CR-03
+ * eligibility gate above can sit in front of it without reordering anything.
+ * The status write happens ONLY inside the resolved-send branch.
+ */
+function sendWaitlistContactAndAdvance(res, id, to, subject, emailBody, bookingUrl) {
+  return mailer.sendWaitlistContact({ to: to, subject: subject, body: emailBody, bookingUrl: bookingUrl })
     .then(function () {
       // D-08: the status write happens ONLY inside this resolved-send branch —
       // there is no code path that writes status outside it. This inner chain
@@ -4133,8 +4192,7 @@ router.post('/api/waitlist/:id/contact', function (req, res) {
       log.error('[waitlist/contact] send failed for id=' + id + ': ' + (sendErr && sendErr.message));
       res.status(502).json({ ok: false, error: 'contact_failed' });
     });
-  });
-});
+}
 
 // Phase 80 D-24: staff manual-add's MailerLite leg, lifted verbatim from the
 // public POST /api/waitlist fire-and-forget block (server.js). The row write
