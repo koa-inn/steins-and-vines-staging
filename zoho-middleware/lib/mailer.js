@@ -435,7 +435,12 @@ function sendWaitlistContact(data) {
   var htmlBody =
     '<div style="font-family:Arial,sans-serif;font-size:15px;color:#2c2c2c;line-height:1.6;">' +
     paragraphs +
-    '<p style="margin:24px 0;"><a href="' + bookingUrl + '" ' +
+    // CR-01: bookingUrl is client-supplied here (req.body.bookingUrl via
+    // pos.js), unlike sendBottlingInvite's server-constructed URL. It MUST be
+    // escaped before entering the attribute or a `"` closes the href and
+    // injects sibling attributes into the anchor. The plaintext echo below was
+    // already escaped — this is the one interpolation that was not.
+    '<p style="margin:24px 0;"><a href="' + htmlEscape(bookingUrl) + '" ' +
     'style="background:#4a6f4b;color:#ffffff;text-decoration:none;padding:12px 22px;' +
     'border-radius:6px;font-weight:bold;display:inline-block;">Book your appointment</a></p>' +
     '<p style="font-size:13px;color:#5f5f5f;">Or paste this link into your browser:<br>' + htmlEscape(bookingUrl) + '</p>' +

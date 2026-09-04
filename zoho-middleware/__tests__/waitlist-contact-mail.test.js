@@ -94,6 +94,28 @@ describe('mailer.sendWaitlistContact', () => {
     expect(call[1].html).toContain('href="https://cal.com/steins-and-vines-tw8csc/ferment-kit"');
   });
 
+  // CR-01 regression. bookingUrl arrives as req.body.bookingUrl (client-supplied,
+  // pos.js) — a `"` in it must NOT be able to close the href attribute and inject
+  // sibling attributes into the anchor. The plaintext echo was always escaped;
+  // the href was not.
+  test('HTML-escapes bookingUrl in the href — a quote cannot break out of the attribute', async () => {
+    await mailer.sendWaitlistContact({
+      to: 'jane@example.com',
+      subject: 'Subject',
+      body: 'Body',
+      bookingUrl: 'https://evil.example/x" style="display:none" data-x="'
+    });
+    var call = axios.post.mock.calls[0];
+    var html = call[1].html;
+    // The injected style must never appear as a live attribute on the anchor.
+    expect(html).not.toContain('style="display:none"');
+    expect(html).not.toContain('data-x=""');
+    // The quotes must be entity-encoded inside the href instead.
+    expect(html).toContain('href="https://evil.example/x&quot; style=&quot;display:none&quot; data-x=&quot;"');
+    // The real CTA styling must survive intact as the anchor's only style.
+    expect(html).toContain('background:#4a6f4b');
+  });
+
   test('HTML-escapes the staff-supplied body — <script> becomes &lt;script&gt;, never a raw tag', async () => {
     await mailer.sendWaitlistContact({
       to: 'jane@example.com',
