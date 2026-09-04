@@ -4851,7 +4851,7 @@ function getGiftCards() {
 function setupWaitlist() {
   var result = ensureWaitlistSheet();
   if (result.ok) {
-    Logger.log('Waitlist tab ready (7 columns).');
+    Logger.log('Waitlist tab ready (' + result.headers.length + ' columns).');
   } else {
     Logger.log('Waitlist tab is missing required columns: ' + result.missing.join(', '));
   }
@@ -4859,9 +4859,15 @@ function setupWaitlist() {
 
 /**
  * Self-healing AND fail-closed (same combination as ensureGiftCardLedgerSheet, Phase 51,
- * D-10): if the Waitlist tab is absent, create it inline with the exact 7-column header row,
+ * D-10): if the Waitlist tab is absent, create it inline with the exact 13-column header row,
  * bolded and frozen. If the tab exists but ANY required column is missing (drifted headers),
  * return waitlist_unavailable rather than repair headers or fall back to a positional write.
+ *
+ * Phase 80, D-17: extended from the original Phase 78 7-column contract to 13 columns — the six
+ * new names (zoho_contact_id, customer_name, customer_phone, recipe_ids, position, contacted_at)
+ * are APPENDED after `notes`, never inserted between existing names. Column order is otherwise
+ * irrelevant to THIS function (headers.indexOf(name) is a name-based lookup), but
+ * addWaitlistEntry below depends on writing by name too — see its Pitfall-1 fix.
  * @returns {{ok: true, sheet: Object, headers: Array<string>, col: Object}
  *          |{ok: false, error: string, missing: Array<string>}}
  */
@@ -4869,7 +4875,10 @@ function ensureWaitlistSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(WAITLIST_SHEET_NAME);
 
-  var headerNames = ['id', 'email', 'category', 'status', 'signed_up_at', 'mailerlite_synced', 'notes'];
+  var headerNames = [
+    'id', 'email', 'category', 'status', 'signed_up_at', 'mailerlite_synced', 'notes',
+    'zoho_contact_id', 'customer_name', 'customer_phone', 'recipe_ids', 'position', 'contacted_at'
+  ];
 
   if (!sheet) {
     sheet = ss.insertSheet(WAITLIST_SHEET_NAME);
@@ -5007,9 +5016,9 @@ function waitlistDedupeDecision(rows, email, category) {
 }
 
 /**
- * Phase 80, D-15: serialize a list of recipe ids (e.g. `SV-R-000003`, from
- * generateNextId(RECIPES_SHEET_NAME, 'SV-R-', 6), adminApi.gs:3629) into the Waitlist sheet's
- * `recipe_ids` cell value. Pipe-delimited, no spaces — a pipe can never occur inside a
+ * Phase 80, D-15: serialize a list of recipe ids (e.g. `SV-R-000003`, minted by the
+ * generateNextId helper — see the RECIPES_SHEET_NAME call site at adminApi.gs:3629) into the
+ * Waitlist sheet's `recipe_ids` cell value. Pipe-delimited, no spaces — a pipe can never occur inside a
  * `SV-R-XXXXXX` id, so it is a safe, unambiguous separator. Drops falsy entries so a stray
  * `null`/`''`/`undefined` in the array never corrupts the round trip. PURE: zero references to
  * SpreadsheetApp/LockService/Session/CacheService/Logger/Utilities (same purity contract as
@@ -5079,16 +5088,31 @@ function addWaitlistEntry(payload) {
     return { ok: true, id: decision.row.id };
   }
 
+  // Phase 80, RESEARCH.md Pitfall 1: build the row by NAME via ensured.col, never a literal
+  // positional array. The original 7-column literal array happened to match the header order at
+  // the time, but D-17 added six more columns after `notes` with no guarantee a sheet's physical
+  // column order matches any particular literal order — a human hand-edit or reorder would have
+  // silently misplaced every value from the reordered point on. A literal positional array must
+  // never be reintroduced here.
   var id = Utilities.getUuid();
-  ensured.sheet.appendRow([
-    id,
-    waitlistCellSafe(email),
-    waitlistCellSafe(category),
-    'waiting',
-    new Date().toISOString(),
-    false,
-    ''
-  ]);
+  var newRow = new Array(ensured.headers.length);
+  for (var ri = 0; ri < newRow.length; ri++) newRow[ri] = '';
+  newRow[ensured.col.id - 1] = id;
+  newRow[ensured.col.email - 1] = waitlistCellSafe(email);
+  newRow[ensured.col.category - 1] = waitlistCellSafe(category);
+  newRow[ensured.col.status - 1] = 'waiting';
+  // D-25: signed_up_at is the moment of THIS add, never backdated.
+  newRow[ensured.col.signed_up_at - 1] = new Date().toISOString();
+  newRow[ensured.col.mailerlite_synced - 1] = false;
+  newRow[ensured.col.notes - 1] = '';
+  newRow[ensured.col.zoho_contact_id - 1] = '';
+  newRow[ensured.col.customer_name - 1] = '';
+  newRow[ensured.col.customer_phone - 1] = '';
+  newRow[ensured.col.recipe_ids - 1] = '';
+  // D-11: a new signup is never pinned.
+  newRow[ensured.col.position - 1] = '';
+  newRow[ensured.col.contacted_at - 1] = '';
+  ensured.sheet.appendRow(newRow);
 
   invalidateSheetCache(WAITLIST_SHEET_NAME);
   return { ok: true, id: id };
@@ -5120,7 +5144,13 @@ function getWaitlist() {
       status: w.status,
       signed_up_at: w.signed_up_at,
       mailerlite_synced: waitlistSyncedTrue(w.mailerlite_synced),
-      notes: w.notes
+      notes: w.notes,
+      zoho_contact_id: w.zoho_contact_id,
+      customer_name: w.customer_name,
+      customer_phone: w.customer_phone,
+      recipe_ids: w.recipe_ids,
+      position: w.position,
+      contacted_at: w.contacted_at
     };
   });
 }
