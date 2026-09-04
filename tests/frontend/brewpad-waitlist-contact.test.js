@@ -93,7 +93,10 @@ var REMOVED_ROW = {
 
 var SERVICES_OK = {
   services: [
-    { id: 111, title: 'Ferment Kit Booking', slug: 'ferment-kit', bookingUrl: 'https://cal.com/steins-and-vines/ferment-kit' }
+    // WR-04: the Contact sheet selects by slug, never by array position. This fixture
+    // carries a decoy first entry precisely so a regression to services[0] fails here.
+    { id: 111, title: 'Ferment Kit Booking', slug: 'ferment-kit', bookingUrl: 'https://cal.com/steins-and-vines/ferment-kit' },
+    { id: 222, title: 'Beer Waitlist Booking', slug: 'beer-waitlist', bookingUrl: 'https://cal.com/steins-and-vines/beer-waitlist' }
   ],
   staff: []
 };
@@ -133,6 +136,22 @@ function mockFetch(opts) {
       if (opts.servicesReject) return Promise.reject(new Error('network down'));
       if (opts.servicesEmpty) {
         return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ services: [], staff: [] }); } });
+      }
+      if (opts.servicesNoMatch) {
+        // WR-04: a healthy response that simply does not contain the beer-waitlist
+        // event type — the real production state until 80-CUTOVER §1a lands.
+        return Promise.resolve({
+          ok: true,
+          json: function () {
+            return Promise.resolve({
+              services: [
+                { id: 111, title: 'Ferment Kit Booking', slug: 'ferment-kit', bookingUrl: 'https://cal.com/steins-and-vines/ferment-kit' },
+                { id: 333, title: 'Bottling', slug: 'bottling', bookingUrl: 'https://cal.com/steins-and-vines/bottling' }
+              ],
+              staff: []
+            });
+          }
+        });
       }
       return Promise.resolve({ ok: true, json: function () { return Promise.resolve(SERVICES_OK); } });
     }
@@ -240,6 +259,20 @@ describe('opening the sheet', function () {
     });
   });
 
+  test('WR-04: services present but no beer-waitlist slug fails closed — never falls back to services[0]', function () {
+    mockFetch({ servicesNoMatch: true });
+    renderWithRows([WAITING_ROW]);
+    return bp._openWaitlistContactSheetForTest(WAITING_ROW.id).then(function () {
+      var body = document.getElementById('bp-waitlist-contact-body');
+      // The regression this guards: positional selection would have silently picked
+      // ferment-kit here and mailed a waitlist customer the wrong appointment link.
+      expect(body.textContent).toContain('Could not prepare the booking link. Please try again.');
+      expect(body.textContent).not.toContain('ferment-kit');
+      expect(body.textContent).not.toContain('bottling');
+      expect(document.getElementById('bp-waitlist-contact-send')).toBeNull();
+    });
+  });
+
   test('success pre-fills To (read-only), Subject and Body with the booking link interpolated', function () {
     renderWithRows([WAITING_ROW]);
     return bp._openWaitlistContactSheetForTest(WAITING_ROW.id).then(function () {
@@ -249,7 +282,7 @@ describe('opening the sheet', function () {
       var subjectInput = document.getElementById('bp-waitlist-contact-subject');
       expect(subjectInput.value).toBe('Your spot on the Steins & Vines beer waitlist is ready!');
       var bodyInput = document.getElementById('bp-waitlist-contact-body-input');
-      expect(bodyInput.value).toContain('https://cal.com/steins-and-vines/ferment-kit');
+      expect(bodyInput.value).toContain('https://cal.com/steins-and-vines/beer-waitlist');
       expect(bodyInput.value).toContain('Hi there,');
     });
   });
@@ -296,7 +329,7 @@ describe('send (D-05, D-07, D-08)', function () {
         to: 'jane@example.com',
         subject: 'Your spot on the Steins & Vines beer waitlist is ready!',
         body: body.body,
-        bookingUrl: 'https://cal.com/steins-and-vines/ferment-kit'
+        bookingUrl: 'https://cal.com/steins-and-vines/beer-waitlist'
       });
     });
   });
