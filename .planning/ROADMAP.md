@@ -1294,7 +1294,7 @@ Plans:
 3. **Manual reorder contradicts the customer-facing promise.** `beer.html` says "we work through the list in order", and D-04 exists so backfilled rows sit in true signup order. An override needs a rule for where new signups land, whether `signed_up_at` stays the tiebreaker, and whether staff can see that the order is no longer purely chronological.
 4. **D-06 non-disclosure still binds** — nothing added here may reveal to a customer whether they were already on the list.
 
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 Plans:
 
@@ -1306,7 +1306,7 @@ Plans:
 
 **Wave 2**
 
-- [ ] 80-04-PLAN.md — BrewPad: per-row Zoho customer link (search or create inline, D-01/D-02) with the D-03a phone-preservation guard, and per-row recipe multi-select with removable chips (D-15/D-16)
+- [x] 80-04-PLAN.md — BrewPad: per-row Zoho customer link (search or create inline, D-01/D-02) with the D-03a phone-preservation guard, and per-row recipe multi-select with removable chips (D-15/D-16)
 
 **Wave 3**
 
