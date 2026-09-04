@@ -421,8 +421,8 @@ through the deployed `get_waitlist`**, not by UI appearance alone.
 | # | Leg | Expected result | Owner result |
 |---|---|---|---|
 | 1 | **Customer link — existing contact.** On a waitlist row, tap "Link customer", search for an existing Zoho contact, select it. | Row's Customer cell renders `{Name} — {email} — {phone}`; `get_waitlist` shows `zoho_contact_id`/`customer_name`/`customer_phone` populated on that row. | **PASS** (2026-09-04, Chrome, driven by Claude). Toast "Customer linked"; Customer cell renders `test — phase80-uat1@example.com — 604-555-0101` (exact D-02 em-dash format); trigger flipped "Link customer" → "Change". `get_waitlist`: `zoho_contact_id=109900000000374001`, `customer_name="test"`. |
-| 2 | **Customer link — inline create.** On a different row, tap "Link customer" → "+ Add new customer", fill name/email/phone, save. | New Zoho contact created; row links to it the same as leg 1; `get_waitlist` confirms. | **NOT RUN — needs owner approval.** Creates a real, outward-facing contact record in Zoho Books. Deliberately not performed autonomously. |
-| 3 | **D-03a guard.** On a row that already has a hand-typed `customer_phone` (from a manual add, leg 9), link an existing Zoho contact whose phone differs. | The row's `customer_phone` is **unchanged** — linking a contact must not silently overwrite a non-empty manually-entered phone. | **INCONCLUSIVE — not a pass.** Row kept its hand-typed `604-555-0101` after linking, BUT the Zoho contact used (`test`, id 109900000000374001) has `phone:""` and `mobile:""`, so the guard was never actually exercised — nothing was available to overwrite with. A valid test needs a Zoho contact carrying a DIFFERENT non-empty phone. Re-run before trusting D-03a. |
+| 2 | **Customer link — inline create.** On a different row, tap "Link customer" → "+ Add new customer", fill name/email/phone, save. | New Zoho contact created; row links to it the same as leg 1; `get_waitlist` confirms. | **PASS** (2026-09-04, owner-approved). Created Zoho contact `109900000001294001` — name `ZZ TEST Phase80 Do Not Use`, email `phase80-zoho-test@example.com`, phone `604-555-0199` — via "+ Add new customer" on the `phase80-uat2` row. Row linked immediately and rendered `ZZ TEST Phase80 Do Not Use — phase80-uat2@example.com — 604-555-0199`. **Contact must be deleted in cleanup (see leg 13).** |
+| 3 | **D-03a guard.** On a row that already has a hand-typed `customer_phone` (from a manual add, leg 9), link an existing Zoho contact whose phone differs. | The row's `customer_phone` is **unchanged** — linking a contact must not silently overwrite a non-empty manually-entered phone. | **PASS — re-run properly after leg 2.** First attempt was INCONCLUSIVE (the `test` contact had `phone:""`, so nothing could overwrite). Re-run using leg 2's new contact, which carries `604-555-0199`: linking it to `phase80-uat1` (hand-typed `604-555-0101`) left the phone at **`604-555-0101`** — not overwritten. Side-by-side proof, same contact `109900000001294001` on two rows: `uat1` (had a hand-typed phone) kept `604-555-0101`; `uat2` (no prior phone) took the contact's `604-555-0199`. Name IS updated from the contact on both, phone is not when already present. D-03a confirmed. |
 | 4 | **Recipe attach.** Attach two recipes to a row, then remove one. | Two chips appear, then one; `get_waitlist`'s `recipe_ids` reflects exactly the remaining one, pipe-delimited if more than one remained. | **PARTIAL PASS.** Attach: toast "Recipe attached", chip "Czech Lager ×" renders in `--cellar-green` per spec, `get_waitlist` `recipe_ids="SV-R-000002"`. Remove: toast "Recipe removed", `recipe_ids` cleared. **Untestable half:** only ONE active recipe exists in the catalogue (`/api/recipes?status=active` returns just Czech Lager), so "attach two, remove one" and the pipe-delimited multi-value assertion could not be exercised. |
 | 5 | **Pin to position.** Pin a row to position 2. | Queue visually reorders so that row renders at rank 2; `get_waitlist`'s `position` cell for that row reads `2`; other rows' `signed_up_at` cells are unchanged. | **PASS.** Toast "Pinned to position 2" (exact spec copy); row moved rank 7 → renders 3rd; `#` cell shows `📌 2 ×` (spec-correct `📌 {position}` for a waiting row). `get_waitlist`: `position=2`, and **all six real customers' `signed_up_at` verified UNCHANGED**. |
 | 6 | **Clear pin.** Clear the position set in leg 5. | Row returns to its natural chronological (signup-order) position; `get_waitlist`'s `position` cell for that row is empty. | **PASS.** Toast "Pin cleared"; row returned to chronological rank 7; `#` cell back to a plain number; `position` empty in `get_waitlist`. |
@@ -440,14 +440,14 @@ through the deployed `get_waitlist`**, not by UI appearance alone.
 signed in as `hello@steinsandvines.ca`. Every write verified server-side through the deployed
 `get_waitlist`, never by UI appearance alone.**
 
-**8 PASS · 1 PARTIAL · 1 INCONCLUSIVE · 3 NOT RUN · 0 FAIL**
+**10 PASS · 1 PARTIAL · 2 NOT RUN · 0 FAIL**
 
 | Outcome | Legs |
 |---|---|
-| PASS | 1, 5, 6, 9, 10, 11, 12 (+ bonus D-06 asymmetry check) |
+| PASS | 1, 2, 3, 5, 6, 9, 10, 11, 12 (+ bonus D-06 asymmetry check) |
 | PARTIAL | 4 — attach/remove pass; multi-recipe untestable (one active recipe) |
-| INCONCLUSIVE | 3 — D-03a guard never exercised (linked contact had no phone) |
-| NOT RUN | 2 (creates a real Zoho contact), 8 (needs Railway env toggle), 13 (owner cleanup) |
+
+| NOT RUN | 8 (needs Railway env toggle), 13 (owner cleanup) |
 | BLOCKED | 7 — §1a prerequisite |
 | FAIL | none |
 
@@ -484,7 +484,9 @@ MailerLite beer-waitlist group (all three have `mailerlite_synced: true`):
 |---|---|---|
 | `phase80-probe@example.com` | `e71a5aa6-34c1-46a3-8399-96ef479d3054` | `booked`, `position=2`, `contacted_at="=1+1"` (CR-02 probe) |
 | `phase80-uat1@example.com` | `52fefa22-8892-4616-be56-00fb7198dd17` | `waiting`, linked to Zoho contact `109900000000374001` |
-| `phase80-uat2@example.com` | `b1cb7637-021e-43e6-ae70-bfc80162dd70` | `waiting` |
+| `phase80-uat2@example.com` | `b1cb7637-021e-43e6-ae70-bfc80162dd70` | `waiting`, linked to Zoho contact `109900000001294001` |
+
+**Also delete the Zoho Books contact** `109900000001294001` (`ZZ TEST Phase80 Do Not Use`, `phase80-zoho-test@example.com`) created by leg 2. Both `uat1` and `uat2` link to it.
 
 Sheet held 9 rows at end of UAT (6 real customers + these 3). No duplicate emails. No real customer
 row was written to at any point except the verified-unchanged `signed_up_at` check in leg 5.
