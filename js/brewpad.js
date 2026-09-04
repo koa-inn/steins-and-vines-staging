@@ -8313,6 +8313,7 @@ function parseWaitlistRecipeIds(value) {
     html += '<div class="bp-tasks-toolbar">';
     html += '<input type="search" class="bp-search-input" id="bp-waitlist-search" placeholder="Search email…" value="' + escapeHTML(_waitlistSearch) + '" autocomplete="off" inputmode="search">';
     html += '<button type="button" class="btn-secondary bp-btn-sm" id="bp-waitlist-refresh">↻ Refresh</button>';
+    html += '<button type="button" class="btn bp-new-batch-btn" id="bp-waitlist-add-trigger">+ Add to Waitlist</button>';
     html += '</div>';
 
     html += '<div class="bp-batch-filters">';
@@ -8343,7 +8344,7 @@ function parseWaitlistRecipeIds(value) {
       html += '<table class="bp-active-batches-table" aria-label="Beer waitlist">';
       html += '<thead><tr><th>#</th><th>Customer</th><th>Recipes</th>';
       if (showCategory) html += '<th>Category</th>';
-      html += '<th>Signed up</th><th>Status</th><th>Notes</th><th></th></tr></thead>';
+      html += '<th>Signed up</th><th>Status</th><th>Contact</th><th>Notes</th><th></th></tr></thead>';
       html += '<tbody>';
       filtered.forEach(function (row) {
         var pos = row.id != null ? posById[row.id] : null; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
@@ -8418,6 +8419,13 @@ function parseWaitlistRecipeIds(value) {
         html += '<td>' + fmtShortDate(row.signed_up_at) + '</td>';
         html += '<td><span class="bp-status-badge bp-status-badge--' + color + (actionable ? ' bp-status-clickable' : '') +
           '" data-waitlist-id="' + escapeHTML(row.id) + '" aria-label="' + escapeHTML(ariaLabel) + '">' + escapeHTML(label) + '</span></td>';
+        // Phase 80-05 (D-04/D-07): the Contact button is a bare-verb `.btn bp-btn-sm`
+        // (UI-SPEC Copywriting Contract, Contact action) reusing the actionable
+        // predicate already computed above (Phase-Specific Decision 3) -- offering
+        // the action on a booked/removed row would allow staff to send an email
+        // whose second-leg status write is guaranteed to be refused server-side.
+        html += '<td><button type="button" class="btn bp-btn-sm" data-waitlist-contact-trigger="' + escapeHTML(row.id) + '"' +
+          (actionable ? '' : ' disabled') + '>Contact</button></td>';
         html += '<td>' + escapeHTML(row.notes || '—') +
           ' <button type="button" class="bp-reading-edit" data-waitlist-notes-id="' + escapeHTML(row.id) + '">✎</button></td>';
         html += '<td><button type="button" class="bp-reading-del" data-waitlist-remove-id="' + escapeHTML(row.id) + '" aria-label="Remove from waitlist">×</button></td>';
@@ -8447,6 +8455,13 @@ function parseWaitlistRecipeIds(value) {
     var refreshBtn = document.getElementById('bp-waitlist-refresh');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', function () { loadWaitlist(); });
+    }
+
+    // Phase 80-05 (D-21): manual-add toolbar trigger, same stable-single-id
+    // direct-binding convention as Search/Refresh above.
+    var addTriggerBtn = document.getElementById('bp-waitlist-add-trigger');
+    if (addTriggerBtn) {
+      addTriggerBtn.addEventListener('click', function () { openWaitlistAddSheet(); });
     }
   }
 
@@ -8878,6 +8893,436 @@ function parseWaitlistRecipeIds(value) {
         showToast('Recipe removed', 'success');
       })
       .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // ===== Phase 80-05: Contact review sheet with fail-closed send (D-04-D-09) =====
+  //
+  // Reuse-not-rebuild: verbatim reuse of the .bp-create-sheet shell from
+  // openRecipeFromBatchSheet (js/brewpad.js:5292-5350 region), re-id'd
+  // bp-waitlist-contact-sheet. The booking link is resolved client-side from
+  // the already-public, already-24h-cached GET /api/bookings/services -- never
+  // a new Cal.com call, never a hardcoded bottling-invite-style booking-URL construction. The
+  // send itself never touches adminApiPost -- the status write to 'contacted'
+  // happens ONLY server-side, inside POST /api/waitlist/:id/contact's
+  // resolved-send branch (D-08).
+
+  // Opens the sheet in place, shows the loading state synchronously, then
+  // resolves the booking link before rendering the editable form. Returns the
+  // fetch promise so tests can await sheet-population.
+  function openWaitlistContactSheet(id) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+
+    var existing = document.getElementById('bp-waitlist-contact-sheet');
+    if (existing) existing.parentNode.removeChild(existing);
+
+    var appEl = document.getElementById('bp-app') || document.body;
+    var sheetEl = document.createElement('div');
+    sheetEl.id = 'bp-waitlist-contact-sheet';
+    sheetEl.className = 'bp-create-sheet';
+    sheetEl.style.display = '';
+    sheetEl.innerHTML =
+      '<div class="bp-create-sheet-inner" id="bp-waitlist-contact-sheet-inner">' +
+      '<div class="bp-create-sheet-header">' +
+      '<span class="bp-create-sheet-title">Contact ' + escapeHTML(row.customer_name || row.email) + '</span>' +
+      '<button type="button" class="bp-create-sheet-close" id="bp-waitlist-contact-close">×</button>' +
+      '</div>' +
+      '<div class="bp-create-sheet-body" id="bp-waitlist-contact-body"><p>Preparing email…</p></div>' +
+      '</div>';
+    appEl.appendChild(sheetEl);
+
+    function closeContactSheet() {
+      sheetEl.classList.remove('bp-create-sheet--open');
+      setTimeout(function () {
+        if (sheetEl.parentNode) sheetEl.parentNode.removeChild(sheetEl);
+      }, 180);
+    }
+
+    setTimeout(function () { sheetEl.classList.add('bp-create-sheet--open'); }, 10);
+    sheetEl.addEventListener('click', function (e) { if (e.target === sheetEl) closeContactSheet(); });
+    var closeX = document.getElementById('bp-waitlist-contact-close');
+    if (closeX) closeX.addEventListener('click', closeContactSheet);
+
+    return fetch(mwUrl() + '/api/bookings/services', { credentials: 'include' })
+      .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data || {} }; }); })
+      .then(function (result) {
+        var svc = result.ok && result.data.services && result.data.services[0];
+        var bookingUrl = svc && svc.bookingUrl;
+        var bodyEl = document.getElementById('bp-waitlist-contact-body');
+        if (!bodyEl) return;
+        if (!bookingUrl) throw new Error('no booking link');
+        renderWaitlistContactForm(bodyEl, row, bookingUrl, closeContactSheet);
+      })
+      .catch(function () {
+        var bodyEl = document.getElementById('bp-waitlist-contact-body');
+        if (!bodyEl) return;
+        bodyEl.innerHTML =
+          '<p>Could not prepare the booking link. Please try again.</p>' +
+          '<div class="bp-form-actions">' +
+          '<button type="button" class="btn-secondary" id="bp-waitlist-contact-cancel-only">Cancel</button>' +
+          '</div>';
+        var cancelOnly = document.getElementById('bp-waitlist-contact-cancel-only');
+        if (cancelOnly) cancelOnly.addEventListener('click', closeContactSheet);
+      });
+  }
+
+  // Renders the editable To/Subject/Body form once the booking link has
+  // resolved. The To field is read-only display only -- sendWaitlistContact
+  // below reads row.email directly, never this input's value (T-80-28).
+  function renderWaitlistContactForm(bodyEl, row, bookingUrl, closeContactSheet) {
+    var firstName = (row.customer_name || '').split(/\s+/)[0] || 'there';
+    var defaultSubject = 'Your spot on the Steins & Vines beer waitlist is ready!';
+    var defaultBody = 'Hi ' + firstName + ',\n\nGreat news — it’s your turn on the beer waitlist! You can book your fermentation time here:\n\n' +
+      bookingUrl + '\n\nIf you have any questions, just reply to this email.\n\nCheers,\nSteins & Vines';
+
+    bodyEl.innerHTML =
+      '<div class="bp-form-group">' +
+      '<label>To</label>' +
+      '<input type="email" class="bp-inline-input" value="' + escapeHTML(row.email) + '" readonly>' +
+      '</div>' +
+      '<div class="bp-form-group">' +
+      '<label>Subject</label>' +
+      '<input type="text" id="bp-waitlist-contact-subject" class="bp-inline-input" value="' + escapeHTML(defaultSubject) + '">' +
+      '</div>' +
+      '<div class="bp-form-group">' +
+      '<label>Body</label>' +
+      '<textarea id="bp-waitlist-contact-body-input" class="bp-inline-input bp-notes-input" rows="8">' + escapeHTML(defaultBody) + '</textarea>' +
+      '</div>' +
+      '<div class="bp-waitlist-form-error" id="bp-waitlist-contact-error" style="display:none;"></div>' +
+      '<div class="bp-form-actions">' +
+      '<button type="button" class="btn" id="bp-waitlist-contact-send">Send</button>' +
+      '<button type="button" class="btn-secondary" id="bp-waitlist-contact-cancel">Cancel</button>' +
+      '</div>';
+
+    var cancelBtn = document.getElementById('bp-waitlist-contact-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeContactSheet);
+
+    var sendBtn = document.getElementById('bp-waitlist-contact-send');
+    if (sendBtn) {
+      sendBtn.addEventListener('click', function () {
+        var subjectInput = document.getElementById('bp-waitlist-contact-subject');
+        var bodyInput = document.getElementById('bp-waitlist-contact-body-input');
+        var errEl = document.getElementById('bp-waitlist-contact-error');
+        if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+        sendBtn.disabled = true;
+        sendWaitlistContact(row, subjectInput ? subjectInput.value : '', bodyInput ? bodyInput.value : '', bookingUrl)
+          .then(function (data) {
+            row.status = 'contacted';
+            if (data && data.contacted_at) row.contacted_at = data.contacted_at;
+            closeContactSheet();
+            renderWaitlist();
+            showToast('Email sent — marked Contacted', 'success');
+          })
+          .catch(function (err) {
+            sendBtn.disabled = false;
+            if (errEl) {
+              var msg = 'Could not send. Please try again.';
+              if (err && err.writeFailed) msg += ' The email went out, but the row was not advanced — do not re-send.';
+              errEl.textContent = msg;
+              errEl.style.display = '';
+            }
+          });
+      });
+    }
+  }
+
+  // The single POST to /api/waitlist/:id/contact (D-05/D-08). `to` is read
+  // from the row object, never the DOM -- see T-80-28. Never calls
+  // adminApiPost: the status write to 'contacted' lives entirely server-side.
+  function sendWaitlistContact(row, subject, body, bookingUrl) {
+    return fetch(mwUrl() + '/api/waitlist/' + encodeURIComponent(row.id) + '/contact', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: row.email, subject: subject, body: body, bookingUrl: bookingUrl })
+    }).then(function (r) {
+      return r.json().then(function (data) {
+        if (!r.ok || !data || data.ok !== true) {
+          var err = new Error((data && data.error) || 'send_failed');
+          err.writeFailed = !!(data && data.error === 'contact_write_failed');
+          throw err;
+        }
+        return data;
+      });
+    });
+  }
+
+  // ===== Phase 80-05: manual-add sheet with the D-23 disclosure state (D-21-D-25) =====
+  //
+  // Reuse-not-rebuild: .bp-create-sheet shell verbatim, re-id'd
+  // bp-waitlist-add-sheet. The recipe field reuses the multi-select picker's
+  // markup/classes and lazy-fetch catalog cache from the 80-04 per-row attach
+  // panel (_waitlistRecipeCatalog, showWaitlistRecipeOptions's shape) -- but
+  // selections accumulate in a LOCAL array here rather than writing
+  // immediately per-tap, since this row does not exist until submit.
+
+  function openWaitlistAddSheet() {
+    var existing = document.getElementById('bp-waitlist-add-sheet');
+    if (existing) existing.parentNode.removeChild(existing);
+
+    var appEl = document.getElementById('bp-app') || document.body;
+    var sheetEl = document.createElement('div');
+    sheetEl.id = 'bp-waitlist-add-sheet';
+    sheetEl.className = 'bp-create-sheet';
+    sheetEl.style.display = '';
+    sheetEl.innerHTML =
+      '<div class="bp-create-sheet-inner" id="bp-waitlist-add-sheet-inner">' +
+      '<div class="bp-create-sheet-header">' +
+      '<span class="bp-create-sheet-title">Add to Waitlist</span>' +
+      '<button type="button" class="bp-create-sheet-close" id="bp-waitlist-add-close">×</button>' +
+      '</div>' +
+      '<div class="bp-create-sheet-body" id="bp-waitlist-add-body"></div>' +
+      '</div>';
+    appEl.appendChild(sheetEl);
+
+    function closeAddSheet() {
+      sheetEl.classList.remove('bp-create-sheet--open');
+      setTimeout(function () {
+        if (sheetEl.parentNode) sheetEl.parentNode.removeChild(sheetEl);
+      }, 180);
+    }
+
+    setTimeout(function () { sheetEl.classList.add('bp-create-sheet--open'); }, 10);
+    sheetEl.addEventListener('click', function (e) { if (e.target === sheetEl) closeAddSheet(); });
+    var closeX = document.getElementById('bp-waitlist-add-close');
+    if (closeX) closeX.addEventListener('click', closeAddSheet);
+
+    renderWaitlistAddForm(closeAddSheet);
+  }
+
+  function renderWaitlistAddForm(closeAddSheet) {
+    var bodyEl = document.getElementById('bp-waitlist-add-body');
+    if (!bodyEl) return;
+    // Local to this sheet instance -- not written until submit (D-25: this row
+    // does not exist server-side yet, so there is nothing to attach ids to).
+    var selectedRecipes = [];
+
+    bodyEl.innerHTML =
+      '<div class="bp-form-group">' +
+      '<label>Email <span class="bp-required">*</span></label>' +
+      '<input type="email" id="bp-waitlist-add-email" class="bp-inline-input" placeholder="customer@example.com" autocomplete="off">' +
+      '<div class="bp-waitlist-form-error" id="bp-waitlist-add-email-error" style="display:none;"></div>' +
+      '</div>' +
+      '<div class="bp-form-group">' +
+      '<label>Name <span class="bp-optional">optional</span></label>' +
+      '<input type="text" id="bp-waitlist-add-name" class="bp-inline-input" autocomplete="off">' +
+      '</div>' +
+      '<div class="bp-form-group">' +
+      '<label>Phone <span class="bp-optional">optional</span></label>' +
+      '<input type="tel" id="bp-waitlist-add-phone" class="bp-inline-input" autocomplete="off">' +
+      '</div>' +
+      '<div class="bp-form-group">' +
+      '<label>Recipes <span class="bp-optional">optional</span></label>' +
+      '<div id="bp-waitlist-add-recipe-chips"></div>' +
+      '<div class="bp-vessel-wrap" style="margin-top:4px;">' +
+      '<input type="text" id="bp-waitlist-add-recipe-input" class="bp-inline-input" placeholder="Search recipes…" autocomplete="off">' +
+      '<div class="bp-vessel-dropdown" id="bp-waitlist-add-recipe-dropdown" style="display:none;"></div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="bp-waitlist-form-error" id="bp-waitlist-add-error" style="display:none;"></div>' +
+      '<div class="bp-form-actions">' +
+      '<button type="button" class="btn" id="bp-waitlist-add-submit">Add to Waitlist</button>' +
+      '<button type="button" class="btn-secondary" id="bp-waitlist-add-cancel">Cancel</button>' +
+      '</div>';
+
+    var cancelBtn = document.getElementById('bp-waitlist-add-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeAddSheet);
+
+    function renderAddRecipeChips() {
+      var chipsEl = document.getElementById('bp-waitlist-add-recipe-chips');
+      if (!chipsEl) return;
+      chipsEl.innerHTML = selectedRecipes.map(function (r) {
+        return '<span class="bp-batch-chip-inline">' + escapeHTML(r.name) +
+          ' <button type="button" class="bp-reading-del" data-waitlist-add-recipe-remove="' + escapeHTML(r.recipe_id) +
+          '" aria-label="Remove ' + escapeHTML(r.name) + '">×</button></span>';
+      }).join(' ');
+      Array.prototype.forEach.call(chipsEl.querySelectorAll('[data-waitlist-add-recipe-remove]'), function (btn) {
+        btn.addEventListener('click', function () {
+          var rid = btn.getAttribute('data-waitlist-add-recipe-remove');
+          selectedRecipes = selectedRecipes.filter(function (r) { return r.recipe_id !== rid; });
+          renderAddRecipeChips();
+        });
+      });
+    }
+
+    var recipeInput = document.getElementById('bp-waitlist-add-recipe-input');
+    var recipeDropdown = document.getElementById('bp-waitlist-add-recipe-dropdown');
+
+    // Shares _waitlistRecipeCatalog with the 80-04 per-row attach panel (own
+    // lazy-fetch, never _recipesState) -- D-16: display-only, no detail fetch.
+    function showAddRecipeOptions(term) {
+      if (!recipeDropdown) return;
+      if (!_waitlistRecipeCatalog) {
+        recipeDropdown.innerHTML = '<div class="bp-vessel-option bp-vessel-option--empty">Loading recipes…</div>';
+        recipeDropdown.style.display = '';
+        fetch(mwUrl() + '/api/recipes?status=active', { credentials: 'include' })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            _waitlistRecipeCatalog = data.recipes || [];
+            showAddRecipeOptions(term);
+          })
+          .catch(function () { _waitlistRecipeCatalog = []; showAddRecipeOptions(term); });
+        return;
+      }
+      var matches = _waitlistRecipeCatalog.filter(function (r) {
+        if (!term) return true;
+        return ((r.name || '') + ' ' + (r.style || '')).toLowerCase().indexOf(term.toLowerCase()) !== -1;
+      }).slice(0, 15);
+      recipeDropdown.innerHTML = matches.length === 0
+        ? '<div class="bp-vessel-option bp-vessel-option--empty">No recipes found</div>'
+        : matches.map(function (r) {
+            return '<div class="bp-vessel-option" data-rid="' + escapeHTML(r.recipe_id || '') + '" data-rname="' + escapeHTML(r.name || '') + '">' +
+              escapeHTML(r.name || '') + '</div>';
+          }).join('');
+      recipeDropdown.style.display = '';
+      Array.prototype.forEach.call(recipeDropdown.querySelectorAll('.bp-vessel-option[data-rid]'), function (opt) {
+        opt.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          var rid = opt.getAttribute('data-rid');
+          var rname = opt.getAttribute('data-rname');
+          if (!selectedRecipes.some(function (r) { return r.recipe_id === rid; })) {
+            selectedRecipes.push({ recipe_id: rid, name: rname });
+            renderAddRecipeChips();
+          }
+          recipeDropdown.style.display = 'none';
+          if (recipeInput) recipeInput.value = '';
+        });
+      });
+    }
+
+    if (recipeInput) {
+      recipeInput.addEventListener('focus', function () { showAddRecipeOptions(recipeInput.value); });
+      recipeInput.addEventListener('input', function () { showAddRecipeOptions(recipeInput.value); });
+      recipeInput.addEventListener('blur', function () {
+        setTimeout(function () { if (recipeDropdown) recipeDropdown.style.display = 'none'; }, 200);
+      });
+    }
+
+    var submitBtn = document.getElementById('bp-waitlist-add-submit');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', function () {
+        submitWaitlistAdd(submitBtn, selectedRecipes, closeAddSheet);
+      });
+    }
+  }
+
+  // Email regex matches the middleware's own validation
+  // (apps-script/adminApi.gs addWaitlistEntry) so client-side rejection never
+  // diverges from the server's.
+  var WAITLIST_ADD_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function submitWaitlistAdd(submitBtn, selectedRecipes, closeAddSheet) {
+    var emailInput = document.getElementById('bp-waitlist-add-email');
+    var nameInput = document.getElementById('bp-waitlist-add-name');
+    var phoneInput = document.getElementById('bp-waitlist-add-phone');
+    var emailErrorEl = document.getElementById('bp-waitlist-add-email-error');
+    var errorEl = document.getElementById('bp-waitlist-add-error');
+    if (emailErrorEl) { emailErrorEl.textContent = ''; emailErrorEl.style.display = 'none'; }
+    if (errorEl) { errorEl.textContent = ''; errorEl.style.display = 'none'; }
+
+    var email = emailInput ? emailInput.value.trim() : '';
+    var name = nameInput ? nameInput.value.trim() : '';
+    var phone = phoneInput ? phoneInput.value.trim() : '';
+
+    if (!email) {
+      if (emailErrorEl) { emailErrorEl.textContent = 'Email is required.'; emailErrorEl.style.display = ''; }
+      return;
+    }
+    if (!WAITLIST_ADD_EMAIL_RE.test(email)) {
+      if (emailErrorEl) { emailErrorEl.textContent = 'Enter a valid email address.'; emailErrorEl.style.display = ''; }
+      return;
+    }
+
+    submitBtn.disabled = true;
+    var existingById = {};
+
+    adminApiGet('get_waitlist')
+      .then(function (res) {
+        (res.data || []).forEach(function (r) { existingById[String(r.id)] = r; });
+        return adminApiPost('add_waitlist_entry', { email: email, category: 'beer' });
+      })
+      .then(function (addResult) {
+        var newId = addResult && addResult.id;
+        // D-23 RACE: this diff-against-snapshot check has a narrow race
+        // window. If a second write lands the same email between the
+        // get_waitlist snapshot above and the add_waitlist_entry call just
+        // made -- another staff member's manual add, or a public beer.html
+        // signup landing in between -- the shared handler's dedupe returns
+        // the PRE-EXISTING row's id, but that id is absent from THIS
+        // snapshot, so this check would incorrectly follow the new-row
+        // branch instead of showing the disclosure below. The snapshot diff
+        // was chosen deliberately over having the shared handler return a
+        // decision flag directly, because changing that return shape would
+        // also change what the public signup path receives -- exactly the
+        // Phase 78 D-06 non-disclosure boundary this phase must not weaken.
+        // The resulting false-negative is an ACCEPTED risk, not an
+        // oversight: this is a staff-only surface backed by a single Sheet,
+        // concurrent manual adds are infrequent, and the failure mode is a
+        // missing disclosure (staff simply re-check the list) -- never a
+        // leak, since the public path is structurally unaffected either way.
+        if (Object.prototype.hasOwnProperty.call(existingById, String(newId))) {
+          showWaitlistAddDisclosure(email, existingById[String(newId)], closeAddSheet);
+          submitBtn.disabled = false;
+          return null;
+        }
+
+        var optionalUpdates = {};
+        if (name) optionalUpdates.customer_name = name;
+        if (phone) optionalUpdates.customer_phone = phone;
+        if (selectedRecipes.length) {
+          optionalUpdates.recipe_ids = selectedRecipes.map(function (r) { return r.recipe_id; }).join('|');
+        }
+        var hasOptional = Object.keys(optionalUpdates).length > 0;
+        var writeChain = hasOptional
+          ? adminApiPost('update_waitlist_status', Object.assign({ id: newId }, optionalUpdates))
+          : Promise.resolve();
+
+        return writeChain.then(function () {
+          // D-24: fire-and-forget, mirrors the public signup path's own block
+          // -- the sheet close/toast below does not wait on this.
+          fetch(mwUrl() + '/api/waitlist/' + encodeURIComponent(newId) + '/mailerlite-sync', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email })
+          }).catch(function () {});
+          closeAddSheet();
+          loadWaitlist();
+          showToast('Added to waitlist', 'success');
+        });
+      })
+      .catch(function (err) {
+        submitBtn.disabled = false;
+        if (errorEl) {
+          errorEl.textContent = 'Failed: ' + (err && err.message ? err.message : 'Unknown error');
+          errorEl.style.display = '';
+        }
+      });
+  }
+
+  // D-23: the dedupe-hit disclosure swaps the sheet BODY's innerHTML in
+  // place (UI-SPEC Phase-Specific Decision 4) -- no new sheet, no toast, so
+  // the message is durable until staff deliberately dismiss it. Uses the
+  // pre-write snapshot's signed_up_at/status, never a post-write re-read
+  // (a reinstated `removed` row's timestamp refreshes server-side, and the
+  // honest answer to "when did they sign up" is the pre-write value).
+  function showWaitlistAddDisclosure(email, existingRow, closeAddSheet) {
+    var bodyEl = document.getElementById('bp-waitlist-add-body');
+    if (!bodyEl) return;
+    var statusLabel = WAITLIST_STATUS_LABELS[existingRow.status] || existingRow.status;
+    bodyEl.innerHTML =
+      '<p>' + escapeHTML(email) + ' is already on the beer waitlist — signed up ' +
+      escapeHTML(fmtShortDate(existingRow.signed_up_at)) + ', currently ' + escapeHTML(statusLabel) + '.</p>' +
+      '<div class="bp-form-actions">' +
+      '<button type="button" class="btn-secondary" id="bp-waitlist-add-gotit">Got It</button>' +
+      '</div>';
+    var gotItBtn = document.getElementById('bp-waitlist-add-gotit');
+    if (gotItBtn) {
+      gotItBtn.addEventListener('click', function () {
+        closeAddSheet();
+        loadWaitlist();
+      });
+    }
   }
 
   // ===== Schedule Template Editor =====
@@ -9789,6 +10234,15 @@ function parseWaitlistRecipeIds(value) {
         var recipeRemoveBtn = e.target.closest('[data-waitlist-recipe-remove-id]');
         if (recipeRemoveBtn) {
           removeWaitlistRecipe(recipeRemoveBtn.getAttribute('data-waitlist-recipe-remove-id'), recipeRemoveBtn.getAttribute('data-waitlist-recipe-remove-rid'));
+          return;
+        }
+        // Phase 80-05: Contact review sheet trigger (D-04-D-09). Defensive
+        // `.disabled` guard alongside the native `disabled` attribute already
+        // preventing the click -- belt-and-suspenders, matches T-80-30's intent
+        // that a booked/removed row can never reach the send flow.
+        var contactTrigger = e.target.closest('.btn[data-waitlist-contact-trigger]');
+        if (contactTrigger && !contactTrigger.disabled) {
+          openWaitlistContactSheet(contactTrigger.getAttribute('data-waitlist-contact-trigger'));
         }
       });
     }
@@ -10361,6 +10815,13 @@ function parseWaitlistRecipeIds(value) {
       waitlistResolveRecipeName: waitlistResolveRecipeName,
       _setWaitlistRecipeCatalogForTest: function (v) { _waitlistRecipeCatalog = v; },
       _getWaitlistRecipeCatalogForTest: function () { return _waitlistRecipeCatalog; },
+      // Phase 80-05: test-only seam for the Contact review sheet (D-04-D-09) --
+      // initDelegation() never fires under Jest, so tests drive the sheet open
+      // directly and interact with the real DOM elements it renders.
+      _openWaitlistContactSheetForTest: openWaitlistContactSheet,
+      // Phase 80-05: test-only seam for the manual-add sheet (D-21-D-25) --
+      // same rationale as the Contact sheet seam above.
+      _openWaitlistAddSheetForTest: openWaitlistAddSheet,
       // Plan 36-22: test-only state accessors for the cache-bust state vars
       getStateForTest: function () {
         return {

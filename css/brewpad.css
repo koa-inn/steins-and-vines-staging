@@ -1528,6 +1528,14 @@ img { max-width: 100%; height: auto; display: block; }
   font-size: 0.75rem;
   margin-top: 2px;
 }
+/* Phase 80-05: shared inline-error line for the Contact review sheet (D-08)
+   and the Manual Add sheet -- same shape as .bp-waitlist-pos-error above,
+   reused/renamed generically since both sheets need it. */
+.bp-waitlist-form-error {
+  color: var(--batch-danger);
+  font-size: 0.75rem;
+  margin-top: 2px;
+}
 
 /* ===== Phase 80-04: host the reused customer-link panel (.bp-reassign-*) and
    recipe-attach picker (.bp-vessel-*) inside a Waitlist table cell — width/
