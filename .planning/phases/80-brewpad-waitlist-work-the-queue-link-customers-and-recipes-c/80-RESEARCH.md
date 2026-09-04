@@ -431,17 +431,25 @@ No external library or API version drift relevant to this phase — `axios`, Res
 
 ## Open Questions
 
+> **Status: all three RESOLVED by routing, not by silent decision.** Each question below is
+> settled at plan `80-06` Task 2 — a `checkpoint:decision` with `gate="blocking"` that records the
+> owner's verdict in `80-CUTOVER.md`'s `## Owner decisions` section before the Apps Script redeploy.
+> The per-item annotations name the specific option id that resolves each one.
+
 1. **Which Cal.com event type does the waitlist contact email link to?**
    - What we know: two event-type IDs are configured (`CALCOM_EVENT_TYPE_FERMENT_KIT`, `CALCOM_EVENT_TYPE_BOTTLING`); beer batches conceptually book into the ferment-in-store flow.
    - What's unclear: no waitlist-specific or beer-specific event-type env var exists; nothing in CONTEXT.md pins this down.
    - Recommendation: default to `CALCOM_EVENT_TYPE_FERMENT_KIT` (A1 above), confirm during the cutover/template-approval step already scheduled for the email wording (Claude's Discretion item).
+   - **RESOLVED (routed):** plan `80-06` Task 2, option id `eventtype`. The default is implemented in plan `80-05` Task 1 (select the ferment-kit service's `bookingUrl` from `GET /api/bookings/services`); the owner confirms or overturns it at the blocking checkpoint before the redeploy. Overturning changes which service the contact sheet selects — no re-plan.
 
 2. **Should WR-02 (optimistic locking) be folded into this phase, given it needs a column D-17 doesn't list?**
    - What we know: the concurrent-write surface has grown materially since Phase 78 (five independently-editable fields on one row now, not two).
    - What's unclear: whether the owner considers this worth a D-17 amendment (one more column) versus accepting the documented risk.
    - Recommendation: raise explicitly at `/gsd:discuss-phase` or plan-review time rather than deciding silently either way (see Pitfall 4).
+   - **RESOLVED (routed):** plan `80-06` Task 2, option id `wr02`. Default is carry-forward with a documented comment (A3). The checkpoint is deliberately placed BEFORE the migration/redeploy in `80-06` because folding WR-02 in requires amending D-17, adding a `last_updated` column to the same migration, and extending plan `80-01`'s `updateWaitlistStatus` — it cannot be retrofitted without a second owner-only redeploy.
 
 3. **Exact contact-email template wording** — already flagged as Claude's Discretion in CONTEXT.md; draft during planning, confirm with owner before the cutover plan is finalized. No research blocker here — `sendBottlingInvite`'s tone/structure is a solid starting template.
+   - **RESOLVED (routed):** plan `80-06` Task 2, option id `template`. The subject/body draft is fixed in `80-UI-SPEC.md`'s Copywriting Contract and pre-filled by plan `80-05` Task 1; the owner approves it verbatim or rewords it at the blocking checkpoint. A reword updates the pre-fill strings in `js/brewpad.js` plus a test rerun and `npm run build` — no re-plan. Note this is a review-time default, not a silent send: D-05 makes every individual send staff-reviewable and editable regardless.
 
 ## Environment Availability
 
