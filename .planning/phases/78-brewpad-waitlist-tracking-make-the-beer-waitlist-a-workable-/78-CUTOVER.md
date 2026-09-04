@@ -315,7 +315,7 @@ Use a disposable address such as `phase78-probe@example.com` throughout. Check e
 | 7 | **One-way (D-05 correctness deviation).** With the row `booked`, tap the badge again. | NOTHING happens — no confirm sheet, no toast, no write. Sheet cell still reads `booked`. If it flips back to `waiting`, that is a blocker (the wraparound bug this plan exists to avoid). | **PASS — the one-way guard holds.** Tapping a `booked` badge produced no confirm sheet, no toast, and **no network call at all** (fetch count unchanged). Status stayed `booked`. The wraparound bug is genuinely prevented |
 | 8 | **Remove (D-05).** Tap the row's `×`. | Danger confirm reads `Remove phase78-probe@example.com from the beer waitlist? This cannot be undone.` with **Remove**; confirming shows `Removed from waitlist` toast, sheet's `status` reads `removed`. ROW still exists — removal is a status change, not a deletion. | **PASS** — danger sheet read `Remove phase78-probe@example.com from the beer waitlist? This cannot be undone.` with red destructive styling; status → `removed`; **row still present (7 rows)** — a status change, not a deletion |
 | 9 | **Notes (D-08).** Tap a row's `✎`, type `probe note`, press **Save**. | `Notes saved` toast, sheet's `notes` cell reads `probe note`. Edit again, press `×` (cancel) — nothing written. | **PASS** — `probe note` saved and persisted; re-opening pre-populated the existing value; `×` cancel discarded the edit with nothing written |
-| 10 | **Cleanup.** Delete the probe rows from the `Waitlist` tab; remove probe addresses from the MailerLite group if they reached it. | Shared production sheet has no leftover probe rows. | **OUTSTANDING — owner action required.** See cleanup block below |
+| 10 | **Cleanup.** Delete the probe rows from the `Waitlist` tab; remove probe addresses from the MailerLite group if they reached it. | Shared production sheet has no leftover probe rows. | **PASS** — 2026-09-04. Probe row deleted from the Waitlist tab and the probe address removed from the MailerLite group. Verified via probe: 6 rows remain, all `waiting`, ascending oldest-first, zero probe residue. |
 
 ### UAT outcome
 
@@ -326,14 +326,14 @@ UI appearance alone. Leg 4 skipped (CI-covered), leg 10 outstanding.
 Deviation: legs 8 and 9 were run in the order 9-then-8, so the notes editor was exercised on a live
 `booked` row rather than an already-`removed` one. Strictly stronger coverage; no leg was skipped.
 
-### Leg 10 cleanup — STILL OPEN, owner action required
+### Leg 10 cleanup — DONE 2026-09-04, verified
 
-1. **Delete the probe row** from the `Waitlist` tab (`phase78-probe@example.com`, the last row). There
-   is no delete action in the Apps Script API — removal is a status change by design — so this must be
-   done by hand in the spreadsheet. **This row is in the shared production sheet.**
-2. **Remove `phase78-probe@example.com` from the MailerLite beer waitlist group.** It came back
-   `mailerlite_synced: true`, so MailerLite accepted the `example.com` address and it is a live
-   subscriber there.
+1. ~~Delete the probe row from the `Waitlist` tab.~~ **DONE** — owner deleted it by hand (no delete
+   action exists in the API; removal is a status change by design).
+2. ~~Remove `phase78-probe@example.com` from the MailerLite beer waitlist group.~~ **DONE.**
+
+Post-cleanup probe confirms the shared production sheet holds exactly the six backfilled
+subscribers, every row `waiting`, ascending oldest-first, with no probe residue.
 
 ### Defects found during UAT
 
@@ -446,9 +446,9 @@ documented double-write trap (§2 step 5).
 
 ## 8. Summary of what remains open as of this write-up
 
-- [ ] Task 1: owner runs `setupWaitlist()`, redeploys Apps Script, records rollback version, confirms probe.
-- [ ] Task 2: owner confirms MailerLite timestamp column, backfills (or reports zero-import blocker).
-- [ ] Task 3: gates green, `git push origin main`, eleven-leg staging UAT, probe rows cleaned up.
+- [x] Task 1: `setupWaitlist()` run, Apps Script redeployed, probe confirmed. **Rollback version numbers still unrecorded (§2).**
+- [x] Task 2: MailerLite timestamp column confirmed (UTC), 6 rows backfilled and verified, export CSV deleted.
+- [x] Task 3: gates green, `git push origin main`, staging UAT (9/10 legs, leg 4 CI-covered), probe rows cleaned up 2026-09-04.
 - [x] **Second Apps Script redeploy (§7b) — DONE 2026-09-04, both Critical fixes verified live against the deployment.**
 - [ ] Recover the Task 1 rollback version numbers (§2) — the rollback procedure has no target without them.
 - [ ] Production cutover (out of scope here, batched with Phases 73/75/76).
