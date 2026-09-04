@@ -297,7 +297,7 @@ still works correctly as long as every required name is present:
 | `customer_phone` | Denormalized display cache of the linked contact's phone (Phase 80 D-03), same staleness caveat as `customer_name`. Sanitized via `waitlistCellSafe()` on write. |
 | `recipe_ids` | Pipe-delimited list of attached `SV-R-` recipe ids (Phase 80 D-15/D-16), e.g. `SV-R-000003\|SV-R-000007`. Display-only — parsed/serialized via the pure `parseWaitlistRecipeIds`/`serializeWaitlistRecipeIds` helpers. Sanitized via `waitlistCellSafe()` on write. |
 | `position` | Empty (unpinned) or a positive integer = this row's target 1-based rank in the merged queue (Phase 80 D-10/D-11/D-12). Stored ONLY on the pinned row — pinning writes exactly one cell on exactly one row. Server-validated in `updateWaitlistStatus`: `''`/`null`/`undefined` clears the pin; anything else must be an integer `>= 1` after `Number()` coercion, else `invalid_position` and nothing is written. The actual merge/ranking happens client-side at render time in `js/brewpad.js` — this layer only stores and validates. |
-| `contacted_at` | ISO-8601 UTC of the last successful contact send (Phase 80 D-09). Written verbatim from the caller, same shape as `signed_up_at`. Empty until the first contact email sends. |
+| `contacted_at` | ISO-8601 UTC of the last successful contact send (Phase 80 D-09). Same shape as `signed_up_at`; empty until the first contact email sends. Written through `waitlistCellSafe()` like every other free-text column — the value is client-reachable via the admin proxy, so it is **not** written verbatim (CR-02). |
 
 ### First-time setup
 

@@ -5296,7 +5296,11 @@ function updateWaitlistStatus(payload) {
   }
   if (hasContactedAt) {
     var contactedAtCol = headers.indexOf('contacted_at') + 1;
-    sheet.getRange(result.row, contactedAtCol).setValue(payload.contacted_at);
+    // CR-02: same injection guard as every other free-text write in this handler.
+    // update_waitlist_status is on ADMIN_PROXY_ACTIONS and the proxy forwards the
+    // caller's whole body, so contacted_at IS client-reachable — it is not written
+    // only by the server, and must not be trusted as a well-formed ISO timestamp.
+    sheet.getRange(result.row, contactedAtCol).setValue(waitlistCellSafe(payload.contacted_at));
   }
 
   invalidateSheetCache(WAITLIST_SHEET_NAME);

