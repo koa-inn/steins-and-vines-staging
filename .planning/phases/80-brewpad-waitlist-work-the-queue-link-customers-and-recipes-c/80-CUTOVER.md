@@ -337,7 +337,7 @@ physical position relative to the OLD code's positional write that ran during th
 | b. Position — valid (2) | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN>` |
 | b. Position — invalid (0) | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN — expect invalid_position>` |
 | c. Transition — booked→waiting | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN — expect invalid_transition>` |
-| d. Public signup — status/signed_up_at | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN>` |
+| d. Public signup — status/signed_up_at | **PASS** (2026-09-04) | New row `e71a5aa6-34c1-46a3-8399-96ef479d3054` / `phase80-probe@example.com`: `status` reads exactly `waiting`, `signed_up_at` is `2026-09-04T20:49:44.153Z` (well-formed ISO-8601), all six new columns empty. **No Pitfall 1 corruption.** `mailerlite_synced: true`, so the MailerLite leg fired too. |
 
 > **Probe ORDER CORRECTION — recorded 2026-09-04 from probe a's real output.** Run **d BEFORE b and
 > c**. Probe a shows the sheet holds six rows, all belonging to real customers and all with
@@ -349,6 +349,16 @@ physical position relative to the OLD code's positional write that ran during th
 > target for both b and c. For c, advance that disposable row forward (`waiting` → `contacted` →
 > `booked`, all legal one-way moves) and only then assert that `booked` → `waiting` is refused.
 > §6's cleanup leg removes the probe row afterwards.
+>
+> **Disposable row created by probe d (2026-09-04):** id
+> `e71a5aa6-34c1-46a3-8399-96ef479d3054`, email `phase80-probe@example.com`. Use this id for b and
+> c. **§6 cleanup must delete this row.**
+>
+> *Non-issue, checked and cleared:* this row's id is a UUID while the six Phase 78 rows are
+> `ml-0001`..`ml-0006`. That is pre-existing and correct — `addWaitlistEntry`'s
+> `var id = Utilities.getUuid();` is byte-identical to its pre-Phase-80 form, `server.js` was
+> untouched by this phase, and `78-CUTOVER.md` §id explicitly permits either shape. `findRowById`
+> matches the exact string, so mixed id formats are harmless.
 
 ---
 
