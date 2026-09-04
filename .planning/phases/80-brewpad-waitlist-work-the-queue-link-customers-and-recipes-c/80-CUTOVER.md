@@ -356,12 +356,22 @@ physical position relative to the OLD code's positional write that ran during th
 
 | Gate | Result |
 |---|---|
-| `npm test` | `<OWNER TO FILL IN>` |
-| `cd zoho-middleware && npm test` | `<OWNER TO FILL IN>` |
-| `npm run lint` (root) | `<OWNER TO FILL IN>` |
-| `cd zoho-middleware && npm run lint` | `<OWNER TO FILL IN>` |
-| `npm run build` clean | `<OWNER TO FILL IN>` |
-| `git push origin main` completed | `<OWNER TO FILL IN>` |
+| `npm test` | PASS — 1643/1643, 108 suites (2026-09-04) |
+| `cd zoho-middleware && npm test` | PASS — 1580/1580, 107 suites (2026-09-04) |
+| `npm run lint` (root) | PASS — clean, `--max-warnings 0` |
+| `cd zoho-middleware && npm run lint` | PASS — clean, `--max-warnings 0` |
+| `npm run build` clean | PASS — no `.min` drift; unrelated page restamps reverted |
+| `git push origin main` completed | DONE 2026-09-04 — `7f25a731..c9910fcc`, 62 commits, all Phase 80 |
+| staging middleware `/health` | PASS — HTTP 200 |
+| staging frontend curl check | N/A — Cloudflare 403s non-browser agents (documented caveat); browser check pending |
+
+> **⚠ ORDERING DEVIATION — recorded 2026-09-04.** This section is written as "only after §4's four
+> probes all pass". The staging push was performed BEFORE §2 (sheet migration) and §3 (Apps Script
+> redeploy), at the owner's explicit request. Consequence: staging now runs the Phase 80 BrewPad
+> frontend and middleware against the OLD Apps Script deployment and the un-migrated 7-column
+> `Waitlist` sheet. §6's UAT legs cannot pass in this state and must not be attempted until §2 and
+> §3 are complete. Nothing about production is affected by this push — but note that §2/§3, when
+> they run, still hit the single shared Web App deployment.
 | Staging middleware health check | `<OWNER TO FILL IN>` |
 
 ---
