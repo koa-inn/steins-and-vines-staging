@@ -334,9 +334,9 @@ physical position relative to the OLD code's positional write that ran during th
 | Probe | Result | Response body (key excerpt) |
 |---|---|---|
 | a. Read — 13-field shape | **PASS** (2026-09-04, against v55) | `{"ok":true,"data":[...6 rows...]}` — every row carries all six new keys as empty strings; all `signed_up_at` values are well-formed ISO-8601, no date-serial corruption. Customer emails intentionally not reproduced here. |
-| b. Position — valid (2) | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN>` |
-| b. Position — invalid (0) | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN — expect invalid_position>` |
-| c. Transition — booked→waiting | `<OWNER TO FILL IN>` | `<OWNER TO FILL IN — expect invalid_transition>` |
+| b. Position — valid (2) | **PASS** (2026-09-04) | `{"ok":true,"id":"e71a5aa6-...","status":"waiting"}` — position accepted, status correctly left untouched by a position-only write |
+| b. Position — invalid (0) | **PASS** (2026-09-04) | `{"ok":false,"error":"invalid_position"}` — refused, zero cells touched |
+| c. Transition — booked→waiting | **PASS** (2026-09-04) | Probe row advanced `waiting`→`contacted`→`booked` (both `ok:true`, legal forward moves), then `booked`→`waiting` returned `{"ok":false,"error":"invalid_transition"}`. Confirms Phase 78's D-05 one-way guard survived 80-01's rewrite of `updateWaitlistStatus` — the specific regression that rewrite risked. |
 | d. Public signup — status/signed_up_at | **PASS** (2026-09-04) | New row `e71a5aa6-34c1-46a3-8399-96ef479d3054` / `phase80-probe@example.com`: `status` reads exactly `waiting`, `signed_up_at` is `2026-09-04T20:49:44.153Z` (well-formed ISO-8601), all six new columns empty. **No Pitfall 1 corruption.** `mailerlite_synced: true`, so the MailerLite leg fired too. |
 
 > **Probe ORDER CORRECTION — recorded 2026-09-04 from probe a's real output.** Run **d BEFORE b and
