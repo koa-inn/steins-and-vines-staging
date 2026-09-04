@@ -1519,6 +1519,15 @@ img { max-width: 100%; height: auto; display: block; }
 .bp-waitlist-no-recipes {
   color: var(--ink-muted);
 }
+.bp-waitlist-pin-marker {
+  color: var(--stain);
+  font-weight: 700;
+}
+.bp-waitlist-pos-error {
+  color: var(--batch-danger);
+  font-size: 0.75rem;
+  margin-top: 2px;
+}
 
 /* ===== Dashboard today's tasks / workload expand (Item 5b, 5c) ===== */
 .bp-dash-task-list { margin-bottom: 16px; }

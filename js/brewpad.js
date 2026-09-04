@@ -8358,6 +8358,22 @@ function parseWaitlistRecipeIds(value) {
           ? '<span class="bp-sync-badge">✓ Synced</span>'
           : '<span class="bp-sync-badge bp-sync-badge--warning">⚠ Not synced</span>';
 
+        // D-13 pin marker (Phase 80-03). A `waiting` row shows the pin target number
+        // when pinned, the computed queue number otherwise (unchanged from today). A
+        // non-`waiting` row (which computeWaitlistQueuePositions never numbers) shows
+        // `📌 —` when pinned, plain `—` when unpinned (UI-SPEC Phase-Specific Decision 5
+        // -- pin control renders on EVERY row regardless of status).
+        var pinnedPos = parseWaitlistPosition(row.position);
+        var isPinned = pinnedPos !== null;
+        var posMarker;
+        if (status === 'waiting') {
+          posMarker = isPinned
+            ? '<span class="bp-waitlist-pin-marker">📌 ' + pinnedPos + '</span>'
+            : (pos != null ? pos : '—'); // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+        } else {
+          posMarker = isPinned ? '<span class="bp-waitlist-pin-marker">📌 —</span>' : '—';
+        }
+
         // D-02 Customer cell: linked rows show "{name} — {email} — {phone}" (phone
         // segment AND its leading separator omitted when customer_phone is empty).
         // Unlinked rows keep today's exact bare-email + sync-badge rendering.
@@ -8382,7 +8398,10 @@ function parseWaitlistRecipeIds(value) {
           }).join(' ');
 
         html += '<tr>';
-        html += '<td class="bp-waitlist-pos">' + (pos != null ? pos : '—') + '</td>'; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+        html += '<td class="bp-waitlist-pos">' + posMarker +
+          " <button type=\"button\" class=\"bp-reading-edit\" data-waitlist-pin-id=\"" + escapeHTML(row.id) + "\" aria-label=\"Pin this row's position\">📌</button>" +
+          (isPinned ? '<button type="button" class="bp-reading-del" data-waitlist-clear-pin-id="' + escapeHTML(row.id) + '" aria-label="Clear pin">×</button>' : '') +
+          '</td>';
         html += '<td>' + customerCell + '</td>';
         html += '<td>' + recipesCell + '</td>';
         if (showCategory) html += '<td>' + escapeHTML(row.category || '—') + '</td>';
@@ -8497,6 +8516,62 @@ function parseWaitlistRecipeIds(value) {
         row.notes = value;
         renderWaitlist();
         showToast('Notes saved', 'success');
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // Inline position (pin) editor -- row-becomes-input shape copied from
+  // openWaitlistNotesEdit above (D-13, UI-SPEC.md Queue pin section). Opens on tapping
+  // the pin icon, for EVERY row regardless of status (UI-SPEC Phase-Specific
+  // Decision 5), pre-filled with the row's current pin target (blank when unpinned).
+  function openWaitlistPositionEdit(cellEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    var currentPos = parseWaitlistPosition(row.position);
+    cellEl.innerHTML =
+      '<input class="bp-inline-input" data-waitlist-position-input="' + escapeHTML(id) + '" type="number" min="1" step="1" placeholder="Position" value="' + (currentPos !== null ? currentPos : '') + '" style="width:70px;">' +
+      '<button type="button" class="btn bp-btn-sm" data-waitlist-position-save="' + escapeHTML(id) + '">Save</button>' +
+      '<button type="button" class="btn-secondary bp-btn-sm" data-waitlist-position-cancel="' + escapeHTML(id) + '">×</button>' +
+      '<div class="bp-waitlist-pos-error" data-waitlist-position-error></div>';
+    var input = cellEl.querySelector('input');
+    if (input) input.focus();
+  }
+
+  // D-12: setting/clearing a pin is always reversible -- neither this nor
+  // clearWaitlistPin below use showConfirmSheet (UI-SPEC.md Queue pin section, unlike
+  // the destructive Remove control). Validates a positive integer BEFORE issuing any
+  // request; an invalid value shows the inline error and writes nothing (T-80-18 --
+  // this is UX, the server re-validates authoritatively).
+  function saveWaitlistPosition(cellEl, id, rawValue) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    var n = Number(rawValue);
+    var isValid = rawValue !== '' && rawValue !== null && rawValue !== undefined &&
+      !isNaN(n) && isFinite(n) && n >= 1 && Math.floor(n) === n;
+    if (!isValid) {
+      var errEl = cellEl.querySelector('[data-waitlist-position-error]');
+      if (errEl) errEl.textContent = 'Enter a position of 1 or higher.';
+      return;
+    }
+    return adminApiPost('update_waitlist_status', { id: id, position: n })
+      .then(function () {
+        row.position = n;
+        renderWaitlist();
+        showToast('Pinned to position ' + n, 'success');
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // One-tap, no confirm sheet (D-12) -- a single-cell write clearing this row's
+  // position only; never iterates or touches any other row.
+  function clearWaitlistPin(id) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+    return adminApiPost('update_waitlist_status', { id: id, position: '' })
+      .then(function () {
+        row.position = '';
+        renderWaitlist();
+        showToast('Pin cleared', 'success');
       })
       .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
   }
@@ -9340,6 +9415,30 @@ function parseWaitlistRecipeIds(value) {
           var savedId = notesSaveBtn.getAttribute('data-waitlist-notes-save');
           var input = waitlistPanel.querySelector('[data-waitlist-notes-input="' + savedId + '"]');
           saveWaitlistNotes(savedId, input ? input.value : '');
+          return;
+        }
+        // Phase 80-03: pin marker / inline position editor (D-10-D-14).
+        var pinBtn = e.target.closest('.bp-reading-edit[data-waitlist-pin-id]');
+        if (pinBtn) {
+          openWaitlistPositionEdit(pinBtn.closest('td'), pinBtn.getAttribute('data-waitlist-pin-id'));
+          return;
+        }
+        var clearPinBtn = e.target.closest('.bp-reading-del[data-waitlist-clear-pin-id]');
+        if (clearPinBtn) {
+          clearWaitlistPin(clearPinBtn.getAttribute('data-waitlist-clear-pin-id'));
+          return;
+        }
+        var positionCancelBtn = e.target.closest('[data-waitlist-position-cancel]');
+        if (positionCancelBtn) {
+          renderWaitlist();
+          return;
+        }
+        var positionSaveBtn = e.target.closest('[data-waitlist-position-save]');
+        if (positionSaveBtn) {
+          var positionId = positionSaveBtn.getAttribute('data-waitlist-position-save');
+          var positionCellEl = positionSaveBtn.closest('td');
+          var positionInput = positionCellEl ? positionCellEl.querySelector('[data-waitlist-position-input]') : null;
+          saveWaitlistPosition(positionCellEl, positionId, positionInput ? positionInput.value : '');
         }
       });
     }
@@ -9892,6 +9991,13 @@ function parseWaitlistRecipeIds(value) {
         if ('filter' in patch) _waitlistFilter = patch.filter;
         if ('search' in patch) _waitlistSearch = patch.search;
       },
+      // Phase 80-03: test-only seams for the pin/inline-position-editor flow --
+      // initDelegation() (which normally wires the click handlers below) only runs
+      // from a DOMContentLoaded listener the Jest harness never fires, so tests drive
+      // these directly instead.
+      _openWaitlistPositionEditForTest: openWaitlistPositionEdit,
+      _saveWaitlistPositionForTest: saveWaitlistPosition,
+      _clearWaitlistPinForTest: clearWaitlistPin,
       // Plan 36-22: test-only state accessors for the cache-bust state vars
       getStateForTest: function () {
         return {

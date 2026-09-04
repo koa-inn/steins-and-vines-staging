@@ -129,3 +129,107 @@ describe('Recipes cell', function () {
     expect(cell.querySelectorAll('.bp-batch-chip-inline').length).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 3: pin marker, inline position editor, clear-pin (D-10-D-14). These
+// target the `#` cell only, which plan 80-04 does not touch, so they may be
+// exact-match (unlike the two blocks above).
+// ---------------------------------------------------------------------------
+
+describe('Pin marker and inline position editor (D-10-D-14)', function () {
+  beforeEach(function () {
+    global.fetch.mockReset();
+    global.fetch.mockImplementation(function () {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: function () { return Promise.resolve({ ok: true, data: {} }); }
+      });
+    });
+  });
+
+  function postedBodies() {
+    return global.fetch.mock.calls.map(function (c) {
+      try { return JSON.parse(c[1].body); } catch (e) { return null; }
+    });
+  }
+
+  test('a pinned waiting row renders the pin glyph and its position number', function () {
+    var row = Object.assign({}, LINKED_ROW, { status: 'waiting', position: 3 });
+    var panel = renderWithRows([row]);
+    var posCell = panel.querySelectorAll('tbody tr td')[0];
+    expect(posCell.textContent).toContain('📌');
+    expect(posCell.textContent).toContain('3');
+  });
+
+  test('a pinned non-waiting row renders "📌 —"', function () {
+    var row = Object.assign({}, LINKED_ROW, { status: 'contacted', position: 2 });
+    var panel = renderWithRows([row]);
+    var posCell = panel.querySelectorAll('tbody tr td')[0];
+    expect(posCell.textContent).toContain('📌');
+    expect(posCell.textContent).toContain('—');
+  });
+
+  test('an unpinned non-waiting row renders plain "—"', function () {
+    var row = Object.assign({}, LINKED_ROW, { status: 'contacted', position: '' });
+    var panel = renderWithRows([row]);
+    var posCell = panel.querySelectorAll('tbody tr td')[0];
+    expect(posCell.textContent).toContain('—');
+    expect(posCell.querySelector('.bp-waitlist-pin-marker')).toBeNull();
+  });
+
+  test('the pin button carries the correct aria-label on every row', function () {
+    var panel = renderWithRows([LINKED_ROW]);
+    var pinBtn = panel.querySelector('[data-waitlist-pin-id]');
+    expect(pinBtn).not.toBeNull();
+    expect(pinBtn.getAttribute('aria-label')).toBe("Pin this row's position");
+  });
+
+  test('the clear control carries aria-label="Clear pin" only on a pinned row', function () {
+    var pinnedRow = Object.assign({}, LINKED_ROW, { position: 1 });
+    var panel = renderWithRows([pinnedRow]);
+    var clearBtn = panel.querySelector('[data-waitlist-clear-pin-id]');
+    expect(clearBtn).not.toBeNull();
+    expect(clearBtn.getAttribute('aria-label')).toBe('Clear pin');
+
+    var unpinnedPanel = renderWithRows([LINKED_ROW]);
+    expect(unpinnedPanel.querySelector('[data-waitlist-clear-pin-id]')).toBeNull();
+  });
+
+  test('saving position 0 shows the inline error and issues no fetch', function () {
+    var panel = renderWithRows([LINKED_ROW]);
+    var posCell = panel.querySelectorAll('tbody tr td')[0];
+    bp._openWaitlistPositionEditForTest(posCell, LINKED_ROW.id);
+    bp._saveWaitlistPositionForTest(posCell, LINKED_ROW.id, '0');
+    expect(posCell.querySelector('.bp-waitlist-pos-error').textContent).toBe('Enter a position of 1 or higher.');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('saving position 2 issues exactly one adminApiPost with payload {action, id, position} and nothing else', function () {
+    var panel = renderWithRows([LINKED_ROW]);
+    var posCell = panel.querySelectorAll('tbody tr td')[0];
+    bp._openWaitlistPositionEditForTest(posCell, LINKED_ROW.id);
+    return bp._saveWaitlistPositionForTest(posCell, LINKED_ROW.id, '2').then(function () {
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      var body = postedBodies()[0];
+      expect(body).toEqual({ action: 'update_waitlist_status', id: LINKED_ROW.id, position: 2 });
+    });
+  });
+
+  test('clearing a pin sends position: \'\'', function () {
+    renderWithRows([Object.assign({}, LINKED_ROW, { position: 1 })]);
+    return bp._clearWaitlistPinForTest(LINKED_ROW.id).then(function () {
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      var body = postedBodies()[0];
+      expect(body).toEqual({ action: 'update_waitlist_status', id: LINKED_ROW.id, position: '' });
+    });
+  });
+
+  test('no code path calls showConfirmSheet for saving or clearing a pin', function () {
+    renderWithRows([Object.assign({}, LINKED_ROW, { position: 1 })]);
+    return bp._clearWaitlistPinForTest(LINKED_ROW.id).then(function () {
+      var sheet = document.getElementById('bp-confirm-sheet');
+      expect(sheet === null || !sheet.classList.contains('bp-confirm-sheet--visible')).toBe(true);
+    });
+  });
+});
