@@ -4009,7 +4009,15 @@ var ADMIN_PROXY_ACTIONS = {
   create_ferm_schedule: true,
   update_ferm_schedule: true,
   delete_ferm_schedule: true,
-  update_waitlist_status: true
+  update_waitlist_status: true,
+  // Phase 80 D-21: staff manual-add makes this action reachable from BrewPad.
+  // The row write is identical to the public POST /api/waitlist path's — it
+  // goes through the same addWaitlistEntry/waitlistDedupeDecision logic — and
+  // the D-23 staff disclosure (already-on-the-list, signed up X) is derived
+  // client-side from a get_waitlist snapshot taken immediately before the
+  // write, never from this action's response. Phase 78 D-06 (public
+  // non-disclosure) is therefore unaffected on POST /api/waitlist.
+  add_waitlist_entry: true
 };
 
 // Reads must be forwarded to Apps Script as GET (doGet has a generic server_token
