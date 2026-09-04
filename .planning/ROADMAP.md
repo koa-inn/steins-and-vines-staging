@@ -1270,6 +1270,38 @@ Plans:
 
 ---
 
+### Phase 80: BrewPad waitlist — work the queue
+
+**Goal:** Turn the beer waitlist from a list staff *read* into one they *work*. Phase 78 made the `Waitlist` sheet the system of record and gave BrewPad a read-and-advance tab; this phase adds the four things that let staff actually run the queue: link a row to its Zoho customer, link it to the recipe that person is going to brew, contact them from BrewPad, and override the queue order by hand when reality demands it.
+
+**Why this matters now:** Phase 78 shipped the queue but staff still leave BrewPad to do anything with it — look the customer up in Zoho, find their recipe, write an email. And the order is strictly chronological, with no way to move someone up when a batch frees early or they call to reschedule.
+
+**Source:** Owner direction 2026-09-04, immediately after Phase 78 completion.
+
+**Depends on:** Phase 78 (the `Waitlist` tab, its three Apps Script handlers, the admin-proxy allow-list, and the BrewPad tab this extends)
+
+**Requirements**: TBD — confirm at discuss-phase
+
+**Scope sketch (confirm at discuss-phase):**
+- **Customer link** — associate a row with a Zoho contact. `/api/contacts/search` already exists (used by POS). Needs an identity rule for signups whose email matches no contact, which Phase 78 deferred explicitly as needing its own decision.
+- **Recipe link** — associate a row with the recipe that person will brew. `get_recipes`/`get_recipe` already exist in `adminApi.gs`.
+- **Contact action** — a button that reaches the customer from BrewPad. Mechanism (mailto vs a logged/templated send), and whether it auto-advances status to `contacted`, are open.
+- **Manual reorder** — staff override of queue position.
+
+**Known constraints (carried from Phase 78):**
+1. **The `Waitlist` tab gains columns, and `ensureWaitlistSheet` fails closed on missing ones** (returns `waitlist_unavailable`, never repairs headers). The migration order is load-bearing: **add the columns to the sheet FIRST, then redeploy**. Deploying first takes every signup down with a 503 until the columns land. Old code maps by header name and ignores unknown columns, so adding first is safe.
+2. **`apps-script/adminApi.gs` has no CI deploy path**, and one Web App deployment serves staging AND production. The redeploy is a manual owner step and is effectively a production release for that layer. This is why all four features are one phase — one migration, one redeploy.
+3. **Manual reorder contradicts the customer-facing promise.** `beer.html` says "we work through the list in order", and D-04 exists so backfilled rows sit in true signup order. An override needs a rule for where new signups land, whether `signed_up_at` stays the tiebreaker, and whether staff can see that the order is no longer purely chronological.
+4. **D-06 non-disclosure still binds** — nothing added here may reveal to a customer whether they were already on the list.
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 80 to break down)
+
+---
+
+
 ### Phase 46: Auth Re-Architecture (CRITICAL — split from Phase 45)
 
 **v4.5 carryover:** This phase closes v4.5 **SEC-02** (audit C1) — carried over as-is, not re-planned. ✅ COMPLETE 2026-07-08: owner production cutover (46-10) executed off-hours; kiosk (device token), admin + BrewPad (Google session) all verified; `API_SECRET_KEY` rotated → leaked key dead (403), no surface locked out, public checkout intact. See `46-10-SUMMARY.md` and `docs/RUNBOOK.md` Outcome record; `REQUIREMENTS.md` Traceability.
@@ -1490,8 +1522,6 @@ The idempotency guard reads `gc.last_tx_ref` (~:4221). So if the script dies bet
 2. **A single batched `setValues()` is NOT a safe shortcut here.** GiftCards column order is `cert_number | face_value | current_balance | status | issued_date | issued_by | zoho_invoice_number | notes | last_updated | last_tx_ref`. The mutated columns (3,4 and 9,10) are **not contiguous**, so one ranged write would also rewrite `issued_date`, `issued_by`, `zoho_invoice_number` and `notes` — and `updateGiftCardInvoice` (`:4358`) writes `zoho_invoice_number` **without taking the lock** (a deliberate 44-02 decision), so a batched redeem could silently clobber a concurrent invoice-number write. Either take the append-only ledger route (criterion 1 — preferred, and it also yields the audit trail) or bring `updateGiftCardInvoice` under the lock first.
 
 Related: `.planning/research/sheets-to-postgres-migration.md` §3 reaches the same conclusion independently and proposes a `gift_card_transactions` ledger with `tx_ref UNIQUE`; `.planning/notes/sheets-to-postgres-data-conversion.md` §3.1 carries the target DDL. **This phase should fix the atomicity on Sheets — it is not gated on any migration.**
-
----
 
 **Plans**: 3 plans (3 waves — sequential; every plan touches `apps-script/adminApi.gs`, so shared-file ownership forbids parallelism)
 

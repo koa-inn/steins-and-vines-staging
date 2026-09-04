@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: ready_to_plan
-stopped_at: Phase 78 complete (4/4) — ready to discuss Phase 79
+stopped_at: Phase 80 added to roadmap — ready to discuss Phase 80
 last_updated: 2026-09-04T01:38:01.576Z
 last_activity: 2026-09-02 -- Phase 78 execution started
 progress:
@@ -72,6 +72,7 @@ Last activity: 2026-09-04
 ## Accumulated Context
 
 ### Roadmap Evolution
+- Phase 80 added 2026-09-04: BrewPad waitlist — work the queue (customer link, recipe link, contact action, manual reorder). Owner direction after Phase 78.
 
 - Phase 77 added (2026-08-28): Ferment-in-store catalog filter panel UX. Owner UI report (screenshot): the "Filters & Sort" panel on `products/ferment-in-store.html` is overwhelming, un-scrollable, and wastes horizontal space on the Wine catalogue (238 kits → dozens of chips). Root causes found pre-planning: `.catalog-filter-row` fixed `width:40rem` + centered rows waste side space and force long chip groups into ~7 stacked rows; `.catalog-collapsible.open` has no `max-height`/`overflow` so it expands to full natural height with no internal scroll (`css/styles.css:2008-2041`). Shared `.catalog-*` component (also `products.html`) + `#mobile-catalog-bar` mobile variant — fix must verify desktop + mobile on both surfaces. Frontend-only; CSS-led (styles.css/catalog-subpage.css), JS only if interaction model changes. **NOTE for prod hygiene: beer/cider pages were removed from the site 2026-08-28 (Phase 72 unlaunched placeholders); when this or any phase touches shared nav/CSS, do not reintroduce beer/cider nav links.** Independent frontend polish; not blocked by Phase 76.
 - Phase 76 added (2026-08-26): BrewPad session-expiry hardening — diagnosed during Phase 73 staging verification. BrewPad runs two credentials: durable 7-day `sv_session` (localStorage `sv_session_token` → `x-session-token`, authorizes middleware/recipes) vs ephemeral ~1hr Google OAuth token (GIS silent refresh, authorizes Apps-Script admin API). A GIS silent-refresh failure (third-party-cookie restrictions / embedded contexts) or an Apps-Script response containing "unauthorized" trips `handleUnauthorized()` → `clearSession()` which deletes the STILL-VALID `sv_session_token` → forced full re-login + cascading middleware 401s. Fixes (test-first): (1) only clear `sv_session` on a MIDDLEWARE `x-session-token` rejection, not on Apps-Script/Google-token 401; (2) tighten `isUnauthorizedError` from loose substring match to explicit status/flag; (3) non-blocking "reconnect" UX when silent refresh fails but `sv_session` is valid; (4) stretch: unify onto one `x-session-token` credential. Frontend-only (`js/brewpad.js` + min rebuild) unless #4 folded in. Owner non-code sibling: check Cloudflare Access session-duration policy for staging. Independent of 73/74/75; related to Phase 46 auth model.
