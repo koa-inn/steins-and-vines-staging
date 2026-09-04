@@ -4963,14 +4963,31 @@ function waitlistSyncedTrue(value) {
  * source-extraction harness in tests/frontend/adminapi-waitlist-pure.test.js.
  *
  * A row with status 'removed' STILL counts as a match — a removed customer re-signing up must
- * not silently get a second row; the staff-facing fix for that case is flipping the existing
- * row back via BrewPad, not duplicating them.
+ * not silently get a second row. addWaitlistEntry then reinstates that row to 'waiting' with a
+ * refreshed signed_up_at (see waitlistShouldReinstate), so they rejoin at the back of the queue
+ * rather than being duplicated or silently ignored.
  *
  * @param {Array<Object>} rows - Waitlist rows, shaped like sheetToObjects() output
  * @param {string} email
  * @param {string} category
  * @returns {{action: 'new'|'existing', row: (Object|null)}}
  */
+/**
+ * True when a dedupe-matched row should be reinstated because the customer is signing up again
+ * after being removed. Pure — no Apps Script globals.
+ *
+ * Layered on top of waitlistDedupeDecision rather than folded into it, so that function's
+ * action contract ('new' | 'existing') stays as-is.
+ *
+ * Only 'removed' reinstates. An active row is left alone: re-signing up must never reset a
+ * `waiting` customer to the back of the queue, and must never cost a `booked` one their booking.
+ */
+function waitlistShouldReinstate(row) {
+  if (!row) return false;
+  return String(row.status === null || row.status === undefined ? '' : row.status)
+    .trim().toLowerCase() === 'removed';
+}
+
 function waitlistDedupeDecision(rows, email, category) {
   var normEmail = normalizeWaitlistEmail(email);
   var normCategory = String(category || '').trim().toLowerCase();
@@ -5020,6 +5037,18 @@ function addWaitlistEntry(payload) {
   // D-06 non-disclosure: the dedupe-hit and new-row branches return the IDENTICAL {ok, id}
   // key set. No disclosing field name may ever appear on either return path.
   if (decision.action === 'existing') {
+    // CR-02: a removed customer signing up again is asking to rejoin. Reinstate the existing row
+    // to waiting with a refreshed timestamp, so they land at the back of the queue and reappear
+    // in BrewPad's Waiting filter. Without this the signup was silently ineffective — the
+    // customer saw success and nothing changed. Deliberately NOT routed through
+    // waitlistTransitionAllowed: that guard governs staff status edits via updateWaitlistStatus,
+    // where removed -> waiting stays refused. This path is a customer signup event, not an edit.
+    if (waitlistShouldReinstate(decision.row)) {
+      ensured.sheet.getRange(decision.row._row, ensured.col.status).setValue('waiting');
+      ensured.sheet.getRange(decision.row._row, ensured.col.signed_up_at)
+        .setValue(new Date().toISOString());
+      invalidateSheetCache(WAITLIST_SHEET_NAME);
+    }
     return { ok: true, id: decision.row.id };
   }
 
