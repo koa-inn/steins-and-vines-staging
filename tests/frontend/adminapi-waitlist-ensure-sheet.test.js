@@ -122,12 +122,22 @@ function loadEnsureWaitlistSheet(spreadsheetApp) {
   return api;
 }
 
-var HEADERS = ['id', 'email', 'category', 'status', 'signed_up_at', 'mailerlite_synced', 'notes'];
+// Phase 80, D-17: extended from Phase 78's original 7-column contract to 13 — the six new names
+// are APPENDED after `notes`, never inserted between the original seven (RESEARCH.md Pitfall 1 /
+// ensureWaitlistSheet's own JSDoc). Updated here (not left on the stale 7-column contract) because
+// this suite exists to prove ensureWaitlistSheet's REAL, current required-header behaviour —
+// leaving it asserting the superseded 7-column shape would make it silently wrong, not neutral
+// (same rationale as the phase's documented waitlist-admin-proxy.test.js flip, CLAUDE.md rule 10
+// exception).
+var HEADERS = [
+  'id', 'email', 'category', 'status', 'signed_up_at', 'mailerlite_synced', 'notes',
+  'zoho_contact_id', 'customer_name', 'customer_phone', 'recipe_ids', 'position', 'contacted_at'
+];
 
 // --- Tests ---------------------------------------------------------------------------------
 
 describe('ensureWaitlistSheet — bootstrap branches (behavioural, fake Sheets runtime)', function () {
-  test('creates the tab with the 7 bold, frozen headers when it is absent', function () {
+  test('creates the tab with the 13 bold, frozen headers when it is absent', function () {
     var app = makeFakeSpreadsheetApp({});
     var api = loadEnsureWaitlistSheet(app);
 
@@ -164,7 +174,10 @@ describe('ensureWaitlistSheet — bootstrap branches (behavioural, fake Sheets r
   });
 
   test('leaves a correctly-headered existing tab untouched and reports its column map', function () {
-    var existing = makeFakeSheet([HEADERS.slice(), ['ml-0001', 'a@example.com', 'beer', 'waiting', '2026-08-14T17:05:00.000Z', 'TRUE', '']]);
+    var existing = makeFakeSheet([
+      HEADERS.slice(),
+      ['ml-0001', 'a@example.com', 'beer', 'waiting', '2026-08-14T17:05:00.000Z', 'TRUE', '', '', '', '', '', '', '']
+    ]);
     var app = makeFakeSpreadsheetApp({ Waitlist: existing });
     var api = loadEnsureWaitlistSheet(app);
 
@@ -175,12 +188,20 @@ describe('ensureWaitlistSheet — bootstrap branches (behavioural, fake Sheets r
     expect(existing._calls.setFrozenRows).toEqual([]);
     expect(existing._grid.length).toBe(2);
     expect(result.col.id).toBe(1);
-    expect(result.col.notes).toBe(HEADERS.length);
+    // `notes` is column 7 (the last of the original Phase 78 seven); the six D-17 additions are
+    // appended after it, so `contacted_at` — not `notes` — is now the true last column.
+    expect(result.col.notes).toBe(7);
+    expect(result.col.contacted_at).toBe(HEADERS.length);
   });
 
   test('still fails closed on drifted headers rather than repairing them', function () {
-    // Real content present, but `signed_up_at` and `notes` are missing.
-    var drifted = makeFakeSheet([['id', 'email', 'category', 'status', 'mailerlite_synced']]);
+    // All 13 D-17 required names present EXCEPT `signed_up_at` and `notes` — isolates the
+    // "two original columns missing" case from the unrelated "six D-17 columns don't exist yet"
+    // case, which is covered separately in adminapi-waitlist-fields.test.js / append-headers.
+    var drifted = makeFakeSheet([[
+      'id', 'email', 'category', 'status', 'mailerlite_synced',
+      'zoho_contact_id', 'customer_name', 'customer_phone', 'recipe_ids', 'position', 'contacted_at'
+    ]]);
     var app = makeFakeSpreadsheetApp({ Waitlist: drifted });
     var api = loadEnsureWaitlistSheet(app);
 
@@ -190,7 +211,10 @@ describe('ensureWaitlistSheet — bootstrap branches (behavioural, fake Sheets r
     expect(result.error).toBe('waitlist_unavailable');
     expect(result.missing).toEqual(['signed_up_at', 'notes']);
     // Fail-closed means it did not rewrite the header row.
-    expect(drifted._grid[0]).toEqual(['id', 'email', 'category', 'status', 'mailerlite_synced']);
+    expect(drifted._grid[0]).toEqual([
+      'id', 'email', 'category', 'status', 'mailerlite_synced',
+      'zoho_contact_id', 'customer_name', 'customer_phone', 'recipe_ids', 'position', 'contacted_at'
+    ]);
     expect(drifted._calls.appendRow).toEqual([]);
   });
 });

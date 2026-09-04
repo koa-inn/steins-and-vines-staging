@@ -275,17 +275,29 @@ this by adding a lock later without re-reading `78-RESEARCH.md` Pitfall 5 first.
 
 ### The columns
 
-The `Waitlist` tab has exactly these 7 columns, in this order, created by `setupWaitlist()`:
+The `Waitlist` tab has exactly these 13 columns, in this order, created by `setupWaitlist()`.
+Phase 80 (D-17) extended the original Phase 78 seven-column contract by **appending** six columns
+after `notes` — never inserting between the original seven. `ensureWaitlistSheet` looks every
+column up by name (`headers.indexOf(name)`), so physical column order never matters to it, but
+`addWaitlistEntry`'s write is also header-driven (`ensured.col[name]`, RESEARCH.md Pitfall 1) —
+neither handler assumes a fixed positional layout, so a sheet whose columns get reordered by hand
+still works correctly as long as every required name is present:
 
 | Column | Meaning |
 |---|---|
 | `id` | A generated `Utilities.getUuid()` string, never the customer's email. Keeps `findRowById`'s "column A is a unique key" assumption valid once D-02's multi-category future lands (the same email could legitimately appear twice, once per category). Unique and non-blank on every row — `findRowById` matches on this column, and a blank cell makes the row uneditable from BrewPad. |
 | `email` | Lowercase-trimmed. Sanitized via `waitlistCellSafe()` on write. |
 | `category` | `'beer'` for every row today (D-02 keeps the column ready for cider/wine/classes later without a schema migration). |
-| `status` | One of `waiting`, `contacted`, `booked`, `removed` (D-05). |
+| `status` | One of `waiting`, `contacted`, `booked`, `removed` (D-05). Written through `waitlistCellSafe()` (Phase 80 IN-01 fold-in). |
 | `signed_up_at` | ISO-8601 UTC (`new Date().toISOString()`). **This is the queue-order key** — the whole point of the backfill is making it real for pre-cutover signups too. |
 | `mailerlite_synced` | `TRUE` / `FALSE`. Set by the middleware's best-effort MailerLite sync (D-07); read back via `waitlistSyncedTrue()`, which tolerates a real boolean, the strings `'true'/'yes'/'y'/'1'`, or the number `1`, since a D-04 backfill paste of `TRUE` and a code-written boolean `true` must read back identically. |
-| `notes` | Free text (D-08). Sanitized via `waitlistCellSafe()` on write. No linking to a Zoho customer or BrewPad batch in this phase — that's deferred to a future phase per D-08. |
+| `notes` | Free text (D-08). Sanitized via `waitlistCellSafe()` on write. |
+| `zoho_contact_id` | The Zoho Books contact id backing this row, once linked (Phase 80 D-02/D-03). The only identifier anything downstream keys off. Sanitized via `waitlistCellSafe()` on write. Empty on a new signup; populated when staff link a customer. |
+| `customer_name` | Denormalized display cache of the linked contact's name (Phase 80 D-03). May go stale if the Zoho contact is later renamed — this phase does not implement opportunistic refresh. Sanitized via `waitlistCellSafe()` on write. |
+| `customer_phone` | Denormalized display cache of the linked contact's phone (Phase 80 D-03), same staleness caveat as `customer_name`. Sanitized via `waitlistCellSafe()` on write. |
+| `recipe_ids` | Pipe-delimited list of attached `SV-R-` recipe ids (Phase 80 D-15/D-16), e.g. `SV-R-000003\|SV-R-000007`. Display-only — parsed/serialized via the pure `parseWaitlistRecipeIds`/`serializeWaitlistRecipeIds` helpers. Sanitized via `waitlistCellSafe()` on write. |
+| `position` | Empty (unpinned) or a positive integer = this row's target 1-based rank in the merged queue (Phase 80 D-10/D-11/D-12). Stored ONLY on the pinned row — pinning writes exactly one cell on exactly one row. Server-validated in `updateWaitlistStatus`: `''`/`null`/`undefined` clears the pin; anything else must be an integer `>= 1` after `Number()` coercion, else `invalid_position` and nothing is written. The actual merge/ranking happens client-side at render time in `js/brewpad.js` — this layer only stores and validates. |
+| `contacted_at` | ISO-8601 UTC of the last successful contact send (Phase 80 D-09). Written verbatim from the caller, same shape as `signed_up_at`. Empty until the first contact email sends. |
 
 ### First-time setup
 
@@ -294,15 +306,19 @@ re-run at any time — it does nothing if the tab already exists and its columns
 is fail-closed by design: if a `Waitlist` tab already exists with drifted headers, `setupWaitlist`
 does **not** repair or reorder them. It logs which columns are missing and leaves the tab alone;
 fix the header row by hand to exactly `id, email, category, status, signed_up_at,
-mailerlite_synced, notes` and re-run.
+mailerlite_synced, notes, zoho_contact_id, customer_name, customer_phone, recipe_ids, position,
+contacted_at` and re-run. **D-18 migration order is load-bearing:** add the six new columns to the
+live sheet BEFORE redeploying Phase 80's `adminApi.gs` — deploying the new code first takes every
+public signup down with a 503 (`waitlist_unavailable`) until the columns exist. The reverse order
+is safe.
 
-### The three actions
+### The four actions
 
 | Action | Transport | Auth | On admin proxy? |
 |---|---|---|---|
-| `add_waitlist_entry` | `doPost` | `server_token` | **No** — deliberately absent from both `ADMIN_PROXY_ACTIONS` and `ADMIN_PROXY_READS` in `zoho-middleware/routes/pos.js`. Staff never create waitlist rows from BrewPad; every row originates from the public `POST /api/waitlist` endpoint's own server-to-server call. Widening this to the admin proxy would let a session-tier caller inject arbitrary rows into the public queue. |
+| `add_waitlist_entry` | `doPost` | `server_token` | **Yes, write-only** (Phase 80 D-21 — reverses the Phase 78 rule below). In `ADMIN_PROXY_ACTIONS` (`zoho-middleware/routes/pos.js`), deliberately still absent from `ADMIN_PROXY_READS` — BrewPad's staff manual-add feature needs to create rows, but nothing needs to poll this action as a read. The staff caller discloses a D-06 dedupe hit to the staff member ("already on the list, signed up X") so a manual add can't silently no-op; the public `POST /api/waitlist` path calls this exact same function and must never see that disclosure — the handler's `{ok, id}` return shape is byte-identical on both branches, so the asymmetry lives entirely in the caller, not here (D-23). |
 | `get_waitlist` | `doGet` / `handleReadAction` | `server_token` | Yes — read, forwarded as GET. Returns either an array of rows or `ensureWaitlistSheet()`'s failure object directly (`{ok:false, error:'waitlist_unavailable', missing:[...]}`) so a caller can't mistake a broken tab for an empty one. Deliberately **no `_cachedGet` wrapper** — `get_gift_cards` sets the precedent of skipping the cache layer entirely for a low-volume staff list, sidestepping the Phase 69 stale-cache bug class outright. |
-| `update_waitlist_status` | `doPost` | `server_token` | Yes — write, forwarded as POST. Accepts `{id, status?, notes?, mailerlite_synced?}`; at least one optional field is required. Validates `status` against the fixed set (`waiting`/`contacted`/`booked`/`removed`) **before** any `setValue` call — an out-of-set status writes nothing. |
+| `update_waitlist_status` | `doPost` | `server_token` | Yes — write, forwarded as POST. Accepts `{id, status?, notes?, mailerlite_synced?, zoho_contact_id?, customer_name?, customer_phone?, recipe_ids?, position?, contacted_at?}`; at least one of the nine optional fields is required. Validates `status` against the fixed set and `position` as an integer `>= 1` (or empty) **before** any `setValue` call — a rejected write writes nothing. Two staff-tier middleware endpoints call this action (plan 80-02): `POST /api/waitlist/:id/contact` (sets `status:'contacted'` + `contacted_at` together after a successful send) and `POST /api/waitlist/:id/mailerlite-sync` (sets `mailerlite_synced`). |
 
 **`add_waitlist_entry` request/response:**
 ```
@@ -313,32 +329,36 @@ Response: { ok: true, id: '<uuid>' }               // identical shape whether ne
 ```
 The dedupe-hit and new-row branches return the byte-identical `{ok, id}` key set — this is D-06's
 non-disclosure requirement. No field name may ever differ between the two paths, or a repeat
-signup could be inferred by a customer from response shape alone.
+signup could be inferred by a customer from response shape alone. See "The four actions" above for
+how the staff-tier caller (D-23) still discloses a dedupe hit without this function's return shape
+changing.
 
 **`get_waitlist` request/response:**
 ```
 Request:  { action: 'get_waitlist', server_token }
-Response: { ok: true, data: [ { id, email, category, status, signed_up_at, mailerlite_synced, notes }, ... ] }
+Response: { ok: true, data: [ { id, email, category, status, signed_up_at, mailerlite_synced,
+            notes, zoho_contact_id, customer_name, customer_phone, recipe_ids, position,
+            contacted_at }, ... ] }
           { ok: false, error: 'waitlist_unavailable', missing: [...] }
 ```
 
 **`update_waitlist_status` request/response:**
 ```
-Request:  { action: 'update_waitlist_status', server_token, id, status?, notes?, mailerlite_synced? }
+Request:  { action: 'update_waitlist_status', server_token, id,
+            status?, notes?, mailerlite_synced?,
+            zoho_contact_id?, customer_name?, customer_phone?, recipe_ids?, position?, contacted_at? }
 Response: { ok: true, id, status }
-          { ok: false, error: 'not_found' | 'invalid_status' | 'no_fields' | 'waitlist_unavailable' }
+          { ok: false, error: 'not_found' | 'invalid_status' | 'invalid_position' | 'invalid_transition' | 'no_fields' | 'waitlist_unavailable' }
 ```
 
-**One-way status transitions are enforced client-side, not by this handler.** `updateWaitlistStatus`
-itself will happily accept any request that moves a row from `booked` back to `waiting` — the
-Apps Script layer only validates that the requested status is one of the four known values, not
-that the transition is forward-only. The one-way `waiting → contacted → booked` cycle (D-05) is
-enforced in `js/brewpad.js`'s `nextWaitlistStatus()` helper, which returns `null` (and the click
-handler no-ops, with no confirm sheet, no toast, no request sent) once a row is `booked` or
-`removed`. If a future caller reaches this action directly (a new UI, a script, a curl probe) it
-can still write `waiting` over a `booked` row — this is a known gap, consistent with this phase's
-accepted rigor level, not a defect to silently "fix" by hardening the Apps Script side without a
-plan review first.
+**One-way status transitions are enforced server-side by this handler.** (Corrected as of Phase 80;
+this section previously — and incorrectly, since commit `a706d7b8`'s CR-01 fix — described a
+client-only guard.) `updateWaitlistStatus` checks `waitlistTransitionAllowed(current, next)`
+(`adminApi.gs:5179`) against the row's CURRENT status on the sheet, before any `setValue` call — a
+rejected transition writes nothing and returns `{ok:false, error:'invalid_transition'}`. A direct
+caller (a script, a curl probe, a stale BrewPad tab) can no longer move a `booked` row back to
+`waiting`. `js/brewpad.js`'s `nextWaitlistStatus()` mirrors this rule client-side for UX (the
+button no-ops with no request sent), but the server no longer trusts that alone.
 
 ### Why neither write handler takes a script lock
 
