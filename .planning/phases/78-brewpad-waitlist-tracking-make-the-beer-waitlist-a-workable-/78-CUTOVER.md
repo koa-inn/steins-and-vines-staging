@@ -452,3 +452,7 @@ documented double-write trap (§2 step 5).
 - [x] **Second Apps Script redeploy (§7b) — DONE 2026-09-04, both Critical fixes verified live against the deployment.**
 - [ ] Recover the Task 1 rollback version numbers (§2) — the rollback procedure has no target without them.
 - [ ] Production cutover (out of scope here, batched with Phases 73/75/76).
+- [ ] **Added 2026-09-04 (Phase 80):** Phase 80 adds another Apps Script redeploy on top of this same
+      deployment. Its rollback version numbers ARE recorded (or are pending real values, not silently
+      skipped) in `.planning/phases/80-brewpad-waitlist-work-the-queue-link-customers-and-recipes-c/80-CUTOVER.md`
+      §3 — so a future reader chasing this file's still-open gap above finds the newer, complete record there.
