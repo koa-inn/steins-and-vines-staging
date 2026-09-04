@@ -9388,10 +9388,16 @@ function parseWaitlistRecipeIds(value) {
     if (droppedFields && droppedFields.length) {
       // Say plainly that these were discarded -- "already on the list" on its own
       // reads as though the typed details were merged into the existing row.
-      droppedNote = '<p>The ' + escapeHTML(droppedFields.join(', ')) +
+      // Read as a sentence, not a comma-spliced array: "name and phone",
+      // "name, phone and recipes". A staff member skimming this needs to see
+      // exactly which of their inputs went nowhere.
+      var fieldList = droppedFields.length > 1
+        ? droppedFields.slice(0, -1).join(', ') + ' and ' + droppedFields[droppedFields.length - 1]
+        : droppedFields[0];
+      droppedNote = '<p><strong>The ' + escapeHTML(fieldList) +
         ' you entered ' + (droppedFields.length > 1 ? 'were' : 'was') +
-        ' not saved. Edit the existing row if you need to update ' +
-        (droppedFields.length > 1 ? 'them' : 'it') + '.</p>';
+        ' not saved.</strong> Nothing on the existing row was changed — edit it directly if you need to update ' +
+        (droppedFields.length > 1 ? 'those details' : 'it') + '.</p>';
     }
     bodyEl.innerHTML =
       '<p>' + escapeHTML(email) + ' is already on the beer waitlist — signed up ' +

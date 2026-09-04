@@ -347,7 +347,10 @@ describe('D-23 disclosure (dedupe hit)', function () {
       return flushPromises();
     }).then(function () {
       var body = document.getElementById('bp-waitlist-add-body');
-      expect(body.textContent).toContain('not saved');
+      // Names the specific fields, joined so it reads as a sentence — a staff
+      // member must be able to tell at a glance exactly what went nowhere.
+      expect(body.textContent).toContain('The name and phone you entered were not saved.');
+      expect(body.textContent).toContain('Nothing on the existing row was changed');
       // And the write really did not happen.
       var actions = proxyBodies().map(function (b) { return b.action; });
       expect(actions.indexOf('update_waitlist_status')).toBe(-1);
