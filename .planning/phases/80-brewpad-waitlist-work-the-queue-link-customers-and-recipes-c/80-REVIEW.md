@@ -29,7 +29,21 @@ findings:
   warning: 5
   info: 4
   total: 12
-status: issues_found
+status: fixed
+fixes_applied: 2026-09-04
+fix_outcome:
+  CR-01: fixed (66daba1d)
+  CR-02: fixed (2dcab6e3) — ships with the pending Apps Script redeploy
+  CR-03: fixed (1c534fd4 + harness e667ca3a)
+  WR-01: fixed (82e6bf6e)
+  WR-02: fixed (cd731469) — ships with the pending Apps Script redeploy
+  WR-03: fixed (01fcb16c)
+  WR-04: fixed (99fa1cdd + 6fe0d7a1) — provisional slug, confirm in 80-CUTOVER 1a step (d)
+  WR-05: partial (f9675b18) — stale status fixed; dedupe write behavior deferred, needs owner decision
+  IN-01..IN-04: not attempted (Info out of default --fix scope)
+post_fix_tests:
+  frontend: 1643/1643 (108 suites)
+  middleware: 1580/1580 (107 suites)
 ---
 
 # Phase 80: Code Review Report
