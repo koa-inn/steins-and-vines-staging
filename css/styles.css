@@ -1364,17 +1364,8 @@ behold-widget {
   color: var(--color-green);
 }
 
-/* Auto margins centre a paragraph's 75ch measure — correct ONLY where the section is
-   itself centred. `.intro` is `text-align:center`, as is `.content` on the three pages
-   listed below (see the `[data-page=...] .content` rule further down). Everywhere else
-   `.content` is left-aligned: its headings run the full container width from the left
-   edge, so auto-centring just the paragraphs left body copy floating ~200px right of its
-   own heading — visible on beer.html's "Ready to Brew?" and FAQ. Scoped to the centred
-   cases only. */
 .intro p,
-[data-page="about"] .content p,
-[data-page="contact"] .content p,
-[data-page="reservation"] .content p {
+.content p {
   margin-left: auto;
   margin-right: auto;
 }
@@ -1440,16 +1431,13 @@ behold-widget {
    cream-on-cream fill it used to carry was invisible on the light background. Dark-banner
    styling lives under `.beer-banner--green` below. */
 
-/* Rendered only once, inside beer.html's `section.content#waitlist` — never in a centred
-   banner. The centring below was vestigial and left the form adrift from the left-aligned
-   heading, copy and CTA it sits among. */
 .beer-waitlist-form {
   display: flex;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 0.75rem;
   flex-wrap: wrap;
   max-width: 400px;
-  margin: 0 0 1rem;
+  margin: 0 auto;
 }
 
 /* Base styles assume the LIGHT cream body, which is where beer.html actually renders this form
@@ -2285,7 +2273,12 @@ behold-widget {
   flex-wrap: wrap;
 }
 
+/* These pages centre their `.content` sections. beer.html was omitted, which left its
+   headings left-aligned against body copy that `.content p`'s auto margins centred — the
+   "Ready to Brew?" heading and FAQ answers sat ~200px apart. Centred to match the rest of
+   the site rather than left-aligning, which is not this site's idiom. */
 [data-page="about"] .content,
+[data-page="beer"] .content,
 [data-page="contact"] .content,
 [data-page="reservation"] .content {
   text-align: center;
