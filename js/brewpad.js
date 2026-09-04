@@ -8377,25 +8377,35 @@ function parseWaitlistRecipeIds(value) {
         // D-02 Customer cell: linked rows show "{name} — {email} — {phone}" (phone
         // segment AND its leading separator omitted when customer_phone is empty).
         // Unlinked rows keep today's exact bare-email + sync-badge rendering.
-        // No trigger link in this plan -- 80-04 adds "Link customer"/"Change".
+        // Phase 80-04 (D-01): a "Link customer"/"Change" trigger opens the per-row
+        // customer-link panel in place of this cell -- see openWaitlistLinkPanel.
+        var linkTriggerHtml = ' <button type="button" class="bp-so-change-btn" data-waitlist-link-trigger="' +
+          escapeHTML(row.id) + '">' + (row.zoho_contact_id ? 'Change' : 'Link customer') + '</button>';
         var customerCell;
         if (row.zoho_contact_id) {
           var custBits = [escapeHTML(row.customer_name || ''), escapeHTML(row.email)];
           if (row.customer_phone) custBits.push(escapeHTML(row.customer_phone));
-          customerCell = custBits.join(' — ') + syncBadge;
+          customerCell = custBits.join(' — ') + syncBadge + linkTriggerHtml;
         } else {
-          customerCell = escapeHTML(row.email) + syncBadge;
+          customerCell = escapeHTML(row.email) + syncBadge + linkTriggerHtml;
         }
 
         // D-15/D-16 Recipes cell: one display-only chip per attached recipe id, in
-        // stored order. No remove '×', no attach trigger in this plan -- 80-04 adds
-        // both and swaps the label from the raw id to the catalog-resolved name.
+        // stored order, showing the catalog-resolved NAME (falls back to the raw id
+        // when the catalog hasn't resolved it yet -- see waitlistResolveRecipeName)
+        // plus a remove '×'. Phase 80-04 (D-15): an attach trigger opens the per-row
+        // recipe picker in place of this cell.
         var recipeIds = parseWaitlistRecipeIds(row.recipe_ids);
-        var recipesCell = recipeIds.length === 0
+        var recipeChipsHtml = recipeIds.map(function (rid) {
+          var rname = waitlistResolveRecipeName(rid);
+          return '<span class="bp-batch-chip-inline">' + escapeHTML(rname) +
+            ' <button type="button" class="bp-reading-del" data-waitlist-recipe-remove-id="' + escapeHTML(row.id) +
+            '" data-waitlist-recipe-remove-rid="' + escapeHTML(rid) + '" aria-label="Remove ' + escapeHTML(rname) + '">×</button></span>';
+        }).join(' ');
+        var recipesCell = (recipeIds.length === 0
           ? '<span class="bp-waitlist-no-recipes">No recipes attached</span>'
-          : recipeIds.map(function (rid) {
-            return '<span class="bp-batch-chip-inline">' + escapeHTML(rid) + '</span>';
-          }).join(' ');
+          : recipeChipsHtml) +
+          ' <button type="button" class="bp-reassign-addnew-toggle" data-waitlist-recipe-attach-trigger="' + escapeHTML(row.id) + '">+ Attach recipe</button>';
 
         html += '<tr>';
         html += '<td class="bp-waitlist-pos">' + posMarker +
@@ -8572,6 +8582,300 @@ function parseWaitlistRecipeIds(value) {
         row.position = '';
         renderWaitlist();
         showToast('Pin cleared', 'success');
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // ===== Phase 80-04: per-row customer-link panel (D-01/D-02/D-03/D-03a) =====
+  //
+  // Reuse-not-rebuild: verbatim reuse of the reassign panel markup/CSS
+  // (js/brewpad.js:5556-5572 region, css/brewpad.css:1977-2021 .bp-reassign-*)
+  // and fetchReassignSearch's exact fetch shape (js/brewpad.js:2139), re-id'd per
+  // row so two rows can never collide (bp-waitlist-link-{id}-*). The cell-becomes-
+  // editor transform mirrors openWaitlistNotesEdit above.
+
+  var _waitlistLinkSearchTimer = null;
+
+  // Opens the search panel in place of the Customer cell. No sheet, no navigation.
+  function openWaitlistLinkPanel(cellEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    cellEl.innerHTML =
+      '<div class="bp-reassign-panel">' +
+      '<div class="bp-so-search-wrap bp-reassign-search-wrap">' +
+      '<input type="text" id="bp-waitlist-link-' + escapeHTML(id) + '-search-input" class="bp-inline-input" placeholder="Search by name, email or phone…" autocomplete="off">' +
+      '<button type="button" class="bp-so-dismiss-link" data-waitlist-link-cancel="' + escapeHTML(id) + '">Cancel</button>' +
+      '</div>' +
+      '<div class="bp-so-results bp-reassign-results" id="bp-waitlist-link-' + escapeHTML(id) + '-results"></div>' +
+      '<button type="button" class="bp-reassign-addnew-toggle" data-waitlist-link-addnew-toggle="' + escapeHTML(id) + '">+ Add new customer</button>' +
+      '<div id="bp-waitlist-link-' + escapeHTML(id) + '-addnew" class="bp-reassign-addnew" style="display:none;">' +
+      '<input type="text" id="bp-waitlist-link-' + escapeHTML(id) + '-new-name" class="bp-inline-input" placeholder="Full name *" autocomplete="off">' +
+      '<input type="email" id="bp-waitlist-link-' + escapeHTML(id) + '-new-email" class="bp-inline-input" placeholder="Email" autocomplete="off">' +
+      '<input type="tel" id="bp-waitlist-link-' + escapeHTML(id) + '-new-phone" class="bp-inline-input" placeholder="Phone" autocomplete="off">' +
+      '<button type="button" class="btn bp-btn-sm" data-waitlist-link-new-save="' + escapeHTML(id) + '">Save New Customer</button>' +
+      '</div>' +
+      '</div>';
+
+    var searchInput = document.getElementById('bp-waitlist-link-' + id + '-search-input');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.addEventListener('input', function () {
+        var term = searchInput.value.trim();
+        clearTimeout(_waitlistLinkSearchTimer);
+        if (!term || term.length < 2) {
+          var resultsEl = document.getElementById('bp-waitlist-link-' + id + '-results');
+          if (resultsEl) resultsEl.innerHTML = '';
+          return;
+        }
+        _waitlistLinkSearchTimer = setTimeout(function () {
+          fetchWaitlistLinkSearch(id, term);
+        }, 400);
+      });
+    }
+  }
+
+  // Reuses fetchReassignSearch's exact /api/contacts/search?q= fetch shape
+  // (js/brewpad.js:2139), rendering into this row's namespaced results container.
+  function fetchWaitlistLinkSearch(id, term) {
+    var resultsEl = document.getElementById('bp-waitlist-link-' + id + '-results');
+    if (!resultsEl) return;
+    resultsEl.innerHTML = '<div class="bp-so-result-item" style="color:var(--ink-muted);">Searching…</div>';
+
+    return fetch(mwUrl() + '/api/contacts/search?q=' + encodeURIComponent(term), {
+      credentials: 'include'
+    }).then(function (r) { return r.json(); })
+      .then(function (data) {
+        var contacts = data.contacts || [];
+        if (contacts.length === 0) {
+          resultsEl.innerHTML = '<div class="bp-so-result-item" style="color:var(--ink-muted);">No matching customers found</div>';
+          return;
+        }
+        var html = '';
+        for (var i = 0; i < contacts.length; i++) {
+          var c = contacts[i];
+          html += '<div class="bp-so-result-item bp-reassign-result-item"'
+               + ' data-contact-id="' + escapeHTML(c.contact_id || '') + '"'
+               + ' data-name="' + escapeHTML(c.contact_name || '') + '"'
+               + ' data-email="' + escapeHTML(c.email || '') + '"'
+               + ' data-phone="' + escapeHTML(c.phone || '') + '">';
+          html += '<span class="bp-so-result-name">' + escapeHTML(c.contact_name || '') + '</span>';
+          if (c.email || c.phone) {
+            html += '<span class="bp-so-result-meta">' + escapeHTML(c.email || '') + (c.email && c.phone ? ' · ' : '') + escapeHTML(c.phone || '') + '</span>';
+          }
+          html += '</div>';
+        }
+        resultsEl.innerHTML = html;
+
+        var items = resultsEl.querySelectorAll('.bp-reassign-result-item[data-contact-id]');
+        for (var j = 0; j < items.length; j++) {
+          items[j].addEventListener('click', function () {
+            linkWaitlistCustomer(id, {
+              contact_id: this.getAttribute('data-contact-id'),
+              name: this.getAttribute('data-name'),
+              email: this.getAttribute('data-email'),
+              phone: this.getAttribute('data-phone')
+            });
+          });
+        }
+      })
+      .catch(function () {
+        resultsEl.innerHTML = '<div class="bp-so-result-item" style="color:var(--ink-muted);">Search unavailable — check connection</div>';
+      });
+  }
+
+  // D-02 write-through: one adminApiPost carrying id, zoho_contact_id, customer_name
+  // and -- ONLY when the row's current customer_phone is empty -- customer_phone
+  // (D-03a: a hand-typed phone from a manual add, plan 80-05, must never be
+  // clobbered by a later contact link). Reads the current value from
+  // findWaitlistRow(id); does not re-fetch.
+  function linkWaitlistCustomer(id, picked) {
+    var row = findWaitlistRow(id);
+    if (!row || !picked) return;
+    var payload = { id: id, zoho_contact_id: picked.contact_id, customer_name: picked.name || '' };
+    if (!row.customer_phone) payload.customer_phone = picked.phone || '';
+    return adminApiPost('update_waitlist_status', payload)
+      .then(function () {
+        row.zoho_contact_id = picked.contact_id;
+        row.customer_name = picked.name || '';
+        if (!row.customer_phone) row.customer_phone = picked.phone || '';
+        renderWaitlist();
+        showToast('Customer linked', 'success');
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // Create-inline: reuses the existing POST /api/contacts {name, first_name,
+  // last_name, email, phone} shape (js/brewpad.js reassign new-save handler,
+  // :6217-6233 region), splitting the typed full name into first/last exactly as
+  // that handler does. On a contact_id response, treats it identically to
+  // selecting a search result. A failure toasts and leaves the panel/typed values
+  // untouched (no re-render).
+  function saveWaitlistNewCustomer(id) {
+    var nameInput = document.getElementById('bp-waitlist-link-' + id + '-new-name');
+    var emailInput = document.getElementById('bp-waitlist-link-' + id + '-new-email');
+    var phoneInput = document.getElementById('bp-waitlist-link-' + id + '-new-phone');
+    var name = nameInput ? nameInput.value.trim() : '';
+    var email = emailInput ? emailInput.value.trim() : '';
+    var phone = phoneInput ? phoneInput.value.trim() : '';
+    if (!name) {
+      showToast('Name is required to add a new customer', 'error');
+      return;
+    }
+    var nameParts = name.split(/\s+/);
+    var firstName = nameParts[0] || '';
+    var lastName = nameParts.slice(1).join(' ') || '';
+
+    return fetch(mwUrl() + '/api/contacts', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, first_name: firstName, last_name: lastName, email: email, phone: phone })
+    }).then(function (r) {
+      return r.json().then(function (data) { return { ok: r.ok, data: data || {} }; });
+    }).then(function (result) {
+      if (!result.ok || !result.data.contact_id) {
+        throw new Error((result.data && (result.data.message || result.data.error)) || 'Unable to create contact');
+      }
+      return linkWaitlistCustomer(id, { contact_id: result.data.contact_id, name: name, email: email, phone: phone });
+    }).catch(function (err) {
+      showToast('Failed: ' + err.message, 'error');
+    });
+  }
+
+  // ===== Phase 80-04: per-row recipe multi-select attach (D-15/D-16) =====
+  //
+  // Own-lazy-fetch catalog cache, copied verbatim from showAttachOptions's shape
+  // (js/brewpad.js:5196-5222 region, the Batches-tab attach dropdown) -- adapted
+  // from single-select-with-resolve to multi-select-display-only. D-16: this
+  // NEVER reads the Recipes-tab's own catalog state (populated only once
+  // initRecipesTab() has run) and NEVER fetches a per-recipe detail endpoint --
+  // attaching is display-only, no stock check, no batch pre-fill, no pricing.
+  var _waitlistRecipeCatalog = null;
+
+  // Resolves a recipe id to its catalog name; falls back to the raw id when the
+  // catalog hasn't loaded yet or doesn't contain this id.
+  function waitlistResolveRecipeName(rid) {
+    if (!_waitlistRecipeCatalog) return rid;
+    for (var i = 0; i < _waitlistRecipeCatalog.length; i++) {
+      if (_waitlistRecipeCatalog[i].recipe_id === rid) return _waitlistRecipeCatalog[i].name || rid;
+    }
+    return rid;
+  }
+
+  // Opens the recipe picker in place of the Recipes cell. No sheet, no navigation.
+  function openWaitlistRecipeAttachPanel(cellEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    renderWaitlistRecipeAttachPanel(cellEl, id);
+  }
+
+  // Renders the attached chips (with remove ×) plus the search box/dropdown, and
+  // wires the dropdown's own lazy-fetch. Re-invoked after each attach/duplicate-
+  // skip so the picker stays open for a second selection (D-15).
+  function renderWaitlistRecipeAttachPanel(cellEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    var attachedIds = parseWaitlistRecipeIds(row.recipe_ids);
+    var chipsHtml = attachedIds.map(function (rid) {
+      var rname = waitlistResolveRecipeName(rid);
+      return '<span class="bp-batch-chip-inline">' + escapeHTML(rname) +
+        ' <button type="button" class="bp-reading-del" data-waitlist-recipe-remove-id="' + escapeHTML(id) +
+        '" data-waitlist-recipe-remove-rid="' + escapeHTML(rid) + '" aria-label="Remove ' + escapeHTML(rname) + '">×</button></span>';
+    }).join(' ');
+
+    cellEl.innerHTML =
+      (attachedIds.length === 0 ? '<span class="bp-waitlist-no-recipes">No recipes attached</span> ' : chipsHtml + ' ') +
+      '<div class="bp-vessel-wrap" style="margin-top:4px;">' +
+      '<input type="text" id="bp-waitlist-recipe-' + escapeHTML(id) + '-input" class="bp-inline-input" placeholder="Search recipes…" autocomplete="off">' +
+      '<div class="bp-vessel-dropdown" id="bp-waitlist-recipe-' + escapeHTML(id) + '-dropdown" style="display:none;"></div>' +
+      '</div>' +
+      '<button type="button" class="bp-so-dismiss-link" data-waitlist-recipe-attach-cancel="' + escapeHTML(id) + '" style="margin-top:4px;">Cancel</button>';
+
+    var input = document.getElementById('bp-waitlist-recipe-' + id + '-input');
+    var dropdown = document.getElementById('bp-waitlist-recipe-' + id + '-dropdown');
+    if (!input || !dropdown) return;
+
+    function showWaitlistRecipeOptions(term) {
+      if (!_waitlistRecipeCatalog) {
+        dropdown.innerHTML = '<div class="bp-vessel-option bp-vessel-option--empty">Loading recipes…</div>';
+        dropdown.style.display = '';
+        fetch(mwUrl() + '/api/recipes?status=active', { credentials: 'include' })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            _waitlistRecipeCatalog = data.recipes || [];
+            showWaitlistRecipeOptions(term);
+          })
+          .catch(function () { _waitlistRecipeCatalog = []; showWaitlistRecipeOptions(term); });
+        return;
+      }
+      var matches = _waitlistRecipeCatalog.filter(function (r) {
+        if (!term) return true;
+        return ((r.name || '') + ' ' + (r.style || '')).toLowerCase().indexOf(term.toLowerCase()) !== -1;
+      }).slice(0, 15);
+      dropdown.innerHTML = matches.length === 0
+        ? '<div class="bp-vessel-option bp-vessel-option--empty">No recipes found</div>'
+        : matches.map(function (r) {
+            return '<div class="bp-vessel-option" data-rid="' + escapeHTML(r.recipe_id || '') + '" data-rname="' + escapeHTML(r.name || '') + '">' +
+              escapeHTML(r.name || '') + '</div>';
+          }).join('');
+      dropdown.style.display = '';
+      Array.prototype.forEach.call(dropdown.querySelectorAll('.bp-vessel-option[data-rid]'), function (opt) {
+        opt.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          attachWaitlistRecipe(id, opt.getAttribute('data-rid'), opt.getAttribute('data-rname'), cellEl);
+        });
+      });
+    }
+
+    input.focus();
+    input.addEventListener('input', function () {
+      showWaitlistRecipeOptions(input.value.trim());
+    });
+    showWaitlistRecipeOptions('');
+  }
+
+  // Appends {recipe_id} to the row's attached list (skipping a duplicate with no
+  // write) and issues one adminApiPost carrying the pipe-joined ids in selection
+  // order (mirrors the Apps Script serializeWaitlistRecipeIds contract from plan
+  // 80-01). Keeps the picker open afterward (D-15) instead of collapsing the cell.
+  function attachWaitlistRecipe(id, rid, rname, cellEl) {
+    var row = findWaitlistRow(id);
+    if (!row || !rid) return;
+    var attachedIds = parseWaitlistRecipeIds(row.recipe_ids);
+    if (attachedIds.indexOf(rid) !== -1) {
+      renderWaitlistRecipeAttachPanel(cellEl, id);
+      return;
+    }
+    attachedIds.push(rid);
+    var serialized = attachedIds.join('|');
+    return adminApiPost('update_waitlist_status', { id: id, recipe_ids: serialized })
+      .then(function () {
+        row.recipe_ids = serialized;
+        if (!_waitlistRecipeCatalog) _waitlistRecipeCatalog = [];
+        var alreadyCached = false;
+        for (var i = 0; i < _waitlistRecipeCatalog.length; i++) {
+          if (_waitlistRecipeCatalog[i].recipe_id === rid) { alreadyCached = true; break; }
+        }
+        if (!alreadyCached) _waitlistRecipeCatalog.push({ recipe_id: rid, name: rname });
+        showToast('Recipe attached', 'success');
+        renderWaitlistRecipeAttachPanel(cellEl, id);
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // Chip '×' -- writes the remaining ids immediately, no showConfirmSheet (D-15/
+  // UI-SPEC Decision 6: removal is reversible). Removing the last id writes an
+  // empty string; renderWaitlist() then shows "No recipes attached".
+  function removeWaitlistRecipe(id, rid) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+    var remaining = parseWaitlistRecipeIds(row.recipe_ids).filter(function (existing) { return existing !== rid; });
+    var serialized = remaining.join('|');
+    return adminApiPost('update_waitlist_status', { id: id, recipe_ids: serialized })
+      .then(function () {
+        row.recipe_ids = serialized;
+        renderWaitlist();
+        showToast('Recipe removed', 'success');
       })
       .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
   }
@@ -9439,6 +9743,52 @@ function parseWaitlistRecipeIds(value) {
           var positionCellEl = positionSaveBtn.closest('td');
           var positionInput = positionCellEl ? positionCellEl.querySelector('[data-waitlist-position-input]') : null;
           saveWaitlistPosition(positionCellEl, positionId, positionInput ? positionInput.value : '');
+          return;
+        }
+        // Phase 80-04: per-row customer-link panel (D-01/D-02/D-03a).
+        var linkTrigger = e.target.closest('[data-waitlist-link-trigger]');
+        if (linkTrigger) {
+          openWaitlistLinkPanel(linkTrigger.closest('td'), linkTrigger.getAttribute('data-waitlist-link-trigger'));
+          return;
+        }
+        var linkCancelBtn = e.target.closest('[data-waitlist-link-cancel]');
+        if (linkCancelBtn) {
+          renderWaitlist();
+          return;
+        }
+        var linkAddNewToggle = e.target.closest('[data-waitlist-link-addnew-toggle]');
+        if (linkAddNewToggle) {
+          var linkRowId = linkAddNewToggle.getAttribute('data-waitlist-link-addnew-toggle');
+          var linkAddNewForm = document.getElementById('bp-waitlist-link-' + linkRowId + '-addnew');
+          if (linkAddNewForm) {
+            var linkAddNewVisible = linkAddNewForm.style.display !== 'none';
+            linkAddNewForm.style.display = linkAddNewVisible ? 'none' : '';
+            if (!linkAddNewVisible) {
+              var linkNameInput = document.getElementById('bp-waitlist-link-' + linkRowId + '-new-name');
+              if (linkNameInput) linkNameInput.focus();
+            }
+          }
+          return;
+        }
+        var linkNewSaveBtn = e.target.closest('[data-waitlist-link-new-save]');
+        if (linkNewSaveBtn) {
+          saveWaitlistNewCustomer(linkNewSaveBtn.getAttribute('data-waitlist-link-new-save'));
+          return;
+        }
+        // Phase 80-04: per-row recipe multi-select attach (D-15/D-16).
+        var recipeAttachTrigger = e.target.closest('[data-waitlist-recipe-attach-trigger]');
+        if (recipeAttachTrigger) {
+          openWaitlistRecipeAttachPanel(recipeAttachTrigger.closest('td'), recipeAttachTrigger.getAttribute('data-waitlist-recipe-attach-trigger'));
+          return;
+        }
+        var recipeAttachCancelBtn = e.target.closest('[data-waitlist-recipe-attach-cancel]');
+        if (recipeAttachCancelBtn) {
+          renderWaitlist();
+          return;
+        }
+        var recipeRemoveBtn = e.target.closest('[data-waitlist-recipe-remove-id]');
+        if (recipeRemoveBtn) {
+          removeWaitlistRecipe(recipeRemoveBtn.getAttribute('data-waitlist-recipe-remove-id'), recipeRemoveBtn.getAttribute('data-waitlist-recipe-remove-rid'));
         }
       });
     }
@@ -9998,6 +10348,19 @@ function parseWaitlistRecipeIds(value) {
       _openWaitlistPositionEditForTest: openWaitlistPositionEdit,
       _saveWaitlistPositionForTest: saveWaitlistPosition,
       _clearWaitlistPinForTest: clearWaitlistPin,
+      // Phase 80-04: test-only seams for the customer-link panel (D-01/D-02/D-03a) --
+      // same rationale as the 80-03 seams above (initDelegation never fires under Jest).
+      _openWaitlistLinkPanelForTest: openWaitlistLinkPanel,
+      _fetchWaitlistLinkSearchForTest: fetchWaitlistLinkSearch,
+      _linkWaitlistCustomerForTest: linkWaitlistCustomer,
+      _saveWaitlistNewCustomerForTest: saveWaitlistNewCustomer,
+      // Phase 80-04: test-only seams for the recipe multi-select attach flow (D-15/D-16).
+      _openWaitlistRecipeAttachPanelForTest: openWaitlistRecipeAttachPanel,
+      _attachWaitlistRecipeForTest: attachWaitlistRecipe,
+      _removeWaitlistRecipeForTest: removeWaitlistRecipe,
+      waitlistResolveRecipeName: waitlistResolveRecipeName,
+      _setWaitlistRecipeCatalogForTest: function (v) { _waitlistRecipeCatalog = v; },
+      _getWaitlistRecipeCatalogForTest: function () { return _waitlistRecipeCatalog; },
       // Plan 36-22: test-only state accessors for the cache-bust state vars
       getStateForTest: function () {
         return {
