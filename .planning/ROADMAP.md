@@ -1294,7 +1294,7 @@ Plans:
 3. **Manual reorder contradicts the customer-facing promise.** `beer.html` says "we work through the list in order", and D-04 exists so backfilled rows sit in true signup order. An override needs a rule for where new signups land, whether `signed_up_at` stays the tiebreaker, and whether staff can see that the order is no longer purely chronological.
 4. **D-06 non-disclosure still binds** — nothing added here may reveal to a customer whether they were already on the list.
 
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 
@@ -1310,7 +1310,7 @@ Plans:
 
 **Wave 3**
 
-- [ ] 80-05-PLAN.md — BrewPad: Contact column + review sheet with Cal.com booking link and fail-closed inline error (D-05..D-08), manual-add sheet with client-derived D-23 disclosure and MailerLite sync (D-21..D-25)
+- [x] 80-05-PLAN.md — BrewPad: Contact column + review sheet with Cal.com booking link and fail-closed inline error (D-05..D-08), manual-add sheet with client-derived D-23 disclosure and MailerLite sync (D-21..D-25)
 
 **Wave 4** (owner cutover — checkpoints)
 
