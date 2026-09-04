@@ -978,15 +978,44 @@ function isWaitlistSynced(value) {
   return false;
 }
 
+// D-10: returns a positive integer when `value` coerces to one (accepting the numeric
+// string form the sheet may return, e.g. '2'), otherwise null. Only a positive integer
+// pins a row -- everything else (0, negative, non-integer, non-numeric, empty, null,
+// undefined) is treated as unpinned. ES5 only.
+function parseWaitlistPosition(value) {
+  if (value === null || value === undefined || value === '') return null;
+  var n = Number(value);
+  if (isNaN(n) || !isFinite(n)) return null;
+  if (n !== Math.floor(n)) return null;
+  if (n <= 0) return null;
+  return n;
+}
+
 // Returns a NEW array (never mutates `rows`) sorted by signed_up_at ascending (oldest
 // first), comparing the raw ISO strings. A row with a missing/unparseable signed_up_at
 // sorts LAST, in its original relative order, so a backfilled undated row never
 // displaces a dated one from the front of the queue (UI-SPEC.md §3).
+//
+// D-10 EXTENSION (Phase 80-03): rows carrying a positive-integer `position`
+// (parseWaitlistPosition) are pinned -- split out, sorted by ascending position with an
+// original-index tiebreak, then merge-inserted into the unpinned output at their target
+// 1-based rank (clamped to the end so an out-of-range position never drops the row or
+// creates a gap). Unpinned rows keep the EXACT existing chronological comparator above,
+// byte-for-byte -- this is a pure render-time splice; no cell is ever rewritten.
 function sortWaitlistRows(rows) {
   var input = rows || [];
-  var indexed = [];
-  for (var i = 0; i < input.length; i++) indexed.push({ row: input[i], i: i });
-  indexed.sort(function (a, b) {
+  var pinned = [];
+  var unpinned = [];
+  for (var i = 0; i < input.length; i++) {
+    var row = input[i];
+    var pos = parseWaitlistPosition(row && row.position);
+    if (pos !== null) {
+      pinned.push({ row: row, pos: pos, i: i });
+    } else {
+      unpinned.push({ row: row, i: i });
+    }
+  }
+  unpinned.sort(function (a, b) {
     var sa = a.row && a.row.signed_up_at;
     var sb = b.row && b.row.signed_up_at;
     var aValid = typeof sa === 'string' && sa !== '' && !isNaN(Date.parse(sa));
@@ -998,7 +1027,20 @@ function sortWaitlistRows(rows) {
     if (sa > sb) return 1;
     return a.i - b.i;
   });
-  return indexed.map(function (x) { return x.row; });
+  pinned.sort(function (a, b) { return a.pos - b.pos || a.i - b.i; });
+  var out = unpinned.map(function (x) { return x.row; });
+  // lastIdx guards against two rows pinned to the same slot landing in reverse order:
+  // pinned is already sorted ascending (pos, then original index), so if this row's
+  // clamped target collides with (or falls behind) the previous insertion, place it
+  // immediately after instead -- preserving the ascending-index stable tiebreak.
+  var lastIdx = -1;
+  pinned.forEach(function (p) {
+    var idx = Math.max(0, Math.min(p.pos - 1, out.length));
+    if (idx <= lastIdx) idx = lastIdx + 1;
+    out.splice(idx, 0, p.row);
+    lastIdx = idx;
+  });
+  return out;
 }
 
 // Ranks each row (1-based) among rows whose status === 'waiting', in the order given
@@ -1057,6 +1099,15 @@ function shouldShowWaitlistCategoryColumn(rows) {
     count++;
   });
   return count > 1;
+}
+
+// D-15/D-16: client-side mirror of the Apps Script `parseWaitlistRecipeIds` helper.
+// `recipe_ids` is stored as a pipe-delimited string (recipe ids look like
+// 'SV-R-000003' and contain no pipes). Splits on '|', drops empty segments (so a
+// leading/trailing/double pipe never produces a phantom chip), and preserves order.
+function parseWaitlistRecipeIds(value) {
+  if (!value) return [];
+  return String(value).split('|').filter(function (id) { return id !== ''; });
 }
 
 (function () {
@@ -8285,8 +8336,12 @@ function shouldShowWaitlistCategoryColumn(rows) {
     } else if (filtered.length === 0) {
       html += '<p class="bp-empty-state">No entries match this filter.</p>';
     } else {
+      // UI-SPEC Phase-Specific Decision 1: up to 9 columns at BrewPad's iPad-landscape
+      // width would compress uncomfortably -- wrap in a horizontal-scroll wrapper
+      // (copies #bp-recipes-ingredients-editor's pattern) rather than shrinking cells.
+      html += '<div class="bp-waitlist-table-wrap">';
       html += '<table class="bp-active-batches-table" aria-label="Beer waitlist">';
-      html += '<thead><tr><th>#</th><th>Email</th>';
+      html += '<thead><tr><th>#</th><th>Customer</th><th>Recipes</th>';
       if (showCategory) html += '<th>Category</th>';
       html += '<th>Signed up</th><th>Status</th><th>Notes</th><th></th></tr></thead>';
       html += '<tbody>';
@@ -8303,9 +8358,52 @@ function shouldShowWaitlistCategoryColumn(rows) {
           ? '<span class="bp-sync-badge">✓ Synced</span>'
           : '<span class="bp-sync-badge bp-sync-badge--warning">⚠ Not synced</span>';
 
+        // D-13 pin marker (Phase 80-03). A `waiting` row shows the pin target number
+        // when pinned, the computed queue number otherwise (unchanged from today). A
+        // non-`waiting` row (which computeWaitlistQueuePositions never numbers) shows
+        // `📌 —` when pinned, plain `—` when unpinned (UI-SPEC Phase-Specific Decision 5
+        // -- pin control renders on EVERY row regardless of status).
+        var pinnedPos = parseWaitlistPosition(row.position);
+        var isPinned = pinnedPos !== null;
+        var posMarker;
+        if (status === 'waiting') {
+          posMarker = isPinned
+            ? '<span class="bp-waitlist-pin-marker">📌 ' + pinnedPos + '</span>'
+            : (pos != null ? pos : '—'); // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+        } else {
+          posMarker = isPinned ? '<span class="bp-waitlist-pin-marker">📌 —</span>' : '—';
+        }
+
+        // D-02 Customer cell: linked rows show "{name} — {email} — {phone}" (phone
+        // segment AND its leading separator omitted when customer_phone is empty).
+        // Unlinked rows keep today's exact bare-email + sync-badge rendering.
+        // No trigger link in this plan -- 80-04 adds "Link customer"/"Change".
+        var customerCell;
+        if (row.zoho_contact_id) {
+          var custBits = [escapeHTML(row.customer_name || ''), escapeHTML(row.email)];
+          if (row.customer_phone) custBits.push(escapeHTML(row.customer_phone));
+          customerCell = custBits.join(' — ') + syncBadge;
+        } else {
+          customerCell = escapeHTML(row.email) + syncBadge;
+        }
+
+        // D-15/D-16 Recipes cell: one display-only chip per attached recipe id, in
+        // stored order. No remove '×', no attach trigger in this plan -- 80-04 adds
+        // both and swaps the label from the raw id to the catalog-resolved name.
+        var recipeIds = parseWaitlistRecipeIds(row.recipe_ids);
+        var recipesCell = recipeIds.length === 0
+          ? '<span class="bp-waitlist-no-recipes">No recipes attached</span>'
+          : recipeIds.map(function (rid) {
+            return '<span class="bp-batch-chip-inline">' + escapeHTML(rid) + '</span>';
+          }).join(' ');
+
         html += '<tr>';
-        html += '<td class="bp-waitlist-pos">' + (pos != null ? pos : '—') + '</td>'; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
-        html += '<td>' + escapeHTML(row.email) + syncBadge + '</td>';
+        html += '<td class="bp-waitlist-pos">' + posMarker +
+          " <button type=\"button\" class=\"bp-reading-edit\" data-waitlist-pin-id=\"" + escapeHTML(row.id) + "\" aria-label=\"Pin this row's position\">📌</button>" +
+          (isPinned ? '<button type="button" class="bp-reading-del" data-waitlist-clear-pin-id="' + escapeHTML(row.id) + '" aria-label="Clear pin">×</button>' : '') +
+          '</td>';
+        html += '<td>' + customerCell + '</td>';
+        html += '<td>' + recipesCell + '</td>';
         if (showCategory) html += '<td>' + escapeHTML(row.category || '—') + '</td>';
         html += '<td>' + fmtShortDate(row.signed_up_at) + '</td>';
         html += '<td><span class="bp-status-badge bp-status-badge--' + color + (actionable ? ' bp-status-clickable' : '') +
@@ -8316,6 +8414,7 @@ function shouldShowWaitlistCategoryColumn(rows) {
         html += '</tr>';
       });
       html += '</tbody></table>';
+      html += '</div>';
     }
 
     html += '</div>';
@@ -8417,6 +8516,62 @@ function shouldShowWaitlistCategoryColumn(rows) {
         row.notes = value;
         renderWaitlist();
         showToast('Notes saved', 'success');
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // Inline position (pin) editor -- row-becomes-input shape copied from
+  // openWaitlistNotesEdit above (D-13, UI-SPEC.md Queue pin section). Opens on tapping
+  // the pin icon, for EVERY row regardless of status (UI-SPEC Phase-Specific
+  // Decision 5), pre-filled with the row's current pin target (blank when unpinned).
+  function openWaitlistPositionEdit(cellEl, id) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    var currentPos = parseWaitlistPosition(row.position);
+    cellEl.innerHTML =
+      '<input class="bp-inline-input" data-waitlist-position-input="' + escapeHTML(id) + '" type="number" min="1" step="1" placeholder="Position" value="' + (currentPos !== null ? currentPos : '') + '" style="width:70px;">' +
+      '<button type="button" class="btn bp-btn-sm" data-waitlist-position-save="' + escapeHTML(id) + '">Save</button>' +
+      '<button type="button" class="btn-secondary bp-btn-sm" data-waitlist-position-cancel="' + escapeHTML(id) + '">×</button>' +
+      '<div class="bp-waitlist-pos-error" data-waitlist-position-error></div>';
+    var input = cellEl.querySelector('input');
+    if (input) input.focus();
+  }
+
+  // D-12: setting/clearing a pin is always reversible -- neither this nor
+  // clearWaitlistPin below use showConfirmSheet (UI-SPEC.md Queue pin section, unlike
+  // the destructive Remove control). Validates a positive integer BEFORE issuing any
+  // request; an invalid value shows the inline error and writes nothing (T-80-18 --
+  // this is UX, the server re-validates authoritatively).
+  function saveWaitlistPosition(cellEl, id, rawValue) {
+    var row = findWaitlistRow(id);
+    if (!row || !cellEl) return;
+    var n = Number(rawValue);
+    var isValid = rawValue !== '' && rawValue !== null && rawValue !== undefined &&
+      !isNaN(n) && isFinite(n) && n >= 1 && Math.floor(n) === n;
+    if (!isValid) {
+      var errEl = cellEl.querySelector('[data-waitlist-position-error]');
+      if (errEl) errEl.textContent = 'Enter a position of 1 or higher.';
+      return;
+    }
+    return adminApiPost('update_waitlist_status', { id: id, position: n })
+      .then(function () {
+        row.position = n;
+        renderWaitlist();
+        showToast('Pinned to position ' + n, 'success');
+      })
+      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // One-tap, no confirm sheet (D-12) -- a single-cell write clearing this row's
+  // position only; never iterates or touches any other row.
+  function clearWaitlistPin(id) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+    return adminApiPost('update_waitlist_status', { id: id, position: '' })
+      .then(function () {
+        row.position = '';
+        renderWaitlist();
+        showToast('Pin cleared', 'success');
       })
       .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
   }
@@ -9260,6 +9415,30 @@ function shouldShowWaitlistCategoryColumn(rows) {
           var savedId = notesSaveBtn.getAttribute('data-waitlist-notes-save');
           var input = waitlistPanel.querySelector('[data-waitlist-notes-input="' + savedId + '"]');
           saveWaitlistNotes(savedId, input ? input.value : '');
+          return;
+        }
+        // Phase 80-03: pin marker / inline position editor (D-10-D-14).
+        var pinBtn = e.target.closest('.bp-reading-edit[data-waitlist-pin-id]');
+        if (pinBtn) {
+          openWaitlistPositionEdit(pinBtn.closest('td'), pinBtn.getAttribute('data-waitlist-pin-id'));
+          return;
+        }
+        var clearPinBtn = e.target.closest('.bp-reading-del[data-waitlist-clear-pin-id]');
+        if (clearPinBtn) {
+          clearWaitlistPin(clearPinBtn.getAttribute('data-waitlist-clear-pin-id'));
+          return;
+        }
+        var positionCancelBtn = e.target.closest('[data-waitlist-position-cancel]');
+        if (positionCancelBtn) {
+          renderWaitlist();
+          return;
+        }
+        var positionSaveBtn = e.target.closest('[data-waitlist-position-save]');
+        if (positionSaveBtn) {
+          var positionId = positionSaveBtn.getAttribute('data-waitlist-position-save');
+          var positionCellEl = positionSaveBtn.closest('td');
+          var positionInput = positionCellEl ? positionCellEl.querySelector('[data-waitlist-position-input]') : null;
+          saveWaitlistPosition(positionCellEl, positionId, positionInput ? positionInput.value : '');
         }
       });
     }
@@ -9802,6 +9981,23 @@ function shouldShowWaitlistCategoryColumn(rows) {
       sendBottlingInviteForBatch: sendBottlingInviteForBatch,
       // Test-only: render the batch-detail pane (bottling-invite send-tracking UI).
       _renderBatchDetailForTest: renderBatchDetail,
+      // Phase 80-03: test-only seams for renderWaitlist -- sets the IIFE-scoped
+      // _waitlistRows/_waitlistFilter/_waitlistSearch state, then renders into
+      // #bp-panel-waitlist so a jsdom test can inspect the resulting markup.
+      renderWaitlist: renderWaitlist,
+      _setWaitlistStateForTest: function (patch) {
+        patch = patch || {};
+        if ('rows' in patch) _waitlistRows = patch.rows;
+        if ('filter' in patch) _waitlistFilter = patch.filter;
+        if ('search' in patch) _waitlistSearch = patch.search;
+      },
+      // Phase 80-03: test-only seams for the pin/inline-position-editor flow --
+      // initDelegation() (which normally wires the click handlers below) only runs
+      // from a DOMContentLoaded listener the Jest harness never fires, so tests drive
+      // these directly instead.
+      _openWaitlistPositionEditForTest: openWaitlistPositionEdit,
+      _saveWaitlistPositionForTest: saveWaitlistPosition,
+      _clearWaitlistPinForTest: clearWaitlistPin,
       // Plan 36-22: test-only state accessors for the cache-bust state vars
       getStateForTest: function () {
         return {
@@ -9898,7 +10094,11 @@ if (typeof module !== 'undefined' && module.exports) {
     sortWaitlistRows: sortWaitlistRows,
     computeWaitlistQueuePositions: computeWaitlistQueuePositions,
     filterWaitlistRows: filterWaitlistRows,
-    shouldShowWaitlistCategoryColumn: shouldShowWaitlistCategoryColumn
+    shouldShowWaitlistCategoryColumn: shouldShowWaitlistCategoryColumn,
+    // Phase 80-03 (D-10-D-14): position-aware merge-insert helper.
+    parseWaitlistPosition: parseWaitlistPosition,
+    // Phase 80-03 (D-15/D-16): client-side recipe_ids parser (display-only chips).
+    parseWaitlistRecipeIds: parseWaitlistRecipeIds
     // Plan 36-19: renderRecipeListHtml + bpCloneRecipePayload exported by the IIFE inner block above
     // Plan 36-22: afterBatchWrite + getStateForTest exported by the IIFE inner block above
     // State-dependent attach-flow exports are merged by Object.assign inside the IIFE above
