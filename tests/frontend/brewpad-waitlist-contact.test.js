@@ -315,7 +315,9 @@ describe('send (D-05, D-07, D-08)', function () {
       document.getElementById('bp-waitlist-contact-send').click();
       return flushPromises();
     }).then(function () {
-      return flushPromises();
+      // The sheet's close animation defers actual DOM removal by 180ms
+      // (matches openRecipeFromBatchSheet's closeRcSheet timing) -- wait past it.
+      return new Promise(function (resolve) { setTimeout(resolve, 200); });
     }).then(function () {
       expect(toastMessages()).toContain('Email sent — marked Contacted');
       expect(document.getElementById('bp-waitlist-contact-sheet')).toBeNull();

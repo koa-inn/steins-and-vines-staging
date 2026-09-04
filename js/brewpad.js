@@ -8343,7 +8343,7 @@ function parseWaitlistRecipeIds(value) {
       html += '<table class="bp-active-batches-table" aria-label="Beer waitlist">';
       html += '<thead><tr><th>#</th><th>Customer</th><th>Recipes</th>';
       if (showCategory) html += '<th>Category</th>';
-      html += '<th>Signed up</th><th>Status</th><th>Notes</th><th></th></tr></thead>';
+      html += '<th>Signed up</th><th>Status</th><th>Contact</th><th>Notes</th><th></th></tr></thead>';
       html += '<tbody>';
       filtered.forEach(function (row) {
         var pos = row.id != null ? posById[row.id] : null; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
@@ -8418,6 +8418,13 @@ function parseWaitlistRecipeIds(value) {
         html += '<td>' + fmtShortDate(row.signed_up_at) + '</td>';
         html += '<td><span class="bp-status-badge bp-status-badge--' + color + (actionable ? ' bp-status-clickable' : '') +
           '" data-waitlist-id="' + escapeHTML(row.id) + '" aria-label="' + escapeHTML(ariaLabel) + '">' + escapeHTML(label) + '</span></td>';
+        // Phase 80-05 (D-04/D-07): the Contact button is a bare-verb `.btn bp-btn-sm`
+        // (UI-SPEC Copywriting Contract, Contact action) reusing the actionable
+        // predicate already computed above (Phase-Specific Decision 3) -- offering
+        // the action on a booked/removed row would allow staff to send an email
+        // whose second-leg status write is guaranteed to be refused server-side.
+        html += '<td><button type="button" class="btn bp-btn-sm" data-waitlist-contact-trigger="' + escapeHTML(row.id) + '"' +
+          (actionable ? '' : ' disabled') + '>Contact</button></td>';
         html += '<td>' + escapeHTML(row.notes || '—') +
           ' <button type="button" class="bp-reading-edit" data-waitlist-notes-id="' + escapeHTML(row.id) + '">✎</button></td>';
         html += '<td><button type="button" class="bp-reading-del" data-waitlist-remove-id="' + escapeHTML(row.id) + '" aria-label="Remove from waitlist">×</button></td>';
@@ -8878,6 +8885,158 @@ function parseWaitlistRecipeIds(value) {
         showToast('Recipe removed', 'success');
       })
       .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+  }
+
+  // ===== Phase 80-05: Contact review sheet with fail-closed send (D-04-D-09) =====
+  //
+  // Reuse-not-rebuild: verbatim reuse of the .bp-create-sheet shell from
+  // openRecipeFromBatchSheet (js/brewpad.js:5292-5350 region), re-id'd
+  // bp-waitlist-contact-sheet. The booking link is resolved client-side from
+  // the already-public, already-24h-cached GET /api/bookings/services -- never
+  // a new Cal.com call, never a hardcoded bottling-invite-style booking-URL construction. The
+  // send itself never touches adminApiPost -- the status write to 'contacted'
+  // happens ONLY server-side, inside POST /api/waitlist/:id/contact's
+  // resolved-send branch (D-08).
+
+  // Opens the sheet in place, shows the loading state synchronously, then
+  // resolves the booking link before rendering the editable form. Returns the
+  // fetch promise so tests can await sheet-population.
+  function openWaitlistContactSheet(id) {
+    var row = findWaitlistRow(id);
+    if (!row) return;
+
+    var existing = document.getElementById('bp-waitlist-contact-sheet');
+    if (existing) existing.parentNode.removeChild(existing);
+
+    var appEl = document.getElementById('bp-app') || document.body;
+    var sheetEl = document.createElement('div');
+    sheetEl.id = 'bp-waitlist-contact-sheet';
+    sheetEl.className = 'bp-create-sheet';
+    sheetEl.style.display = '';
+    sheetEl.innerHTML =
+      '<div class="bp-create-sheet-inner" id="bp-waitlist-contact-sheet-inner">' +
+      '<div class="bp-create-sheet-header">' +
+      '<span class="bp-create-sheet-title">Contact ' + escapeHTML(row.customer_name || row.email) + '</span>' +
+      '<button type="button" class="bp-create-sheet-close" id="bp-waitlist-contact-close">×</button>' +
+      '</div>' +
+      '<div class="bp-create-sheet-body" id="bp-waitlist-contact-body"><p>Preparing email…</p></div>' +
+      '</div>';
+    appEl.appendChild(sheetEl);
+
+    function closeContactSheet() {
+      sheetEl.classList.remove('bp-create-sheet--open');
+      setTimeout(function () {
+        if (sheetEl.parentNode) sheetEl.parentNode.removeChild(sheetEl);
+      }, 180);
+    }
+
+    setTimeout(function () { sheetEl.classList.add('bp-create-sheet--open'); }, 10);
+    sheetEl.addEventListener('click', function (e) { if (e.target === sheetEl) closeContactSheet(); });
+    var closeX = document.getElementById('bp-waitlist-contact-close');
+    if (closeX) closeX.addEventListener('click', closeContactSheet);
+
+    return fetch(mwUrl() + '/api/bookings/services', { credentials: 'include' })
+      .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data || {} }; }); })
+      .then(function (result) {
+        var svc = result.ok && result.data.services && result.data.services[0];
+        var bookingUrl = svc && svc.bookingUrl;
+        var bodyEl = document.getElementById('bp-waitlist-contact-body');
+        if (!bodyEl) return;
+        if (!bookingUrl) throw new Error('no booking link');
+        renderWaitlistContactForm(bodyEl, row, bookingUrl, closeContactSheet);
+      })
+      .catch(function () {
+        var bodyEl = document.getElementById('bp-waitlist-contact-body');
+        if (!bodyEl) return;
+        bodyEl.innerHTML =
+          '<p>Could not prepare the booking link. Please try again.</p>' +
+          '<div class="bp-form-actions">' +
+          '<button type="button" class="btn-secondary" id="bp-waitlist-contact-cancel-only">Cancel</button>' +
+          '</div>';
+        var cancelOnly = document.getElementById('bp-waitlist-contact-cancel-only');
+        if (cancelOnly) cancelOnly.addEventListener('click', closeContactSheet);
+      });
+  }
+
+  // Renders the editable To/Subject/Body form once the booking link has
+  // resolved. The To field is read-only display only -- sendWaitlistContact
+  // below reads row.email directly, never this input's value (T-80-28).
+  function renderWaitlistContactForm(bodyEl, row, bookingUrl, closeContactSheet) {
+    var firstName = (row.customer_name || '').split(/\s+/)[0] || 'there';
+    var defaultSubject = 'Your spot on the Steins & Vines beer waitlist is ready!';
+    var defaultBody = 'Hi ' + firstName + ',\n\nGreat news — it’s your turn on the beer waitlist! You can book your fermentation time here:\n\n' +
+      bookingUrl + '\n\nIf you have any questions, just reply to this email.\n\nCheers,\nSteins & Vines';
+
+    bodyEl.innerHTML =
+      '<div class="bp-form-group">' +
+      '<label>To</label>' +
+      '<input type="email" class="bp-inline-input" value="' + escapeHTML(row.email) + '" readonly>' +
+      '</div>' +
+      '<div class="bp-form-group">' +
+      '<label>Subject</label>' +
+      '<input type="text" id="bp-waitlist-contact-subject" class="bp-inline-input" value="' + escapeHTML(defaultSubject) + '">' +
+      '</div>' +
+      '<div class="bp-form-group">' +
+      '<label>Body</label>' +
+      '<textarea id="bp-waitlist-contact-body-input" class="bp-inline-input bp-notes-input" rows="8">' + escapeHTML(defaultBody) + '</textarea>' +
+      '</div>' +
+      '<div class="bp-waitlist-form-error" id="bp-waitlist-contact-error" style="display:none;"></div>' +
+      '<div class="bp-form-actions">' +
+      '<button type="button" class="btn" id="bp-waitlist-contact-send">Send</button>' +
+      '<button type="button" class="btn-secondary" id="bp-waitlist-contact-cancel">Cancel</button>' +
+      '</div>';
+
+    var cancelBtn = document.getElementById('bp-waitlist-contact-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeContactSheet);
+
+    var sendBtn = document.getElementById('bp-waitlist-contact-send');
+    if (sendBtn) {
+      sendBtn.addEventListener('click', function () {
+        var subjectInput = document.getElementById('bp-waitlist-contact-subject');
+        var bodyInput = document.getElementById('bp-waitlist-contact-body-input');
+        var errEl = document.getElementById('bp-waitlist-contact-error');
+        if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+        sendBtn.disabled = true;
+        sendWaitlistContact(row, subjectInput ? subjectInput.value : '', bodyInput ? bodyInput.value : '', bookingUrl)
+          .then(function (data) {
+            row.status = 'contacted';
+            if (data && data.contacted_at) row.contacted_at = data.contacted_at;
+            closeContactSheet();
+            renderWaitlist();
+            showToast('Email sent — marked Contacted', 'success');
+          })
+          .catch(function (err) {
+            sendBtn.disabled = false;
+            if (errEl) {
+              var msg = 'Could not send. Please try again.';
+              if (err && err.writeFailed) msg += ' The email went out, but the row was not advanced — do not re-send.';
+              errEl.textContent = msg;
+              errEl.style.display = '';
+            }
+          });
+      });
+    }
+  }
+
+  // The single POST to /api/waitlist/:id/contact (D-05/D-08). `to` is read
+  // from the row object, never the DOM -- see T-80-28. Never calls
+  // adminApiPost: the status write to 'contacted' lives entirely server-side.
+  function sendWaitlistContact(row, subject, body, bookingUrl) {
+    return fetch(mwUrl() + '/api/waitlist/' + encodeURIComponent(row.id) + '/contact', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: row.email, subject: subject, body: body, bookingUrl: bookingUrl })
+    }).then(function (r) {
+      return r.json().then(function (data) {
+        if (!r.ok || !data || data.ok !== true) {
+          var err = new Error((data && data.error) || 'send_failed');
+          err.writeFailed = !!(data && data.error === 'contact_write_failed');
+          throw err;
+        }
+        return data;
+      });
+    });
   }
 
   // ===== Schedule Template Editor =====
@@ -9789,6 +9948,15 @@ function parseWaitlistRecipeIds(value) {
         var recipeRemoveBtn = e.target.closest('[data-waitlist-recipe-remove-id]');
         if (recipeRemoveBtn) {
           removeWaitlistRecipe(recipeRemoveBtn.getAttribute('data-waitlist-recipe-remove-id'), recipeRemoveBtn.getAttribute('data-waitlist-recipe-remove-rid'));
+          return;
+        }
+        // Phase 80-05: Contact review sheet trigger (D-04-D-09). Defensive
+        // `.disabled` guard alongside the native `disabled` attribute already
+        // preventing the click -- belt-and-suspenders, matches T-80-30's intent
+        // that a booked/removed row can never reach the send flow.
+        var contactTrigger = e.target.closest('.btn[data-waitlist-contact-trigger]');
+        if (contactTrigger && !contactTrigger.disabled) {
+          openWaitlistContactSheet(contactTrigger.getAttribute('data-waitlist-contact-trigger'));
         }
       });
     }
@@ -10361,6 +10529,10 @@ function parseWaitlistRecipeIds(value) {
       waitlistResolveRecipeName: waitlistResolveRecipeName,
       _setWaitlistRecipeCatalogForTest: function (v) { _waitlistRecipeCatalog = v; },
       _getWaitlistRecipeCatalogForTest: function () { return _waitlistRecipeCatalog; },
+      // Phase 80-05: test-only seam for the Contact review sheet (D-04-D-09) --
+      // initDelegation() never fires under Jest, so tests drive the sheet open
+      // directly and interact with the real DOM elements it renders.
+      _openWaitlistContactSheetForTest: openWaitlistContactSheet,
       // Plan 36-22: test-only state accessors for the cache-bust state vars
       getStateForTest: function () {
         return {
