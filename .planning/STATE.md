@@ -193,6 +193,12 @@ Last activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
     here); (c) WR-02 optimistic locking, carried forward by design since closing it needs a 14th
     column and a second redeploy that D-20 forbids.
   - Phase lessons preserved in `80-CUTOVER.md` §8 (the `.continue-here.md` checkpoint was retired).
+  - **Queue-order question CLOSED 2026-09-05 (owner).** `beer.html`'s "we work through the list in
+    order" remains accurate and stays verbatim. Pinning is NOT a general override: it is only for
+    placing a word-of-mouth signup at their true point in the queue, or moving someone who defers.
+    Nobody jumps ahead of an earlier signup. `signed_up_at` stays the ordering key and tiebreaker.
+    This closes ROADMAP Phase 80 known-constraint 3, which had been left open pending exactly this
+    rule.
   - **Production cutover (§7) is explicitly OUT of phase 80 scope** — batches with the pending
     51/74/78/79 pushes. Apps Script v55 already serves prod; frontend/middleware prod push has not
     happened. Non-blocking owner action: set `CALCOM_EVENT_TYPE_BEER_WAITLIST=6955754` on the
