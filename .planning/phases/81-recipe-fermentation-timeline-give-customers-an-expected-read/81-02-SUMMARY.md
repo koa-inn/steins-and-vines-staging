@@ -109,3 +109,15 @@ None — no external service configuration required. Zero Apps Script changes (v
 ---
 *Phase: 81-recipe-fermentation-timeline-give-customers-an-expected-read*
 *Completed: 2026-09-05*
+
+## Self-Check: PASSED
+
+- FOUND: zoho-middleware/lib/constants.js
+- FOUND: zoho-middleware/routes/recipes.js
+- FOUND: zoho-middleware/__tests__/recipes.test.js
+- FOUND: zoho-middleware/__tests__/recipes-public-guard.test.js
+- FOUND: .planning/phases/81-recipe-fermentation-timeline-give-customers-an-expected-read/81-02-SUMMARY.md
+- FOUND commit: 5aab752d (test(81-02): add failing tests for maxNonPackagingOffset and fetchFermSchedules)
+- FOUND commit: 3ab87181 (feat(81-02): add FERM_SCHEDULES cache key and maxNonPackagingOffset derivation)
+- FOUND commit: 6e56fd1e (test(81-02): add failing tests for ferment_days wiring and public allowlist)
+- FOUND commit: 195b930a (feat(81-02): wire ferment_days into both recipe read paths and public allowlist)
