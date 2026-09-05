@@ -69,7 +69,7 @@ computing or displaying an expected packaging *date* on a batch.
   as three weeks from today. Carrying the start point in the phrase means the card cannot be
   misread standalone, screenshotted, or shared out of context.
 - **D-07:** On the recipe card the figure is a **second label/value column in the existing
-  `.price-footer`**, reusing the `.price-col` idiom: "Ready in" over "~3 weeks from brew day",
+  `.price-footer`**, reusing the `.price-col` idiom: "Ready in" over "about 3 weeks from brew day",
   beside "Ferment in store" over the price. Price and time — the two questions a customer has — sit
   together. `buildRecipeCard` is `createElement`-only (T-74-12); the new column must stay that way.
 - **D-08:** **Both** `beer.html` timeline passages are rewritten: How It Works (`beer.html:179`) and
@@ -249,7 +249,10 @@ computing or displaying an expected packaging *date* on a batch.
 - Production has exactly **3 active recipes** (verified live during discussion, 2026-09-05):
   `SV-R-000011` West Coast IPA, `SV-R-000003` Hazy Pale Ale, `SV-R-000002` Czech Lager. Two ales and
   a lager — the owner's split exactly. This is the whole backfill.
-- Card footer target reading: "Ferment in store / $X" beside "Ready in / ~3 weeks from brew day".
+- Card footer target reading: "Ferment in store / $X" beside "Ready in / about 3 weeks from brew day".
+  *(Corrected 2026-09-05 during `/gsd:ui-phase`: earlier drafts of D-07 and this line used "~3 weeks"
+  as shorthand, which contradicted D-05's locked "about N weeks". D-05 is the wording the owner
+  actually selected and governs. The card and `beer.html` now use the same word.)*
 - The FAQ answer being replaced reads, in full: *"It depends on the style. We'll give you a timeline
   at your consult."* The How It Works line reads: *"We look after your batch while it ferments — how
   long depends on the style, and we'll give you a timeline at your consult."*

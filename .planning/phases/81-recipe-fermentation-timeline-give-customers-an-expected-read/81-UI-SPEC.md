@@ -37,11 +37,18 @@ No new spacing values are introduced. Every measurement this phase adds is inher
 
 | Context | Value | Source |
 |---------|-------|--------|
-| Public card `.price-col` padding | `0.6rem 0.5rem` (already 4px-family: 9.6px/8px) | `.label-beer .price-col`, `css/styles.css:4715` — reused unchanged, not reauthored |
+| Public card `.price-col` padding | `0.6rem 0.5rem` = **9.6px / 8px** | `.label-beer .price-col`, `css/styles.css:4715` — reused unchanged, not reauthored. **Disclosure:** 9.6px is NOT a multiple of 4 and sits outside the standard set. Pre-existing shared production CSS, not authored here — see "Pre-existing debt" below |
 | Public card column divider | `1px solid rgba(184,150,62,0.3)` | `.label-beer .price-col + .price-col`, `css/styles.css:4716` — already fires automatically once a 2nd `.price-col` exists; no new rule needed |
 | Admin form spacing | `var(--sp-1)`/`var(--sp-3)`/`var(--sp-4)`/`var(--sp-6)` tokens (4/12/16/24px) | `css/admin.css:44-49`, already used throughout `renderScheduleForm`/the recipe editor and the BeerXML modal's own inline styles (`gap:var(--sp-4)`, `margin-top:var(--sp-6)`, `js/admin.js:9527`) |
 
-Exceptions: none.
+**Pre-existing debt — disclosed, not inherited silently.** Two reused values fall outside the {4, 8, 16, 24, 32, 48, 64} standard set:
+
+1. `.label-beer .price-col` padding `0.6rem` = **9.6px** (`css/styles.css:4715`).
+2. Admin token `var(--sp-3)` = **12px** (`css/admin.css:44-49`).
+
+Both are shared, live production values this phase *reuses* rather than reauthors — the same category as the pre-existing `.price-label` 3.7:1 contrast shortfall disclosed in the Color section, and handled the same way: named openly, not fixed here. Changing either would mean editing CSS shared site-wide (every kit and recipe card for the first; every admin form for the second), which is disproportionate to this feature phase and would put unrelated surfaces at risk. **Recorded as known debt so it is not mistaken for compliance, and not silently re-copied as precedent by a future phase.**
+
+Exceptions: none newly introduced by this phase.
 
 ---
 
@@ -50,7 +57,7 @@ Exceptions: none.
 | Role | Size | Weight | Line Height | Family | Source |
 |------|------|--------|-------------|--------|--------|
 | Public — price-col label (both "Ferment in store" and new "Ready in") | 9px (0.5625rem) desktop / 10px (0.625rem) mobile floor | 700 | 1 (uppercase, single line) | `--font-body` (inherited, no family declared) | `.label-beer .price-label`, `css/styles.css:4717`; mobile floor `css/styles.css:5175-5179` |
-| Public — new "Ready in" value, line 1 ("~3 weeks") | 13px (0.8125rem) | 600 | 1.3 | `--font-body` 'Lato' — **deliberately NOT `--font-condensed`** | New rule, this phase (see §1) |
+| Public — new "Ready in" value, line 1 ("about 3 weeks") | 13px (0.8125rem) | 600 | 1.3 | `--font-body` 'Lato' — **deliberately NOT `--font-condensed`** | New rule, this phase (see §1) |
 | Public — new "Ready in" value, line 2 ("from brew day") | 11px (0.6875rem) | 400 | 1.3 | `--font-body` 'Lato' | New rule, this phase (see §1) |
 | Public — existing price value ("$X") for comparison | 17.6px (1.1rem) | 600 | normal | `--font-condensed` 'Oswald' (see flag below) | `.label-beer .price-value`, `css/styles.css:4718` — unchanged |
 | Admin — form field label | 13px | 700 | normal | inherited | `.recipes-form-field label`, `css/admin.css:3031` |
@@ -72,7 +79,7 @@ No new color token or hex value is introduced. This phase reuses the beer-card's
 | Dominant (~60%) — public card | `#faf8f2` (`.label-beer` background) | Card surface, `css/styles.css:4679` |
 | Secondary (~30%) — public card | `rgba(184,150,62,0.06)` gold-tinted footer wash | `.price-footer` background, `css/styles.css:4714` — both price-col AND the new Ready-in col sit on this |
 | Accent (~10%) — public card | `--color-burgundy` `#370e13` | **Reserved for:** the price value only (unchanged). The new "Ready in" value is deliberately NOT burgundy — see contrast/hierarchy note below |
-| New — public card, Ready-in value | `--color-muted-dark` `#4f4f4f` (existing token, `css/styles.css:129`) | Both lines of the new value ("~3 weeks" / "from brew day") — chosen specifically so it does not compete with the burgundy price (see §1) |
+| New — public card, Ready-in value | `--color-muted-dark` `#4f4f4f` (existing token, `css/styles.css:129`) | Both lines of the new value ("about 3 weeks" / "from brew day") — chosen specifically so it does not compete with the burgundy price (see §1) |
 | Admin — warning (D-11/D-15) | `--batch-warning` `#b87a1a` on `--batch-warning-bg` `rgba(184,122,26,0.08)`, left border `--batch-warning` | Reused verbatim from `.availability-banner--low`, `css/admin.css:3072-3076` — no new semantic color |
 | Destructive | Not applicable — this phase adds no destructive action | — |
 
@@ -93,8 +100,8 @@ No new color token or hex value is introduced. This phase reuses the beer-card's
 | Element | Copy |
 |---------|------|
 | Public card — "Ready in" label | **"Ready in"** (exact string, D-07) |
-| Public card — "Ready in" value, weeks ≥ 2 | **"~N weeks"** then, on its own line, **"from brew day"** — e.g. `ferment_days=21` → "~3 weeks" / "from brew day"; `ferment_days=35` → "~5 weeks" / "from brew day" |
-| Public card — "Ready in" value, weeks = 1 | **"~1 week"** (singular, no "s") / "from brew day" |
+| Public card — "Ready in" value, weeks ≥ 2 | **"about N weeks"** then, on its own line, **"from brew day"** — e.g. `ferment_days=21` → "about 3 weeks" / "from brew day"; `ferment_days=35` → "about 5 weeks" / "from brew day" |
+| Public card — "Ready in" value, weeks = 1 | **"about 1 week"** (singular, no "s") / "from brew day" |
 | Public card — no schedule / unusable offset | **Column omitted entirely.** No "TBD", no "—", no "0 weeks" (D-09). See §1 for the exact omission rule. |
 | `beer.html` — How It Works step 4 (`beer.html:179`) | See §2 for full replacement text |
 | `beer.html` — FAQ "How long until it's ready?" (`beer.html:317-318`) | See §2 for full replacement text |
@@ -169,7 +176,7 @@ if (fermTime) {
 card.appendChild(footer); // existing, unchanged
 ```
 
-**Column order (resolves the "left or right of price" question):** price stays FIRST (col 1, unchanged position), "Ready in" is col 2 — matches the CONTEXT `<specifics>` target reading verbatim ("Ferment in store / $X" beside "Ready in / ~3 weeks…") and is the minimal-diff insertion (append, don't reorder). Both columns are `flex: 1` (existing rule) → an even 50/50 split when both are present; the existing single-column footer is untouched when `fermTime` is null.
+**Column order (resolves the "left or right of price" question):** price stays FIRST (col 1, unchanged position), "Ready in" is col 2 — matches the CONTEXT `<specifics>` target reading verbatim ("Ferment in store / $X" beside "Ready in / about 3 weeks…") and is the minimal-diff insertion (append, don't reorder). Both columns are `flex: 1` (existing rule) → an even 50/50 split when both are present; the existing single-column footer is untouched when `fermTime` is null.
 
 **Helper function — `fermentTimeDisplay(recipe)`** (pure, colocated with `recipeDisplayPrice()` in the same module):
 
@@ -180,12 +187,12 @@ function fermentTimeDisplay(recipe) {
   var weeks = Math.round(days / 7);
   if (weeks < 1) return null; // D-09: sub-week values are unusable, omit rather than show "0 weeks"
   var weekWord = weeks === 1 ? 'week' : 'weeks';
-  return { weeks: '~' + weeks + ' ' + weekWord, start: 'from brew day' };
+  return { weeks: 'about ' + weeks + ' ' + weekWord, start: 'from brew day' };
 }
 ```
 This resolves BOTH of the phase's open "Claude's Discretion" items in one place: the rounding implementation (`Math.round(days/7)`) and the D-09 unusable-value floor (any `ferment_days` that rounds to 0 weeks — i.e. under ~4 days — is treated identically to "no schedule at all": the column is omitted, not shown as "0 weeks"). `recipe.ferment_days` is the ONE derived integer D-16 puts on the public payload — the frontend never sees `schedule_id` or step data, so this function is the sole place the "about N weeks" phrasing is owned, exactly as D-16 requires.
 
-**Wrapping — why two explicit `<span>`s, not one wrapped string:** at the live launch width (`.product-grid--compact`: `minmax(280px, 320px)` cards, confirmed live for exactly-3-card grids per `js/modules/07-catalog-kits.js:339`), each `.price-col` has roughly 130-140px of usable text width after padding/border. The full phrase "~3 weeks from brew day" (23 characters) will NOT fit on one line at any readable size. Rather than let the browser wrap it unpredictably (risking an ugly break like "~3 weeks from brew" / "day"), the DOM forces the break at the natural clause boundary: line 1 = the week count ("~3 weeks"), line 2 = the start point ("from brew day"), via two `display: block` spans. This guarantees the same two-line shape at 1, 3, or 5 weeks and at any card width ≥ ~110px.
+**Wrapping — why two explicit `<span>`s, not one wrapped string:** at the live launch width (`.product-grid--compact`: `minmax(280px, 320px)` cards, confirmed live for exactly-3-card grids per `js/modules/07-catalog-kits.js:339`), each `.price-col` has roughly 130-140px of usable text width after padding/border. The full phrase "about 3 weeks from brew day" (27 characters) will NOT fit on one line at any readable size. Rather than let the browser wrap it unpredictably (risking an ugly break like "about 3 weeks from" / "brew day"), the DOM forces the break at the natural clause boundary: line 1 = the week count ("about 3 weeks"), line 2 = the start point ("from brew day"), via two `display: block` spans. This guarantees the same two-line shape at 1, 3, or 5 weeks and at any card width ≥ ~110px.
 
 **Visual weight — why the value is NOT styled like the price:** the existing `.price-value` (burgundy, 17.6px, `--font-condensed` bold) is calibrated to be the card's second-most-prominent element after the beer name — appropriate for a price, which is the customer's primary decision input. "Ready in" is supporting context, not a competing decision point, so it must read as visually secondary. New CSS:
 
@@ -203,7 +210,10 @@ This resolves BOTH of the phase's open "Claude's Discretion" items in one place:
 }
 .label-beer .ferment-time-start {
   font-size: 0.6875rem;   /* 11px */
-  font-weight: 400;
+  /* No font-weight declared — inherits the body default (400). Declaring it
+     explicitly would make this one component carry three declared weights
+     (700/600/400); inheriting keeps it at two and the rendered result is
+     identical. */
   color: var(--color-muted-dark);
 }
 ```
