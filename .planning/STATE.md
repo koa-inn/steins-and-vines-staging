@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: completed
-stopped_at: Phase 81 context gathered
-last_updated: "2026-09-05T14:58:54.049Z"
+stopped_at: Phase 81 UI-SPEC approved
+last_updated: "2026-09-05T15:13:24.580Z"
 last_activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
 progress:
   total_phases: 67
@@ -226,8 +226,8 @@ Last activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
 
 ## Session Continuity
 
-Last session: 2026-09-05T14:58:54.041Z
-Stopped at: Phase 81 context gathered
+Last session: 2026-09-05T15:13:24.571Z
+Stopped at: Phase 81 UI-SPEC approved
 `HANDOFF.json` (now retired). Confirmed the staging redeploy of the double-encoding fix `8a3d7868`
 landed by calling `/api/bookings/services` twice — the second, cache-hit call returned a parsed
 object containing slug `beer-consult`, which is exactly how the bug previously hid. Then drove leg 7
@@ -257,7 +257,7 @@ GA4 IDs: account `a391385411`, property `p533046537`.
 
 Stopped at: **PROD STAGE-3 CUTOVER SHIPPED** (tag prod-20260710-2, blessed gated-deploy run 29127742148) — Phases 48 + 54 + kiosk fixes + brewpad + Metricool CSP + v4.6 GA4 events all live on production; middleware redeployed (uptime reset, redis ✅); frontend verified (kiosk-core, Metricool CSP, GA4 in bundle). Earlier this session: iPad UAT (48/54 standalone), Fix 1 break-glass (prod-20260710-1), 9 test invoices+11 payments deleted from Zoho, Phase 48 secured (22/22), v4.6 milestone + Phase 55/56 scaffolded, GA4 reviewed + shipped + staging-verified (site half proven; GA4 collect 503s from this browser only), milestone state reconciled.
 Open threads: (1) **watch Sentry** on the 48/54 money-path/auth changes now live; (2) **GA4 Realtime** confirm on a real prod order (Option A — the staging DebugView 503 was environment-local); (3) delete test order INV-000145 from Zoho (Helcim already voided by owner); (4) v4.5 Phase 47 SEC-01 checkbox vs narrative mismatch — owner reconcile; (5) Phases 49/50/51 remain in v4.5; (6) Phase 56 GTM remaining (Conversion Linker, Ads tag AW-18091171314, mark purchase key event, 2nd admin) + staging internal-traffic filter (todo); (7) GiftCards sheet tidy for GC-000001.
-Resume file: .planning/phases/81-recipe-fermentation-timeline-give-customers-an-expected-read/81-CONTEXT.md
+Resume file: .planning/phases/81-recipe-fermentation-timeline-give-customers-an-expected-read/81-UI-SPEC.md
 
 ### Prior session (2026-07-08T21:04:01.660Z)
 
