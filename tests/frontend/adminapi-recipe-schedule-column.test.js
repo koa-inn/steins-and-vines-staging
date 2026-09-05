@@ -149,3 +149,34 @@ describe('ensureRecipesScheduleIdColumn — self-migrating Recipes column (D-03,
     expect(sheet._grid[0][schedIdx]).toBe('schedule_id');
   });
 });
+
+// --- Task 2: 'gfs' cache-bust on FermSchedules CRUD (Pitfall 3) ---------------------------
+//
+// createFermSchedule/updateFermSchedule/deleteFermSchedule call SpreadsheetApp/LockService
+// throughout and cannot be executed in this Jest sandbox -- exactly as
+// tests/frontend/adminapi-recipe-pure.test.js documents for its own scope (that suite's file
+// header explains why: SpreadsheetApp/LockService/Session/Utilities/CacheService are Apps
+// Script globals with no local implementation, so only pure helpers can be safely CALLED
+// here). Source-shape assertion is the honest ceiling for these three; the real gate is the
+// live probe in plan 81-07.
+
+function sliceTopLevelFunctionBody(fnName) {
+  var src = fs.readFileSync(ADMIN_API_PATH, 'utf8');
+  var startMarker = 'function ' + fnName + '(';
+  var startIdx = src.indexOf(startMarker);
+  if (startIdx === -1) return null;
+  var nextFnIdx = src.indexOf('\nfunction ', startIdx + 1);
+  if (nextFnIdx === -1) nextFnIdx = src.length;
+  return src.slice(startIdx, nextFnIdx);
+}
+
+describe("FermSchedules CRUD cache-bust — source shape only (Pitfall 3, D-15 cache correctness)", function () {
+  ['createFermSchedule', 'updateFermSchedule', 'deleteFermSchedule'].forEach(function (fnName) {
+    test(fnName + " evicts the 'gfs' script cache on its success path, not via _invalidateBatchCache", function () {
+      var body = sliceTopLevelFunctionBody(fnName);
+      expect(body).not.toBeNull();
+      expect(body).toEqual(expect.stringContaining("remove('gfs')"));
+      expect(body).not.toEqual(expect.stringContaining('_invalidateBatchCache'));
+    });
+  });
+});
