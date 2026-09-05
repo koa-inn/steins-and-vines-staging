@@ -9379,6 +9379,25 @@
       ingredients: []
     };
 
+    // D-12: sum the file's own fermentation-vessel timing claim (display-only,
+    // never written to a recipe, never sent in a save payload, never used to
+    // derive the customer-facing figure -- D-03 keeps the schedule template
+    // the single source of truth, and D-13 forbids even pre-selecting from
+    // this number). Only assigned when the sum is > 0 -- this function's own
+    // `|| 0` + presence-guard convention means an always-present zero would
+    // render a meaningless zero-value meta-line segment, indistinguishable
+    // from a real zero-day claim.
+    //
+    // AGE is deliberately NEVER read here. Per the BeerXML 1.0 spec, AGE is
+    // days to age the beer AFTER bottling -- post-packaging conditioning,
+    // which happens after our handoff, is unverifiable by us, and per D-01 is
+    // never counted and never promised to a customer. Do not "complete" this
+    // field set by adding it.
+    var _fermentDaysTotal = (parseFloat(getTagText(recipe, 'PRIMARY_AGE')) || 0)
+      + (parseFloat(getTagText(recipe, 'SECONDARY_AGE')) || 0)
+      + (parseFloat(getTagText(recipe, 'TERTIARY_AGE')) || 0);
+    if (_fermentDaysTotal > 0) parsed.ferment_days_beerxml = _fermentDaysTotal;
+
     // --- FERMENTABLES with D-08 lbs detection heuristic ---
     var ferms = recipe.getElementsByTagName('FERMENTABLE');
     var rawFermAmounts = [];
@@ -9570,6 +9589,9 @@
     if (parsed.style) metaLine += escapeHTML(parsed.style);
     if (parsed.abv) metaLine += (metaLine ? ' &middot; ' : '') + parsed.abv.toFixed(1) + '% ABV';
     if (parsed.batch_size_l) metaLine += (metaLine ? ' &middot; ' : '') + parsed.batch_size_l.toFixed(1) + ' L';
+    if (parsed.ferment_days_beerxml) {
+      metaLine += (metaLine ? ' &middot; ' : '') + 'BeerXML: ' + parsed.ferment_days_beerxml + ' days ferment';
+    }
 
     var rowsHTML = '';
     for (var i = 0; i < matchedRows.length; i++) {
@@ -9898,7 +9920,9 @@
       _setUserEmail: function (e) { userEmail = e; },
       // 64-03: test seam for the adminApiGet token-transport regression test --
       // adminApiGet has no other public caller that isolates a single call/response.
-      _adminApiGetForTest: adminApiGet
+      _adminApiGetForTest: adminApiGet,
+      // 81-05: BeerXML review modal (D-12) test hook
+      showBeerXMLReviewModal: showBeerXMLReviewModal
     });
   }
 
