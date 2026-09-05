@@ -558,3 +558,56 @@ describe('autoMatchIngredients', function () {
     expect(result[0].quantity).toBe(14.2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// confirmBeerXMLImport schedule carry-through (Task 3, the verified defect)
+// ---------------------------------------------------------------------------
+describe('confirmBeerXMLImport schedule_id carry-through', function () {
+  beforeEach(function () {
+    resetAdminDomFixture();
+    admin._setFermSchedulesDataForTest([
+      { schedule_id: 'SCHED-1', name: 'Standard Ale', category: 'beer' }
+    ]);
+  });
+
+  // Stands in for the modal's real #beerxml-schedule-select (normally created
+  // dynamically inside #admin-modal-body by showBeerXMLReviewModal). A plain
+  // value-bearing element is sufficient here: confirmBeerXMLImport only reads
+  // .value, and an <input> avoids needing a matching <option> the way a real
+  // <select> would.
+  function seedBeerxmlScheduleSelect(value) {
+    var el = document.createElement('input');
+    el.type = 'hidden';
+    el.id = 'beerxml-schedule-select';
+    el.value = value;
+    document.body.appendChild(el);
+  }
+
+  test('a template selected in the review modal survives Confirm Import into #recipe-schedule-select', function () {
+    seedBeerxmlScheduleSelect('SCHED-1');
+    var parsedRecipe = { name: 'Test Ale', style: 'IPA', abv: 5.5, batch_size_l: 20, ibu: 40, colour_srm: 8 };
+    admin.confirmBeerXMLImport(parsedRecipe, []);
+    var scheduleSelectEl = document.getElementById('recipe-schedule-select');
+    expect(scheduleSelectEl.innerHTML).toContain('value="SCHED-1" selected');
+  });
+
+  test('no template selected leaves #recipe-schedule-select empty and does not fire the D-11 warning (imported recipe is draft)', function () {
+    seedBeerxmlScheduleSelect('');
+    var parsedRecipe = { name: 'Test Ale', style: 'IPA', abv: 5.5, batch_size_l: 20, ibu: 40, colour_srm: 8 };
+    admin.confirmBeerXMLImport(parsedRecipe, []);
+    var scheduleSelectEl = document.getElementById('recipe-schedule-select');
+    expect(scheduleSelectEl.innerHTML).not.toContain('selected');
+    var warningEl = document.getElementById('recipe-schedule-warning');
+    expect(warningEl.textContent).toBe('');
+  });
+
+  test('does not throw when #beerxml-schedule-select is absent (defends the read against a torn-down modal)', function () {
+    // No seedBeerxmlScheduleSelect() call -- simulates closeModal having
+    // already removed the element. confirmBeerXMLImport's element-exists
+    // guard must default to an empty schedule_id rather than throw.
+    var parsedRecipe = { name: 'Test Ale', style: 'IPA', abv: 5.5, batch_size_l: 20, ibu: 40, colour_srm: 8 };
+    expect(function () { admin.confirmBeerXMLImport(parsedRecipe, []); }).not.toThrow();
+    var scheduleSelectEl = document.getElementById('recipe-schedule-select');
+    expect(scheduleSelectEl.innerHTML).not.toContain('selected');
+  });
+});

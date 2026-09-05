@@ -9836,6 +9836,16 @@
   }
 
   function confirmBeerXMLImport(parsedRecipe, confirmedRows) {
+    // Read the modal's schedule choice BEFORE closeModal() -- ordering is
+    // load-bearing: closeModal may tear down the modal body, after which
+    // #beerxml-schedule-select is gone. Without this read (and without
+    // carrying it into populateRecipeForm below), the Task 2 dropdown is
+    // decorative: staff choose a template, click Confirm Import, and the
+    // choice is silently discarded with no error -- a verified defect, not a
+    // hypothetical.
+    var beerxmlScheduleSelectEl = document.getElementById('beerxml-schedule-select');
+    var chosenScheduleId = beerxmlScheduleSelectEl ? beerxmlScheduleSelectEl.value : '';
+
     var modalContent = document.querySelector('.admin-modal-content');
     if (modalContent) modalContent.classList.remove('admin-modal-content--wide');
     closeModal();
@@ -9849,7 +9859,8 @@
       batch_size_l: parsedRecipe.batch_size_l,
       ibu:          parsedRecipe.ibu,
       colour_srm:   parsedRecipe.colour_srm,
-      status:       'draft'
+      status:       'draft',
+      schedule_id:  chosenScheduleId || ''
     });
 
     var ings = [];
@@ -9983,7 +9994,13 @@
       // adminApiGet has no other public caller that isolates a single call/response.
       _adminApiGetForTest: adminApiGet,
       // 81-05: BeerXML review modal (D-12) test hook
-      showBeerXMLReviewModal: showBeerXMLReviewModal
+      showBeerXMLReviewModal: showBeerXMLReviewModal,
+      // 81-05: BeerXML review modal schedule carry-through (Task 3) test hooks
+      confirmBeerXMLImport: confirmBeerXMLImport,
+      // Test seam for fermSchedulesData -- module-scope var normally filled
+      // only by an async Apps-Script fetch (triggerBatchLoad), which unit
+      // tests must not depend on.
+      _setFermSchedulesDataForTest: function (arr) { fermSchedulesData = arr; }
     });
   }
 
