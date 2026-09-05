@@ -68,7 +68,12 @@ function bustRecipeCache(recipeId) {
 // ingredients gate.
 // ---------------------------------------------------------------------------
 
-var PUBLIC_RECIPE_FIELDS = ['recipe_id', 'name', 'style', 'description'];
+// D-16 amendment to Phase 74 D-07: 'ferment_days' is the ONLY field this
+// phase (81-02) adds to the public boundary. `schedule_id` and step data
+// (steps, steps_parsed, title, is_transfer) are deliberately absent and
+// must stay absent — the schedule is reduced to this single integer before
+// anything reaches toPublicRecipe.
+var PUBLIC_RECIPE_FIELDS = ['recipe_id', 'name', 'style', 'description', 'ferment_days'];
 
 // Build-by-allowlist, never delete-from-source (T-74-04): a public recipe is
 // assembled as a NEW object copying only PUBLIC_RECIPE_FIELDS, so a future
@@ -153,6 +158,68 @@ function enrichIngredientGroups(ingredients) {
       ing.display_group = ing.cf_subcategory || ing.cf_type || '';
     });
   }).catch(function () {}); // D-07: never throw on enrichment failure
+}
+
+// ---------------------------------------------------------------------------
+// Helper — Fermentation timeline derivation (D-16, D-03, Phase 81-02)
+//
+// A byte-identical copy of this pure function lives in the browser runtime
+// at js/admin.js (created by plan 81-05 for D-14's live comparison). The
+// duplication is deliberate: the two runtimes cannot share a module, and if
+// the "exclude packaging, take the max" rule ever drifts between them the
+// BeerXML review modal would show staff a different number from the one
+// that later appears on the live card.
+// ---------------------------------------------------------------------------
+
+function maxNonPackagingOffset(schedule) {
+  var steps = (schedule && schedule.steps_parsed) || [];
+  if (!Array.isArray(steps)) return null;
+  var max = null;
+  steps.forEach(function (step) {
+    if (!step) return;
+    var qualifies = step.is_packaging !== true && typeof step.day_offset === 'number';
+    if (!qualifies) return; // packaging steps and non-numeric offsets are skipped, not coerced
+    if (max === null || step.day_offset > max) max = step.day_offset;
+  });
+  return max;
+}
+
+// ---------------------------------------------------------------------------
+// Helper — Fermentation schedule fetch (Redis cached, Apps Script sourced)
+//
+// Uses axios.get (NOT callAppsScriptPost/doPost): `get_ferm_schedules` is
+// absent from doPost's hardcoded server-token allowlist
+// (apps-script/adminApi.gs:262-329) and would return invalid_action, whereas
+// doGet's bypass already dispatches it. Adding get_ferm_schedules to doPost's
+// allowlist is explicitly the wrong fix — it would widen the write-path
+// action surface for no benefit.
+//
+// Never rejects: a schedules outage must degrade to "no timeline shown"
+// (D-09) and never fail the whole recipe list.
+// ---------------------------------------------------------------------------
+
+function fetchFermSchedules() {
+  return cache.get(C.CACHE_KEYS.FERM_SCHEDULES).then(function (cached) {
+    if (cached) return cached;
+
+    var url = process.env.APPS_SCRIPT_URL;
+    var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
+    if (!url || !token) return [];
+
+    return axios.get(url, {
+      params: { action: 'get_ferm_schedules', server_token: token },
+      timeout: 12000
+    }).then(function (resp) {
+      var data = (resp && resp.data) || {};
+      if (!data.ok) return [];
+      var schedules = (data.data && data.data.schedules) || [];
+      cache.set(C.CACHE_KEYS.FERM_SCHEDULES, schedules, 300);
+      return schedules;
+    });
+  }).catch(function (err) {
+    log.warn('[api/recipes] fetchFermSchedules failed: ' + err.message);
+    return [];
+  });
 }
 
 function enrichWithComputedPrice(recipe, ingredients) {
@@ -299,6 +366,35 @@ function enrichListPrices(recipes) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper — Fermentation timeline enrichment (D-16, D-09, Phase 81-02)
+//
+// Sets recipe.ferment_days ONLY when derivable and strictly greater than 0.
+// Never assigns null/0/undefined — an assigned-but-empty key would still
+// survive toPublicRecipe's hasOwnProperty copy, and D-09 requires an
+// unusable value to be indistinguishable from "no schedule". Degrades to
+// "no timeline shown" on any failure (schedules fetch, cache, etc.) rather
+// than failing the recipe list/detail response.
+// ---------------------------------------------------------------------------
+
+function enrichFermentDays(recipes) {
+  var list = recipes || [];
+  var anyScheduled = list.some(function (r) { return r && r.schedule_id; });
+  if (!anyScheduled) return Promise.resolve();
+
+  return fetchFermSchedules().then(function (schedules) {
+    var map = {};
+    (schedules || []).forEach(function (s) { if (s && s.schedule_id) map[s.schedule_id] = s; });
+    list.forEach(function (recipe) {
+      if (!recipe || !recipe.schedule_id) return;
+      var offset = maxNonPackagingOffset(map[recipe.schedule_id]);
+      if (typeof offset === 'number' && offset > 0) {
+        recipe.ferment_days = offset;
+      }
+    });
+  }).catch(function () {});
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/recipes — List recipes with optional status filter
 // ---------------------------------------------------------------------------
 
@@ -333,7 +429,10 @@ router.get('/api/recipes', function (req, res) {
     return cache.get(cacheKey).then(function (cached) {
       if (cached && cached.recipes) {
         log.info('[api/recipes] Cache hit status=' + status);
-        return enrichListPrices(cached.recipes).then(function () {
+        return Promise.all([
+          enrichListPrices(cached.recipes),
+          enrichFermentDays(cached.recipes)
+        ]).then(function () {
           sendRecipeList('cache', cached.recipes, cached.total);
         });
       }
@@ -349,7 +448,10 @@ router.get('/api/recipes', function (req, res) {
             cache.set(C.CACHE_KEYS.RECIPES_TS, Date.now(), RECIPES_CACHE_TTL);
           }
           var recipeList = payload.recipes || [];
-          return enrichListPrices(recipeList).then(function () {
+          return Promise.all([
+            enrichListPrices(recipeList),
+            enrichFermentDays(recipeList)
+          ]).then(function () {
             sendRecipeList('apps-script', recipeList, payload.total || 0);
           });
         });
@@ -389,9 +491,12 @@ router.get('/api/recipes/:id', function (req, res) {
     return cache.get(cacheKey).then(function (cached) {
       if (cached) {
         log.info('[api/recipes/' + recipeId + '] Cache hit');
-        return enrichWithComputedPrice(cached.recipe, cached.ingredients).then(function () {
-          return enrichIngredientGroups(cached.ingredients);
-        }).then(function () {
+        return Promise.all([
+          enrichWithComputedPrice(cached.recipe, cached.ingredients).then(function () {
+            return enrichIngredientGroups(cached.ingredients);
+          }),
+          enrichFermentDays([cached.recipe])
+        ]).then(function () {
           // Full result stays cached regardless of caller tier — staff and
           // the kiosk depend on it. Projection happens only at response time.
           cache.set(cacheKey, cached, RECIPES_CACHE_TTL);
@@ -405,9 +510,12 @@ router.get('/api/recipes/:id', function (req, res) {
           }
           var detail = data.data || {};
           var result = { recipe: detail.recipe || detail, ingredients: detail.ingredients || [] };
-          return enrichWithComputedPrice(result.recipe, result.ingredients).then(function () {
-            return enrichIngredientGroups(result.ingredients);
-          }).then(function () {
+          return Promise.all([
+            enrichWithComputedPrice(result.recipe, result.ingredients).then(function () {
+              return enrichIngredientGroups(result.ingredients);
+            }),
+            enrichFermentDays([result.recipe])
+          ]).then(function () {
             cache.set(cacheKey, result, RECIPES_CACHE_TTL);
             sendRecipeDetail(result);
           });
@@ -704,5 +812,8 @@ router.post('/api/recipes/bust-cache', function (req, res) {
     res.status(500).json({ error: 'Cache bust failed' });
   });
 });
+
+router.maxNonPackagingOffset = maxNonPackagingOffset;
+router.fetchFermSchedules = fetchFermSchedules;
 
 module.exports = router;

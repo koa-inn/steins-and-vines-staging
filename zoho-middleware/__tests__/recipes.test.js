@@ -37,7 +37,8 @@ jest.mock('../lib/constants', function () {
       RECIPES_TS: 'sv:recipes:ts',
       INGREDIENTS: 'zoho:ingredients',
       INGREDIENTS_ALL: 'zoho:ingredients:all',
-      RECIPE_AVAILABILITY: 'sv:recipe-availability'
+      RECIPE_AVAILABILITY: 'sv:recipe-availability',
+      FERM_SCHEDULES: 'sv:ferm-schedules'
     }
   };
 });
@@ -49,10 +50,11 @@ jest.mock('../lib/constants', function () {
 function resetAndLoadRecipes() {
   mockRouteHandlers = {};
   jest.resetModules();
-  require('../routes/recipes');
+  var recipesRoute = require('../routes/recipes');
   return {
     axios: require('axios'),
-    cache: require('../lib/cache')
+    cache: require('../lib/cache'),
+    recipes: recipesRoute
   };
 }
 
@@ -1170,6 +1172,216 @@ describe('Phase 73-02: unit-aware computed_price (detail + list read-paths)', fu
       expect(good.computed_price).toBe(11); // (2 * 3) + service_fee 5
       expect(bad.computed_price).toBeNull();
       expect(typeof bad.pricing_error).toBe('string');
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 81-02 Task 1: maxNonPackagingOffset — pure derivation
+// ---------------------------------------------------------------------------
+
+describe('maxNonPackagingOffset', function () {
+  var recipes;
+  beforeEach(function () {
+    recipes = resetAndLoadRecipes().recipes;
+  });
+
+  test('returns the max day_offset among non-packaging steps', function () {
+    var schedule = { steps_parsed: [{ day_offset: 0 }, { day_offset: 21 }, { is_packaging: true }] };
+    expect(recipes.maxNonPackagingOffset(schedule)).toBe(21);
+  });
+
+  test('steps stored out of order still yield the maximum', function () {
+    var schedule = { steps_parsed: [{ day_offset: 21 }, { day_offset: 3 }, { day_offset: 14 }] };
+    expect(recipes.maxNonPackagingOffset(schedule)).toBe(21);
+  });
+
+  test('the packaging step is excluded even when it carries the largest day_offset', function () {
+    var schedule = { steps_parsed: [{ day_offset: 21 }, { day_offset: 99, is_packaging: true }] };
+    expect(recipes.maxNonPackagingOffset(schedule)).toBe(21);
+  });
+
+  test('a schedule whose only step is the packaging step returns null', function () {
+    var schedule = { steps_parsed: [{ day_offset: 99, is_packaging: true }] };
+    expect(recipes.maxNonPackagingOffset(schedule)).toBeNull();
+  });
+
+  test('null, undefined, {} and { steps_parsed: [] } all return null without throwing', function () {
+    expect(recipes.maxNonPackagingOffset(null)).toBeNull();
+    expect(recipes.maxNonPackagingOffset(undefined)).toBeNull();
+    expect(recipes.maxNonPackagingOffset({})).toBeNull();
+    expect(recipes.maxNonPackagingOffset({ steps_parsed: [] })).toBeNull();
+  });
+
+  test('a step whose day_offset is a string, null or missing is skipped, not coerced', function () {
+    var schedule = {
+      steps_parsed: [
+        { day_offset: '21' },
+        { day_offset: null },
+        { day_offset: undefined },
+        { day_offset: 7 }
+      ]
+    };
+    expect(recipes.maxNonPackagingOffset(schedule)).toBe(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 81-02 Task 1: fetchFermSchedules — cache + Apps Script GET
+// ---------------------------------------------------------------------------
+
+describe('fetchFermSchedules', function () {
+  var mocks;
+  var OLD_APPS_SCRIPT_URL, OLD_APPS_SCRIPT_SERVER_TOKEN;
+
+  beforeEach(function () {
+    mocks = resetAndLoadRecipes();
+    OLD_APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
+    OLD_APPS_SCRIPT_SERVER_TOKEN = process.env.APPS_SCRIPT_SERVER_TOKEN;
+    process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
+    process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
+  });
+
+  afterEach(function () {
+    process.env.APPS_SCRIPT_URL = OLD_APPS_SCRIPT_URL;
+    process.env.APPS_SCRIPT_SERVER_TOKEN = OLD_APPS_SCRIPT_SERVER_TOKEN;
+  });
+
+  test('returns the cached array without calling axios when the cache key is populated', function () {
+    var cachedSchedules = [{ schedule_id: 'FS-1' }];
+    mocks.cache.get.mockResolvedValue(cachedSchedules);
+    return mocks.recipes.fetchFermSchedules().then(function (result) {
+      expect(result).toEqual(cachedSchedules);
+      expect(mocks.axios.get).not.toHaveBeenCalled();
+    });
+  });
+
+  test('calls axios.get with action get_ferm_schedules and server_token, and caches the result', function () {
+    mocks.cache.get.mockResolvedValue(null);
+    mocks.cache.set.mockResolvedValue(true);
+    var schedules = [{ schedule_id: 'FS-1', steps_parsed: [{ day_offset: 21 }] }];
+    mocks.axios.get.mockResolvedValue({ data: { ok: true, data: { schedules: schedules } } });
+    return mocks.recipes.fetchFermSchedules().then(function (result) {
+      expect(result).toEqual(schedules);
+      expect(mocks.axios.get).toHaveBeenCalledTimes(1);
+      var callArgs = mocks.axios.get.mock.calls[0];
+      expect(callArgs[1].params.action).toBe('get_ferm_schedules');
+      expect(callArgs[1].params.server_token).toBe('test-token');
+      expect(mocks.cache.set).toHaveBeenCalledWith('sv:ferm-schedules', schedules, 300);
+    });
+  });
+
+  test('resolves to [] when axios rejects', function () {
+    mocks.cache.get.mockResolvedValue(null);
+    mocks.axios.get.mockRejectedValue(new Error('network down'));
+    return mocks.recipes.fetchFermSchedules().then(function (result) {
+      expect(result).toEqual([]);
+    });
+  });
+
+  test('resolves to [] when the response is ok:false', function () {
+    mocks.cache.get.mockResolvedValue(null);
+    mocks.axios.get.mockResolvedValue({ data: { ok: false, error: 'boom' } });
+    return mocks.recipes.fetchFermSchedules().then(function (result) {
+      expect(result).toEqual([]);
+    });
+  });
+
+  test('resolves to [] when APPS_SCRIPT_URL is unset', function () {
+    delete process.env.APPS_SCRIPT_URL;
+    mocks.cache.get.mockResolvedValue(null);
+    return mocks.recipes.fetchFermSchedules().then(function (result) {
+      expect(result).toEqual([]);
+      expect(mocks.axios.get).not.toHaveBeenCalled();
+    });
+  });
+
+  test('resolves to [] when APPS_SCRIPT_SERVER_TOKEN is unset', function () {
+    delete process.env.APPS_SCRIPT_SERVER_TOKEN;
+    mocks.cache.get.mockResolvedValue(null);
+    return mocks.recipes.fetchFermSchedules().then(function (result) {
+      expect(result).toEqual([]);
+      expect(mocks.axios.get).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 81-02 Task 2 (D-16): ferment_days — staff path + schedules-fetch
+// failure. The anonymous-caller contract has its own dedicated coverage in
+// recipes-public-guard.test.js; these two cases specifically exercise the
+// staff (byte-for-byte) branch and the D-09/T-81-10 degrade-gracefully path.
+// ---------------------------------------------------------------------------
+
+describe('D-16 ferment_days: staff path + schedules-fetch failure (Phase 81-02)', function () {
+  var mocks;
+  var OLD_API_SECRET_KEY;
+
+  var SCHEDULE_WITH_OFFSET = {
+    schedule_id: 'SV-FS-000021',
+    steps_parsed: [
+      { day_offset: 0 },
+      { day_offset: 21 },
+      { day_offset: 999, is_packaging: true }
+    ]
+  };
+
+  // Factory, NOT a shared object literal: enrichFermentDays mutates the
+  // recipe in place (recipe.ferment_days = offset), so a single shared
+  // fixture would leak a mutation from one test into the next.
+  function freshStaffRecipeScheduled() {
+    return {
+      recipe_id: 'SV-R-FERM-STAFF-1',
+      name: 'Staff Fermentation Test IPA',
+      style: 'IPA',
+      status: 'draft',
+      pricing_mode: 'locked',
+      locked_price: 40,
+      schedule_id: 'SV-FS-000021',
+      ingredients: []
+    };
+  }
+
+  beforeEach(function () {
+    mocks = resetAndLoadRecipes();
+    mocks.cache.set.mockResolvedValue(true);
+    mocks.cache.del.mockResolvedValue(true);
+    process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
+    process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
+    OLD_API_SECRET_KEY = process.env.API_SECRET_KEY;
+    process.env.API_SECRET_KEY = TEST_API_KEY;
+  });
+
+  afterEach(function () {
+    process.env.API_SECRET_KEY = OLD_API_SECRET_KEY;
+  });
+
+  test('staff list: still receives schedule_id byte-for-byte and also gains ferment_days', function () {
+    mocks.cache.get.mockImplementation(function (key) {
+      if (key === 'sv:ferm-schedules') return Promise.resolve([SCHEDULE_WITH_OFFSET]);
+      return Promise.resolve(null);
+    });
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipes: [freshStaffRecipeScheduled()], total: 1 } }
+    });
+    return callHandler('GET', '/api/recipes', { query: { status: 'draft' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
+      expect(res._status).toBe(200);
+      var r = res._body.recipes[0];
+      expect(r.schedule_id).toBe('SV-FS-000021');
+      expect(r.ferment_days).toBe(21);
+    });
+  });
+
+  test('schedules fetch failure: list route still returns 200 with recipes and no ferment_days keys', function () {
+    mocks.cache.get.mockResolvedValue(null); // both the recipe-list key and sv:ferm-schedules miss
+    mocks.axios.get.mockRejectedValue(new Error('Apps Script unreachable'));
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipes: [freshStaffRecipeScheduled()], total: 1 } }
+    });
+    return callHandler('GET', '/api/recipes', { query: { status: 'draft' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
+      expect(res._status).toBe(200);
+      var r = res._body.recipes[0];
+      expect(r).not.toHaveProperty('ferment_days');
     });
   });
 });
