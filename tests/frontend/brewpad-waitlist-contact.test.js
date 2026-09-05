@@ -96,7 +96,7 @@ var SERVICES_OK = {
     // WR-04: the Contact sheet selects by slug, never by array position. This fixture
     // carries a decoy first entry precisely so a regression to services[0] fails here.
     { id: 111, title: 'Ferment Kit Booking', slug: 'ferment-kit', bookingUrl: 'https://cal.com/steins-and-vines/ferment-kit' },
-    { id: 222, title: 'Beer Waitlist Booking', slug: 'beer-waitlist', bookingUrl: 'https://cal.com/steins-and-vines/beer-waitlist' }
+    { id: 6955754, title: 'Beer Consult', slug: 'beer-consult', bookingUrl: 'https://cal.com/steins-and-vines-tw8csc/beer-consult' }
   ],
   staff: []
 };
@@ -138,7 +138,7 @@ function mockFetch(opts) {
         return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ services: [], staff: [] }); } });
       }
       if (opts.servicesNoMatch) {
-        // WR-04: a healthy response that simply does not contain the beer-waitlist
+        // WR-04: a healthy response that simply does not contain the beer-consult
         // event type — the real production state until 80-CUTOVER §1a lands.
         return Promise.resolve({
           ok: true,
@@ -259,7 +259,7 @@ describe('opening the sheet', function () {
     });
   });
 
-  test('WR-04: services present but no beer-waitlist slug fails closed — never falls back to services[0]', function () {
+  test('WR-04: services present but no beer-consult slug fails closed — never falls back to services[0]', function () {
     mockFetch({ servicesNoMatch: true });
     renderWithRows([WAITING_ROW]);
     return bp._openWaitlistContactSheetForTest(WAITING_ROW.id).then(function () {
@@ -282,7 +282,7 @@ describe('opening the sheet', function () {
       var subjectInput = document.getElementById('bp-waitlist-contact-subject');
       expect(subjectInput.value).toBe('Your spot on the Steins & Vines beer waitlist is ready!');
       var bodyInput = document.getElementById('bp-waitlist-contact-body-input');
-      expect(bodyInput.value).toContain('https://cal.com/steins-and-vines/beer-waitlist');
+      expect(bodyInput.value).toContain('https://cal.com/steins-and-vines-tw8csc/beer-consult');
       expect(bodyInput.value).toContain('Hi there,');
     });
   });
@@ -329,7 +329,7 @@ describe('send (D-05, D-07, D-08)', function () {
         to: 'jane@example.com',
         subject: 'Your spot on the Steins & Vines beer waitlist is ready!',
         body: body.body,
-        bookingUrl: 'https://cal.com/steins-and-vines/beer-waitlist'
+        bookingUrl: 'https://cal.com/steins-and-vines-tw8csc/beer-consult'
       });
     });
   });

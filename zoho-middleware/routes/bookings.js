@@ -137,10 +137,13 @@ router.get('/api/bookings/services', async function (req, res) {
       return res.json(cached);
     }
 
-    // Read both configured event-type IDs; skip any that are not set.
+    // Read the configured event-type IDs; skip any that are not set. BEER_WAITLIST
+    // backs the Phase 80 waitlist contact flow (80-CUTOVER §1a) — BrewPad selects it
+    // by slug ('beer-consult'), so it must be surfaced here or that flow fails closed.
     var ids = [
       process.env.CALCOM_EVENT_TYPE_FERMENT_KIT,
-      process.env.CALCOM_EVENT_TYPE_BOTTLING
+      process.env.CALCOM_EVENT_TYPE_BOTTLING,
+      process.env.CALCOM_EVENT_TYPE_BEER_WAITLIST
     ].filter(function (id) { return id && String(id).trim() !== ''; });
 
     var serviceData;

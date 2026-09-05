@@ -964,18 +964,16 @@ var WAITLIST_STATUS_COLORS = { waiting: 'neutral', contacted: 'warning', booked:
 // That event type does not exist yet (§1a steps (a)/(b) are the owner's to perform), so
 // its slug is genuinely unknowable here and is deliberately NOT invented.
 //
-// PROVISIONAL VALUE — 'beer-waitlist' is a placeholder, not a confirmed slug. No
-// Cal.com event type with this slug exists yet, and bookings.js does not yet
-// surface a third event type at all (§1a step (c)), so in production this matches
-// nothing and the flow fails LOUDLY and CLOSED via the existing "Could not prepare
-// the booking link" path — rather than silently mailing waitlist customers a
-// ferment-kit link. UAT leg 7 is already marked BLOCKED ON §1a, so this turns a
-// procedural prerequisite into an enforced one.
+// The beer-waitlist Cal.com event type's slug, confirmed by the owner 2026-09-05:
+// https://cal.com/steins-and-vines-tw8csc/beer-consult (event type id 6955754,
+// surfaced through CALCOM_EVENT_TYPE_BEER_WAITLIST — see bookings.js).
 //
-// §1a step (d): replace this with the real slug once the event type exists. If the
-// owner names it something other than 'beer-waitlist', THIS LINE MUST CHANGE TOO —
-// a mismatch here fails closed (no mail sent), it does not mis-send.
-var WAITLIST_BOOKING_SLUG = 'beer-waitlist';
+// Selection is by slug, never by array position: an unmatched lookup yields no
+// service, so bookingUrl stays falsy and the sheet shows "Could not prepare the
+// booking link" — fail LOUDLY and CLOSED rather than silently mailing a waitlist
+// customer a ferment-kit or bottling link. If this slug and the Cal.com event ever
+// diverge, the flow stops; it does not mis-send.
+var WAITLIST_BOOKING_SLUG = 'beer-consult';
 
 // D-05 ONE-WAY: returns the next status in WAITLIST_STATUS_ORDER, or null when there is
 // none (booked, removed, or any unrecognized value). Deliberately does NOT use
