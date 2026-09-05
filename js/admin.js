@@ -8561,6 +8561,15 @@
     initRecipesControls();
     loadIngredientCatalogForRecipes();
     loadRecipeList();
+    // The Recipes tab's schedule picker (#recipe-schedule-select) needs
+    // fermSchedulesData, but that array is only populated by
+    // triggerBatchLoad() -> loadBatchInit(), which is otherwise wired
+    // exclusively to the Batches tab. A staff member who opens Admin and
+    // goes straight to Recipes would see an empty picker without this call.
+    // triggerBatchLoad() is idempotent (guarded by _batchDataLoaded /
+    // _batchDataLoading), so calling it here costs nothing when Batches was
+    // already visited.
+    triggerBatchLoad();
   }
 
   // Ingredient catalog pre-load (D-03)
