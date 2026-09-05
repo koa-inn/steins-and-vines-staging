@@ -140,14 +140,14 @@ their own small plan.
 
 | Field | Value |
 |---|---|
-| New Cal.com event type name/title | `<OWNER TO FILL IN>` |
-| New Cal.com event type numeric ID | `<OWNER TO FILL IN>` |
-| Railway env var name | `CALCOM_EVENT_TYPE_BEER_WAITLIST` (proposed — confirm or rename here: `<OWNER TO FILL IN>`) |
-| Railway env var value set on staging | `<OWNER TO FILL IN>` |
-| Railway env var value set on production | `<OWNER TO FILL IN>` |
-| Resulting Cal.com booking URL | `<OWNER TO FILL IN>` |
-| Commit implementing (c) `bookings.js` ids array | `<OWNER/EXECUTOR TO FILL IN — separate plan>` |
-| Commit implementing (d) `brewpad.js` explicit selection | `<OWNER/EXECUTOR TO FILL IN — separate plan>` |
+| New Cal.com event type name/title | **Beer Consult** — `https://cal.com/steins-and-vines-tw8csc/beer-consult` (created by owner 2026-09-05) |
+| New Cal.com event type numeric ID | **6955754** |
+| Railway env var name | **`CALCOM_EVENT_TYPE_BEER_WAITLIST`** — confirmed. Note it is purpose-named (the waitlist contact flow); the Cal.com slug is `beer-consult`. The var holds the **numeric ID**, not the slug — `bookings.js` calls `calcom.listEventType(Number(id))`. |
+| Railway env var value set on staging | `<OWNER TO FILL IN — set to 6955754>` |
+| Railway env var value set on production | `<OWNER TO FILL IN — set to 6955754>` |
+| Resulting Cal.com booking URL | `https://cal.com/steins-and-vines-tw8csc/beer-consult` |
+| Commit implementing (c) `bookings.js` ids array | DONE 2026-09-05 — `CALCOM_EVENT_TYPE_BEER_WAITLIST` added to the services id list |
+| Commit implementing (d) `brewpad.js` explicit selection | DONE 2026-09-05 — `WAITLIST_BOOKING_SLUG = 'beer-consult'`; selection by slug, fails closed on no match |
 | Date/time (c)+(d) redeployed | `<OWNER/EXECUTOR TO FILL IN>` |
 
 ---
