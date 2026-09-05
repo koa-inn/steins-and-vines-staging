@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: Phase 80 UI-SPEC approved
-last_updated: "2026-09-04T17:56:30.267Z"
-last_activity: 2026-09-04 -- Phase 80 execution started
+stopped_at: Phase 80 UAT complete -- leg 13 cleanup + phase closeout remain
+last_updated: "2026-09-05T13:20:00.000Z"
+last_activity: 2026-09-05 -- Phase 80 UAT leg 7 PASS (last runnable leg)
 progress:
   total_phases: 66
   completed_phases: 26
@@ -51,7 +51,7 @@ Next: **staging deploy + BrewPad UAT, then prod cutover.** Apps-Script leg alrea
 
 Milestone: v4.5 Security & Money-Path Closeout — NOT complete (the 2026-07-08 `milestone_complete` flag was false; corrected 2026-07-10). Done: 46 (SEC-02 ✅), 48 (KIOSK-01 ✅ — de-fork live-verified standalone 2026-07-10, 22/22 threats secured), 51 (Phase complete for its narrowed scope 2026-09-02 — MONEY-03 itself still open, see above), 52 (RESIL-01 ✅), 53 (OBS-01 ✅), 54 (kiosk gift-card mgmt ✅ — UAT+security closed 2026-07-10). **Open phases:** 47 (SEC-01 — STATE narrative says closed-on-staging but ROADMAP checkbox is still `[ ]`; needs owner reconciliation), 49 (MONEY-01 — 49-01 code merged, 49-02 live-card UAT pending), 50 (MONEY-02, still gated on its four blocking-human checkpoints). MONEY-03's M9/M18 follow-up and M15 rehome still need their own phase.
 Status: Executing Phase 80
-Last activity: 2026-09-04 -- Phase 80 execution started
+Last activity: 2026-09-05 -- Phase 80 UAT leg 7 PASS (last runnable leg)
 
 **Phase 49 / MONEY-01 (H2) — 49-01 code done, merged to main.** `/api/checkout` now reads back the captured amount (`helcimLib.getCardTransactionById`) and verifies it covers the invoice total (±$0.01) BEFORE side-effects/customerpayments; short/unverifiable → tagged throw routed through the existing `moneyPath.voidWithTimeout` (single void path) → 402. RED→GREEN commits + 13-test regression `checkout-captured-amount.test.js`; full middleware suite 62/1187 green; lint clean. **Pending: 49-02** live-card UAT (checkpoint) — needs the new code deployed and a real card terminal, so it rides a prod deploy / Phase 46 cutover: confirm a legit order still books paid (no false-void) + a tamper attempt is voided.
 
@@ -163,11 +163,43 @@ Last activity: 2026-09-04 -- Phase 80 execution started
 - BEER_SALES_ENABLED is now `true` in Railway production (confirmed live 2026-06-26, intentionally enabled) — kiosk recipe sales + recipe discounts are active. (Was previously held false pending the federal brewing licence; ensure the licence status supports live beer sales at the kiosk POS.)
 - Apps Script changes require manual redeploy (not in CI) — plan authors must flag this
 - 36-02 BLOCKED: Apps Script create_batch handler must accept + persist target_volume_l and scale_factor; manual redeploy needed before SEL-02 is fully closed
-- 80-06 Task 3: live Google Sheet migration + Apps Script redeploy + new Cal.com event-type creation awaiting owner action
+- 80-06 Task 3: **§1-§6 all COMPLETE as of 2026-09-05.** Migration, Apps Script redeploy (v54->v55,
+  rollback target 54), §4 probes, staging deploy and the full §6 UAT are done and recorded in
+  `80-CUTOVER.md`. **UAT final: 12 PASS / 1 PARTIAL / 1 NOT RUN / 0 FAIL.**
+  - **Leg 7 (contact end-to-end) PASSED 2026-09-05** — the last runnable leg. Contact sheet resolved
+    `cal.com/steins-and-vines-tw8csc/beer-consult` (NOT `batch-start-appointment-kit`), which is the
+    live proof of the WR-04 slug-selection fix; `get_waitlist` confirmed `status:"contacted"` +
+    `contacted_at:2026-09-05T13:12:57.615Z`; owner confirmed email receipt. This also proved
+    `RESEND_API_KEY` is restored on staging via a real successful send.
+  - **Leg 4 stays PARTIAL** — `/api/recipes?status=active` returns only Czech Lager, so the
+    "attach two recipes, remove one" pipe-delimited multi-value assertion cannot be exercised.
+    Closing it needs a second active recipe; otherwise accept PARTIAL.
+  - **Leg 13 (cleanup) NOT RUN — owner-only, no Sheets/MailerLite access from Claude.** Two probe
+    rows remain: `phase80-uat3@example.com` (`0870e675-...`, waiting) and
+    `koainn+phase80uat@gmail.com` (`9eba5eda-...`, contacted). Remove both from the `Waitlist` tab
+    AND the MailerLite beer group; confirm Zoho contact `109900000001294001` is deleted. All six
+    real customer rows re-verified clean 2026-09-05 (still `waiting`, empty position/contacted_at).
+  - **Remaining to close Phase 80:** leg 13 cleanup, then verification + ROADMAP checkbox.
+  - **Production cutover (§7) is explicitly OUT of phase 80 scope** — batches with the pending
+    51/74/78/79 pushes. Apps Script v55 already serves prod; frontend/middleware prod push has not
+    happened. Non-blocking owner action: set `CALCOM_EVENT_TYPE_BEER_WAITLIST=6955754` on the
+    PRODUCTION Railway environment (confirmed on staging, never verified on prod).
 
 ## Session Continuity
 
-Last session: 2026-09-04T13:44:18.809Z
+Last session: 2026-09-05T13:20:00.000Z
+Stopped at: **Phase 80 UAT complete — leg 7 PASSED, the last runnable leg.** Resumed from
+`HANDOFF.json` (now retired). Confirmed the staging redeploy of the double-encoding fix `8a3d7868`
+landed by calling `/api/bookings/services` twice — the second, cache-hit call returned a parsed
+object containing slug `beer-consult`, which is exactly how the bug previously hid. Then drove leg 7
+in Chrome and recorded the result in `80-CUTOVER.md` (`ad0d6c00`).
+**Next:** owner performs leg 13 cleanup (2 probe rows + MailerLite + Zoho contact), then Phase 80
+closeout (verification + ROADMAP). Leg 4 remains PARTIAL pending a second active recipe.
+**Note:** `links.html` is a pre-existing owner edit in the working tree — NOT part of phase 80,
+never stage it.
+
+### Prior session (2026-09-04)
+
 Stopped at: Phase 80 UI-SPEC approved
 **INV-000137 backfilled** — `SV-B-000183` + `SV-B-000184`; guard now reports "3 of 3" and rejects a 4th. Owner redeployed Apps Script twice. Middleware suite 1283 / frontend 986 / lint clean.
 **⚠️ Anti-patterns discovered (see `.planning/.continue-here.md`):** (1) *green tests ≠ working system* — `fda6e40` passed its suite for 4 days while dead in prod, because the contradicting logic lived in Apps Script (no CI deploy, no Jest); exercise Apps-Script-crossing changes against the live system. (2) *`curl` against prod lies* — Cloudflare returns a 403 bot-challenge page, which made me wrongly conclude prod had no GTM/CSP; verify prod **through the browser**. (3) `apps-script/*.gs` needs a MANUAL redeploy.
