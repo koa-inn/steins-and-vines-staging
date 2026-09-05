@@ -8819,6 +8819,7 @@
     if (pricingModeSelect) pricingModeSelect.value = r.pricing_mode || 'locked';
     _recipesState.previousStatus = r.status || 'draft';
     document.getElementById('recipe-status-error').textContent = '';
+    renderScheduleWarning();
   }
 
   // Availability banner rendering (D-07)
@@ -8842,6 +8843,22 @@
     }
 
     banner.innerHTML = '<div class="availability-banner ' + cls + '">' + escapeHTML(msg) + '</div>';
+  }
+
+  // D-11 warn-don't-block: an active recipe with no fermentation schedule
+  // won't show a timeline on its public card. This is advisory only -- it
+  // must never be added to canActivateRecipe or any save pre-flight, since
+  // that would turn an advisory into a new way for a save to fail.
+  function renderScheduleWarning() {
+    var warningEl = document.getElementById('recipe-schedule-warning');
+    var statusEl = document.getElementById('recipe-status');
+    var scheduleEl = document.getElementById('recipe-schedule-select');
+    if (!warningEl || !statusEl || !scheduleEl) return;
+    if (statusEl.value === 'active' && !scheduleEl.value) {
+      warningEl.textContent = "This recipe won't show a timeline on its card — attach a fermentation schedule, or set status to Draft.";
+    } else {
+      warningEl.textContent = '';
+    }
   }
 
   // Ingredient rows rendering with availability status dots (D-07, D-08)
@@ -9306,6 +9323,14 @@
     if (statusSelect) {
       statusSelect.addEventListener('change', function () {
         document.getElementById('recipe-status-error').textContent = '';
+        renderScheduleWarning();
+      });
+    }
+
+    var scheduleSelectEl = document.getElementById('recipe-schedule-select');
+    if (scheduleSelectEl) {
+      scheduleSelectEl.addEventListener('change', function () {
+        renderScheduleWarning();
       });
     }
 

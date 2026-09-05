@@ -3051,6 +3051,10 @@ body.kiosk-mode .batch-cal-day { min-height: 100px; }
   min-height: 16px;
 }
 
+.recipes-inline-error--warning {
+  color: var(--batch-warning);
+}
+
 .recipes-availability-banner {
   margin-bottom: var(--sp-4);
 }
