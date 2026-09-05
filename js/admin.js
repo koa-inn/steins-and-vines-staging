@@ -8561,6 +8561,15 @@
     initRecipesControls();
     loadIngredientCatalogForRecipes();
     loadRecipeList();
+    // The Recipes tab's schedule picker (#recipe-schedule-select) needs
+    // fermSchedulesData, but that array is only populated by
+    // triggerBatchLoad() -> loadBatchInit(), which is otherwise wired
+    // exclusively to the Batches tab. A staff member who opens Admin and
+    // goes straight to Recipes would see an empty picker without this call.
+    // triggerBatchLoad() is idempotent (guarded by _batchDataLoaded /
+    // _batchDataLoading), so calling it here costs nothing when Batches was
+    // already visited.
+    triggerBatchLoad();
   }
 
   // Ingredient catalog pre-load (D-03)
@@ -8767,6 +8776,29 @@
     });
   }
 
+  // Build <option> markup for the recipe editor's schedule picker
+  // (#recipe-schedule-select). Beer-category entries are sorted first,
+  // every other entry after them -- filter-then-show, never hide-entirely,
+  // since a blank category is a normal, reachable state on existing
+  // FermSchedules rows (renderScheduleForm offers an explicit "None"
+  // category option) and a beer recipe may legitimately reuse a generic
+  // or blank-category template. escapeHTML is applied to schedule_id, name
+  // and category, matching the stricter #sa-schedule-select loop rather
+  // than the unescaped #batch-schedule-select loop.
+  function buildScheduleOptionsHtml(selectedId) {
+    var html = '<option value="">None</option>';
+    var sorted = fermSchedulesData.slice().sort(function (a, b) {
+      var aBeer = a.category === 'beer' ? 0 : 1;
+      var bBeer = b.category === 'beer' ? 0 : 1;
+      return aBeer - bBeer;
+    });
+    sorted.forEach(function (s) {
+      var selected = s.schedule_id === selectedId ? ' selected' : '';
+      html += '<option value="' + escapeHTML(s.schedule_id) + '"' + selected + '>' + escapeHTML(s.name) + (s.category ? ' (' + escapeHTML(s.category) + ')' : '') + '</option>';
+    });
+    return html;
+  }
+
   // Populate form fields
   function populateRecipeForm(recipe) {
     var r = recipe || {};
@@ -8777,6 +8809,8 @@
     document.getElementById('recipe-abv').value = r.abv || '';
     document.getElementById('recipe-ibu').value = r.ibu || '';
     document.getElementById('recipe-colour').value = r.colour_srm || '';
+    var scheduleSelect = document.getElementById('recipe-schedule-select');
+    if (scheduleSelect) scheduleSelect.innerHTML = buildScheduleOptionsHtml(r.schedule_id || '');
     document.getElementById('recipe-locked-price').value = r.locked_price || '';
     document.getElementById('recipe-service-fee').value = r.service_fee != null ? r.service_fee : 45; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
     document.getElementById('recipe-materials-fee').value = r.materials_fee != null ? r.materials_fee : 5; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
@@ -8785,6 +8819,7 @@
     if (pricingModeSelect) pricingModeSelect.value = r.pricing_mode || 'locked';
     _recipesState.previousStatus = r.status || 'draft';
     document.getElementById('recipe-status-error').textContent = '';
+    renderScheduleWarning();
   }
 
   // Availability banner rendering (D-07)
@@ -8808,6 +8843,22 @@
     }
 
     banner.innerHTML = '<div class="availability-banner ' + cls + '">' + escapeHTML(msg) + '</div>';
+  }
+
+  // D-11 warn-don't-block: an active recipe with no fermentation schedule
+  // won't show a timeline on its public card. This is advisory only -- it
+  // must never be added to canActivateRecipe or any save pre-flight, since
+  // that would turn an advisory into a new way for a save to fail.
+  function renderScheduleWarning() {
+    var warningEl = document.getElementById('recipe-schedule-warning');
+    var statusEl = document.getElementById('recipe-status');
+    var scheduleEl = document.getElementById('recipe-schedule-select');
+    if (!warningEl || !statusEl || !scheduleEl) return;
+    if (statusEl.value === 'active' && !scheduleEl.value) {
+      warningEl.textContent = "This recipe won't show a timeline on its card — attach a fermentation schedule, or set status to Draft.";
+    } else {
+      warningEl.textContent = '';
+    }
   }
 
   // Ingredient rows rendering with availability status dots (D-07, D-08)
@@ -9080,6 +9131,7 @@
       abv: parseFloat(document.getElementById('recipe-abv').value) || 0,
       ibu: parseInt(document.getElementById('recipe-ibu').value, 10) || 0,
       colour_srm: parseInt(document.getElementById('recipe-colour').value, 10) || 0,
+      schedule_id: document.getElementById('recipe-schedule-select').value || null,
       pricing_mode: document.getElementById('recipe-pricing-mode') ? document.getElementById('recipe-pricing-mode').value : 'locked',
       locked_price: parseFloat(document.getElementById('recipe-locked-price').value) || 0,
       service_fee: parseFloat(document.getElementById('recipe-service-fee').value) || 45,
@@ -9271,6 +9323,14 @@
     if (statusSelect) {
       statusSelect.addEventListener('change', function () {
         document.getElementById('recipe-status-error').textContent = '';
+        renderScheduleWarning();
+      });
+    }
+
+    var scheduleSelectEl = document.getElementById('recipe-schedule-select');
+    if (scheduleSelectEl) {
+      scheduleSelectEl.addEventListener('change', function () {
+        renderScheduleWarning();
       });
     }
 

@@ -520,6 +520,15 @@
                     <label for="recipe-colour">Colour (SRM)</label>
                     <input type="number" id="recipe-colour" class="admin-input" step="1" min="0" inputmode="numeric" />
                   </div>
+                  <div class="recipes-form-field">
+                    <label for="recipe-schedule-select">Fermentation Schedule</label>
+                    <select id="recipe-schedule-select" class="admin-select">
+                      <option value="">None</option>
+                      <!-- populated from fermSchedulesData, same option-building loop as
+                           #batch-schedule-select (js/admin.js:6997-7000) -->
+                    </select>
+                    <span id="recipe-schedule-warning" class="recipes-inline-error recipes-inline-error--warning"></span>
+                  </div>
                 </div>
                 <h3 class="recipes-section-heading">Pricing</h3>
                 <div class="recipes-form-grid recipes-form-grid--narrow">
