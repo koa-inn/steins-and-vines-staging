@@ -1850,6 +1850,28 @@ function recipeDisplayPrice(recipe) {
 }
 
 /**
+ * Compute the "Ready in" display strings for a recipe's fermentation figure
+ * (D-05/D-07/D-09). Reads only `recipe.ferment_days` — the ONE derived
+ * integer the public payload carries for this feature (D-16); the frontend
+ * never sees schedule_id, template names or step data.
+ *
+ * Returns null (column omitted, never "0 weeks") unless ferment_days is a
+ * finite number > 0 AND rounds to at least 1 week — the D-09 unusable-value
+ * floor treats a sub-4-day value identically to "no schedule at all".
+ *
+ * @param {Object} recipe - Public recipe payload ({ferment_days}).
+ * @returns {{weeks: String, start: String}|null}
+ */
+function fermentTimeDisplay(recipe) {
+  var days = recipe && recipe.ferment_days;
+  if (typeof days !== 'number' || !isFinite(days) || days <= 0) return null;
+  var weeks = Math.round(days / 7);
+  if (weeks < 1) return null;
+  var weekWord = weeks === 1 ? 'week' : 'weeks';
+  return { weeks: 'about ' + weeks + ' ' + weekWord, start: 'from brew day' };
+}
+
+/**
  * Build a public recipe card — the plain `.product-card` idiom (D-02), never
  * the `.label-wine`/`.label-beer` bottle-label idiom, so a recipe never reads
  * as a purchasable product. Built entirely with createElement/textContent —
@@ -1933,6 +1955,30 @@ function buildRecipeCard(recipe, doc) {
   priceValue.textContent = recipeDisplayPrice(recipe);
   priceCol.appendChild(priceValue);
   footer.appendChild(priceCol);
+
+  // NEW — conditional second column (D-07/D-09), createElement-only (T-74-12):
+  var fermTime = fermentTimeDisplay(recipe);
+  if (fermTime) {
+    var timeCol = d.createElement('div');
+    timeCol.className = 'price-col';
+    var timeLabel = d.createElement('div');
+    timeLabel.className = 'price-label';
+    timeLabel.textContent = 'Ready in';
+    timeCol.appendChild(timeLabel);
+    var timeValue = d.createElement('div');
+    timeValue.className = 'price-value ferment-time-value';
+    var weeksLine = d.createElement('span');
+    weeksLine.className = 'ferment-time-weeks';
+    weeksLine.textContent = fermTime.weeks;
+    var startLine = d.createElement('span');
+    startLine.className = 'ferment-time-start';
+    startLine.textContent = fermTime.start;
+    timeValue.appendChild(weeksLine);
+    timeValue.appendChild(startLine);
+    timeCol.appendChild(timeValue);
+    footer.appendChild(timeCol);
+  }
+
   card.appendChild(footer);
 
   card.appendChild(buildWaitlistCtaLink(d));
@@ -3584,7 +3630,7 @@ function renderKitBuyControl(wrap, product) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { appendSvLogo: appendSvLogo, buildBeerCard: buildBeerCard, flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, buildRecipeCard: buildRecipeCard, fetchActiveRecipes: fetchActiveRecipes, renderRecipeBlock: renderRecipeBlock, orderCatalogBlocks: orderCatalogBlocks };
+  module.exports = { appendSvLogo: appendSvLogo, buildBeerCard: buildBeerCard, flattenCustomFields: flattenCustomFields, matchesKitCategory: matchesKitCategory, buildWaitlistCtaLink: buildWaitlistCtaLink, sortFilterValues: sortFilterValues, recipeDisplayPrice: recipeDisplayPrice, fermentTimeDisplay: fermentTimeDisplay, buildRecipeCard: buildRecipeCard, fetchActiveRecipes: fetchActiveRecipes, renderRecipeBlock: renderRecipeBlock, orderCatalogBlocks: orderCatalogBlocks };
 }
 var _allIngredients = [];
 var _ingredientsFuse = null;
