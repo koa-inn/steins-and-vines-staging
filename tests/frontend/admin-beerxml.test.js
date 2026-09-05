@@ -111,6 +111,51 @@ function buildXML(recipeXml) {
 }
 
 // ---------------------------------------------------------------------------
+// DOM fixture — this jsdom testEnvironment ignores the top-of-file
+// global.document reassignment above (jest-environment-jsdom's `document`
+// global is not replaceable), so document.getElementById here resolves
+// against the REAL jsdom document. Functions exercising the BeerXML review
+// modal + recipe-editor carry-through (D-12/D-13/D-14) touch a real set of
+// admin-panel DOM ids -- this fixture provides exactly the ids those code
+// paths read/write, built fresh before each test that needs it.
+// ---------------------------------------------------------------------------
+function resetAdminDomFixture() {
+  document.body.innerHTML =
+    '<div id="admin-modal" style="display:none">' +
+    '  <div class="admin-modal-content">' +
+    '    <button id="admin-modal-close"></button>' +
+    '    <h2 id="admin-modal-title"></h2>' +
+    '    <div id="admin-modal-body"></div>' +
+    '  </div>' +
+    '</div>' +
+    '<div id="admin-modal-overlay"></div>' +
+    '<div id="recipes-list-view"></div>' +
+    '<div id="recipes-detail-view"></div>' +
+    '<h2 id="recipes-detail-title"></h2>' +
+    '<button id="recipes-delete-btn"></button>' +
+    '<button id="recipes-duplicate-btn"></button>' +
+    '<button id="recipes-save-btn"></button>' +
+    '<div id="recipes-availability-banner"></div>' +
+    '<table><tbody id="recipes-ingredients-body"></tbody></table>' +
+    '<div id="recipes-ingredients-empty"></div>' +
+    '<input id="recipe-name" />' +
+    '<input id="recipe-style" />' +
+    '<textarea id="recipe-description"></textarea>' +
+    '<input id="recipe-batch-size" />' +
+    '<input id="recipe-abv" />' +
+    '<input id="recipe-ibu" />' +
+    '<input id="recipe-colour" />' +
+    '<select id="recipe-schedule-select"></select>' +
+    '<p id="recipe-schedule-warning"></p>' +
+    '<input id="recipe-locked-price" />' +
+    '<input id="recipe-service-fee" />' +
+    '<input id="recipe-materials-fee" />' +
+    '<select id="recipe-status"></select>' +
+    '<select id="recipe-pricing-mode"></select>' +
+    '<div id="recipe-status-error"></div>';
+}
+
+// ---------------------------------------------------------------------------
 // parseBeerXML
 // ---------------------------------------------------------------------------
 describe('parseBeerXML', function () {
@@ -282,6 +327,104 @@ describe('parseBeerXML', function () {
     // Display should note the conversion
     expect(result.ingredients[0].amount_display).toContain('converted from lbs');
     expect(result.ingredients[1].amount_display).toContain('converted from lbs');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseBeerXML — D-12 fermentation timing extraction (ferment_days_beerxml)
+// ---------------------------------------------------------------------------
+describe('parseBeerXML fermentation timing (D-12)', function () {
+  test('sums PRIMARY_AGE + SECONDARY_AGE when no TERTIARY_AGE is present', function () {
+    var xmlDoc = buildXML(
+      '<NAME>Test Recipe</NAME>' +
+      '<PRIMARY_AGE>14</PRIMARY_AGE>' +
+      '<SECONDARY_AGE>21</SECONDARY_AGE>'
+    );
+    var result = admin.parseBeerXML(xmlDoc);
+    expect(result.ferment_days_beerxml).toBe(35);
+  });
+
+  test('uses PRIMARY_AGE alone when no other timing tag is present', function () {
+    var xmlDoc = buildXML(
+      '<NAME>Test Recipe</NAME>' +
+      '<PRIMARY_AGE>14</PRIMARY_AGE>'
+    );
+    var result = admin.parseBeerXML(xmlDoc);
+    expect(result.ferment_days_beerxml).toBe(14);
+  });
+
+  test('sums all three vessel timing tags when all are present', function () {
+    var xmlDoc = buildXML(
+      '<NAME>Test Recipe</NAME>' +
+      '<PRIMARY_AGE>4</PRIMARY_AGE>' +
+      '<SECONDARY_AGE>10</SECONDARY_AGE>' +
+      '<TERTIARY_AGE>7</TERTIARY_AGE>'
+    );
+    var result = admin.parseBeerXML(xmlDoc);
+    expect(result.ferment_days_beerxml).toBe(21);
+  });
+
+  test('omits ferment_days_beerxml entirely when no timing tag is present', function () {
+    var xmlDoc = buildXML('<NAME>Test Recipe</NAME>');
+    var result = admin.parseBeerXML(xmlDoc);
+    expect('ferment_days_beerxml' in result).toBe(false);
+  });
+
+  test('omits ferment_days_beerxml when every timing tag present is 0', function () {
+    var xmlDoc = buildXML(
+      '<NAME>Test Recipe</NAME>' +
+      '<PRIMARY_AGE>0</PRIMARY_AGE>' +
+      '<SECONDARY_AGE>0</SECONDARY_AGE>' +
+      '<TERTIARY_AGE>0</TERTIARY_AGE>'
+    );
+    var result = admin.parseBeerXML(xmlDoc);
+    expect('ferment_days_beerxml' in result).toBe(false);
+  });
+
+  test('never reads AGE (post-packaging conditioning is out of scope per D-01)', function () {
+    var xmlDoc = buildXML(
+      '<NAME>Test Recipe</NAME>' +
+      '<PRIMARY_AGE>14</PRIMARY_AGE>' +
+      '<AGE>90</AGE>'
+    );
+    var result = admin.parseBeerXML(xmlDoc);
+    expect(result.ferment_days_beerxml).toBe(14);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// showBeerXMLReviewModal meta-line — D-12 BeerXML fermentation claim segment
+// ---------------------------------------------------------------------------
+describe('showBeerXMLReviewModal meta-line ferment segment (D-12)', function () {
+  beforeEach(function () {
+    resetAdminDomFixture();
+  });
+
+  test('meta line ends with the BeerXML days-ferment segment when a timing total exists', function () {
+    var xmlDoc = buildXML(
+      '<NAME>Burton Ale</NAME>' +
+      '<STYLE><NAME>English Pale Ale</NAME></STYLE>' +
+      '<EST_ABV>5.2</EST_ABV>' +
+      '<PRIMARY_AGE>14</PRIMARY_AGE>' +
+      '<SECONDARY_AGE>21</SECONDARY_AGE>'
+    );
+    var parsed = admin.parseBeerXML(xmlDoc);
+    var matchedRows = admin.autoMatchIngredients(parsed);
+    admin.showBeerXMLReviewModal(parsed, matchedRows);
+    var metaLineEl = document.querySelector('.beerxml-meta-line');
+    expect(metaLineEl.textContent).toBe('English Pale Ale · 5.2% ABV · BeerXML: 35 days ferment');
+  });
+
+  test('meta line contains no BeerXML segment when the file carried no timing tags', function () {
+    var xmlDoc = buildXML(
+      '<NAME>Burton Ale</NAME>' +
+      '<STYLE><NAME>English Pale Ale</NAME></STYLE>'
+    );
+    var parsed = admin.parseBeerXML(xmlDoc);
+    var matchedRows = admin.autoMatchIngredients(parsed);
+    admin.showBeerXMLReviewModal(parsed, matchedRows);
+    var metaLineEl = document.querySelector('.beerxml-meta-line');
+    expect(metaLineEl.textContent).not.toContain('BeerXML:');
   });
 });
 
