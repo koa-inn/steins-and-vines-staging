@@ -9360,6 +9360,33 @@
     return els.length > 0 ? (els[0].textContent || '').trim() : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // Helper — Fermentation timeline derivation, browser copy (D-16, D-03, D-14)
+  //
+  // A byte-identical copy of this pure function lives server-side at
+  // zoho-middleware/routes/recipes.js:maxNonPackagingOffset (created by plan
+  // 81-02, which produces the public ferment_days field). The duplication is
+  // deliberate: the two runtimes cannot share a module. This copy renders the
+  // D-14 comparison live in the browser, before any save round-trips to the
+  // server; the Node copy produces the public ferment_days shown on the
+  // customer's card. If the "exclude packaging, take the max" rule ever
+  // drifts between the two copies, the number shown to staff during BeerXML
+  // review will disagree with the number that later appears on the live
+  // card -- exactly the silent drift D-03 exists to prevent.
+  // ---------------------------------------------------------------------------
+  function maxNonPackagingOffset(schedule) {
+    var steps = (schedule && schedule.steps_parsed) || [];
+    if (!Array.isArray(steps)) return null;
+    var max = null;
+    steps.forEach(function (step) {
+      if (!step) return;
+      var qualifies = step.is_packaging !== true && typeof step.day_offset === 'number';
+      if (!qualifies) return; // packaging steps and non-numeric offsets are skipped, not coerced
+      if (max === null || step.day_offset > max) max = step.day_offset;
+    });
+    return max;
+  }
+
   function parseBeerXML(xmlDoc) {
     var recipes = xmlDoc.getElementsByTagName('RECIPE');
     if (recipes.length === 0) return null;
@@ -9378,6 +9405,25 @@
       colour_srm: parseFloat(getTagText(recipe, 'EST_COLOR')) || 0,
       ingredients: []
     };
+
+    // D-12: sum the file's own fermentation-vessel timing claim (display-only,
+    // never written to a recipe, never sent in a save payload, never used to
+    // derive the customer-facing figure -- D-03 keeps the schedule template
+    // the single source of truth, and D-13 forbids even pre-selecting from
+    // this number). Only assigned when the sum is > 0 -- this function's own
+    // `|| 0` + presence-guard convention means an always-present zero would
+    // render a meaningless zero-value meta-line segment, indistinguishable
+    // from a real zero-day claim.
+    //
+    // AGE is deliberately NEVER read here. Per the BeerXML 1.0 spec, AGE is
+    // days to age the beer AFTER bottling -- post-packaging conditioning,
+    // which happens after our handoff, is unverifiable by us, and per D-01 is
+    // never counted and never promised to a customer. Do not "complete" this
+    // field set by adding it.
+    var _fermentDaysTotal = (parseFloat(getTagText(recipe, 'PRIMARY_AGE')) || 0)
+      + (parseFloat(getTagText(recipe, 'SECONDARY_AGE')) || 0)
+      + (parseFloat(getTagText(recipe, 'TERTIARY_AGE')) || 0);
+    if (_fermentDaysTotal > 0) parsed.ferment_days_beerxml = _fermentDaysTotal;
 
     // --- FERMENTABLES with D-08 lbs detection heuristic ---
     var ferms = recipe.getElementsByTagName('FERMENTABLE');
@@ -9570,14 +9616,36 @@
     if (parsed.style) metaLine += escapeHTML(parsed.style);
     if (parsed.abv) metaLine += (metaLine ? ' &middot; ' : '') + parsed.abv.toFixed(1) + '% ABV';
     if (parsed.batch_size_l) metaLine += (metaLine ? ' &middot; ' : '') + parsed.batch_size_l.toFixed(1) + ' L';
+    if (parsed.ferment_days_beerxml) {
+      metaLine += (metaLine ? ' &middot; ' : '') + 'BeerXML: ' + parsed.ferment_days_beerxml + ' days ferment';
+    }
 
     var rowsHTML = '';
     for (var i = 0; i < matchedRows.length; i++) {
       rowsHTML += _buildBeerXMLRowHTML(matchedRows[i], i);
     }
 
+    // D-12/D-13: recipe-level schedule picker, NOT a per-ingredient row, so it
+    // lives above the ingredient table rather than inside it. Reuses plan
+    // 81-04's buildScheduleOptionsHtml (beer-first ordering, escapeHTML
+    // treatment) rather than a second option loop, stripping its own leading
+    // "None" option in favor of this modal's "No schedule (add later)"
+    // wording. Called with '' (never a proximity-matched id) -- D-13 is a
+    // hard requirement that nothing is pre-selected here, no matter how
+    // close a template's offset is to parsed.ferment_days_beerxml. Do not add
+    // nearest-match logic; this omission is intentional.
+    var scheduleOptionsHtml = buildScheduleOptionsHtml('').replace('<option value="">None</option>', '');
+
     var bodyHTML = ''
       + '<p class="beerxml-meta-line">' + metaLine + '</p>'
+      + '<div class="form-group" style="margin-top:var(--sp-4);">'
+      + '<label for="beerxml-schedule-select">Fermentation Schedule</label>'
+      + '<select id="beerxml-schedule-select" class="admin-select">'
+      + '<option value="">No schedule (add later)</option>'
+      + scheduleOptionsHtml
+      + '</select>'
+      + '<p id="beerxml-schedule-compare" class="beerxml-schedule-compare"></p>'
+      + '</div>'
       + '<div style="overflow-x:auto;">'
       + '<table class="beerxml-review-table" role="grid">'
       + '<thead><tr>'
@@ -9602,6 +9670,21 @@
     var confirmBtn = document.getElementById('beerxml-confirm-btn');
     var cancelBtn = document.getElementById('beerxml-cancel-btn');
     var tbody = document.getElementById('beerxml-review-tbody');
+
+    // D-14: neutral side-by-side comparison, no threshold, no judgement.
+    // Starts empty so nothing renders until staff choose a template.
+    var scheduleSelectEl = document.getElementById('beerxml-schedule-select');
+    if (scheduleSelectEl) {
+      scheduleSelectEl.addEventListener('change', function () {
+        var compareEl = document.getElementById('beerxml-schedule-compare');
+        var sched = fermSchedulesData.find(function (s) { return s.schedule_id === scheduleSelectEl.value; });
+        if (!compareEl) return;
+        if (!sched || !parsed.ferment_days_beerxml) { compareEl.textContent = ''; return; }
+        var templateDays = maxNonPackagingOffset(sched);
+        if (templateDays === null) { compareEl.textContent = ''; return; }
+        compareEl.textContent = 'BeerXML: ' + parsed.ferment_days_beerxml + ' days · Template: ' + templateDays + ' days';
+      });
+    }
 
     function canConfirm() {
       return matchedRows.some(function (r) { return !r.skipped && r.zoho_match; });
@@ -9753,6 +9836,16 @@
   }
 
   function confirmBeerXMLImport(parsedRecipe, confirmedRows) {
+    // Read the modal's schedule choice BEFORE closeModal() -- ordering is
+    // load-bearing: closeModal may tear down the modal body, after which
+    // #beerxml-schedule-select is gone. Without this read (and without
+    // carrying it into populateRecipeForm below), the Task 2 dropdown is
+    // decorative: staff choose a template, click Confirm Import, and the
+    // choice is silently discarded with no error -- a verified defect, not a
+    // hypothetical.
+    var beerxmlScheduleSelectEl = document.getElementById('beerxml-schedule-select');
+    var chosenScheduleId = beerxmlScheduleSelectEl ? beerxmlScheduleSelectEl.value : '';
+
     var modalContent = document.querySelector('.admin-modal-content');
     if (modalContent) modalContent.classList.remove('admin-modal-content--wide');
     closeModal();
@@ -9766,7 +9859,8 @@
       batch_size_l: parsedRecipe.batch_size_l,
       ibu:          parsedRecipe.ibu,
       colour_srm:   parsedRecipe.colour_srm,
-      status:       'draft'
+      status:       'draft',
+      schedule_id:  chosenScheduleId || ''
     });
 
     var ings = [];
@@ -9898,7 +9992,15 @@
       _setUserEmail: function (e) { userEmail = e; },
       // 64-03: test seam for the adminApiGet token-transport regression test --
       // adminApiGet has no other public caller that isolates a single call/response.
-      _adminApiGetForTest: adminApiGet
+      _adminApiGetForTest: adminApiGet,
+      // 81-05: BeerXML review modal (D-12) test hook
+      showBeerXMLReviewModal: showBeerXMLReviewModal,
+      // 81-05: BeerXML review modal schedule carry-through (Task 3) test hooks
+      confirmBeerXMLImport: confirmBeerXMLImport,
+      // Test seam for fermSchedulesData -- module-scope var normally filled
+      // only by an async Apps-Script fetch (triggerBatchLoad), which unit
+      // tests must not depend on.
+      _setFermSchedulesDataForTest: function (arr) { fermSchedulesData = arr; }
     });
   }
 
