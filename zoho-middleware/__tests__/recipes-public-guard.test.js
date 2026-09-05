@@ -51,7 +51,8 @@ jest.mock('../lib/constants', function () {
       RECIPES_TS: 'sv:recipes:ts',
       INGREDIENTS: 'zoho:ingredients',
       INGREDIENTS_ALL: 'zoho:ingredients:all',
-      RECIPE_AVAILABILITY: 'sv:recipe-availability'
+      RECIPE_AVAILABILITY: 'sv:recipe-availability',
+      FERM_SCHEDULES: 'sv:ferm-schedules'
     }
   };
 });
@@ -63,10 +64,11 @@ jest.mock('../lib/constants', function () {
 function resetAndLoadRecipes() {
   mockRouteHandlers = {};
   jest.resetModules();
-  require('../routes/recipes');
+  var recipesRoute = require('../routes/recipes');
   return {
     axios: require('axios'),
-    cache: require('../lib/cache')
+    cache: require('../lib/cache'),
+    recipes: recipesRoute
   };
 }
 
@@ -331,6 +333,244 @@ describe('Public recipe read contract (D-05/D-06/D-07)', function () {
       expect(res._status).toBe(200);
       expect(res._body.ingredients).toBeDefined();
       expect(res._body.ingredients.length).toBeGreaterThan(0);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 81-02 Task 2 (D-16): ferment_days — anonymous-caller contract
+//
+// A NEW field crosses the public boundary for the first time this phase.
+// This block asserts it is present exactly when derivable and absent (not
+// null, not 0) in every non-derivable case, and that no internal schedule
+// detail (schedule_id, steps, steps_parsed, is_transfer) ever leaks past
+// the allowlist (T-81-06).
+// ---------------------------------------------------------------------------
+
+describe('D-16 ferment_days: anonymous-caller contract (Phase 81-02)', function () {
+  var mocks;
+  var OLD_API_SECRET_KEY, OLD_APPS_SCRIPT_URL, OLD_APPS_SCRIPT_SERVER_TOKEN;
+
+  var SCHEDULE_WITH_OFFSET = {
+    schedule_id: 'SV-FS-000021',
+    steps_parsed: [
+      { step_number: 1, day_offset: 0, title: 'Pitch', is_transfer: false },
+      { step_number: 2, day_offset: 21, title: 'Dry hop', is_transfer: true },
+      { step_number: 3, day_offset: 999, title: 'Package', is_packaging: true }
+    ]
+  };
+  var SCHEDULE_ZERO_OFFSET = {
+    schedule_id: 'SV-FS-ZERO',
+    steps_parsed: [
+      { step_number: 1, day_offset: 0, title: 'Pitch' },
+      { step_number: 2, day_offset: 999, title: 'Package', is_packaging: true }
+    ]
+  };
+  var SCHEDULE_NEGATIVE_OFFSET = {
+    schedule_id: 'SV-FS-NEG',
+    steps_parsed: [
+      { step_number: 1, day_offset: -3, title: 'Backdated step' }
+    ]
+  };
+  var FERM_SCHEDULES_FIXTURE = [SCHEDULE_WITH_OFFSET, SCHEDULE_ZERO_OFFSET, SCHEDULE_NEGATIVE_OFFSET];
+
+  // Factories, NOT shared object literals: enrichFermentDays mutates the
+  // recipe in place (recipe.ferment_days = offset), so a single shared
+  // fixture reused across tests (or within one test's multi-recipe array)
+  // would leak a mutation forward. Each call site gets its own fresh object.
+  function freshRecipeScheduled() {
+    return {
+      recipe_id: 'SV-R-PGUARD-FERM-1',
+      name: 'Fermentation Test IPA',
+      style: 'IPA',
+      description: 'Has a schedule.',
+      status: 'active',
+      pricing_mode: 'dynamic',
+      computed_price: 20,
+      schedule_id: 'SV-FS-000021',
+      ingredients: []
+    };
+  }
+  function freshRecipeNoSchedule() {
+    return {
+      recipe_id: 'SV-R-PGUARD-FERM-2',
+      name: 'No Schedule Kit',
+      style: 'Kit',
+      description: '',
+      status: 'active',
+      pricing_mode: 'locked',
+      locked_price: 40,
+      service_fee: 5,
+      materials_fee: 5,
+      schedule_id: '',
+      ingredients: []
+    };
+  }
+  function freshRecipeUnknownSchedule() {
+    return {
+      recipe_id: 'SV-R-PGUARD-FERM-3',
+      name: 'Unknown Schedule Kit',
+      style: 'Kit',
+      description: '',
+      status: 'active',
+      pricing_mode: 'locked',
+      locked_price: 30,
+      service_fee: 0,
+      materials_fee: 0,
+      schedule_id: 'SV-FS-MISSING',
+      ingredients: []
+    };
+  }
+  function freshRecipeZeroOffset() {
+    return {
+      recipe_id: 'SV-R-PGUARD-FERM-4',
+      name: 'Zero Offset Kit',
+      style: 'Kit',
+      description: '',
+      status: 'active',
+      pricing_mode: 'locked',
+      locked_price: 25,
+      service_fee: 0,
+      materials_fee: 0,
+      schedule_id: 'SV-FS-ZERO',
+      ingredients: []
+    };
+  }
+  function freshRecipeNegativeOffset() {
+    return {
+      recipe_id: 'SV-R-PGUARD-FERM-5',
+      name: 'Negative Offset Kit',
+      style: 'Kit',
+      description: '',
+      status: 'active',
+      pricing_mode: 'locked',
+      locked_price: 15,
+      service_fee: 0,
+      materials_fee: 0,
+      schedule_id: 'SV-FS-NEG',
+      ingredients: []
+    };
+  }
+
+  beforeEach(function () {
+    OLD_API_SECRET_KEY = process.env.API_SECRET_KEY;
+    OLD_APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
+    OLD_APPS_SCRIPT_SERVER_TOKEN = process.env.APPS_SCRIPT_SERVER_TOKEN;
+    process.env.API_SECRET_KEY = TEST_KEY;
+    process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
+    process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
+
+    mocks = resetAndLoadRecipes();
+    mocks.cache.set.mockResolvedValue(true);
+    mocks.cache.del.mockResolvedValue(true);
+  });
+
+  afterEach(function () {
+    process.env.API_SECRET_KEY = OLD_API_SECRET_KEY;
+    process.env.APPS_SCRIPT_URL = OLD_APPS_SCRIPT_URL;
+    process.env.APPS_SCRIPT_SERVER_TOKEN = OLD_APPS_SCRIPT_SERVER_TOKEN;
+  });
+
+  // cache.get is a single shared mock across every Redis key this route
+  // touches (the recipe-list key AND sv:ferm-schedules) — branch by key so
+  // the recipe-list lookup misses (forcing the Apps Script path) while the
+  // schedules lookup hits with the fixture.
+  function mockRecipesCacheMissFermSchedulesHit(schedules) {
+    mocks.cache.get.mockImplementation(function (key) {
+      if (key === 'sv:ferm-schedules') return Promise.resolve(schedules);
+      return Promise.resolve(null);
+    });
+  }
+
+  test('ferment_days present when derivable: max non-packaging offset 21', function () {
+    mockRecipesCacheMissFermSchedulesHit(FERM_SCHEDULES_FIXTURE);
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipes: [freshRecipeScheduled()], total: 1 } }
+    });
+    return callHandler('GET', '/api/recipes', { query: { status: 'active' }, headers: {} }).then(function (res) {
+      expect(res._body.recipes[0].ferment_days).toBe(21);
+    });
+  });
+
+  test("key entirely absent when schedule_id is '' (not null, not 0)", function () {
+    mockRecipesCacheMissFermSchedulesHit(FERM_SCHEDULES_FIXTURE);
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipes: [freshRecipeNoSchedule()], total: 1 } }
+    });
+    return callHandler('GET', '/api/recipes', { query: { status: 'active' }, headers: {} }).then(function (res) {
+      expect(res._body.recipes[0]).not.toHaveProperty('ferment_days');
+    });
+  });
+
+  test('key entirely absent when schedule_id matches no schedule', function () {
+    mockRecipesCacheMissFermSchedulesHit(FERM_SCHEDULES_FIXTURE);
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipes: [freshRecipeUnknownSchedule()], total: 1 } }
+    });
+    return callHandler('GET', '/api/recipes', { query: { status: 'active' }, headers: {} }).then(function (res) {
+      expect(res._body.recipes[0]).not.toHaveProperty('ferment_days');
+    });
+  });
+
+  test('key entirely absent when the schedule yields a 0 or negative offset', function () {
+    mockRecipesCacheMissFermSchedulesHit(FERM_SCHEDULES_FIXTURE);
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipes: [freshRecipeZeroOffset(), freshRecipeNegativeOffset()], total: 2 } }
+    });
+    return callHandler('GET', '/api/recipes', { query: { status: 'active' }, headers: {} }).then(function (res) {
+      res._body.recipes.forEach(function (r) {
+        expect(r).not.toHaveProperty('ferment_days');
+      });
+    });
+  });
+
+  test('negative sweep: anonymous response never contains schedule_id, steps, steps_parsed or is_transfer', function () {
+    mockRecipesCacheMissFermSchedulesHit(FERM_SCHEDULES_FIXTURE);
+    mocks.axios.post.mockResolvedValue({
+      data: {
+        ok: true,
+        data: {
+          recipes: [
+            freshRecipeScheduled(),
+            freshRecipeNoSchedule(),
+            freshRecipeUnknownSchedule(),
+            freshRecipeZeroOffset(),
+            freshRecipeNegativeOffset()
+          ],
+          total: 5
+        }
+      }
+    });
+    return callHandler('GET', '/api/recipes', { query: { status: 'all' }, headers: {} }).then(function (res) {
+      var serialized = JSON.stringify(res._body);
+      ['schedule_id', 'steps_parsed', '"steps"', 'is_transfer'].forEach(function (forbidden) {
+        expect(serialized.indexOf(forbidden)).toBe(-1);
+      });
+    });
+  });
+
+  test('anonymous detail: the same derivation/omission rules apply to a single recipe', function () {
+    mockRecipesCacheMissFermSchedulesHit(FERM_SCHEDULES_FIXTURE);
+    var recipe = freshRecipeScheduled();
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipe: recipe, ingredients: [] } }
+    });
+    return callHandler('GET', '/api/recipes/:id', { params: { id: recipe.recipe_id }, headers: {} }).then(function (res) {
+      expect(res._status).toBe(200);
+      expect(res._body.recipe.ferment_days).toBe(21);
+      expect(res._body.recipe).not.toHaveProperty('schedule_id');
+    });
+  });
+
+  test('anonymous detail: no ferment_days key when the recipe has no schedule_id', function () {
+    mockRecipesCacheMissFermSchedulesHit(FERM_SCHEDULES_FIXTURE);
+    var recipe = freshRecipeNoSchedule();
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipe: recipe, ingredients: [] } }
+    });
+    return callHandler('GET', '/api/recipes/:id', { params: { id: recipe.recipe_id }, headers: {} }).then(function (res) {
+      expect(res._status).toBe(200);
+      expect(res._body.recipe).not.toHaveProperty('ferment_days');
     });
   });
 });

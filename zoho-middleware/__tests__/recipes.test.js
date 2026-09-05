@@ -1305,3 +1305,83 @@ describe('fetchFermSchedules', function () {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 81-02 Task 2 (D-16): ferment_days — staff path + schedules-fetch
+// failure. The anonymous-caller contract has its own dedicated coverage in
+// recipes-public-guard.test.js; these two cases specifically exercise the
+// staff (byte-for-byte) branch and the D-09/T-81-10 degrade-gracefully path.
+// ---------------------------------------------------------------------------
+
+describe('D-16 ferment_days: staff path + schedules-fetch failure (Phase 81-02)', function () {
+  var mocks;
+  var OLD_API_SECRET_KEY;
+
+  var SCHEDULE_WITH_OFFSET = {
+    schedule_id: 'SV-FS-000021',
+    steps_parsed: [
+      { day_offset: 0 },
+      { day_offset: 21 },
+      { day_offset: 999, is_packaging: true }
+    ]
+  };
+
+  // Factory, NOT a shared object literal: enrichFermentDays mutates the
+  // recipe in place (recipe.ferment_days = offset), so a single shared
+  // fixture would leak a mutation from one test into the next.
+  function freshStaffRecipeScheduled() {
+    return {
+      recipe_id: 'SV-R-FERM-STAFF-1',
+      name: 'Staff Fermentation Test IPA',
+      style: 'IPA',
+      status: 'draft',
+      pricing_mode: 'locked',
+      locked_price: 40,
+      schedule_id: 'SV-FS-000021',
+      ingredients: []
+    };
+  }
+
+  beforeEach(function () {
+    mocks = resetAndLoadRecipes();
+    mocks.cache.set.mockResolvedValue(true);
+    mocks.cache.del.mockResolvedValue(true);
+    process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
+    process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
+    OLD_API_SECRET_KEY = process.env.API_SECRET_KEY;
+    process.env.API_SECRET_KEY = TEST_API_KEY;
+  });
+
+  afterEach(function () {
+    process.env.API_SECRET_KEY = OLD_API_SECRET_KEY;
+  });
+
+  test('staff list: still receives schedule_id byte-for-byte and also gains ferment_days', function () {
+    mocks.cache.get.mockImplementation(function (key) {
+      if (key === 'sv:ferm-schedules') return Promise.resolve([SCHEDULE_WITH_OFFSET]);
+      return Promise.resolve(null);
+    });
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipes: [freshStaffRecipeScheduled()], total: 1 } }
+    });
+    return callHandler('GET', '/api/recipes', { query: { status: 'draft' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
+      expect(res._status).toBe(200);
+      var r = res._body.recipes[0];
+      expect(r.schedule_id).toBe('SV-FS-000021');
+      expect(r.ferment_days).toBe(21);
+    });
+  });
+
+  test('schedules fetch failure: list route still returns 200 with recipes and no ferment_days keys', function () {
+    mocks.cache.get.mockResolvedValue(null); // both the recipe-list key and sv:ferm-schedules miss
+    mocks.axios.get.mockRejectedValue(new Error('Apps Script unreachable'));
+    mocks.axios.post.mockResolvedValue({
+      data: { ok: true, data: { recipes: [freshStaffRecipeScheduled()], total: 1 } }
+    });
+    return callHandler('GET', '/api/recipes', { query: { status: 'draft' }, headers: { 'x-api-key': TEST_API_KEY } }).then(function (res) {
+      expect(res._status).toBe(200);
+      var r = res._body.recipes[0];
+      expect(r).not.toHaveProperty('ferment_days');
+    });
+  });
+});
