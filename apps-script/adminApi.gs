@@ -3604,6 +3604,26 @@ function normalizePricingMode(value) {
   return value === 'dynamic' ? 'dynamic' : 'locked';
 }
 
+/**
+ * Self-migrating helper: the Recipes sheet originally shipped without a
+ * schedule_id column, so a recipe had no way to link to a FermSchedules
+ * template. Add the column (at the end) the first time we write, so
+ * schedule_id persists and round-trips via sheetToObjects' header mapping.
+ * Existing rows read as '' -- '' means "no fermentation schedule attached"
+ * (D-09). schedule_id is a free string ID, not an enum, so unlike
+ * pricing_mode there is no normalizer. Returns the zero-based column index.
+ */
+function ensureRecipesScheduleIdColumn(sheet) {
+  var lastCol = sheet.getLastColumn();
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var idx = headers.indexOf('schedule_id');
+  if (idx === -1) {
+    sheet.getRange(1, lastCol + 1).setValue('schedule_id').setFontWeight('bold');
+    return lastCol; // zero-based index of the newly added column
+  }
+  return idx;
+}
+
 function createRecipe(payload, userEmail) {
   if (!payload.name) {
     return { ok: false, error: 'missing_fields', message: 'name is required' };
@@ -3654,6 +3674,11 @@ function createRecipe(payload, userEmail) {
     var pmCol = ensureRecipesPricingModeColumn(recipesSheet);
     recipesSheet.getRange(recipesSheet.getLastRow(), pmCol + 1)
       .setValue(normalizePricingMode(payload.pricing_mode));
+
+    // Persist schedule_id by header lookup (column is self-migrated if missing, D-03)
+    var scheduleCol = ensureRecipesScheduleIdColumn(recipesSheet);
+    recipesSheet.getRange(recipesSheet.getLastRow(), scheduleCol + 1)
+      .setValue(sanitizeInput(payload.schedule_id || ''));
 
     var ingredientErrors = [];
     var ingredientsCreated = 0;
@@ -3739,7 +3764,10 @@ function updateRecipe(payload, userEmail) {
     // _sheetCache entry when one exists, so reading the row first would yield a short header
     // array and the batched setValues() below would then write a stale-width row. Invalidate
     // the cache immediately after so findRowById() below re-reads the (possibly new) width.
+    // ensureRecipesScheduleIdColumn() (D-03) shares the exact same hazard and so runs here too,
+    // before the same single cache invalidation.
     var pmCol = ensureRecipesPricingModeColumn(recipesSheet);
+    var schedCol = ensureRecipesScheduleIdColumn(recipesSheet);
     invalidateSheetCache(RECIPES_SHEET_NAME);
 
     var result = findRowById(RECIPES_SHEET_NAME, payload.recipe_id);
@@ -3762,7 +3790,7 @@ function updateRecipe(payload, userEmail) {
     var maxCol = null;
 
     // Update string fields via header lookup
-    var stringFields = ['name', 'style', 'description', 'status', 'notes'];
+    var stringFields = ['name', 'style', 'description', 'status', 'notes', 'schedule_id'];
     stringFields.forEach(function (field) {
       if (payload[field] !== undefined) {
         var col = headers.indexOf(field);
