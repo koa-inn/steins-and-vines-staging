@@ -279,12 +279,6 @@ small, .text-small {
   text-align: center;
 }
 
-/* beer.html has 3 steps, not 4 — without this they fill 3 of 4 columns and
-   the whole block sits left of centre. */
-.how-it-works-steps--3 {
-  grid-template-columns: repeat(3, 1fr);
-}
-
 .how-it-works-step {
   display: flex;
   flex-direction: column;
