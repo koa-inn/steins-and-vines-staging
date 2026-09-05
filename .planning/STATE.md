@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: Phase 80 UAT all-green (13 legs) -- one probe row to clear, then closeout
+stopped_at: Phase 80 UAT + cleanup fully done -- only verification + ROADMAP remain
 last_updated: "2026-09-05T13:20:00.000Z"
 last_activity: 2026-09-05 -- Phase 80 UAT fully green: legs 7 and 4 both PASS
 progress:
@@ -180,10 +180,11 @@ Last activity: 2026-09-05 -- Phase 80 UAT fully green: legs 7 and 4 both PASS
     the Zoho test contact are gone; sheet confirmed back to exactly the 6 real customers.
     **ONE new row outstanding:** `phase80-uat4@example.com` (`210dd746-b666-4c62-87a2-b6bdd8855a31`,
     waiting, `recipe_ids="SV-R-000003"`), created to give leg 4 a subject rather than writing to a
-    real customer. Owner: delete it from the `Waitlist` tab + remove from the MailerLite beer group.
-    No Zoho contact and no email are associated with it. **No UAT leg ever wrote to a real customer
-    row** — re-verified after every leg.
-  - **Remaining to close Phase 80:** clear the one probe row, then verification + ROADMAP checkbox.
+    real customer. **CLEARED by the owner 2026-09-05 and verified** — `get_waitlist` returns exactly
+    the 6 real customers, zero probe rows. **Leg 13 is fully closed.** **No UAT leg ever wrote to a
+    real customer row** — re-verified after every leg.
+  - **Remaining to close Phase 80:** verification + ROADMAP checkbox. All UAT and cleanup are DONE.
+  - Phase lessons preserved in `80-CUTOVER.md` §8 (the `.continue-here.md` checkpoint was retired).
   - **Production cutover (§7) is explicitly OUT of phase 80 scope** — batches with the pending
     51/74/78/79 pushes. Apps Script v55 already serves prod; frontend/middleware prod push has not
     happened. Non-blocking owner action: set `CALCOM_EVENT_TYPE_BEER_WAITLIST=6955754` on the

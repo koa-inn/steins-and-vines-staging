@@ -653,5 +653,23 @@ N/A — carry-forward approved, this branch does not apply.
 
 ---
 
+## 8. Lessons from this cutover
+
+Carried over from the phase's `.continue-here.md` checkpoint before it was retired, so they outlive
+the checkpoint. All three were paid for during this phase.
+
+| Lesson | What happened | How to avoid it |
+|---|---|---|
+| **Probe a cached endpoint at least twice.** | `/api/bookings/services` returned a perfect payload on the FIRST curl and double-encoded garbage on every call after, because only the cache-*hit* path was broken. A single probe "confirmed" the endpoint was wired when it was not. | One call only ever exercises the miss path. Call twice and assert on the second. **This is how the fix was verified on resume, and it is why leg 7 passed first try.** |
+| **Don't test a seam by mocking it.** | `bookings.test.js` had a test literally named "returns cached data without double-parsing" that mocked `cache.get` with an already-parsed object. It could never fail on the real bug, which lived between `cache.set` and `cache.get`. | When testing a cache or serialisation boundary, round-trip through the real set/get semantics instead of mocking the parsed result. |
+| **Check the page's idiom before changing a shared style.** | A `.content` alignment mismatch on `beer.html` was "fixed" by left-aligning paragraphs site-wide — locally correct, globally wrong, since centred is this site's idiom. The owner pushed back and it was reverted. | Before changing a shared style rule, look at 2–3 sibling pages and match the dominant pattern rather than optimising one section in isolation. |
+
+A fourth, from the UAT itself: **verify writes server-side, never by UI appearance.** Every leg in §6
+was confirmed through `get_waitlist` rather than by reading the rendered row, which is what let leg 3
+be caught as INCONCLUSIVE (the probe contact had an empty phone, so nothing could have been
+overwritten) and re-run properly instead of being recorded as a false PASS.
+
+---
+
 *Phase: 80-brewpad-waitlist-work-the-queue-link-customers-and-recipes-c*
 *Runsheet drafted: 2026-09-04, plan 80-06 Task 1*
