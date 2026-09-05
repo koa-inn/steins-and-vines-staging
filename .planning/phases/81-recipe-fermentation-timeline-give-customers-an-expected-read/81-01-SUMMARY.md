@@ -182,3 +182,10 @@ Both tasks followed RED → GREEN:
   (confirming the pre-existing gap), then passed after the fix.
 
 No REFACTOR-stage commit was needed for either task.
+
+## Self-Check: PASSED
+
+- FOUND: `apps-script/adminApi.gs`
+- FOUND: `tests/frontend/adminapi-recipe-schedule-column.test.js`
+- FOUND: `.planning/phases/81-recipe-fermentation-timeline-give-customers-an-expected-read/81-01-SUMMARY.md`
+- FOUND: `4cc62864`, `762d6e5b`, `269ba499`, `d85a78a2`, `df3c959e` (all commits verified in `git log --oneline --all`)
