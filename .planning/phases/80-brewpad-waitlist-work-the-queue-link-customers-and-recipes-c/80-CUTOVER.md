@@ -427,7 +427,22 @@ through the deployed `get_waitlist`**, not by UI appearance alone.
 | 5 | **Pin to position.** Pin a row to position 2. | Queue visually reorders so that row renders at rank 2; `get_waitlist`'s `position` cell for that row reads `2`; other rows' `signed_up_at` cells are unchanged. | **PASS.** Toast "Pinned to position 2" (exact spec copy); row moved rank 7 → renders 3rd; `#` cell shows `📌 2 ×` (spec-correct `📌 {position}` for a waiting row). `get_waitlist`: `position=2`, and **all six real customers' `signed_up_at` verified UNCHANGED**. |
 | 6 | **Clear pin.** Clear the position set in leg 5. | Row returns to its natural chronological (signup-order) position; `get_waitlist`'s `position` cell for that row is empty. | **PASS.** Toast "Pin cleared"; row returned to chronological rank 7; `#` cell back to a plain number; `position` empty in `get_waitlist`. |
 | 7 | **BLOCKED ON §1a PREREQUISITE.** Contact a `waiting` row, end to end. Tap Contact, review the pre-filled subject/body (booking link resolved), send. | The probe address receives the email; `get_waitlist` shows the row's `status` advanced to `contacted` and `contacted_at` holds an ISO timestamp. | `BLOCKED — do not run until §1a steps (a)-(e) land; running this today would exercise the wrong (ferment-kit) event type, not the owner-approved beer-waitlist one` |
-| 8 | **D-08 fail-closed send — THE SINGLE MOST IMPORTANT LEG.** Temporarily unset `RESEND_API_KEY` on STAGING Railway only (or address a Resend-rejected address), attempt a Contact send. | Sheet stays open, shows the inline `--batch-danger` error ("Could not send. Please try again."), Send re-enables. **The row's `status` is UNCHANGED** in `get_waitlist` — no partial write. Restore `RESEND_API_KEY` after. | **NOT RUN — needs owner.** Requires unsetting `RESEND_API_KEY` on staging Railway; environment variables were deliberately not modified autonomously. Claude can drive the send attempt and verify status-unchanged once the owner toggles the key. |
+| 8 | **D-08 fail-closed send — THE SINGLE MOST IMPORTANT LEG.** Temporarily unset `RESEND_API_KEY` on STAGING Railway only (or address a Resend-rejected address), attempt a Contact send. | Sheet stays open, shows the inline `--batch-danger` error ("Could not send. Please try again."), Send re-enables. **The row's `status` is UNCHANGED** in `get_waitlist` — no partial write. Restore `RESEND_API_KEY` after. | **PASS** (2026-09-05). Owner broke `RESEND_API_KEY` on staging; Claude drove the send against a
+disposable row (`phase80-uat3@example.com`, id `0870e675-cd6f-421d-80d9-2880b6774317`, `waiting`)
+from the authenticated BrewPad session. **Result: HTTP 502 `{"ok":false,"error":"contact_failed"}`** —
+and specifically `contact_failed`, not `contact_write_failed`, so the SEND failed rather than the
+write, which is the correct discrimination. **Row verified UNCHANGED server-side after two failed
+attempts: `status` still `waiting`, `contacted_at` still empty. No partial write.** D-08 holds
+against a REAL Resend failure — the thing the 1,580 middleware tests cannot prove, since
+`waitlist-staff-routes.test.js:47` mocks `../lib/mailer` entirely and therefore only ever exercises a
+synthetic rejection.
+
+*Residual gap (low risk, not blocking):* the UI half of this leg — sheet stays open, inline
+`--batch-danger` error, Send re-enabled, no success toast — was NOT exercised live, because WR-04's
+fail-closed guard prevented the Contact sheet from rendering a Send button while
+`CALCOM_EVENT_TYPE_BEER_WAITLIST` was unset. That half is covered by
+`tests/frontend/brewpad-waitlist-contact.test.js`'s D-08 case. Re-running it live would require
+breaking `RESEND_API_KEY` again after leg 7, which is not worth the churn. |
 | 9 | **Contact button disabled on a `booked` row.** Find or advance a row to `booked`, observe the Contact button. | Button renders disabled (`.btn:disabled`, opacity 0.6, `pointer-events:none`); no request is possible. | **PASS — verified in the DOM, not by eye.** Booked row's Contact button: `disabled=true`, `opacity:0.6`, `pointer-events:none`, class `.btn bp-btn-sm` — exactly the spec treatment. All six waiting rows: `disabled=false`, `opacity:1`. |
 | 10 | **Manual add — brand-new address.** Use `+ Add to Waitlist`, submit a never-before-seen disposable address. | Sheet closes, toast "Added to waitlist"; `get_waitlist` shows a new row, `status:waiting`, `signed_up_at` = now (not backdated). | **PASS.** Sheet closed; new row `52fefa22-8892-4616-be56-00fb7198dd17`, `status:waiting`, `signed_up_at:2026-09-04T21:07:19.790Z` (now, not backdated), `customer_name:"UAT Probe One"`, `customer_phone:"604-555-0101"`, `mailerlite_synced:true`. See Finding F-1 re: the transient "Not synced" render. |
 | 11 | **Manual add — already-on-list disclosure (D-23).** Use `+ Add to Waitlist` again with the SAME address from leg 10 (or any existing row's email). | Sheet does NOT close silently — it swaps to the disclosure message naming the signup date and current status, single "Got It" dismissal; no duplicate row created; no optional-field write; no MailerLite sync attempted. | **PASS — and it validates the WR-05 fix live.** Sheet swapped to the disclosure (did not close): *"…already on the beer waitlist — signed up Sep 4, currently Waiting."* + *"**The name and phone you entered were not saved.** Nothing on the existing row was changed…"*, single "Got It". Server-side: exactly ONE row for that address (no duplicate), `customer_name` still `"UAT Probe One"` (NOT "Should Be Discarded") and phone still `604-555-0101` (NOT ...9999) — the typed fields were genuinely discarded. |
@@ -440,14 +455,14 @@ through the deployed `get_waitlist`**, not by UI appearance alone.
 signed in as `hello@steinsandvines.ca`. Every write verified server-side through the deployed
 `get_waitlist`, never by UI appearance alone.**
 
-**10 PASS · 1 PARTIAL · 2 NOT RUN · 0 FAIL**
+**11 PASS · 1 PARTIAL · 1 NOT RUN · 0 FAIL**
 
 | Outcome | Legs |
 |---|---|
-| PASS | 1, 2, 3, 5, 6, 9, 10, 11, 12 (+ bonus D-06 asymmetry check) |
+| PASS | 1, 2, 3, 5, 6, 8, 9, 10, 11, 12 (+ bonus D-06 asymmetry check) |
 | PARTIAL | 4 — attach/remove pass; multi-recipe untestable (one active recipe) |
 
-| NOT RUN | 8 (needs Railway env toggle), 13 (owner cleanup) |
+| NOT RUN | 13 (owner cleanup — partially done; see below) |
 | BLOCKED | 7 — §1a prerequisite |
 | FAIL | none |
 
