@@ -423,7 +423,8 @@ through the deployed `get_waitlist`**, not by UI appearance alone.
 | 1 | **Customer link — existing contact.** On a waitlist row, tap "Link customer", search for an existing Zoho contact, select it. | Row's Customer cell renders `{Name} — {email} — {phone}`; `get_waitlist` shows `zoho_contact_id`/`customer_name`/`customer_phone` populated on that row. | **PASS** (2026-09-04, Chrome, driven by Claude). Toast "Customer linked"; Customer cell renders `test — phase80-uat1@example.com — 604-555-0101` (exact D-02 em-dash format); trigger flipped "Link customer" → "Change". `get_waitlist`: `zoho_contact_id=109900000000374001`, `customer_name="test"`. |
 | 2 | **Customer link — inline create.** On a different row, tap "Link customer" → "+ Add new customer", fill name/email/phone, save. | New Zoho contact created; row links to it the same as leg 1; `get_waitlist` confirms. | **PASS** (2026-09-04, owner-approved). Created Zoho contact `109900000001294001` — name `ZZ TEST Phase80 Do Not Use`, email `phase80-zoho-test@example.com`, phone `604-555-0199` — via "+ Add new customer" on the `phase80-uat2` row. Row linked immediately and rendered `ZZ TEST Phase80 Do Not Use — phase80-uat2@example.com — 604-555-0199`. **Contact must be deleted in cleanup (see leg 13).** |
 | 3 | **D-03a guard.** On a row that already has a hand-typed `customer_phone` (from a manual add, leg 9), link an existing Zoho contact whose phone differs. | The row's `customer_phone` is **unchanged** — linking a contact must not silently overwrite a non-empty manually-entered phone. | **PASS — re-run properly after leg 2.** First attempt was INCONCLUSIVE (the `test` contact had `phone:""`, so nothing could overwrite). Re-run using leg 2's new contact, which carries `604-555-0199`: linking it to `phase80-uat1` (hand-typed `604-555-0101`) left the phone at **`604-555-0101`** — not overwritten. Side-by-side proof, same contact `109900000001294001` on two rows: `uat1` (had a hand-typed phone) kept `604-555-0101`; `uat2` (no prior phone) took the contact's `604-555-0199`. Name IS updated from the contact on both, phone is not when already present. D-03a confirmed. |
-| 4 | **Recipe attach.** Attach two recipes to a row, then remove one. | Two chips appear, then one; `get_waitlist`'s `recipe_ids` reflects exactly the remaining one, pipe-delimited if more than one remained. | **PARTIAL PASS.** Attach: toast "Recipe attached", chip "Czech Lager ×" renders in `--cellar-green` per spec, `get_waitlist` `recipe_ids="SV-R-000002"`. Remove: toast "Recipe removed", `recipe_ids` cleared. **Untestable half:** only ONE active recipe exists in the catalogue (`/api/recipes?status=active` returns just Czech Lager), so "attach two, remove one" and the pipe-delimited multi-value assertion could not be exercised. |
+| 4 | **Recipe attach.** Attach two recipes to a row, then remove one. | Two chips appear, then one; `get_waitlist`'s `recipe_ids` reflects exactly the remaining one, pipe-delimited if more than one remained. | **PASS — upgraded from PARTIAL on 2026-09-05 once the owner activated more recipes.** Originally only Czech Lager was active, so the multi-value half could not be exercised. With three active recipes (`SV-R-000011` West Coast IPA, `SV-R-000003` Hazy Pale Ale, `SV-R-000002` Czech Lager) the full leg ran against a fresh disposable row `210dd746-b666-4c62-87a2-b6bdd8855a31` (`phase80-uat4@example.com`): attaching two rendered both chips and `get_waitlist` returned **`recipe_ids="SV-R-000011|SV-R-000003"`** — **the pipe-delimited multi-value assertion, exercised live for the first time.** Removing West Coast IPA gave toast "Recipe removed", left one chip, and `recipe_ids` became exactly **`"SV-R-000003"`** — no stray pipe, no empty segment, removed id absent. All six real customer rows re-verified clean in the same call. |
+
 | 5 | **Pin to position.** Pin a row to position 2. | Queue visually reorders so that row renders at rank 2; `get_waitlist`'s `position` cell for that row reads `2`; other rows' `signed_up_at` cells are unchanged. | **PASS.** Toast "Pinned to position 2" (exact spec copy); row moved rank 7 → renders 3rd; `#` cell shows `📌 2 ×` (spec-correct `📌 {position}` for a waiting row). `get_waitlist`: `position=2`, and **all six real customers' `signed_up_at` verified UNCHANGED**. |
 | 6 | **Clear pin.** Clear the position set in leg 5. | Row returns to its natural chronological (signup-order) position; `get_waitlist`'s `position` cell for that row is empty. | **PASS.** Toast "Pin cleared"; row returned to chronological rank 7; `#` cell back to a plain number; `position` empty in `get_waitlist`. |
 | 7 | **Contact a `waiting` row, end to end.** Tap Contact, review the pre-filled subject/body (booking link resolved), send. | The probe address receives the email; `get_waitlist` shows the row's `status` advanced to `contacted` and `contacted_at` holds an ISO timestamp. | **PASS** (2026-09-05, Chrome desktop, driven by Claude; owner confirmed receipt). Run against row `9eba5eda-87f0-449e-845a-efb6937c3a49` (`koainn+phase80uat@gmail.com`, `waiting`) after §1a landed. Contact sheet pre-filled subject *"Your spot on the Steins & Vines beer waitlist is ready!"* and a body resolving **`https://cal.com/steins-and-vines-tw8csc/beer-consult`** — the owner-approved beer event type, **not** `batch-start-appointment-kit`. **This is the live proof of the WR-04 slug-selection fix**, which the old `services[0]` would have failed. Send disabled in-flight, sheet closed on success, row re-rendered `CONTACTED` with its `#` cell dropping to `—`. Server-side via `get_waitlist`: `status:"contacted"`, `contacted_at:"2026-09-05T13:12:57.615Z"` (valid ISO). Email delivered to the probe address and confirmed by the owner. **Also closes the outstanding blocking question: `RESEND_API_KEY` IS restored on staging** — proven by a real successful send, not by assertion. |
@@ -455,17 +456,16 @@ breaking `RESEND_API_KEY` again after leg 7, which is not worth the churn. |
 signed in as `hello@steinsandvines.ca`. Every write verified server-side through the deployed
 `get_waitlist`, never by UI appearance alone.**
 
-**12 PASS · 1 PARTIAL · 1 NOT RUN · 0 FAIL**
+**13 PASS · 0 PARTIAL · 0 FAIL** (leg 13 is cleanup, tracked separately below)
 
 | Outcome | Legs |
 |---|---|
-| PASS | 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12 (+ bonus D-06 asymmetry check) |
-| PARTIAL | 4 — attach/remove pass; multi-recipe untestable (one active recipe) |
+| PASS | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 (+ bonus D-06 asymmetry check) |
 
-| NOT RUN | 13 (owner cleanup — partially done; see below) |
+| CLEANUP | 13 — owner cleared the first five probe rows 2026-09-05; ONE new row outstanding (see below) |
 | FAIL | none |
 
-**No leg failed. Every runnable leg has now been run.** Notably, leg 7 confirmed the WR-04 booking-slug fix live (the beer-consult link, not the batch-start kit) and proved the Resend send path end to end, leg 11 confirmed the WR-05 code-review fix live, leg 9 was verified in the
+**No leg failed. Every leg has now been run and every leg passes.** Notably, leg 7 confirmed the WR-04 booking-slug fix live (the beer-consult link, not the batch-start kit) and proved the Resend send path end to end, leg 11 confirmed the WR-05 code-review fix live, leg 9 was verified in the
 DOM rather than visually, and leg 5 confirmed pinning does not disturb any real customer's
 `signed_up_at`.
 
@@ -494,23 +494,26 @@ visibly marked and the clear control is present — but the carve-out is **not d
 Delete these three rows from the `Waitlist` tab, and remove the same three addresses from the
 MailerLite beer-waitlist group (all three have `mailerlite_synced: true`):
 
-**Re-verified against live `get_waitlist` on 2026-09-05 after leg 7.** The owner has already removed
-three of the five probe rows (`phase80-probe`, `phase80-uat1`, `phase80-uat2`). **Two remain:**
+**Re-verified against live `get_waitlist` on 2026-09-05.** The owner cleared all five original probe
+rows (`phase80-probe`, `phase80-uat1`, `phase80-uat2`, `phase80-uat3`, `koainn+phase80uat`) and the
+Zoho test contact. That round of cleanup is **DONE and verified** — the sheet was confirmed back to
+exactly the 6 real customers.
+
+**One new row is outstanding.** Closing leg 4's multi-recipe half required a subject row, and the
+probe rows had just been cleared, so a fresh disposable row was created rather than writing to a real
+customer:
 
 | Email | Row id | Left in state |
 |---|---|---|
-| `phase80-uat3@example.com` | `0870e675-cd6f-421d-80d9-2880b6774317` | `waiting` — leg 8's fail-closed subject, correctly never written to |
-| `koainn+phase80uat@gmail.com` | `9eba5eda-87f0-449e-845a-efb6937c3a49` | `contacted`, `contacted_at=2026-09-05T13:12:57.615Z` — leg 7's subject |
+| `phase80-uat4@example.com` | `210dd746-b666-4c62-87a2-b6bdd8855a31` | `waiting`, `recipe_ids="SV-R-000003"`, `mailerlite_synced:true` |
 
-Both still carry `mailerlite_synced: true`, so both must also come out of the MailerLite
-beer-waitlist group.
+**Owner action:** delete this row from the `Waitlist` tab and remove the address from the MailerLite
+beer-waitlist group. Nothing else is outstanding — no Zoho contact was created for it, and it was
+never contacted, so no email was sent to it.
 
-**Zoho Books contact** `109900000001294001` (`ZZ TEST Phase80 Do Not Use`, `phase80-zoho-test@example.com`)
-created by leg 2 — the two rows that linked to it are gone; confirm the contact itself is deleted.
-
-Sheet holds **8 rows** as of 2026-09-05 (6 real customers + these 2). No duplicate emails. **All six
-real customer rows re-verified clean after leg 7:** every one still `waiting`, with empty `position`,
-`contacted_at`, and `zoho_contact_id` — no UAT leg ever wrote to a real customer.
+Sheet holds **7 rows** as of 2026-09-05 (6 real customers + this one). **All six real customer rows
+re-verified clean after every leg:** each still `waiting`, with empty `recipe_ids`, `position`,
+`contacted_at` and `zoho_contact_id`. **No UAT leg ever wrote to a real customer row.**
 
 ---
 

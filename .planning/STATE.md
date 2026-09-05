@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: Phase 80 UAT complete -- leg 13 cleanup + phase closeout remain
+stopped_at: Phase 80 UAT all-green (13 legs) -- one probe row to clear, then closeout
 last_updated: "2026-09-05T13:20:00.000Z"
-last_activity: 2026-09-05 -- Phase 80 UAT leg 7 PASS (last runnable leg)
+last_activity: 2026-09-05 -- Phase 80 UAT fully green: legs 7 and 4 both PASS
 progress:
   total_phases: 66
   completed_phases: 26
@@ -51,7 +51,7 @@ Next: **staging deploy + BrewPad UAT, then prod cutover.** Apps-Script leg alrea
 
 Milestone: v4.5 Security & Money-Path Closeout — NOT complete (the 2026-07-08 `milestone_complete` flag was false; corrected 2026-07-10). Done: 46 (SEC-02 ✅), 48 (KIOSK-01 ✅ — de-fork live-verified standalone 2026-07-10, 22/22 threats secured), 51 (Phase complete for its narrowed scope 2026-09-02 — MONEY-03 itself still open, see above), 52 (RESIL-01 ✅), 53 (OBS-01 ✅), 54 (kiosk gift-card mgmt ✅ — UAT+security closed 2026-07-10). **Open phases:** 47 (SEC-01 — STATE narrative says closed-on-staging but ROADMAP checkbox is still `[ ]`; needs owner reconciliation), 49 (MONEY-01 — 49-01 code merged, 49-02 live-card UAT pending), 50 (MONEY-02, still gated on its four blocking-human checkpoints). MONEY-03's M9/M18 follow-up and M15 rehome still need their own phase.
 Status: Executing Phase 80
-Last activity: 2026-09-05 -- Phase 80 UAT leg 7 PASS (last runnable leg)
+Last activity: 2026-09-05 -- Phase 80 UAT fully green: legs 7 and 4 both PASS
 
 **Phase 49 / MONEY-01 (H2) — 49-01 code done, merged to main.** `/api/checkout` now reads back the captured amount (`helcimLib.getCardTransactionById`) and verifies it covers the invoice total (±$0.01) BEFORE side-effects/customerpayments; short/unverifiable → tagged throw routed through the existing `moneyPath.voidWithTimeout` (single void path) → 402. RED→GREEN commits + 13-test regression `checkout-captured-amount.test.js`; full middleware suite 62/1187 green; lint clean. **Pending: 49-02** live-card UAT (checkpoint) — needs the new code deployed and a real card terminal, so it rides a prod deploy / Phase 46 cutover: confirm a legit order still books paid (no false-void) + a tamper attempt is voided.
 
@@ -165,21 +165,25 @@ Last activity: 2026-09-05 -- Phase 80 UAT leg 7 PASS (last runnable leg)
 - 36-02 BLOCKED: Apps Script create_batch handler must accept + persist target_volume_l and scale_factor; manual redeploy needed before SEL-02 is fully closed
 - 80-06 Task 3: **§1-§6 all COMPLETE as of 2026-09-05.** Migration, Apps Script redeploy (v54->v55,
   rollback target 54), §4 probes, staging deploy and the full §6 UAT are done and recorded in
-  `80-CUTOVER.md`. **UAT final: 12 PASS / 1 PARTIAL / 1 NOT RUN / 0 FAIL.**
+  `80-CUTOVER.md`. **UAT final: 13 PASS / 0 PARTIAL / 0 FAIL — every leg run, every leg green.**
   - **Leg 7 (contact end-to-end) PASSED 2026-09-05** — the last runnable leg. Contact sheet resolved
     `cal.com/steins-and-vines-tw8csc/beer-consult` (NOT `batch-start-appointment-kit`), which is the
     live proof of the WR-04 slug-selection fix; `get_waitlist` confirmed `status:"contacted"` +
     `contacted_at:2026-09-05T13:12:57.615Z`; owner confirmed email receipt. This also proved
     `RESEND_API_KEY` is restored on staging via a real successful send.
-  - **Leg 4 stays PARTIAL** — `/api/recipes?status=active` returns only Czech Lager, so the
-    "attach two recipes, remove one" pipe-delimited multi-value assertion cannot be exercised.
-    Closing it needs a second active recipe; otherwise accept PARTIAL.
-  - **Leg 13 (cleanup) NOT RUN — owner-only, no Sheets/MailerLite access from Claude.** Two probe
-    rows remain: `phase80-uat3@example.com` (`0870e675-...`, waiting) and
-    `koainn+phase80uat@gmail.com` (`9eba5eda-...`, contacted). Remove both from the `Waitlist` tab
-    AND the MailerLite beer group; confirm Zoho contact `109900000001294001` is deleted. All six
-    real customer rows re-verified clean 2026-09-05 (still `waiting`, empty position/contacted_at).
-  - **Remaining to close Phase 80:** leg 13 cleanup, then verification + ROADMAP checkbox.
+  - **Leg 4 UPGRADED to full PASS 2026-09-05** after the owner activated more recipes (now 3 active:
+    `SV-R-000011`, `SV-R-000003`, `SV-R-000002`). The previously untestable half ran live on a fresh
+    disposable row: two attached gave `recipe_ids="SV-R-000011|SV-R-000003"` (**the pipe-delimited
+    multi-value assertion, exercised for the first time**), and removing one left exactly
+    `"SV-R-000003"` with no stray pipe.
+  - **Leg 13 (cleanup): first round DONE by owner and verified** — all five original probe rows and
+    the Zoho test contact are gone; sheet confirmed back to exactly the 6 real customers.
+    **ONE new row outstanding:** `phase80-uat4@example.com` (`210dd746-b666-4c62-87a2-b6bdd8855a31`,
+    waiting, `recipe_ids="SV-R-000003"`), created to give leg 4 a subject rather than writing to a
+    real customer. Owner: delete it from the `Waitlist` tab + remove from the MailerLite beer group.
+    No Zoho contact and no email are associated with it. **No UAT leg ever wrote to a real customer
+    row** — re-verified after every leg.
+  - **Remaining to close Phase 80:** clear the one probe row, then verification + ROADMAP checkbox.
   - **Production cutover (§7) is explicitly OUT of phase 80 scope** — batches with the pending
     51/74/78/79 pushes. Apps Script v55 already serves prod; frontend/middleware prod push has not
     happened. Non-blocking owner action: set `CALCOM_EVENT_TYPE_BEER_WAITLIST=6955754` on the
