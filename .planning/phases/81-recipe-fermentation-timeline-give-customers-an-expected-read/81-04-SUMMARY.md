@@ -92,3 +92,11 @@ Plans 81-05 and 81-06 can now consume `#recipe-schedule-select`, `#recipe-schedu
 ---
 *Phase: 81-recipe-fermentation-timeline-give-customers-an-expected-read*
 *Completed: 2026-09-05*
+
+## Self-Check: PASSED
+
+- FOUND: admin.html
+- FOUND: js/admin.js
+- FOUND: css/admin.css
+- FOUND: .planning/phases/81-recipe-fermentation-timeline-give-customers-an-expected-read/81-04-SUMMARY.md
+- FOUND (git log): 750ffc8b, 2e5bb988, 367d6e8f, a368ae3e
