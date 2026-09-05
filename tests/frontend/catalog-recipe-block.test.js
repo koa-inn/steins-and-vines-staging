@@ -143,6 +143,93 @@ describe('buildRecipeCard', function () {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 81 Plan 03 Task 1 — fermentTimeDisplay (D-05/D-09 rounding + floor)
+// and the conditional "Ready in" second .price-col on buildRecipeCard (D-07).
+// ---------------------------------------------------------------------------
+
+describe('fermentTimeDisplay', function () {
+  test('is exported from the module', function () {
+    expect(typeof mod.fermentTimeDisplay).toBe('function');
+  });
+
+  test('21 days returns "about 3 weeks" / "from brew day"', function () {
+    expect(mod.fermentTimeDisplay({ ferment_days: 21 })).toEqual({ weeks: 'about 3 weeks', start: 'from brew day' });
+  });
+
+  test('24 days rounds down to "about 3 weeks" (D-05 nearest-week boundary)', function () {
+    expect(mod.fermentTimeDisplay({ ferment_days: 24 }).weeks).toBe('about 3 weeks');
+  });
+
+  test('26 days rounds up to "about 4 weeks" (D-05 nearest-week boundary)', function () {
+    expect(mod.fermentTimeDisplay({ ferment_days: 26 }).weeks).toBe('about 4 weeks');
+  });
+
+  test('7 days returns singular "about 1 week", no trailing "s"', function () {
+    expect(mod.fermentTimeDisplay({ ferment_days: 7 }).weeks).toBe('about 1 week');
+  });
+
+  test('35 days returns "about 5 weeks"', function () {
+    expect(mod.fermentTimeDisplay({ ferment_days: 35 }).weeks).toBe('about 5 weeks');
+  });
+
+  test('returns null when ferment_days is absent', function () {
+    expect(mod.fermentTimeDisplay({})).toBeNull();
+  });
+
+  test('returns null when ferment_days is 0', function () {
+    expect(mod.fermentTimeDisplay({ ferment_days: 0 })).toBeNull();
+  });
+
+  test('returns null when ferment_days is negative', function () {
+    expect(mod.fermentTimeDisplay({ ferment_days: -5 })).toBeNull();
+  });
+
+  test('returns null when ferment_days rounds to 0 weeks (D-09 unusable-value floor)', function () {
+    expect(mod.fermentTimeDisplay({ ferment_days: 3 })).toBeNull();
+  });
+
+  test('returns null when ferment_days is a string, not a number', function () {
+    expect(mod.fermentTimeDisplay({ ferment_days: '21' })).toBeNull();
+  });
+
+  test('returns null when the recipe itself is null', function () {
+    expect(mod.fermentTimeDisplay(null)).toBeNull();
+  });
+});
+
+describe('buildRecipeCard — Ready-in second .price-col (D-07/D-09)', function () {
+  test('a recipe with a usable ferment_days produces exactly two .price-col children', function () {
+    var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000005', name: 'Czech Lager', style: 'Lager', description: '', price: 45, ferment_days: 21 }, document);
+    var cols = card.querySelectorAll('.price-footer .price-col');
+    expect(cols.length).toBe(2);
+  });
+
+  test('the second .price-col has a .price-label reading "Ready in"', function () {
+    var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000005', name: 'Czech Lager', style: 'Lager', description: '', price: 45, ferment_days: 21 }, document);
+    var cols = card.querySelectorAll('.price-footer .price-col');
+    expect(cols[1].querySelector('.price-label').textContent).toBe('Ready in');
+  });
+
+  test('the second .price-col value contains a .ferment-time-weeks span reading "about 3 weeks"', function () {
+    var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000005', name: 'Czech Lager', style: 'Lager', description: '', price: 45, ferment_days: 21 }, document);
+    var cols = card.querySelectorAll('.price-footer .price-col');
+    expect(cols[1].querySelector('.price-value.ferment-time-value .ferment-time-weeks').textContent).toBe('about 3 weeks');
+  });
+
+  test('the second .price-col value contains a .ferment-time-start span reading "from brew day"', function () {
+    var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000005', name: 'Czech Lager', style: 'Lager', description: '', price: 45, ferment_days: 21 }, document);
+    var cols = card.querySelectorAll('.price-footer .price-col');
+    expect(cols[1].querySelector('.price-value.ferment-time-value .ferment-time-start').textContent).toBe('from brew day');
+  });
+
+  test('a recipe with no ferment_days produces exactly one .price-col — byte-identical to today\'s output', function () {
+    var card = mod.buildRecipeCard({ recipe_id: 'SV-R-000006', name: 'Czech Lager', style: 'Lager', description: '', price: 45 }, document);
+    var cols = card.querySelectorAll('.price-footer .price-col');
+    expect(cols.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Task 2 — fetchActiveRecipes / renderRecipeBlock (D-05, per-block error isolation)
 // ---------------------------------------------------------------------------
 
