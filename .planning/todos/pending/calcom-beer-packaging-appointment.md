@@ -24,14 +24,28 @@ Two independent reasons, either alone sufficient:
    Bottling beer (crown top / flip top) is **slower than canning**, so the beer type likely needs
    either a longer default or a duration the staff set per booking.
 
+## Decided parameters (owner, 2026-09-05)
+
+| Field | Value |
+|---|---|
+| Name (customer-visible, appears in booking emails) | **Beer Packaging Appointment** |
+| Slug | **`beer-packaging`** |
+| Default duration | **30 minutes** |
+
+Rationale: "Packaging" rather than "Canning" because the page now offers bottling as a real choice,
+and a customer booking to bottle should not receive an email saying canning. 30 minutes matches the
+duration `beer.html` publishes for a standard 30 L batch. The description should note that bottling
+takes longer, mirroring how the wine bottling type says "add 15 minutes for each additional kit".
+
 ## Owner action required first
 
-Claude cannot create this — it needs Cal.com account access. Same shape as the `beer-consult`
-creation during Phase 80 §1a:
+Claude cannot create this — Cal.com requires a sign-in, and Claude does not authenticate. Attempted
+2026-09-05 and blocked at `app.cal.com/auth/login`. Same shape as the `beer-consult` creation during
+Phase 80 §1a:
 
-1. Create the event type in Cal.com (suggested slug `beer-packaging` or `beer-canning` — note the
-   customer-visible name should cover **both** canning and bottling, since the page now offers both).
-2. Note its numeric event-type id.
+1. Sign in to Cal.com. (Claude can then drive the creation in-browser, or you can create it directly.)
+2. Create the event type with the parameters above.
+3. Note its numeric event-type id — that id is what unblocks the wiring below.
 
 ## Then the code wiring (Claude can do, once the id exists)
 
