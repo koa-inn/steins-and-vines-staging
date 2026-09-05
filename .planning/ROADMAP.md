@@ -1352,9 +1352,45 @@ Plans:
 3. **Fallback when a recipe has no value** — must degrade to today's "we'll give you a timeline at your consult" rather than rendering blank or zero.
 
 **Known constraints:**
-1. **The Apps Script layer has no CI deploy path and ONE deployment serves staging AND production.** Adding the column is therefore a production release for that layer, and the Phase 80 lesson applies exactly: **add the column FIRST, redeploy SECOND.** Deploying first takes the live path down until the column lands.
+1. **The Apps Script layer has no CI deploy path and ONE deployment serves staging AND production.** Adding the column is therefore a production release for that layer. ~~The Phase 80 lesson applies exactly: add the column FIRST, redeploy SECOND.~~ **CORRECTED at research (2026-09-05):** the Phase 80 ordering rule does NOT transfer. It came from `ensureWaitlistSheet`, a fail-closed validator that refuses to run when any of 13 headers is missing. `schedule_id` follows the `ensureRecipesPricingModeColumn` precedent (`apps-script/adminApi.gs:3592`) — self-migrating, header-name-based, already live in production. There is no load-bearing manual pre-redeploy step; deploy once and the column appears on the first save. Also note: staging and production share ONE Google Sheet, so any sheet write made "on staging" is a production write.
 2. **Imported timings are not trustworthy on arrival.** A recipe exported from BeerSmith or Brewfather may carry a default `PRIMARY_AGE` nobody edited. The review step is the control, not the import.
 3. **This is customer-facing copy about a biological process.** An under-promise is recoverable; an over-promise means a customer turns up for beer that is not ready.
+
+**Superseded scope note:** the "Storage — one new column on the Recipes sheet" sketch above is
+**superseded by D-03.** The recipe carries a `schedule_id` pointing at an existing `FermSchedules`
+template, and the public figure is DERIVED as the largest `day_offset` among that template's
+non-packaging steps. There is no standalone `ferment_days` column on `Recipes`. Do not resurrect
+the sketched approach.
+
+**Plans:** 9 plans across 6 waves
+
+Plans:
+**Wave 1** (parallel — disjoint files)
+
+- [ ] 81-01-PLAN.md — Apps Script: self-migrating `Recipes.schedule_id` column, persistence in `createRecipe`/`updateRecipe`, and the pre-existing `'gfs'` cache-bust fix in the three FermSchedules CRUD handlers
+- [ ] 81-02-PLAN.md — Middleware: `CACHE_KEYS.FERM_SCHEDULES`, `fetchFermSchedules` (GET + server_token), `maxNonPackagingOffset`, `enrichFermentDays` on both read paths, and `ferment_days` in `PUBLIC_RECIPE_FIELDS`
+- [ ] 81-03-PLAN.md — Public: `fermentTimeDisplay` + the second "Ready in" `.price-col` on the recipe card, new CSS, both `beer.html` passages rewritten, CSP confirmed unchanged, bundles rebuilt
+- [ ] 81-04-PLAN.md — Admin recipe editor: schedule picker, load/save round-trip, D-11 warn-don't-block message, and the `initRecipesTab` lazy-load fix
+
+**Wave 2**
+
+- [ ] 81-05-PLAN.md — Admin BeerXML review: `PRIMARY_AGE`/`SECONDARY_AGE`/`TERTIARY_AGE` extraction (display-only), meta-line segment, template dropdown with no pre-selection (D-13), D-14 side-by-side compare, and the `confirmBeerXMLImport` carry-through fix
+
+**Wave 3**
+
+- [ ] 81-06-PLAN.md — Admin: D-15 blast-radius note on the template editor, and D-04 pre-selection on `#sa-schedule-select` (the `#batch-schedule-select` leg is recorded as an open finding — that modal has no recipe identity)
+
+**Wave 4** (owner — Apps Script release)
+
+- [ ] 81-07-PLAN.md — Read the live `FermSchedules` inventory, decide the D-10 branch, then redeploy Apps Script with the rollback version recorded and four live probes
+
+**Wave 5** (owner — staging deploy, backfill, release gate)
+
+- [ ] 81-08-PLAN.md — Push to staging, verify the public API contract pre-backfill, create/attach templates and attach schedules to all 3 active recipes, then the unconditional D-10 release gate
+
+**Wave 6** (owner — production cutover)
+
+- [ ] 81-09-PLAN.md — Production middleware + frontend cutover, live verification, and the RUNBOOK/STATE outcome record (OPS-05 stays open — this phase closes the fermentation-time slice only)
 
 ---
 
