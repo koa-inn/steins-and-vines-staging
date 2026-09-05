@@ -73,6 +73,19 @@ Last activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
 
 ### Roadmap Evolution
 
+- **Phase 81 added 2026-09-05: Recipe fermentation timeline.** Owner direction — beer recipes should
+  carry a fermentation time so customers get an expected ready date ("ales ~3 weeks, lagers ~5").
+  Owner's insight: it is importable from BeerXML, which is correct — `PRIMARY_AGE`/`SECONDARY_AGE`/
+  `TERTIARY_AGE`/`AGE` are standard `RECIPE` fields, and `parseBeerXML` (`js/admin.js:9307`) already
+  reads these files but extracts only name/style/abv/batch/ibu/colour and discards the timing.
+  **Deliberately carved out of Phase 66 (OPS-05), whose criterion 1 already claimed "fermentation
+  stages"** — 66 was amended to exclude it so the two do not both claim the same ground; hop timing,
+  mash steps and hop-unit normalization stay in 66. Spans 5 layers and crosses the Apps Script
+  redeploy boundary (one deployment serves staging AND prod), so the Phase 80 rule applies: add the
+  sheet column FIRST, redeploy SECOND. Key risk: BeerXML timing fields are optional and often left at
+  the exporting software's default, so they must pass through the importer's existing D-09 review
+  table rather than being trusted on import.
+
 - Phase 80 added 2026-09-04: BrewPad waitlist — work the queue (customer link, recipe link, contact action, manual reorder). Owner direction after Phase 78.
 
 - Phase 77 added (2026-08-28): Ferment-in-store catalog filter panel UX. Owner UI report (screenshot): the "Filters & Sort" panel on `products/ferment-in-store.html` is overwhelming, un-scrollable, and wastes horizontal space on the Wine catalogue (238 kits → dozens of chips). Root causes found pre-planning: `.catalog-filter-row` fixed `width:40rem` + centered rows waste side space and force long chip groups into ~7 stacked rows; `.catalog-collapsible.open` has no `max-height`/`overflow` so it expands to full natural height with no internal scroll (`css/styles.css:2008-2041`). Shared `.catalog-*` component (also `products.html`) + `#mobile-catalog-bar` mobile variant — fix must verify desktop + mobile on both surfaces. Frontend-only; CSS-led (styles.css/catalog-subpage.css), JS only if interaction model changes. **NOTE for prod hygiene: beer/cider pages were removed from the site 2026-08-28 (Phase 72 unlaunched placeholders); when this or any phase touches shared nav/CSS, do not reintroduce beer/cider nav links.** Independent frontend polish; not blocked by Phase 76.

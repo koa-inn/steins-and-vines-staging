@@ -139,7 +139,7 @@
 - [ ] **Phase 63: Batch↔Invoice Reconciliation Model** — structured `no_invoice_reason` on batches (pre-Zoho / cash / legacy Global Payments / comped) so the ~40-54 legitimately-unlinkable batches stop reading as failures; matching keys on customer_id with names validated against Zoho contacts; household/linked-contact (or kit+date) fallback for cases like Witwitki-invoice → Webb-batches (feedback #4, #8, #11, #13, #14). Cross-repo: Apps Script + sheet columns. (OPS-02)
 - [x] **Phase 64: Linking & Search Correctness** — safe in-repo quick wins, execute first: `search-invoices` detail-fetches so `line_items` are real (list endpoint never returns them — pos.js:2279; pattern exists at pos.js:3112); batch delete clears/re-syncs the invoice's stale `cf_batch_status` (INV-000151 class); `adminApiGet` stops putting the Google OAuth token in the URL query string (adminApiPost body precedent — brewpad.js:1285) (feedback #3, #7, #10). (OPS-03) (completed 2026-07-25)
 - [ ] **Phase 65: Staff Tooling Reliability & Backfill** — pre-flight token check before bulk operations + longer-lived/refreshing staff sessions (builds on the shipped x-session-token auth; 4 expiries in one admin day, one silently dropped a batch of writes); `bulk_update_batches` Apps Script action (72 batches took ~6 min at ~4-5s/call); configurable / one-time-backfill `scan-invoices` window so pre-30-day batches can auto-link (feedback #5, #6, #12, #20). (OPS-04)
-- [ ] **Phase 66: Recipe Data Quality** — lowest priority: structured brewing-schedule fields (hop timing, mash steps, fermentation) extending the Phase 15 BeerXML import instead of cramming into free-text notes; normalize hop item units (pcs/g/kg drift across the same product family, e.g. Citra-100g "pcs" vs Mosaic-100g "g") (feedback #15, #16). (OPS-05)
+- [ ] **Phase 66: Recipe Data Quality** — lowest priority: structured brewing-schedule fields (hop timing, mash steps — *fermentation time split out to Phase 81*) extending the Phase 15 BeerXML import instead of cramming into free-text notes; normalize hop item units (pcs/g/kg drift across the same product family, e.g. Citra-100g "pcs" vs Mosaic-100g "g") (feedback #15, #16). (OPS-05)
 
 ### 📋 Backlog — captured, not yet scheduled
 
@@ -1318,6 +1318,45 @@ Plans:
 
 ---
 
+### Phase 81: Recipe fermentation timeline — give customers an expected ready date
+
+**Goal:** Every beer recipe carries a structured fermentation time, imported from the BeerXML files we already parse, and that time is surfaced to customers as a plain-language expectation ("ready in about 3 weeks") on the recipe card and the beer page — replacing today's "it depends on the style, we'll tell you at your consult".
+
+**Why this matters now:** The beer page was rewritten 2026-09-05 to remove the fear that brewing costs a full day. The one question it still cannot answer is *when do I get my beer*. Staff answer it by hand at every consult. The data to answer it automatically is already inside the BeerXML files being imported — `parseBeerXML` (`js/admin.js:9307`) reads name, style, ABV, batch size, IBU and colour, and throws the timing fields away.
+
+**Source:** Owner direction 2026-09-05 — "we should have a timeline attached to the recipes, ales will be ~3 weeks and lagers ~5 weeks, can we add that so customers can have an expected timeline?", then "we could have a fermentation time field? that should be importable from beerxml right?"
+
+**Depends on:** Phase 15 (the BeerXML import this extends). No dependency on Phase 80.
+
+**Requirements**: OPS-05 (partial — see the scope split below).
+
+> **⚠ SCOPE SPLIT WITH PHASE 66 — read before planning.** Phase 66 (Recipe Data Quality, OPS-05)
+> already claims this ground: its success criterion 1 covers "a structured schedule (hop timing, mash
+> steps, **fermentation stages**) OR the BeerXML import maps these into a defined structure". Phase 81
+> deliberately carves out **only the fermentation-time slice**, because it has a customer-facing
+> driver and Phase 66 is explicitly "lowest priority, do last". **Phase 66 criterion 1 has been
+> amended to exclude fermentation time so the two phases do not both claim it.** Hop timing, mash
+> steps and hop-unit normalization stay in Phase 66.
+
+**Scope sketch (confirm at discuss-phase):**
+- **BeerXML parse** — read `PRIMARY_AGE`, `SECONDARY_AGE`, `TERTIARY_AGE`, `AGE` and `FERMENTATION_STAGES` from the `RECIPE` record. These are **optional** in BeerXML and are frequently left at the exporting software's default, so they must land in the importer's existing review table (the D-09 pattern) for a human glance, never be trusted blind.
+- **Storage** — one new column on the `Recipes` sheet. `ensureRecipesPricingModeColumn` (`apps-script/adminApi.gs:3592`) is the safe-append precedent; old code maps by header name and ignores unknown columns.
+- **Public exposure** — add to `PUBLIC_RECIPE_FIELDS` (`zoho-middleware/routes/recipes.js:71`). It is build-by-allowlist, so a new field stays invisible publicly until explicitly listed.
+- **Display** — recipe card (`buildRecipeCard`) and `beer.html`, phrased as an approximation, not a promise.
+- **Admin editing** — the field must be correctable in the recipe editor, since imported values will be wrong sometimes.
+- **Backfill** — existing recipes predate the field.
+
+**Open decisions for discuss-phase:**
+1. **What does the number mean to a customer** — ready to *package*, or ready to *drink*? The owner's 3-week/5-week figures sound like ready-to-drink, i.e. primary + secondary + conditioning. This determines whether the stored value is a single total or the stages kept separate.
+2. **Single value or range**, and **how it renders**. Recommendation: store days as a number, render as an approximation ("about 3 weeks"), never an exact date — fermentation is biological and a precise promise will eventually be wrong.
+3. **Fallback when a recipe has no value** — must degrade to today's "we'll give you a timeline at your consult" rather than rendering blank or zero.
+
+**Known constraints:**
+1. **The Apps Script layer has no CI deploy path and ONE deployment serves staging AND production.** Adding the column is therefore a production release for that layer, and the Phase 80 lesson applies exactly: **add the column FIRST, redeploy SECOND.** Deploying first takes the live path down until the column lands.
+2. **Imported timings are not trustworthy on arrival.** A recipe exported from BeerSmith or Brewfather may carry a default `PRIMARY_AGE` nobody edited. The review step is the control, not the import.
+3. **This is customer-facing copy about a biological process.** An under-promise is recoverable; an over-promise means a customer turns up for beer that is not ready.
+
+---
 
 ### Phase 46: Auth Re-Architecture (CRITICAL — split from Phase 45)
 
@@ -1801,6 +1840,6 @@ Plans:
 **Requirements**: OPS-05
 **Success Criteria** (what must be TRUE):
 
-  1. Recipes support a structured schedule (hop timing, mash steps, fermentation stages — scope confirmed at plan time) OR the BeerXML import maps these into a defined structure automatically — no more stuffing into notes
+  1. Recipes support a structured schedule (hop timing, mash steps — scope confirmed at plan time) OR the BeerXML import maps these into a defined structure automatically — no more stuffing into notes. **Fermentation time is NO LONGER in scope here — it moved to Phase 81 (2026-09-05), which has a customer-facing driver. Do not re-claim it.**
   2. Hop item units are normalized or explicitly mapped (the pcs/g/kg drift across the same product family is resolved) so recipe quantity semantics are unambiguous
   3. The hand-imported Hazy Pale Ale (SV-R-000003) round-trips correctly under the new model
