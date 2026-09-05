@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
-status: executing
-stopped_at: Phase 80 COMPLETE -- verified and marked in ROADMAP
-last_updated: "2026-09-05T13:40:00.000Z"
+status: completed
+stopped_at: Phase 81 context gathered
+last_updated: "2026-09-05T14:58:54.049Z"
 last_activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
 progress:
-  total_phases: 66
+  total_phases: 67
   completed_phases: 27
   total_plans: 151
-  completed_plans: 151
-  percent: 41
+  completed_plans: 152
+  percent: 40
 ---
 
 # Project State
@@ -179,16 +179,19 @@ Last activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
 - 80-06 Task 3: **§1-§6 all COMPLETE as of 2026-09-05.** Migration, Apps Script redeploy (v54->v55,
   rollback target 54), §4 probes, staging deploy and the full §6 UAT are done and recorded in
   `80-CUTOVER.md`. **UAT final: 13 PASS / 0 PARTIAL / 0 FAIL — every leg run, every leg green.**
+
   - **Leg 7 (contact end-to-end) PASSED 2026-09-05** — the last runnable leg. Contact sheet resolved
     `cal.com/steins-and-vines-tw8csc/beer-consult` (NOT `batch-start-appointment-kit`), which is the
     live proof of the WR-04 slug-selection fix; `get_waitlist` confirmed `status:"contacted"` +
     `contacted_at:2026-09-05T13:12:57.615Z`; owner confirmed email receipt. This also proved
     `RESEND_API_KEY` is restored on staging via a real successful send.
+
   - **Leg 4 UPGRADED to full PASS 2026-09-05** after the owner activated more recipes (now 3 active:
     `SV-R-000011`, `SV-R-000003`, `SV-R-000002`). The previously untestable half ran live on a fresh
     disposable row: two attached gave `recipe_ids="SV-R-000011|SV-R-000003"` (**the pipe-delimited
     multi-value assertion, exercised for the first time**), and removing one left exactly
     `"SV-R-000003"` with no stray pipe.
+
   - **Leg 13 (cleanup): first round DONE by owner and verified** — all five original probe rows and
     the Zoho test contact are gone; sheet confirmed back to exactly the 6 real customers.
     **ONE new row outstanding:** `phase80-uat4@example.com` (`210dd746-b666-4c62-87a2-b6bdd8855a31`,
@@ -196,15 +199,18 @@ Last activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
     real customer. **CLEARED by the owner 2026-09-05 and verified** — `get_waitlist` returns exactly
     the 6 real customers, zero probe rows. **Leg 13 is fully closed.** **No UAT leg ever wrote to a
     real customer row** — re-verified after every leg.
+
   - **✅ PHASE COMPLETE 2026-09-05.** `80-06-SUMMARY.md` written (the missing summary that had kept
     the plan open), `80-VERIFICATION.md` written — verdict **PASSED**: all 5 goal capabilities
     delivered and live-verified, 6/6 plan must-haves, gates green (frontend 1643/1643, middleware
     1582/1582, lint clean), UAT 13/13. ROADMAP marked 6/6 + phase checked.
+
   - **Still open, NOT blocking the phase:** (a) production cutover §7, batched with 51/74/78/79 —
     must carry `CALCOM_EVENT_TYPE_BEER_WAITLIST=6955754` on production Railway or the Contact button
     fails closed there; (b) Phase 78's unrecovered rollback version numbers (inherited, not caused
     here); (c) WR-02 optimistic locking, carried forward by design since closing it needs a 14th
     column and a second redeploy that D-20 forbids.
+
   - Phase lessons preserved in `80-CUTOVER.md` §8 (the `.continue-here.md` checkpoint was retired).
   - **Queue-order question CLOSED 2026-09-05 (owner).** `beer.html`'s "we work through the list in
     order" remains accurate and stays verbatim. Pinning is NOT a general override: it is only for
@@ -212,6 +218,7 @@ Last activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
     Nobody jumps ahead of an earlier signup. `signed_up_at` stays the ordering key and tiebreaker.
     This closes ROADMAP Phase 80 known-constraint 3, which had been left open pending exactly this
     rule.
+
   - **Production cutover (§7) is explicitly OUT of phase 80 scope** — batches with the pending
     51/74/78/79 pushes. Apps Script v55 already serves prod; frontend/middleware prod push has not
     happened. Non-blocking owner action: set `CALCOM_EVENT_TYPE_BEER_WAITLIST=6955754` on the
@@ -219,8 +226,8 @@ Last activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
 
 ## Session Continuity
 
-Last session: 2026-09-05T13:20:00.000Z
-Stopped at: **Phase 80 UAT complete — leg 7 PASSED, the last runnable leg.** Resumed from
+Last session: 2026-09-05T14:58:54.041Z
+Stopped at: Phase 81 context gathered
 `HANDOFF.json` (now retired). Confirmed the staging redeploy of the double-encoding fix `8a3d7868`
 landed by calling `/api/bookings/services` twice — the second, cache-hit call returned a parsed
 object containing slug `beer-consult`, which is exactly how the bug previously hid. Then drove leg 7
@@ -250,7 +257,7 @@ GA4 IDs: account `a391385411`, property `p533046537`.
 
 Stopped at: **PROD STAGE-3 CUTOVER SHIPPED** (tag prod-20260710-2, blessed gated-deploy run 29127742148) — Phases 48 + 54 + kiosk fixes + brewpad + Metricool CSP + v4.6 GA4 events all live on production; middleware redeployed (uptime reset, redis ✅); frontend verified (kiosk-core, Metricool CSP, GA4 in bundle). Earlier this session: iPad UAT (48/54 standalone), Fix 1 break-glass (prod-20260710-1), 9 test invoices+11 payments deleted from Zoho, Phase 48 secured (22/22), v4.6 milestone + Phase 55/56 scaffolded, GA4 reviewed + shipped + staging-verified (site half proven; GA4 collect 503s from this browser only), milestone state reconciled.
 Open threads: (1) **watch Sentry** on the 48/54 money-path/auth changes now live; (2) **GA4 Realtime** confirm on a real prod order (Option A — the staging DebugView 503 was environment-local); (3) delete test order INV-000145 from Zoho (Helcim already voided by owner); (4) v4.5 Phase 47 SEC-01 checkbox vs narrative mismatch — owner reconcile; (5) Phases 49/50/51 remain in v4.5; (6) Phase 56 GTM remaining (Conversion Linker, Ads tag AW-18091171314, mark purchase key event, 2nd admin) + staging internal-traffic filter (todo); (7) GiftCards sheet tidy for GC-000001.
-Resume file: .planning/phases/80-brewpad-waitlist-work-the-queue-link-customers-and-recipes-c/80-UI-SPEC.md
+Resume file: .planning/phases/81-recipe-fermentation-timeline-give-customers-an-expected-read/81-CONTEXT.md
 
 ### Prior session (2026-07-08T21:04:01.660Z)
 
