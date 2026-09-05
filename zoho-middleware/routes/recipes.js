@@ -155,6 +155,68 @@ function enrichIngredientGroups(ingredients) {
   }).catch(function () {}); // D-07: never throw on enrichment failure
 }
 
+// ---------------------------------------------------------------------------
+// Helper — Fermentation timeline derivation (D-16, D-03, Phase 81-02)
+//
+// A byte-identical copy of this pure function lives in the browser runtime
+// at js/admin.js (created by plan 81-05 for D-14's live comparison). The
+// duplication is deliberate: the two runtimes cannot share a module, and if
+// the "exclude packaging, take the max" rule ever drifts between them the
+// BeerXML review modal would show staff a different number from the one
+// that later appears on the live card.
+// ---------------------------------------------------------------------------
+
+function maxNonPackagingOffset(schedule) {
+  var steps = (schedule && schedule.steps_parsed) || [];
+  if (!Array.isArray(steps)) return null;
+  var max = null;
+  steps.forEach(function (step) {
+    if (!step) return;
+    var qualifies = step.is_packaging !== true && typeof step.day_offset === 'number';
+    if (!qualifies) return; // packaging steps and non-numeric offsets are skipped, not coerced
+    if (max === null || step.day_offset > max) max = step.day_offset;
+  });
+  return max;
+}
+
+// ---------------------------------------------------------------------------
+// Helper — Fermentation schedule fetch (Redis cached, Apps Script sourced)
+//
+// Uses axios.get (NOT callAppsScriptPost/doPost): `get_ferm_schedules` is
+// absent from doPost's hardcoded server-token allowlist
+// (apps-script/adminApi.gs:262-329) and would return invalid_action, whereas
+// doGet's bypass already dispatches it. Adding get_ferm_schedules to doPost's
+// allowlist is explicitly the wrong fix — it would widen the write-path
+// action surface for no benefit.
+//
+// Never rejects: a schedules outage must degrade to "no timeline shown"
+// (D-09) and never fail the whole recipe list.
+// ---------------------------------------------------------------------------
+
+function fetchFermSchedules() {
+  return cache.get(C.CACHE_KEYS.FERM_SCHEDULES).then(function (cached) {
+    if (cached) return cached;
+
+    var url = process.env.APPS_SCRIPT_URL;
+    var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
+    if (!url || !token) return [];
+
+    return axios.get(url, {
+      params: { action: 'get_ferm_schedules', server_token: token },
+      timeout: 12000
+    }).then(function (resp) {
+      var data = (resp && resp.data) || {};
+      if (!data.ok) return [];
+      var schedules = (data.data && data.data.schedules) || [];
+      cache.set(C.CACHE_KEYS.FERM_SCHEDULES, schedules, 300);
+      return schedules;
+    });
+  }).catch(function (err) {
+    log.warn('[api/recipes] fetchFermSchedules failed: ' + err.message);
+    return [];
+  });
+}
+
 function enrichWithComputedPrice(recipe, ingredients) {
   if (!recipe || recipe.pricing_mode !== 'dynamic') return Promise.resolve();
   return cache.get(C.CACHE_KEYS.INGREDIENTS_ALL).then(function (catalog) {
@@ -704,5 +766,8 @@ router.post('/api/recipes/bust-cache', function (req, res) {
     res.status(500).json({ error: 'Cache bust failed' });
   });
 });
+
+router.maxNonPackagingOffset = maxNonPackagingOffset;
+router.fetchFermSchedules = fetchFermSchedules;
 
 module.exports = router;

@@ -82,6 +82,7 @@ var CACHE_KEYS = {
   RECIPES:             'sv:recipes',
   RECIPES_TS:          'sv:recipes:ts',
   RECIPE_AVAILABILITY: 'sv:recipe-availability',  // append ':' + recipe_id (Phase 52-05 M8)
+  FERM_SCHEDULES:      'sv:ferm-schedules',       // fermentation schedule templates (Phase 81-02)
 
   // Gift cards (Apps Script sourced, Redis cached — Phase 52-05 M8)
   GIFT_CARD_NEXT_NUMBER: 'kiosk:gift-card-next-number',
