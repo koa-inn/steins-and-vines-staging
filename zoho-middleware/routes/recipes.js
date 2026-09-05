@@ -68,7 +68,12 @@ function bustRecipeCache(recipeId) {
 // ingredients gate.
 // ---------------------------------------------------------------------------
 
-var PUBLIC_RECIPE_FIELDS = ['recipe_id', 'name', 'style', 'description'];
+// D-16 amendment to Phase 74 D-07: 'ferment_days' is the ONLY field this
+// phase (81-02) adds to the public boundary. `schedule_id` and step data
+// (steps, steps_parsed, title, is_transfer) are deliberately absent and
+// must stay absent — the schedule is reduced to this single integer before
+// anything reaches toPublicRecipe.
+var PUBLIC_RECIPE_FIELDS = ['recipe_id', 'name', 'style', 'description', 'ferment_days'];
 
 // Build-by-allowlist, never delete-from-source (T-74-04): a public recipe is
 // assembled as a NEW object copying only PUBLIC_RECIPE_FIELDS, so a future
@@ -361,6 +366,35 @@ function enrichListPrices(recipes) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper — Fermentation timeline enrichment (D-16, D-09, Phase 81-02)
+//
+// Sets recipe.ferment_days ONLY when derivable and strictly greater than 0.
+// Never assigns null/0/undefined — an assigned-but-empty key would still
+// survive toPublicRecipe's hasOwnProperty copy, and D-09 requires an
+// unusable value to be indistinguishable from "no schedule". Degrades to
+// "no timeline shown" on any failure (schedules fetch, cache, etc.) rather
+// than failing the recipe list/detail response.
+// ---------------------------------------------------------------------------
+
+function enrichFermentDays(recipes) {
+  var list = recipes || [];
+  var anyScheduled = list.some(function (r) { return r && r.schedule_id; });
+  if (!anyScheduled) return Promise.resolve();
+
+  return fetchFermSchedules().then(function (schedules) {
+    var map = {};
+    (schedules || []).forEach(function (s) { if (s && s.schedule_id) map[s.schedule_id] = s; });
+    list.forEach(function (recipe) {
+      if (!recipe || !recipe.schedule_id) return;
+      var offset = maxNonPackagingOffset(map[recipe.schedule_id]);
+      if (typeof offset === 'number' && offset > 0) {
+        recipe.ferment_days = offset;
+      }
+    });
+  }).catch(function () {});
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/recipes — List recipes with optional status filter
 // ---------------------------------------------------------------------------
 
@@ -395,7 +429,10 @@ router.get('/api/recipes', function (req, res) {
     return cache.get(cacheKey).then(function (cached) {
       if (cached && cached.recipes) {
         log.info('[api/recipes] Cache hit status=' + status);
-        return enrichListPrices(cached.recipes).then(function () {
+        return Promise.all([
+          enrichListPrices(cached.recipes),
+          enrichFermentDays(cached.recipes)
+        ]).then(function () {
           sendRecipeList('cache', cached.recipes, cached.total);
         });
       }
@@ -411,7 +448,10 @@ router.get('/api/recipes', function (req, res) {
             cache.set(C.CACHE_KEYS.RECIPES_TS, Date.now(), RECIPES_CACHE_TTL);
           }
           var recipeList = payload.recipes || [];
-          return enrichListPrices(recipeList).then(function () {
+          return Promise.all([
+            enrichListPrices(recipeList),
+            enrichFermentDays(recipeList)
+          ]).then(function () {
             sendRecipeList('apps-script', recipeList, payload.total || 0);
           });
         });
@@ -451,9 +491,12 @@ router.get('/api/recipes/:id', function (req, res) {
     return cache.get(cacheKey).then(function (cached) {
       if (cached) {
         log.info('[api/recipes/' + recipeId + '] Cache hit');
-        return enrichWithComputedPrice(cached.recipe, cached.ingredients).then(function () {
-          return enrichIngredientGroups(cached.ingredients);
-        }).then(function () {
+        return Promise.all([
+          enrichWithComputedPrice(cached.recipe, cached.ingredients).then(function () {
+            return enrichIngredientGroups(cached.ingredients);
+          }),
+          enrichFermentDays([cached.recipe])
+        ]).then(function () {
           // Full result stays cached regardless of caller tier — staff and
           // the kiosk depend on it. Projection happens only at response time.
           cache.set(cacheKey, cached, RECIPES_CACHE_TTL);
@@ -467,9 +510,12 @@ router.get('/api/recipes/:id', function (req, res) {
           }
           var detail = data.data || {};
           var result = { recipe: detail.recipe || detail, ingredients: detail.ingredients || [] };
-          return enrichWithComputedPrice(result.recipe, result.ingredients).then(function () {
-            return enrichIngredientGroups(result.ingredients);
-          }).then(function () {
+          return Promise.all([
+            enrichWithComputedPrice(result.recipe, result.ingredients).then(function () {
+              return enrichIngredientGroups(result.ingredients);
+            }),
+            enrichFermentDays([result.recipe])
+          ]).then(function () {
             cache.set(cacheKey, result, RECIPES_CACHE_TTL);
             sendRecipeDetail(result);
           });
