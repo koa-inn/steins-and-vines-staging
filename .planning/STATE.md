@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: Phase 80 UAT + cleanup fully done -- only verification + ROADMAP remain
-last_updated: "2026-09-05T13:20:00.000Z"
-last_activity: 2026-09-05 -- Phase 80 UAT fully green: legs 7 and 4 both PASS
+stopped_at: Phase 80 COMPLETE -- verified and marked in ROADMAP
+last_updated: "2026-09-05T13:40:00.000Z"
+last_activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
 progress:
   total_phases: 66
-  completed_phases: 26
+  completed_phases: 27
   total_plans: 151
   completed_plans: 151
-  percent: 39
+  percent: 41
 ---
 
 # Project State
@@ -21,11 +21,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-19)
 
 **Core value:** Customers can discover, select, or co-create fermentation recipes and purchase them as a complete package — with ingredient inventory, pricing, and batch tracking handled automatically by the system.
-**Current focus:** Phase 80 — brewpad-waitlist-work-the-queue-link-customers-and-recipes-c
+**Current focus:** Phase 80 COMPLETE (2026-09-05) — next phase not yet selected
 
 ## Current Position
 
-Phase: 80 (brewpad-waitlist-work-the-queue-link-customers-and-recipes-c) — EXECUTING
+Phase: 80 (brewpad-waitlist-work-the-queue-link-customers-and-recipes-c) — ✅ COMPLETE 2026-09-05
 
 All 5 plans executed 2026-08-31 in 3 waves via parallel worktree executors. Gates green on the fully merged tree: middleware **1514/1514** (101 suites; baseline 1461, +53), frontend **1166/1166** (88 suites; baseline 1158, +8), both linters clean. Nothing pushed to staging or production.
 
@@ -50,8 +50,8 @@ Next: **staging deploy + BrewPad UAT, then prod cutover.** Apps-Script leg alrea
 **Phase 76 / STAFF-AUTH (BrewPad session-expiry hardening) — ✅ CODE COMPLETE + verified 2026-08-27.** Full single-credential migration (decisions D-01..D-05): BrewPad now authenticates every batch/dashboard/reading/schedule call via middleware `POST /api/batch/admin-proxy` on `x-session-token` only; Google token used solely at login. Dual-token machinery DELETED (not hardened) — `_tokenRefreshTimer`, `_silentRefreshTimer`, `handleUnauthorized`-on-Apps-Script-401, `isUnauthorizedError` all gone (grep 0). Full re-login fires ONLY on a real middleware `res.status===401` (single global `_handleMiddlewareResponse` interceptor), never a body substring. `sv_session` TTL now slides on use (`touchSession` fire-and-forget in `resolveTier`) — no hard 7-day cliff. Apps-Script `doPost` server_token allowlist extended with BrewPad's 10 write actions (owner-redeployed + live-probed). Verifier caught + closed a D-03 gap missed by SUMMARY/tests/lint: a residual `clearSession()` in `onTokenResponse`'s GIS-error else branch (reachable from `doSilentRefreshOnLoad` on iPad-Safari 3p-cookie GIS errors) — reproduced RED then fixed (`fix(76) d79084b3`), min artifact rebuilt via terser. Commits: 76-01 `9a6dc31b`/`a26a9d72`, 76-02 `d202f4a1`/`85ce6a93`/`2f3f6404`/`16c5ffd3`, 76-03 `c739f92d`/`a572275b`/`2e899904`/`d9bb07aa`, gap `fd5048c9`/`d79084b3`. Frontend 1151/1151, middleware 1459/1459, lint clean. Non-code owner sibling still open: review Cloudflare Access session-duration policy for `staging.steinsandvines.ca`.
 
 Milestone: v4.5 Security & Money-Path Closeout — NOT complete (the 2026-07-08 `milestone_complete` flag was false; corrected 2026-07-10). Done: 46 (SEC-02 ✅), 48 (KIOSK-01 ✅ — de-fork live-verified standalone 2026-07-10, 22/22 threats secured), 51 (Phase complete for its narrowed scope 2026-09-02 — MONEY-03 itself still open, see above), 52 (RESIL-01 ✅), 53 (OBS-01 ✅), 54 (kiosk gift-card mgmt ✅ — UAT+security closed 2026-07-10). **Open phases:** 47 (SEC-01 — STATE narrative says closed-on-staging but ROADMAP checkbox is still `[ ]`; needs owner reconciliation), 49 (MONEY-01 — 49-01 code merged, 49-02 live-card UAT pending), 50 (MONEY-02, still gated on its four blocking-human checkpoints). MONEY-03's M9/M18 follow-up and M15 rehome still need their own phase.
-Status: Executing Phase 80
-Last activity: 2026-09-05 -- Phase 80 UAT fully green: legs 7 and 4 both PASS
+Status: Phase 80 COMPLETE
+Last activity: 2026-09-05 -- Phase 80 VERIFIED + marked COMPLETE
 
 **Phase 49 / MONEY-01 (H2) — 49-01 code done, merged to main.** `/api/checkout` now reads back the captured amount (`helcimLib.getCardTransactionById`) and verifies it covers the invoice total (±$0.01) BEFORE side-effects/customerpayments; short/unverifiable → tagged throw routed through the existing `moneyPath.voidWithTimeout` (single void path) → 402. RED→GREEN commits + 13-test regression `checkout-captured-amount.test.js`; full middleware suite 62/1187 green; lint clean. **Pending: 49-02** live-card UAT (checkpoint) — needs the new code deployed and a real card terminal, so it rides a prod deploy / Phase 46 cutover: confirm a legit order still books paid (no false-void) + a tamper attempt is voided.
 
@@ -183,7 +183,15 @@ Last activity: 2026-09-05 -- Phase 80 UAT fully green: legs 7 and 4 both PASS
     real customer. **CLEARED by the owner 2026-09-05 and verified** — `get_waitlist` returns exactly
     the 6 real customers, zero probe rows. **Leg 13 is fully closed.** **No UAT leg ever wrote to a
     real customer row** — re-verified after every leg.
-  - **Remaining to close Phase 80:** verification + ROADMAP checkbox. All UAT and cleanup are DONE.
+  - **✅ PHASE COMPLETE 2026-09-05.** `80-06-SUMMARY.md` written (the missing summary that had kept
+    the plan open), `80-VERIFICATION.md` written — verdict **PASSED**: all 5 goal capabilities
+    delivered and live-verified, 6/6 plan must-haves, gates green (frontend 1643/1643, middleware
+    1582/1582, lint clean), UAT 13/13. ROADMAP marked 6/6 + phase checked.
+  - **Still open, NOT blocking the phase:** (a) production cutover §7, batched with 51/74/78/79 —
+    must carry `CALCOM_EVENT_TYPE_BEER_WAITLIST=6955754` on production Railway or the Contact button
+    fails closed there; (b) Phase 78's unrecovered rollback version numbers (inherited, not caused
+    here); (c) WR-02 optimistic locking, carried forward by design since closing it needs a 14th
+    column and a second redeploy that D-20 forbids.
   - Phase lessons preserved in `80-CUTOVER.md` §8 (the `.continue-here.md` checkpoint was retired).
   - **Production cutover (§7) is explicitly OUT of phase 80 scope** — batches with the pending
     51/74/78/79 pushes. Apps Script v55 already serves prod; frontend/middleware prod push has not

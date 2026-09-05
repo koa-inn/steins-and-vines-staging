@@ -541,15 +541,25 @@ pushed to production independently. **This runsheet does not authorize or perfor
 - [x] Task 2 — owner decision on the five open items (template wording, Cal.com event type, Contact-
       disabled-on-booked/removed, pin-available-on-every-row, WR-02 carry-forward vs fold-in). See
       the `## Owner decisions` section below — all five verdicts recorded.
-- [ ] §1a — NEW blocking prerequisite from the `eventtype` overturn: create the beer-waitlist Cal.com
-      event type, add its Railway env var, extend `bookings.js`'s `ids` array, point `brewpad.js`'s
-      Contact sheet at it explicitly, redeploy. Blocks the contact-email flow and §6 leg 7 only — does
-      NOT block §2 or §3.
-- [ ] §2 — sheet migration (six columns H..M) + read probe against the STILL-OLD deployment
-- [ ] §3 — Apps Script redeploy + four-row rollback table filled with real values
-- [ ] §4 — all four probes recorded with real response bodies
-- [ ] §5 — staging deploy gates green + push + health check
-- [ ] §6 — all 13 UAT legs recorded, especially leg 8 (D-08 fail-closed) and leg 13 (cleanup)
+- [x] §1a — **DONE 2026-09-04/05.** `beer-consult` created (id `6955754`),
+      `CALCOM_EVENT_TYPE_BEER_WAITLIST` set on staging Railway, `bookings.js` `ids` array extended,
+      `brewpad.js`'s Contact sheet pointed at it by slug with a fail-closed guard (WR-04). Commits
+      `b8f35143`, `6116b4cb`. Verified live: `/api/bookings/services` returns slug `beer-consult`,
+      and §6 leg 7 resolved that exact booking URL. **Production env var still unset — see §7.**
+- [x] §2 — **DONE 2026-09-04.** Six columns added as H..M before any redeploy (D-18 order held);
+      read probe against the still-old deployment returned `"ok":true`. Confirmed downstream by §4
+      probe (a), which shows all six new keys present on every row.
+- [x] §3 — **DONE 2026-09-04.** v54 → v55 as a new version of the SAME deployment; rollback target
+      **54** recorded BEFORE the redeploy, deployment ID verified byte-identical (no
+      `admin-config.js` or Railway change needed). This closes the gap Phase 78 left.
+- [x] §4 — **DONE 2026-09-04.** All four probes PASS with real response bodies, plus a bonus CR-02
+      formula-injection probe proving `waitlistCellSafe()` apostrophe-guards `=1+1` live on v55.
+- [x] §5 — **DONE 2026-09-04.** `7f25a731..c9910fcc` pushed, staging middleware `/health` 200.
+      Carries a recorded ORDERING DEVIATION (pushed before §2/§3 at owner request); resolved, since
+      §6's UAT ran only after §2 and §3 completed. D-18's load-bearing order was never violated.
+- [x] §6 — **DONE 2026-09-05. 13 PASS / 0 PARTIAL / 0 FAIL.** Leg 8 (D-08 fail-closed) PASSED
+      against a REAL Resend failure, and leg 13 cleanup is verified complete — `get_waitlist`
+      returns exactly the 6 real customers, zero probe rows.
 - [ ] Recover Phase 78's still-missing rollback version numbers (`78-HUMAN-UAT.md`) — the owner is
       already in the Apps Script deployment history for §3 above; this is the natural moment to also
       open the Version dropdown's history and backfill the Phase 78 table while there. Not required

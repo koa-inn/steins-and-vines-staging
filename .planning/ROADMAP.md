@@ -1270,7 +1270,7 @@ Plans:
 
 ---
 
-### Phase 80: BrewPad waitlist — work the queue
+### Phase 80: BrewPad waitlist — work the queue ✅ COMPLETE
 
 **Goal:** Turn the beer waitlist from a list staff *read* into one they *work*. Phase 78 made the `Waitlist` sheet the system of record and gave BrewPad a read-and-advance tab; this phase adds the four things that let staff actually run the queue: link a row to its Zoho customer, link it to the recipe that person is going to brew, contact them from BrewPad, and override the queue order by hand when reality demands it.
 
@@ -1294,7 +1294,7 @@ Plans:
 3. **Manual reorder contradicts the customer-facing promise.** `beer.html` says "we work through the list in order", and D-04 exists so backfilled rows sit in true signup order. An override needs a rule for where new signups land, whether `signed_up_at` stays the tiebreaker, and whether staff can see that the order is no longer purely chronological.
 4. **D-06 non-disclosure still binds** — nothing added here may reveal to a customer whether they were already on the list.
 
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans executed — **PHASE COMPLETE 2026-09-05** (verified: `80-VERIFICATION.md`)
 
 Plans:
 
@@ -1314,7 +1314,7 @@ Plans:
 
 **Wave 4** (owner cutover — checkpoints)
 
-- [ ] 80-06-PLAN.md — 80-CUTOVER.md runsheet, owner approval of the email template / Cal.com event type / three UI-SPEC open items, then the gated columns-first migration (D-18), the single Apps Script redeploy with recorded rollback versions (D-20), probes, staging deploy and UAT
+- [x] 80-06-PLAN.md — 80-CUTOVER.md runsheet, owner approval of the email template / Cal.com event type / three UI-SPEC open items, then the gated columns-first migration (D-18), the single Apps Script redeploy with recorded rollback versions (D-20), probes, staging deploy and UAT
 
 ---
 
