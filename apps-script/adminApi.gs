@@ -3177,6 +3177,13 @@ function createFermSchedule(payload, userEmail) {
     now
   ]);
 
+  // Pre-existing gap (Pitfall 3): 'gfs' was already listed among the batch-cache keys but
+  // this function never called it, so a newly-created template was invisible to
+  // handleReadAction's get_ferm_schedules (_cachedGet('gfs', 300, ...), :185-192) for up to
+  // 300s. Single-key remove, not the batch-cache-wide helper -- that call also evicts batch-list
+  // keys this function has no reason to touch.
+  CacheService.getScriptCache().remove('gfs');
+
   return { ok: true, schedule_id: scheduleId };
 }
 
@@ -3222,6 +3229,13 @@ function updateFermSchedule(payload, userEmail) {
 
   var luCol = headers.indexOf('last_updated');
   if (luCol !== -1) sheet.getRange(row, luCol + 1).setValue(now);
+
+  // Pre-existing gap (Pitfall 3): 'gfs' was already listed among the batch-cache keys but
+  // this function never called it, so an edited template's steps stayed stale for up to 300s
+  // in handleReadAction's get_ferm_schedules (_cachedGet('gfs', 300, ...), :185-192). Single-key
+  // remove, not the batch-cache-wide helper -- that call also evicts batch-list keys this function
+  // has no reason to touch.
+  CacheService.getScriptCache().remove('gfs');
 
   return { ok: true, message: 'Schedule updated' };
 }
@@ -3369,6 +3383,13 @@ function deleteFermSchedule(payload) {
 
   var luCol = result.headers.indexOf('last_updated');
   if (luCol !== -1) result.sheet.getRange(result.row, luCol + 1).setValue(new Date().toISOString());
+
+  // Pre-existing gap (Pitfall 3): 'gfs' was already listed among the batch-cache keys but
+  // this function never called it, so a deactivated template stayed visible for up to 300s in
+  // handleReadAction's get_ferm_schedules (_cachedGet('gfs', 300, ...), :185-192). Single-key
+  // remove, not the batch-cache-wide helper -- that call also evicts batch-list keys this function
+  // has no reason to touch.
+  CacheService.getScriptCache().remove('gfs');
 
   return { ok: true, message: 'Schedule deactivated' };
 }
