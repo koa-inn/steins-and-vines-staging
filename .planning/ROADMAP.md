@@ -1362,15 +1362,15 @@ template, and the public figure is DERIVED as the largest `day_offset` among tha
 non-packaging steps. There is no standalone `ferment_days` column on `Recipes`. Do not resurrect
 the sketched approach.
 
-**Plans:** 9 plans across 6 waves
+**Plans:** 4/9 plans executed
 
 Plans:
 **Wave 1** (parallel — disjoint files)
 
-- [ ] 81-01-PLAN.md — Apps Script: self-migrating `Recipes.schedule_id` column, persistence in `createRecipe`/`updateRecipe`, and the pre-existing `'gfs'` cache-bust fix in the three FermSchedules CRUD handlers
-- [ ] 81-02-PLAN.md — Middleware: `CACHE_KEYS.FERM_SCHEDULES`, `fetchFermSchedules` (GET + server_token), `maxNonPackagingOffset`, `enrichFermentDays` on both read paths, and `ferment_days` in `PUBLIC_RECIPE_FIELDS`
-- [ ] 81-03-PLAN.md — Public: `fermentTimeDisplay` + the second "Ready in" `.price-col` on the recipe card, new CSS, both `beer.html` passages rewritten, CSP confirmed unchanged, bundles rebuilt
-- [ ] 81-04-PLAN.md — Admin recipe editor: schedule picker, load/save round-trip, D-11 warn-don't-block message, and the `initRecipesTab` lazy-load fix
+- [x] 81-01-PLAN.md — Apps Script: self-migrating `Recipes.schedule_id` column, persistence in `createRecipe`/`updateRecipe`, and the pre-existing `'gfs'` cache-bust fix in the three FermSchedules CRUD handlers
+- [x] 81-02-PLAN.md — Middleware: `CACHE_KEYS.FERM_SCHEDULES`, `fetchFermSchedules` (GET + server_token), `maxNonPackagingOffset`, `enrichFermentDays` on both read paths, and `ferment_days` in `PUBLIC_RECIPE_FIELDS`
+- [x] 81-03-PLAN.md — Public: `fermentTimeDisplay` + the second "Ready in" `.price-col` on the recipe card, new CSS, both `beer.html` passages rewritten, CSP confirmed unchanged, bundles rebuilt
+- [x] 81-04-PLAN.md — Admin recipe editor: schedule picker, load/save round-trip, D-11 warn-don't-block message, and the `initRecipesTab` lazy-load fix
 
 **Wave 2**
 
