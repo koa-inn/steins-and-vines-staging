@@ -1362,7 +1362,7 @@ template, and the public figure is DERIVED as the largest `day_offset` among tha
 non-packaging steps. There is no standalone `ferment_days` column on `Recipes`. Do not resurrect
 the sketched approach.
 
-**Plans:** 4/9 plans executed
+**Plans:** 5/9 plans executed
 
 Plans:
 **Wave 1** (parallel — disjoint files)
@@ -1374,7 +1374,7 @@ Plans:
 
 **Wave 2**
 
-- [ ] 81-05-PLAN.md — Admin BeerXML review: `PRIMARY_AGE`/`SECONDARY_AGE`/`TERTIARY_AGE` extraction (display-only), meta-line segment, template dropdown with no pre-selection (D-13), D-14 side-by-side compare, and the `confirmBeerXMLImport` carry-through fix
+- [x] 81-05-PLAN.md — Admin BeerXML review: `PRIMARY_AGE`/`SECONDARY_AGE`/`TERTIARY_AGE` extraction (display-only), meta-line segment, template dropdown with no pre-selection (D-13), D-14 side-by-side compare, and the `confirmBeerXMLImport` carry-through fix
 
 **Wave 3**
 
