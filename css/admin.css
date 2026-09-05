@@ -3292,6 +3292,15 @@ body.kiosk-mode .batch-cal-day { min-height: 100px; }
   margin-bottom: var(--sp-4);
 }
 
+/* D-14: deliberately neutral -- no warning color, no icon, no border,
+   regardless of how far apart the BeerXML claim and template offset are.
+   A human reads both numbers and decides; the UI must not pre-judge. */
+.beerxml-schedule-compare {
+  font-size: 13px;
+  color: var(--ink-secondary);
+  margin-top: var(--sp-1);
+}
+
 .beerxml-match-search {
   width: 100%;
   padding: var(--sp-1) var(--sp-2);

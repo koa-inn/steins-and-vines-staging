@@ -9360,6 +9360,33 @@
     return els.length > 0 ? (els[0].textContent || '').trim() : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // Helper — Fermentation timeline derivation, browser copy (D-16, D-03, D-14)
+  //
+  // A byte-identical copy of this pure function lives server-side at
+  // zoho-middleware/routes/recipes.js:maxNonPackagingOffset (created by plan
+  // 81-02, which produces the public ferment_days field). The duplication is
+  // deliberate: the two runtimes cannot share a module. This copy renders the
+  // D-14 comparison live in the browser, before any save round-trips to the
+  // server; the Node copy produces the public ferment_days shown on the
+  // customer's card. If the "exclude packaging, take the max" rule ever
+  // drifts between the two copies, the number shown to staff during BeerXML
+  // review will disagree with the number that later appears on the live
+  // card -- exactly the silent drift D-03 exists to prevent.
+  // ---------------------------------------------------------------------------
+  function maxNonPackagingOffset(schedule) {
+    var steps = (schedule && schedule.steps_parsed) || [];
+    if (!Array.isArray(steps)) return null;
+    var max = null;
+    steps.forEach(function (step) {
+      if (!step) return;
+      var qualifies = step.is_packaging !== true && typeof step.day_offset === 'number';
+      if (!qualifies) return; // packaging steps and non-numeric offsets are skipped, not coerced
+      if (max === null || step.day_offset > max) max = step.day_offset;
+    });
+    return max;
+  }
+
   function parseBeerXML(xmlDoc) {
     var recipes = xmlDoc.getElementsByTagName('RECIPE');
     if (recipes.length === 0) return null;
@@ -9598,8 +9625,27 @@
       rowsHTML += _buildBeerXMLRowHTML(matchedRows[i], i);
     }
 
+    // D-12/D-13: recipe-level schedule picker, NOT a per-ingredient row, so it
+    // lives above the ingredient table rather than inside it. Reuses plan
+    // 81-04's buildScheduleOptionsHtml (beer-first ordering, escapeHTML
+    // treatment) rather than a second option loop, stripping its own leading
+    // "None" option in favor of this modal's "No schedule (add later)"
+    // wording. Called with '' (never a proximity-matched id) -- D-13 is a
+    // hard requirement that nothing is pre-selected here, no matter how
+    // close a template's offset is to parsed.ferment_days_beerxml. Do not add
+    // nearest-match logic; this omission is intentional.
+    var scheduleOptionsHtml = buildScheduleOptionsHtml('').replace('<option value="">None</option>', '');
+
     var bodyHTML = ''
       + '<p class="beerxml-meta-line">' + metaLine + '</p>'
+      + '<div class="form-group" style="margin-top:var(--sp-4);">'
+      + '<label for="beerxml-schedule-select">Fermentation Schedule</label>'
+      + '<select id="beerxml-schedule-select" class="admin-select">'
+      + '<option value="">No schedule (add later)</option>'
+      + scheduleOptionsHtml
+      + '</select>'
+      + '<p id="beerxml-schedule-compare" class="beerxml-schedule-compare"></p>'
+      + '</div>'
       + '<div style="overflow-x:auto;">'
       + '<table class="beerxml-review-table" role="grid">'
       + '<thead><tr>'
@@ -9624,6 +9670,21 @@
     var confirmBtn = document.getElementById('beerxml-confirm-btn');
     var cancelBtn = document.getElementById('beerxml-cancel-btn');
     var tbody = document.getElementById('beerxml-review-tbody');
+
+    // D-14: neutral side-by-side comparison, no threshold, no judgement.
+    // Starts empty so nothing renders until staff choose a template.
+    var scheduleSelectEl = document.getElementById('beerxml-schedule-select');
+    if (scheduleSelectEl) {
+      scheduleSelectEl.addEventListener('change', function () {
+        var compareEl = document.getElementById('beerxml-schedule-compare');
+        var sched = fermSchedulesData.find(function (s) { return s.schedule_id === scheduleSelectEl.value; });
+        if (!compareEl) return;
+        if (!sched || !parsed.ferment_days_beerxml) { compareEl.textContent = ''; return; }
+        var templateDays = maxNonPackagingOffset(sched);
+        if (templateDays === null) { compareEl.textContent = ''; return; }
+        compareEl.textContent = 'BeerXML: ' + parsed.ferment_days_beerxml + ' days · Template: ' + templateDays + ' days';
+      });
+    }
 
     function canConfirm() {
       return matchedRows.some(function (r) { return !r.skipped && r.zoho_match; });
