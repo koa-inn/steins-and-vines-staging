@@ -8776,6 +8776,29 @@
     });
   }
 
+  // Build <option> markup for the recipe editor's schedule picker
+  // (#recipe-schedule-select). Beer-category entries are sorted first,
+  // every other entry after them -- filter-then-show, never hide-entirely,
+  // since a blank category is a normal, reachable state on existing
+  // FermSchedules rows (renderScheduleForm offers an explicit "None"
+  // category option) and a beer recipe may legitimately reuse a generic
+  // or blank-category template. escapeHTML is applied to schedule_id, name
+  // and category, matching the stricter #sa-schedule-select loop rather
+  // than the unescaped #batch-schedule-select loop.
+  function buildScheduleOptionsHtml(selectedId) {
+    var html = '<option value="">None</option>';
+    var sorted = fermSchedulesData.slice().sort(function (a, b) {
+      var aBeer = a.category === 'beer' ? 0 : 1;
+      var bBeer = b.category === 'beer' ? 0 : 1;
+      return aBeer - bBeer;
+    });
+    sorted.forEach(function (s) {
+      var selected = s.schedule_id === selectedId ? ' selected' : '';
+      html += '<option value="' + escapeHTML(s.schedule_id) + '"' + selected + '>' + escapeHTML(s.name) + (s.category ? ' (' + escapeHTML(s.category) + ')' : '') + '</option>';
+    });
+    return html;
+  }
+
   // Populate form fields
   function populateRecipeForm(recipe) {
     var r = recipe || {};
@@ -8786,6 +8809,8 @@
     document.getElementById('recipe-abv').value = r.abv || '';
     document.getElementById('recipe-ibu').value = r.ibu || '';
     document.getElementById('recipe-colour').value = r.colour_srm || '';
+    var scheduleSelect = document.getElementById('recipe-schedule-select');
+    if (scheduleSelect) scheduleSelect.innerHTML = buildScheduleOptionsHtml(r.schedule_id || '');
     document.getElementById('recipe-locked-price').value = r.locked_price || '';
     document.getElementById('recipe-service-fee').value = r.service_fee != null ? r.service_fee : 45; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
     document.getElementById('recipe-materials-fee').value = r.materials_fee != null ? r.materials_fee : 5; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
@@ -9089,6 +9114,7 @@
       abv: parseFloat(document.getElementById('recipe-abv').value) || 0,
       ibu: parseInt(document.getElementById('recipe-ibu').value, 10) || 0,
       colour_srm: parseInt(document.getElementById('recipe-colour').value, 10) || 0,
+      schedule_id: document.getElementById('recipe-schedule-select').value || null,
       pricing_mode: document.getElementById('recipe-pricing-mode') ? document.getElementById('recipe-pricing-mode').value : 'locked',
       locked_price: parseFloat(document.getElementById('recipe-locked-price').value) || 0,
       service_fee: parseFloat(document.getElementById('recipe-service-fee').value) || 45,
