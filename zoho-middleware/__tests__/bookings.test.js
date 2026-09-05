@@ -65,6 +65,65 @@ describe('bookings routes — cache handling', () => {
     expect(typeof res.json.mock.calls[0][0]).toBe('object');
   });
 
+  // Regression: the two tests above mock cache.get with an ALREADY-PARSED object, so they
+  // prove the read path is fine GIVEN a good cache value -- they never exercise what
+  // cache.set actually wrote. The bug lived in that seam: the handler pre-stringified its
+  // payload while lib/cache.set stringifies again internally, so Redis held a JSON string
+  // of a JSON string. cache.get's single JSON.parse then yielded a STRING, and res.json()
+  // served double-encoded JSON. Browsers doing `(await r.json()).services` got undefined.
+  // Found live on staging 2026-09-05: it broke BrewPad's waitlist contact sheet, which
+  // failed closed with "Could not prepare the booking link".
+  function roundTripThroughRedis(setValue) {
+    // Mirrors lib/cache: set() does JSON.stringify(value), get() does one JSON.parse.
+    return JSON.parse(JSON.stringify(setValue));
+  }
+
+  test('/api/bookings/services survives a cache round-trip — no double encoding', async () => {
+    var calcom = require('../lib/calcom');
+    process.env.CALCOM_EVENT_TYPE_FERMENT_KIT = '111';
+    calcom.listEventType.mockResolvedValue({
+      data: { id: 111, title: 'Ferment Kit', slug: 'ferment-kit', lengthInMinutes: 15, bookingUrl: 'https://cal.com/x/ferment-kit' }
+    });
+    cache.get.mockResolvedValue(null);
+
+    // First pass: cache miss, handler computes the payload and writes it.
+    var res1 = mockRes();
+    await handlers['/api/bookings/services']({}, res1);
+    expect(cache.set).toHaveBeenCalled();
+
+    // Second pass: serve exactly what Redis would hand back for that write.
+    var stored = cache.set.mock.calls[cache.set.mock.calls.length - 1][1];
+    cache.get.mockResolvedValue(roundTripThroughRedis(stored));
+
+    var res2 = mockRes();
+    await handlers['/api/bookings/services']({}, res2);
+
+    var served = res2.json.mock.calls[0][0];
+    expect(typeof served).toBe('object');
+    expect(Array.isArray(served.services)).toBe(true);
+    expect(served.services[0].slug).toBe('ferment-kit');
+    delete process.env.CALCOM_EVENT_TYPE_FERMENT_KIT;
+  });
+
+  test('/api/bookings/services ignores a poisoned (string) cache entry rather than serving it', async () => {
+    // Self-healing: entries written by the buggy code sit in Redis for a 24h TTL. A
+    // non-object cache hit must be treated as a miss, not forwarded to res.json().
+    var calcom = require('../lib/calcom');
+    process.env.CALCOM_EVENT_TYPE_FERMENT_KIT = '111';
+    calcom.listEventType.mockResolvedValue({
+      data: { id: 111, title: 'Ferment Kit', slug: 'ferment-kit', lengthInMinutes: 15, bookingUrl: 'https://cal.com/x/ferment-kit' }
+    });
+    cache.get.mockResolvedValue('{"services":[{"slug":"ferment-kit"}],"staff":[]}');
+
+    var res = mockRes();
+    await handlers['/api/bookings/services']({}, res);
+
+    var served = res.json.mock.calls[0][0];
+    expect(typeof served).toBe('object');
+    expect(Array.isArray(served.services)).toBe(true);
+    delete process.env.CALCOM_EVENT_TYPE_FERMENT_KIT;
+  });
+
   test('/api/bookings/slots returns cached data without double-parsing', async () => {
     var payload = { date: '2026-04-18', slots: [{ time: '10:00' }] };
     cache.get.mockResolvedValue(payload);

@@ -132,8 +132,13 @@ function buildContactsRoutePayload(name, email, phone, firstName, lastName) {
  */
 router.get('/api/bookings/services', async function (req, res) {
   try {
+    // lib/cache.get() already JSON.parses, so a healthy hit is an OBJECT. Entries written
+    // by the old double-stringifying code below parse back to a STRING; serving one made
+    // res.json() emit double-encoded JSON and every consumer's `.services` came back
+    // undefined. Treat any non-object hit as a miss so those entries self-heal rather than
+    // sitting out their 24h TTL.
     var cached = await cache.get(BOOKING_SERVICES_CACHE_KEY);
-    if (cached) {
+    if (cached && typeof cached === 'object') {
       return res.json(cached);
     }
 
@@ -169,7 +174,7 @@ router.get('/api/bookings/services', async function (req, res) {
     }
 
     var payload = { services: serviceData, staff: [] };
-    cache.set(BOOKING_SERVICES_CACHE_KEY, JSON.stringify(payload), BOOKING_SERVICES_CACHE_TTL).catch(function () {});
+    cache.set(BOOKING_SERVICES_CACHE_KEY, payload, BOOKING_SERVICES_CACHE_TTL).catch(function () {});
     res.json(payload);
   } catch (err) {
     log.error('[api/bookings/services] ' + err.message);
@@ -266,7 +271,7 @@ router.get('/api/bookings/slots', async function (req, res) {
     });
 
     var payload = { date: date, slots: slots };
-    cache.set(slotsCacheKey, JSON.stringify(payload), SLOTS_CACHE_TTL).catch(function () {});
+    cache.set(slotsCacheKey, payload, SLOTS_CACHE_TTL).catch(function () {});
     res.json(payload);
   } catch (err) {
     log.error('[api/bookings/slots] ' + err.message);
