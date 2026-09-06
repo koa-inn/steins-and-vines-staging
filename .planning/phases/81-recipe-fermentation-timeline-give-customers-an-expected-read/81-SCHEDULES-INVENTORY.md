@@ -330,6 +330,96 @@ Set the recipe's Fermentation Schedule picker back to "None" and save. That clea
 `schedule_id`, `ferment_days` disappears from the payload (D-09: key absent, not `0`), and
 the card returns to its single-column footer.
 
+## Release-gate verification — plan 81-08 Task 3
+
+All checks run against staging on 2026-09-06. Result: **10 of 11 pass, one defect found**
+(D-15, below), plus one leg that cannot be verified with current data (D-04 positive).
+
+### Public page
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | All three cards show a second footer column, label `Ready in`, two lines | **PASS** — 3/3 |
+| 2 | Reads `about`, not `~` (D-05) | **PASS** — no tilde on any card |
+| 3 | Price column first, Ready-in second, gold divider, even split | **PASS** — divider `rgba(184,150,62,0.3)`, widths 158/159px |
+| 4 | Narrow viewport: two-line value must not wrap to three | **PASS** — see method note |
+| D-08 | How It Works step 4 + FAQ rewritten | **PASS** |
+| D-09 | No-schedule card degrades cleanly | **PASS** |
+
+**Step 4 method note.** Chrome clamps window width near 600px, so a true sub-480px viewport
+could not be forced. Measured intrinsic text width against the column instead, which settles
+it more firmly: column content box **143px** (159 − 16px padding) vs longest line
+`about 3 weeks` at **84px** — 59px of slack. Below 480px the grid collapses to one column, so
+the card grows *wider* and the column exceeds 159px. A three-line wrap is not reachable.
+
+**D-08 copy verified verbatim.** Step 4: "We look after your batch while it ferments —
+typically about 3 weeks for ales and about 5 weeks for lagers, counted from your brew day.
+Each recipe's card shows its own estimate…" FAQ: "It depends on the style — typically about
+3 weeks for ales, about 5 weeks for lagers, counted from your brew day." No occurrence of
+"timeline at your consult" anywhere on the page. Canning/bottling sentences intact; the
+Phase-80 queue-order copy ("we work through the list in order") untouched.
+
+**D-09 negative case, proven not assumed.** Cleared `SV-R-000002`'s schedule, saved, and
+reloaded the public page. The card collapsed to a single **316px full-width** column reading
+`FERMENT IN STORE / From $123.60` — no `TBD`, no em-dash, no `0 weeks`, no `null`/`NaN`, no
+empty half-column. Structurally identical to the Beer Kit card's footer, so it reads as
+deliberate rather than broken. `ferment_days` was **absent** from the API, not `null` or `0`.
+`FS-0008` was re-attached immediately afterwards and the 3-card state re-verified.
+
+### Admin surfaces
+
+| Ref | Check | Result |
+|-----|-------|--------|
+| D-11 | Amber (not red) advisory when an active recipe has no schedule | **PASS** — `recipes-inline-error--warning`, `rgb(184,122,26)` |
+| D-11 | **Save must succeed** | **PASS** — save button never disabled; save landed (`ferment_days` went absent) |
+| D-12 | Meta line ends `BeerXML: N days ferment` | **PASS** — `BeerXML: 14 days ferment` |
+| D-12 | `AGE` never read (D-01) | **PASS** — fixture carried `AGE 30`; it does not appear anywhere |
+| D-13 | Dropdown starts unselected, no matter how close a template is | **PASS** — "No schedule (add later)", value `''`, despite FS-0010 being the obvious match |
+| D-14 | Neutral compare line, no threshold, no judgement | **PASS** — `BeerXML: 14 days · Template: 21 days`, `rgb(107,84,66)`, weight 400, transparent bg, class `beerxml-schedule-compare`, no icon, no warning class — with a 7-day gap |
+| D-14 | Confirm Import carries the choice into the recipe form | **PASS** — form opened with FS-0010 selected |
+| D-15 | Correct count and singular/plural | **PASS** — "1 public recipe" (FS-0008), "2 public recipes" (FS-0010) |
+| D-15 | No note on a 0-attached template or the create-new form | **PASS** — both absent |
+| D-15 | **Note appears when it should** | **FAIL — see defect below** |
+| D-04 | Batch with no linked recipe: nothing pre-selected, activates normally | **PASS** — `#sa-schedule-select` value `''`, 11 options, changeable |
+| D-04 | Batch **with** a linked recipe pre-selects its template | **NOT VERIFIABLE** — see below |
+
+The BeerXML probe wrote nothing: `confirmBeerXMLImport` only calls `openRecipeDetail(null)` +
+`populateRecipeForm(...)`, never a save. Recipe count before and after: 10. No probe recipe
+exists. Fixture used: `PRIMARY_AGE 10 + SECONDARY_AGE 4 = 14`, `AGE 30` planted as a negative
+control.
+
+### DEFECT (blocks 81-09) — the D-15 note silently fails to render
+
+`countRecipesUsingSchedule` reads `_recipesState.list`, which is populated only by
+`loadRecipeList()` — called from `initRecipesTab()`, i.e. **only when the Recipes tab is
+opened**. The note is gated behind `if (usedByCount > 0)` (`js/admin.js:7686-7693`).
+
+Consequence: a staff member who opens Admin and goes straight to **Batches → Schedule
+Templates** — an entirely natural path — edits a template attached to live public recipes and
+sees **no warning at all**, because the count silently evaluates to 0.
+
+Confirmed empirically, not inferred:
+- Straight to Schedule Templates → FS-0010 modal, **no note**.
+- Visit Recipes tab first (10 rows load), reopen the same FS-0010 modal → *"Used by 2 public
+  recipes. Changing day offsets will change what customers are told."*
+
+This matters because D-15 exists precisely to warn staff before they change offsets that now
+drive public marketing copy. The warning fails in the exact situation it was built for.
+
+This is the mirror image of the lazy-load gap plan 81-04 already fixed for the recipe picker,
+and the fix pattern is in the codebase: `initRecipesTab()` calls `triggerBatchLoad()` because
+the picker needs `fermSchedulesData`. Here the dependency runs the other way — the schedule
+editor needs `_recipesState.list`. A guarded recipe-load before rendering the template form
+(or on Batches-tab init) would close it.
+
+### D-04 positive leg — not verifiable with current data
+
+No batch in the system carries a `recipe_id` with a schedule attached. The only three pending
+batches (`SV-B-000206`, `-000205`, `-000204`) are wine products created from Zoho product
+SKUs. Combined with plan 81-06's recorded finding that the create-batch modal has no recipe
+identity to default from, D-04 is currently verified in its negative case only. Not a
+regression and not caused by this phase — recorded so it is not mistaken for verified.
+
 ### Finding for plan 81-06 — a blast-radius warning already exists
 
 Editing `FS-0001` (4 Week Wine) surfaced an existing in-app confirmation:
