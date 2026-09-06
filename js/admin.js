@@ -7626,7 +7626,33 @@
   function openEditScheduleModal(schedId) {
     var sched = fermSchedulesData.find(function (s) { return s.schedule_id === schedId; });
     if (!sched) { showToast('Schedule not found', 'error'); return; }
-    renderScheduleForm(sched);
+    ensureRecipeListForBlastRadius(function () { renderScheduleForm(sched); });
+  }
+
+  // GAP-01 (81-10): guarantee _recipesState.list can answer the D-15 count
+  // before renderScheduleForm reads it, even when the Recipes tab has never
+  // been opened this session. A pre-warm on the Batches tab or its sub-tab
+  // handler would still be a race against the click; this choke point --
+  // right before the render that needs the answer -- is unconditionally
+  // right. Cost accepted: the first edit-modal open of a session waits one
+  // round-trip (~200-500ms) with no spinner. cb() always fires, success or
+  // failure, so the modal can never fail to open because of this.
+  function ensureRecipeListForBlastRadius(cb) {
+    if (_recipesState.list.length > 0) { cb(); return; }
+    var mwUrl = getRecipesMwUrl();
+    if (!mwUrl) { cb(); return; }
+    var statusFilterEl = document.getElementById('recipes-status-filter');
+    var status = (statusFilterEl && statusFilterEl.value) || 'all';
+    fetch(mwUrl + '/api/recipes?status=' + encodeURIComponent(status), {
+      credentials: 'include',
+      headers: getRecipesMwHeaders()
+    })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function (data) {
+        if (_recipesState.list.length === 0) { _recipesState.list = data.recipes || []; }
+        cb();
+      })
+      .catch(function () { cb(); });
   }
 
   // D-15: how many public recipes reference this schedule template. Counts
