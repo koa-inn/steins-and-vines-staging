@@ -1362,7 +1362,7 @@ template, and the public figure is DERIVED as the largest `day_offset` among tha
 non-packaging steps. There is no standalone `ferment_days` column on `Recipes`. Do not resurrect
 the sketched approach.
 
-**Plans:** 6/9 plans executed
+**Plans:** 7/9 plans executed
 
 Plans:
 **Wave 1** (parallel — disjoint files)
@@ -1378,7 +1378,7 @@ Plans:
 
 **Wave 3**
 
-- [ ] 81-06-PLAN.md — Admin: D-15 blast-radius note on the template editor, and D-04 pre-selection on `#sa-schedule-select` (the `#batch-schedule-select` leg is recorded as an open finding — that modal has no recipe identity)
+- [x] 81-06-PLAN.md — Admin: D-15 blast-radius note on the template editor, and D-04 pre-selection on `#sa-schedule-select` (the `#batch-schedule-select` leg is recorded as an open finding — that modal has no recipe identity)
 
 **Wave 4** (owner — Apps Script release)
 
