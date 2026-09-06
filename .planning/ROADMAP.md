@@ -1362,7 +1362,7 @@ template, and the public figure is DERIVED as the largest `day_offset` among tha
 non-packaging steps. There is no standalone `ferment_days` column on `Recipes`. Do not resurrect
 the sketched approach.
 
-**Plans:** 5/9 plans executed
+**Plans:** 6/9 plans executed
 
 Plans:
 **Wave 1** (parallel — disjoint files)
@@ -1382,7 +1382,7 @@ Plans:
 
 **Wave 4** (owner — Apps Script release)
 
-- [ ] 81-07-PLAN.md — Read the live `FermSchedules` inventory, decide the D-10 branch, then redeploy Apps Script with the rollback version recorded and four live probes
+- [x] 81-07-PLAN.md — Read the live `FermSchedules` inventory, decide the D-10 branch, then redeploy Apps Script with the rollback version recorded and four live probes
 
 **Wave 5** (owner — staging deploy, backfill, release gate)
 
