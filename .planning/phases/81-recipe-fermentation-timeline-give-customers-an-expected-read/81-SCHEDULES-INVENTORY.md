@@ -214,6 +214,60 @@ been reset to 300s holding `gfs-probe-81-07`. Returning `''` is only reachable i
 
 `FS-0010.description` is back to its original `''`. No net data change from this probe.
 
+## Staging verification (pre-backfill) — plan 81-08 Task 1
+
+Deployed `ab6e1841..cc054ad9` (55 commits) via `git push origin main` on 2026-09-05.
+Railway staging middleware confirmed redeployed by `uptime` resetting from 58355s to 11s.
+GitHub Pages published.
+
+Pre-push gates: frontend 1678/1678, middleware 1603/1603, both linters clean,
+`npm run build` then `git status --porcelain js/main.js js/main.min.js` produced no output
+(artifacts committed in sync).
+
+### API contract — `https://svmiddleware-staging.up.railway.app`
+
+`GET /api/recipes?status=active` → **HTTP 200**, `source: apps-script`, **3 recipes**:
+
+| recipe_id | name | keys returned |
+|-----------|------|---------------|
+| SV-R-000011 | West Coast IPA | `recipe_id, name, style, description, price, price_from` |
+| SV-R-000003 | Hazy Pale Ale | `recipe_id, name, style, description, price, price_from` |
+| SV-R-000002 | Czech Lager | `recipe_id, name, style, description, price, price_from` |
+
+| Assertion | Expected | Actual |
+|-----------|----------|--------|
+| `grep -c ferment_days` | 0 pre-backfill (D-09: absent, not `null`/`0`) | **0** |
+| `grep -c -E 'schedule_id\|steps_parsed\|is_transfer'` | 0 (D-16 / T-74-04 boundary) | **0** |
+| `grep -c -E '"steps"\|template\|day_offset\|is_packaging'` (broader sweep) | 0 | **0** |
+
+### Anonymous status-guard (T-74-03 regression check)
+
+| Query | Recipes returned | Non-active leaked | `status` key exposed |
+|-------|------------------|-------------------|----------------------|
+| `?status=active` | 3 (the active three) | 0 | no |
+| `?status=all` | 3 (the active three) | 0 | no |
+| `?status=draft` | 3 (the active three) | 0 | no |
+| *(no param)* | 3 (the active three) | 0 | no |
+
+`GET /api/recipes/SV-R-000001` (a draft) → **HTTP 404 `{"error":"Recipe not found"}`**.
+The pre-existing guarantee has not regressed.
+
+### Staging frontend
+
+`curl` against `staging.steinsandvines.ca` returns **HTTP 403** — the static site sits behind
+bot protection, unlike the Railway API host. Verified in a real browser instead:
+
+| Check | Result |
+|-------|--------|
+| 81-03's rewritten copy live (`/brew day/i` in body text) | **true** |
+| Old consult deflection (`/timeline at your consult/i`) gone | **true** (absent) |
+| `fermentTimeDisplay` present in shipped bundle | **`typeof === "function"`** |
+| `Ready in` rendered | **false** — correct, nothing attached yet |
+| `.ferment-time-value` elements | **0** — correct pre-backfill baseline |
+
+No leak, clean no-timeline baseline, new code confirmed live on both tiers. Task 1 acceptance
+criteria all met; cleared to proceed to the Task 2 backfill.
+
 ### Finding for plan 81-06 — a blast-radius warning already exists
 
 Editing `FS-0001` (4 Week Wine) surfaced an existing in-app confirmation:
