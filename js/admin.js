@@ -10086,7 +10086,10 @@
       // Test seam for fermSchedulesData -- module-scope var normally filled
       // only by an async Apps-Script fetch (triggerBatchLoad), which unit
       // tests must not depend on.
-      _setFermSchedulesDataForTest: function (arr) { fermSchedulesData = arr; }
+      _setFermSchedulesDataForTest: function (arr) { fermSchedulesData = arr; },
+      // 81-10: D-15 blast-radius note load-order regression hook (GAP-01) --
+      // the note only renders on this path, and the bug is that it renders too early.
+      openEditScheduleModal: openEditScheduleModal
     });
   }
 
