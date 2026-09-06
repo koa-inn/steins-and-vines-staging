@@ -129,6 +129,59 @@ Pass the Railway deploy ID from the Deploy History table above. Requires a proje
 
 > **Note:** `railway deployment redeploy` only re-runs the CURRENT latest deployment — it is NOT a rollback to a previous version. Use the dashboard or GraphQL mutation to roll back.
 
+### Apps Script (`adminApi.gs`)
+
+Apps Script is **entirely outside `gated-deploy.yml`**. There is no CI path, no smoke check,
+and no staging isolation:
+
+- **One deployment serves staging AND production.** There is no staging Apps Script.
+- **Staging and production share one Google Sheet.** Any sheet write made while "testing on
+  staging" hits live production data.
+- Project: "SV Website", script ID `1uD14PTT2lMWV06FAKcEs6Z_YKsEvnUuk9fOFycu7emiOPyh9jC0KTvUH`.
+  Note there are **two** Apps Script projects with this same name — the correct one contains
+  `Code.gs`, `trackEvent.gs`, `adminApi.gs`, `backup.gs`.
+
+**Deploy sequence:**
+
+1. Deploy → Manage deployments. **Record the currently active version number** — that is the
+   rollback target. Do this every time, even for backward-compatible changes.
+2. **Check for editor drift before pasting.** The editor is the live source; if someone edited
+   it without committing back, pasting the repo file destroys that work silently. Hash both
+   sides and compare — in the editor's devtools console:
+   ```js
+   const m = monaco.editor.getModels().find(x => String(x.uri).includes('file_3')); // adminApi.gs
+   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(m.getValue()));
+   Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, '0')).join('');
+   ```
+   against `git show <last-commit-touching-adminApi.gs>:apps-script/adminApi.gs | shasum -a 256`.
+   Only paste when they match (or when the difference is understood).
+3. `cat apps-script/adminApi.gs | pbcopy`, click into the editor, `cmd+A`, `cmd+V`, `cmd+S`.
+   Wait for "Saved to Drive". Re-hash to confirm the paste landed exactly.
+4. Deploy → Manage deployments → pencil (edit) → Version: **New version** → add a description →
+   Deploy. **Never "New deployment"** — that mints a second URL and splits traffic.
+5. The Web app URL does not change when updating an existing deployment, so no
+   `js/admin-config.js` or Railway `APPS_SCRIPT_URL` update is needed.
+
+**Rollback:** Deploy → Manage deployments → pencil → select the recorded previous version →
+Deploy. Prefer this to forward-fixing a live deployment.
+
+**Deploy record:**
+
+| Date | Version | Previous (rollback target) | Change |
+|------|---------|----------------------------|--------|
+| 2026-09-05 14:11 | 56 | **55** | **Phase 81**-01: `schedule_id` column self-migration + `'gfs'` cache-bust on FermSchedules CRUD |
+| 2026-09-04 13:42 | 55 | 54 | Phase 80 waitlist schema (pre-existing record, reconstructed from version history) |
+
+> ⚠ **Known config drift (pre-existing, unresolved).** The live deployment is configured
+> `Execute as: Me (hello@steinsandvines.ca)` + `Who has access: Anyone`, but `docs/APPS_SCRIPT.md`
+> and `adminApi.gs`'s own header both say it MUST be `User accessing the web app` +
+> `Anyone with Google Account`. Consequence: `Session.getActiveUser().getEmail()` returns empty,
+> so that limb of `checkAuthorization` is dead code in production and a direct browser GET to
+> `/exec` returns `unauthorized`. Real authorization rests on the OAuth-token path and the
+> server-token bypass, both of which work — so this is not an open endpoint, but the documented
+> security model is not the deployed one. Needs its own investigation; do not change it as a
+> side-effect of a deploy.
+
 ---
 
 ## Smoke-check Semantics
