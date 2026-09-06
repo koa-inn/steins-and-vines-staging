@@ -169,11 +169,67 @@ and it is the only guard against silently clobbering editor-only edits.
 |----------|--------|----------|
 | `get_recipes` | **ok** | `GET https://svmiddleware-production.up.railway.app/api/recipes` returned `{"source":"apps-script",...}` — `source: apps-script` means a cache miss went live to the Version 56 deployment via the server-token path and succeeded. All 3 active recipes returned. |
 | `get_tasks_upcoming` | **ok:true** | Captured directly off the wire in the admin panel post-deploy: HTTP 200, `{"ok":true,"data":{"tasks":[...]}}`, 16807 bytes. Confirms `doPost` dispatch, `checkAuthorization` token validation and `handleReadAction` all work on v56. |
-| `get_ferm_schedules` | **ok** (by render) | All 10 templates rendered in Batches → Schedule Templates on a **fresh page load with a fresh sign-in after the deploy**, so `fermSchedulesData` was empty and had to be re-fetched from v56. `adminApiGet` rejects and calls `handleUnauthorized()` on `!data.ok`, so a rendered list is only reachable via an `ok:true` response. Not captured as raw JSON because the response is cached client-side and no UI path forces a re-fetch within one session. |
+| `get_ferm_schedules` | **ok:true** | Captured directly off the wire during probe (d): HTTP 200, `{"ok":true,...}` with all 10 templates. |
+| (c) self-migration fires | **PASS** | See below. |
+| (d) `'gfs'` eviction | **PASS** | See below. |
 
 The `/api/recipes` payload correctly contains **no** `ferment_days` field yet — the 81-02
 middleware code is not deployed. That is plan 81-08's work and confirms current state is
 as designed.
+
+### Probe (c) — `schedule_id` self-migration against real Sheets
+
+A no-op save on `SV-R-000002` (Czech Lager) in Admin → Recipes returned "Recipe saved."
+Inspecting the live `Recipes` sheet afterwards:
+
+| Column | Q | **R** | S |
+|--------|---|-------|---|
+| Header | `pricing_mode` | **`schedule_id`** | *(empty — end of range)* |
+
+- Header cell reads exactly `schedule_id`, spelled as expected.
+- It is the **last** column; `pricing_mode` is unshifted at Q and no other column moved.
+- All `schedule_id` values are empty `''`, as predicted for a fresh migration.
+- `SV-R-000002.updated_at` bumped to 2026-09-06, confirming the write landed.
+
+The column did not exist before this save. `ensureRecipesScheduleIdColumn` created it with
+no manual header pre-add — the self-healing behaviour works against the real Sheets API,
+not just the test fake.
+
+### Probe (d) — `'gfs'` cache eviction on template update
+
+Run against `FS-0010` (Basic Ale) because it has **zero active batches** — see the finding
+below. Sequence:
+
+1. Set `FS-0010.description` = `gfs-probe-81-07`, saved → "Schedule updated".
+2. Re-opened the editor: the form loaded `gfs-probe-81-07`, i.e. the post-save
+   `loadScheduleTemplates()` refetch already returned the new value **and re-cached it under
+   `'gfs'` with a fresh 300s TTL**.
+3. Reverted `description` to `''` and saved. Captured off the wire:
+   - `update_ferm_schedule` → HTTP 200, `ok:true`
+   - `get_ferm_schedules` → HTTP 200, `ok:true`, `FS-0010.description === ""`
+
+Roughly **one second** elapsed between the write and the read, against a TTL that had just
+been reset to 300s holding `gfs-probe-81-07`. Returning `''` is only reachable if
+`remove('gfs')` evicted the key. The cache-bust is confirmed.
+
+`FS-0010.description` is back to its original `''`. No net data change from this probe.
+
+### Finding for plan 81-06 — a blast-radius warning already exists
+
+Editing `FS-0001` (4 Week Wine) surfaced an existing in-app confirmation:
+
+> "Apply template changes to 1 active batch? Completed tasks will not be changed."
+
+This matters for **81-06**, whose objective is to "tell staff what a template edit will
+change before they make it" (D-15). A version of that warning is already shipped — 81-06 is
+therefore an *enhancement to an existing control*, not a greenfield build, and its executor
+should read the current implementation before adding a second competing dialog.
+
+Also note the dialog is Confirm/Cancel only — there is **no** "save the template but do not
+propagate to batches" option. That is why probe (d) was deliberately re-targeted from
+`FS-0001` (1 active batch) to `FS-0010` (0 active batches): running it on `FS-0001` would
+have written to a live customer batch's tasks purely to satisfy a cache test. `FS-0001` was
+cancelled with nothing saved.
 
 ## ⚠ Pre-existing finding — deployment config contradicts the documentation
 
