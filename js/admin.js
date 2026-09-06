@@ -6994,6 +6994,12 @@
     html += '<div class="form-group"><label>Start Date</label><input type="date" id="batch-start-date" class="admin-input" value="' + todayPacific() + '"></div>';
 
     // Schedule template
+    // This modal identifies its subject by a Zoho product SKU search (see
+    // above), and create_batch's payload below carries no recipe_id at all
+    // -- there is no recipe identity here to default from. Closing that gap
+    // needs a product-to-recipe association or a recipe picker; both are
+    // separate decisions (see 81-06-SUMMARY.md). D-04's pre-selection is
+    // implemented on #sa-schedule-select only.
     html += '<div class="form-group"><label>Fermentation Schedule</label><select id="batch-schedule-select" class="admin-select"><option value="">Select a template...</option>';
     fermSchedulesData.forEach(function (s) {
       html += '<option value="' + s.schedule_id + '">' + s.name + (s.category ? ' (' + s.category + ')' : '') + '</option>';
@@ -7307,6 +7313,20 @@
 
   // --- Schedule & Activate Modal (guided pending->primary promotion) ---
 
+  // D-04: resolve the schedule_id a recipe is linked to, for DEFAULTING
+  // (not enforcing) the batch-activation schedule dropdown. Looks the
+  // recipe up in the already-loaded _recipesState.list. Returns '' (never
+  // undefined/null) for a falsy id or an unmatched id, so callers can do
+  // `select.value = scheduleIdForRecipe(x) || batch._resolvedScheduleId ||
+  // ''` without a second guard.
+  function scheduleIdForRecipe(recipeId) {
+    if (!recipeId) return '';
+    var recipe = _recipesState.list.find(function (r) {
+      return String(r.recipe_id) === String(recipeId);
+    });
+    return (recipe && recipe.schedule_id) || '';
+  }
+
   function openScheduleActivateModal(batch, fromDetailModal) {
     // Ensure both schedules and vessels are loaded before rendering
     function doOpen() {
@@ -7314,16 +7334,44 @@
     }
     var needsScheds = fermSchedulesData.length === 0;
     var needsVessels = !vesselsData;
+
+    // D-04: _recipesState.list may still be empty if the staff member has
+    // not opened the Recipes tab this session (scheduleIdForRecipe would
+    // then find nothing). When the batch does have a recipe_id, fetch just
+    // that one recipe's detail to resolve its schedule_id for
+    // pre-selection. Deliberately does NOT call the full recipe-list loader
+    // used by the Recipes tab -- that function also renders into
+    // #recipes-tbody as a side effect, which would leak the (hidden)
+    // Recipes table state from the Batches tab. Non-fatal: any failure
+    // falls through to no pre-selection -- a missing default must never
+    // prevent a batch from being activated.
+    function withScheduleResolved(cb) {
+      if (!batch.recipe_id || _recipesState.list.length > 0) { cb(); return; }
+      var mwUrl = getRecipesMwUrl();
+      if (!mwUrl) { cb(); return; }
+      fetch(mwUrl + '/api/recipes/' + encodeURIComponent(batch.recipe_id), { credentials: 'include', headers: getRecipesMwHeaders() })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+        .then(function (data) {
+          var recipe = data.recipe || data;
+          if (recipe && recipe.schedule_id) batch._resolvedScheduleId = recipe.schedule_id;
+          cb();
+        })
+        .catch(function () { cb(); });
+    }
+    function doOpenAfterResolve() {
+      withScheduleResolved(doOpen);
+    }
+
     if (needsScheds && needsVessels) {
       loadScheduleTemplates(function () {
-        loadVesselsData(doOpen);
+        loadVesselsData(doOpenAfterResolve);
       });
     } else if (needsScheds) {
-      loadScheduleTemplates(doOpen);
+      loadScheduleTemplates(doOpenAfterResolve);
     } else if (needsVessels) {
-      loadVesselsData(doOpen);
+      loadVesselsData(doOpenAfterResolve);
     } else {
-      doOpen();
+      doOpenAfterResolve();
     }
   }
 
@@ -7372,6 +7420,14 @@
     html += '</div>';
 
     openModal('Schedule & Activate ' + escapeHTML(batchId), html);
+
+    // D-04: default the schedule select to the recipe's own template, if
+    // one can be resolved. This is a DEFAULT only -- the control stays
+    // fully editable, no option is disabled, and the existing
+    // required-field check on this select is unchanged.
+    var saScheduleSelect = document.getElementById('sa-schedule-select');
+    var saDefaultScheduleId = scheduleIdForRecipe(batch.recipe_id) || batch._resolvedScheduleId || '';
+    if (saDefaultScheduleId) saScheduleSelect.value = saDefaultScheduleId;
 
     // Schedule preview handler (same pattern as buildCreateBatchFormInner)
     document.getElementById('sa-schedule-select').addEventListener('change', function () {
