@@ -7573,6 +7573,27 @@
     renderScheduleForm(sched);
   }
 
+  // D-15: how many public recipes reference this schedule template. Counts
+  // against _recipesState.list, the already-loaded client-side recipe array
+  // (see js/admin.js:8516) -- no network call for a count rendered inside a
+  // modal. NOTE: _recipesState.list reflects whatever status filter the
+  // Recipes tab last used (default 'all', but a staff member may have
+  // narrowed it), so this count is a LOWER BOUND, not an exact total -- the
+  // banner copy states consequence rather than a complete audit for that
+  // reason. This is a separate, complementary metric to the active-BATCH
+  // count already used by the save-time propagation confirm a few lines
+  // below (js/admin.js:7727) -- that one counts primary/secondary batches
+  // for the propagate-changes-to-live-batches decision; this one counts
+  // public RECIPES for the "what will customers be told differently"
+  // decision. Same simple filter-and-count shape, different source array,
+  // different question.
+  function countRecipesUsingSchedule(scheduleId) {
+    if (!scheduleId) return 0;
+    return _recipesState.list.filter(function (r) {
+      return String(r.schedule_id) === String(scheduleId);
+    }).length;
+  }
+
   function renderScheduleForm(existing) {
     var isEdit = !!existing;
     var regularSteps = [];
@@ -7605,6 +7626,15 @@
       html += '<option value="' + c + '"' + (existing && existing.category === c ? ' selected' : '') + '>' + c.charAt(0).toUpperCase() + c.slice(1) + '</option>';
     });
     html += '</select></div>';
+
+    if (isEdit) {
+      var usedByCount = countRecipesUsingSchedule(existing.schedule_id);
+      if (usedByCount > 0) {
+        html += '<p class="availability-banner availability-banner--low" style="margin-bottom:var(--sp-4);">'
+              + 'Used by ' + usedByCount + ' public recipe' + (usedByCount === 1 ? '' : 's') + '. '
+              + 'Changing day offsets will change what customers are told.</p>';
+      }
+    }
 
     html += '<h4>Fermentation Steps</h4>';
     html += '<p class="sched-form-hint">Add each step with its day offset from the start date. Steps are sorted by day automatically. Check "Transfer" if the step involves moving to a new vessel.</p>';
