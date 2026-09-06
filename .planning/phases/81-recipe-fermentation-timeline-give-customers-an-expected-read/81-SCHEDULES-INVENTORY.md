@@ -268,6 +268,68 @@ bot protection, unlike the Railway API host. Verified in a real browser instead:
 No leak, clean no-timeline baseline, new code confirmed live on both tiers. Task 1 acceptance
 criteria all met; cleared to proceed to the Task 2 backfill.
 
+## Backfill — plan 81-08 Task 2 (Branch A: attach only, nothing created)
+
+Executed 2026-09-06 through the staging admin UI, which writes to the shared production
+Sheet. Both templates were **re-verified live before attaching** rather than trusting the
+81-07 record: `FS-0010` still max non-packaging offset **21** (10 steps), `FS-0008` still
+**35** (10 steps). No template was created, edited or deleted.
+
+### Attachments
+
+| recipe_id | name | template attached | ferment_days | rendered |
+|-----------|------|-------------------|--------------|----------|
+| SV-R-000011 | West Coast IPA | `FS-0010` Basic Ale (No Dry Hop) | 21 | about 3 weeks |
+| SV-R-000003 | Hazy Pale Ale | `FS-0010` Basic Ale (No Dry Hop) | 21 | about 3 weeks |
+| SV-R-000002 | Czech Lager | `FS-0008` Standard Lager | 35 | about 5 weeks |
+
+### Persistence confirmed at source
+
+Live `Recipes` sheet, column **R** (`schedule_id`): `SV-R-000002` → `FS-0008`,
+`SV-R-000003` → `FS-0010`, `SV-R-000011` → `FS-0010`. Every draft recipe's cell remains
+blank — only the three active rows were written. `updated_at` on all three shows 2026-09-06.
+
+### Post-backfill API contract (staging)
+
+`GET /api/recipes?status=active` keys returned, identical for all three recipes:
+
+```
+recipe_id, name, style, description, ferment_days, price, price_from
+```
+
+| Assertion | Result |
+|-----------|--------|
+| `grep -c -E 'schedule_id\|steps_parsed\|is_transfer'` | **0** |
+| `grep -c -E '"steps"\|template\|day_offset\|is_packaging'` | **0** |
+| `grep -c -E 'FS-00'` (template ids) | **0** |
+| `?status=all` / `?status=draft` anonymous | still only the 3 active |
+| `GET /api/recipes/SV-R-000002` (detail path) | `ferment_days: 35`, same allowlist |
+
+Exactly one new field crosses the public boundary, with real data flowing. D-16 / T-74-04 hold.
+
+### D-10 release gate — MET on staging
+
+All three active recipe cards on `staging.steinsandvines.ca/beer.html` render a timeline:
+
+| Card | Rendered text |
+|------|---------------|
+| West Coast IPA | "about 3 weeks from brew day" |
+| Hazy Pale Ale | "about 3 weeks from brew day" |
+| Czech Lager | "about 5 weeks from brew day" |
+
+Layout confirms D-07 — a second `.price-col` beside the price, so cost and timing read
+together: `FERMENT IN STORE / From $108.80 │ READY IN / about 3 weeks / from brew day`.
+D-06 confirmed: "from brew day" travels inside the phrase, so a screenshotted card cannot be
+misread. The Beer Kits section below correctly shows no timeline (kits are not recipes).
+
+Three `.ferment-time-value` elements present; zero before the backfill.
+
+### Undo, if ever needed
+
+Set the recipe's Fermentation Schedule picker back to "None" and save. That clears
+`schedule_id`, `ferment_days` disappears from the payload (D-09: key absent, not `0`), and
+the card returns to its single-column footer.
+
 ### Finding for plan 81-06 — a blast-radius warning already exists
 
 Editing `FS-0001` (4 Week Wine) surfaced an existing in-app confirmation:
