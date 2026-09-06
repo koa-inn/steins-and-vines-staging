@@ -1362,7 +1362,7 @@ template, and the public figure is DERIVED as the largest `day_offset` among tha
 non-packaging steps. There is no standalone `ferment_days` column on `Recipes`. Do not resurrect
 the sketched approach.
 
-**Plans:** 7/9 plans executed
+**Plans:** 8/9 plans executed
 
 Plans:
 **Wave 1** (parallel — disjoint files)
@@ -1386,7 +1386,7 @@ Plans:
 
 **Wave 5** (owner — staging deploy, backfill, release gate)
 
-- [ ] 81-08-PLAN.md — Push to staging, verify the public API contract pre-backfill, create/attach templates and attach schedules to all 3 active recipes, then the unconditional D-10 release gate
+- [x] 81-08-PLAN.md — Push to staging, verify the public API contract pre-backfill, create/attach templates and attach schedules to all 3 active recipes, then the unconditional D-10 release gate
 
 **Wave 6** (owner — production cutover)
 
