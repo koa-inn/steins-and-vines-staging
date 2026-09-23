@@ -10174,6 +10174,8 @@
       // 64-03: test seam for the adminApiGet token-transport regression test --
       // adminApiGet has no other public caller that isolates a single call/response.
       _adminApiGetForTest: adminApiGet,
+      // 82-06: test seam for the adminApiPost proxy-transport regression test (D-05..D-08).
+      _adminApiPostForTest: adminApiPost,
       // 81-05: BeerXML review modal (D-12) test hook
       showBeerXMLReviewModal: showBeerXMLReviewModal,
       // 81-05: BeerXML review modal schedule carry-through (Task 3) test hooks

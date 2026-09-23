@@ -173,18 +173,18 @@ runAdminApiGetTokenSuite({
     '<span id="admin-user-email">staff@example.com</span>' +
     '<button id="admin-signout"></button>',
   setAccessToken: function (mod, token) { mod._setAccessToken(token); },
-  // admin.js is untouched by Phase 76 (Pitfall 4: BrewPad-only scope) -- the
-  // original 64-03 contract (token in body, ADMIN_API_URL target,
-  // handleUnauthorized on an "unauthorized" body) is unchanged.
-  urlTestTitle: 'issues a fetch whose URL carries no token= and no ?action= query string',
-  expectedUrl: function (cfg) { return cfg.ADMIN_API_URL; },
-  bodyTestTitle: 'POSTs method with token + action + params in the JSON body',
-  expectTokenField: true,
-  unauthorizedTestTitle: '{ ok:false, message: "unauthorized" } triggers handleUnauthorized and rejects',
+  // Phase 82 D-22: admin.js's adminApiGet/adminApiPost are migrated onto the
+  // middleware's session-authenticated /api/admin/proxy (mirrors Phase 76-03's
+  // brewpad.js change) -- no Google token anywhere in the request, target URL
+  // is MIDDLEWARE_URL + '/api/admin/proxy' rather than ADMIN_API_URL, and a
+  // body-level "unauthorized" message no longer logs the user out (only a
+  // real middleware HTTP 401 does, via handleProxyResponse).
+  urlTestTitle: 'issues a fetch to the middleware admin proxy (no ADMIN_API_URL, no query string) -- Phase 82 D-05',
+  expectedUrl: function (cfg) { return cfg.MIDDLEWARE_URL + '/api/admin/proxy'; },
+  bodyTestTitle: 'POSTs action + params in the JSON body, no token field -- Phase 82 D-06',
+  expectTokenField: false,
+  unauthorizedTestTitle: '{ ok:false, message: "unauthorized" } rejects WITHOUT logging out (Phase 82 D-07: only a real middleware 401 does)',
   assertUnauthorizedOutcome: function () {
-    // handleUnauthorized() re-shows the sign-in screen and hides the dashboard
-    // (js/admin.js:handleUnauthorized).
-    expect(document.getElementById('admin-signin').style.display).toBe('');
-    expect(document.getElementById('admin-dashboard').style.display).toBe('none');
+    expect(document.getElementById('admin-dashboard').style.display).not.toBe('none');
   }
 });
