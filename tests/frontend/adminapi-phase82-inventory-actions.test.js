@@ -80,6 +80,30 @@ function countOccurrences(str, needle) {
   return str.split(needle).length - 1;
 }
 
+// Scopes assertions to the server_token if-chain inside doPost, between the
+// `if (payload.server_token) {` guard and the final `Unknown server action` fallback.
+// Copied verbatim from adminapi-phase82-dispatch.test.js's technique (same file, same shape).
+function serverTokenSubBlock() {
+  var src = rawSource();
+  var doPostSrc = sliceFunctionSource(src, 'doPost');
+  var startMarker = 'if (payload.server_token) {';
+  var endMarker = 'Unknown server action';
+  var start = doPostSrc.indexOf(startMarker);
+  var end = doPostSrc.indexOf(endMarker);
+  if (start === -1 || end === -1) return null;
+  return doPostSrc.slice(start, end);
+}
+
+// Scopes assertions to the staff switch (the block after `var authResult = checkAuthorization`).
+function staffSwitchBlock() {
+  var src = rawSource();
+  var doPostSrc = sliceFunctionSource(src, 'doPost');
+  var startMarker = 'switch (action) {';
+  var start = doPostSrc.indexOf(startMarker);
+  if (start === -1) return null;
+  return doPostSrc.slice(start);
+}
+
 describe('adminApi.gs — whole-file evaluation (syntax gate)', function () {
   test('adminApi.gs parses and evaluates without throwing', function () {
     expect(function () { evaluateSourceOnly(); }).not.toThrow();
@@ -393,5 +417,113 @@ describe('Purity — all seven new helpers reference no Apps Script globals or s
       expect(fnSrc).not.toBeNull();
       expect(fnSrc).not.toMatch(/SpreadsheetApp|LockService|CacheService|PropertiesService/);
     });
+  });
+});
+
+// ===========================================================================================
+// Task 2: doPost server_token dispatch of the 6 write actions + deletion of get_config,
+// update_schedule, update_kits (D-02 as amended by D-21).
+// ===========================================================================================
+
+describe('doPost server_token branch — 6 new inventory/schedule write entries (D-21)', function () {
+  var expectedActions = [
+    'update_inventory_cells',
+    'append_inventory_row',
+    'import_kits',
+    'add_hold',
+    'append_schedule_slots',
+    'update_schedule_slots'
+  ];
+
+  expectedActions.forEach(function (action) {
+    test("server_token branch contains exactly one action === '" + action + "'", function () {
+      var block = serverTokenSubBlock();
+      expect(block).not.toBeNull();
+      var needle = "action === '" + action + "'";
+      expect(countOccurrences(block, needle)).toBe(1);
+    });
+  });
+
+  test('the 6 new action names do NOT appear in the staff switch (server_token only, T-82-03-07)', function () {
+    var block = staffSwitchBlock();
+    expect(block).not.toBeNull();
+    expectedActions.forEach(function (action) {
+      expect(block).not.toMatch(new RegExp("case '" + action + "'"));
+    });
+  });
+});
+
+describe('Impure write wrappers — locked, validate-before-write (D-21, T-82-03-05)', function () {
+  var wrapperNames = [
+    'updateInventoryCells',
+    'appendInventoryRow',
+    'importKits',
+    'addManualHold',
+    'appendScheduleSlots',
+    'updateScheduleSlots'
+  ];
+  var validatorCalls = {
+    updateInventoryCells: 'validateInventoryCellUpdates(',
+    appendInventoryRow: 'validateAppendRow(',
+    importKits: 'validateKitsImport(',
+    addManualHold: 'buildManualHoldRow(',
+    appendScheduleSlots: 'validateScheduleSlotRows(',
+    updateScheduleSlots: 'planScheduleSlotUpdates('
+  };
+  var writeCallPattern = /setValue\(|setValues\(|appendRow\(/;
+
+  wrapperNames.forEach(function (name) {
+    test(name + '() exists exactly once and acquires/releases the 15s script lock', function () {
+      var src = rawSource();
+      expect(countOccurrences(src, 'function ' + name + '(')).toBe(1);
+      var fnSrc = sliceFunctionSource(src, name);
+      expect(fnSrc).not.toBeNull();
+      expect(fnSrc).toMatch(/acquireScriptLock\(15000\)/);
+      expect(fnSrc).toMatch(/finally\s*\{[^}]*lock\.releaseLock\(\)/);
+    });
+
+    test(name + '() calls its pure validator before any write call', function () {
+      var src = rawSource();
+      var fnSrc = sliceFunctionSource(src, name);
+      var validatorIdx = fnSrc.indexOf(validatorCalls[name]);
+      var writeMatch = writeCallPattern.exec(fnSrc);
+      expect(validatorIdx).toBeGreaterThan(-1);
+      expect(writeMatch).not.toBeNull();
+      expect(validatorIdx).toBeLessThan(writeMatch.index);
+    });
+  });
+});
+
+describe('Deletions — get_config, update_schedule, update_kits (D-02 as amended by D-21)', function () {
+  test('no remaining case/function definitions for the 3 deleted actions', function () {
+    var src = rawSource();
+    var forbidden = [
+      "case 'get_config'",
+      'function getConfig(',
+      "case 'update_schedule'",
+      'function updateSchedule(',
+      "case 'update_kits'",
+      'function updateKits('
+    ];
+    forbidden.forEach(function (needle) {
+      expect(countOccurrences(src, needle)).toBe(0);
+    });
+  });
+
+  test('check_auth and get_homepage cases are retained (D-16/D-19 — old browser path still live)', function () {
+    var src = rawSource();
+    expect(countOccurrences(src, "case 'check_auth'")).toBe(1);
+    expect(countOccurrences(src, "case 'get_homepage'")).toBe(1);
+  });
+
+  test('CONFIG_SHEET_NAME constant is retained (checkAuthorization still uses it)', function () {
+    var src = rawSource();
+    expect(src).toMatch(/var\s+CONFIG_SHEET_NAME\s*=/);
+  });
+});
+
+describe('adminApi.gs — whole-file evaluation still passes after Task 2 edits', function () {
+  test('adminApi.gs parses and evaluates without throwing', function () {
+    expect(function () { evaluateSourceOnly(); }).not.toThrow();
   });
 });
