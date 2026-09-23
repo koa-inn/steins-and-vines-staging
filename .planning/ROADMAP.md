@@ -1912,7 +1912,7 @@ Plans:
   3. `updateGiftCardInvoice` runs under the script lock and `createBatch`'s dedup guard sits inside the lock — owner Apps Script redeploy done and the rollback version number recorded
   4. The four owner checks are answered and written into the phase summary: which tabs carry formulas/named ranges/pivots; Apps Script Executions failures in the last 90 days; Railway plan and backup/PITR entitlement; live row count per sheet
 
-**Plans:** 5/10 plans executed
+**Plans:** 6/10 plans executed
 
 Plans:
 **Wave 1**
@@ -1929,7 +1929,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 82-06-PLAN.md — admin.js: proxy transport (reads retry, writes once, 401-only logout), batch_id fixes, delete ADMIN_API_URL fallbacks
+- [x] 82-06-PLAN.md — admin.js: proxy transport (reads retry, writes once, 401-only logout), batch_id fixes, delete ADMIN_API_URL fallbacks
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
