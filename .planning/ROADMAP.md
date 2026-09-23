@@ -1296,12 +1296,14 @@ Plans:
 **Requirements**: No REQ-IDs map to this phase. Coverage unit is `80-CONTEXT.md` decisions **D-01 through D-25** (all locked at discuss-phase); every one is referenced by at least one plan.
 
 **Scope sketch (confirm at discuss-phase):**
+
 - **Customer link** — associate a row with a Zoho contact. `/api/contacts/search` already exists (used by POS). Needs an identity rule for signups whose email matches no contact, which Phase 78 deferred explicitly as needing its own decision.
 - **Recipe link** — associate a row with the recipe that person will brew. `get_recipes`/`get_recipe` already exist in `adminApi.gs`.
 - **Contact action** — a button that reaches the customer from BrewPad. Mechanism (mailto vs a logged/templated send), and whether it auto-advances status to `contacted`, are open.
 - **Manual reorder** — staff override of queue position.
 
 **Known constraints (carried from Phase 78):**
+
 1. **The `Waitlist` tab gains columns, and `ensureWaitlistSheet` fails closed on missing ones** (returns `waitlist_unavailable`, never repairs headers). The migration order is load-bearing: **add the columns to the sheet FIRST, then redeploy**. Deploying first takes every signup down with a 503 until the columns land. Old code maps by header name and ignores unknown columns, so adding first is safe.
 2. **`apps-script/adminApi.gs` has no CI deploy path**, and one Web App deployment serves staging AND production. The redeploy is a manual owner step and is effectively a production release for that layer. This is why all four features are one phase — one migration, one redeploy.
 3. **~~Manual reorder contradicts the customer-facing promise.~~ RESOLVED 2026-09-05 (owner).** The concern was that `beer.html`'s "we work through the list in order" would stop being true once staff could pin. **It stays true, and the copy stays verbatim.** The owner's rule: the queue *is* worked in order, and pinning is not a general-purpose override — it exists only for (a) placing someone who registered interest by word of mouth at their real point in the queue, and (b) moving someone who asks to defer. Neither jumps a customer ahead of someone who signed up first, so the public promise is accurate as written. `signed_up_at` remains the ordering key and the tiebreaker; D-04 is unaffected.
@@ -1352,6 +1354,7 @@ Plans:
 > steps and hop-unit normalization stay in Phase 66.
 
 **Scope sketch (confirm at discuss-phase):**
+
 - **BeerXML parse** — read `PRIMARY_AGE`, `SECONDARY_AGE`, `TERTIARY_AGE`, `AGE` and `FERMENTATION_STAGES` from the `RECIPE` record. These are **optional** in BeerXML and are frequently left at the exporting software's default, so they must land in the importer's existing review table (the D-09 pattern) for a human glance, never be trusted blind.
 - **Storage** — one new column on the `Recipes` sheet. `ensureRecipesPricingModeColumn` (`apps-script/adminApi.gs:3592`) is the safe-append precedent; old code maps by header name and ignores unknown columns.
 - **Public exposure** — add to `PUBLIC_RECIPE_FIELDS` (`zoho-middleware/routes/recipes.js:71`). It is build-by-allowlist, so a new field stays invisible publicly until explicitly listed.
@@ -1360,11 +1363,13 @@ Plans:
 - **Backfill** — existing recipes predate the field.
 
 **Open decisions for discuss-phase:**
+
 1. **What does the number mean to a customer** — ready to *package*, or ready to *drink*? The owner's 3-week/5-week figures sound like ready-to-drink, i.e. primary + secondary + conditioning. This determines whether the stored value is a single total or the stages kept separate.
 2. **Single value or range**, and **how it renders**. Recommendation: store days as a number, render as an approximation ("about 3 weeks"), never an exact date — fermentation is biological and a precise promise will eventually be wrong.
 3. **Fallback when a recipe has no value** — must degrade to today's "we'll give you a timeline at your consult" rather than rendering blank or zero.
 
 **Known constraints:**
+
 1. **The Apps Script layer has no CI deploy path and ONE deployment serves staging AND production.** Adding the column is therefore a production release for that layer. ~~The Phase 80 lesson applies exactly: add the column FIRST, redeploy SECOND.~~ **CORRECTED at research (2026-09-05):** the Phase 80 ordering rule does NOT transfer. It came from `ensureWaitlistSheet`, a fail-closed validator that refuses to run when any of 13 headers is missing. `schedule_id` follows the `ensureRecipesPricingModeColumn` precedent (`apps-script/adminApi.gs:3592`) — self-migrating, header-name-based, already live in production. There is no load-bearing manual pre-redeploy step; deploy once and the column appears on the first save. Also note: staging and production share ONE Google Sheet, so any sheet write made "on staging" is a production write.
 2. **Imported timings are not trustworthy on arrival.** A recipe exported from BeerSmith or Brewfather may carry a default `PRIMARY_AGE` nobody edited. The review step is the control, not the import.
 3. **This is customer-facing copy about a biological process.** An under-promise is recoverable; an over-promise means a customer turns up for beer that is not ready.
@@ -1893,7 +1898,6 @@ Plans:
   2. Hop item units are normalized or explicitly mapped (the pcs/g/kg drift across the same product family is resolved) so recipe quantity semantics are unambiguous
   3. The hand-imported Hazy Pale Ale (SV-R-000003) round-trips correctly under the new model
 
-
 ## Phase Details (v4.9)
 
 ### Phase 82: Store-Agnostic Prerequisites
@@ -1911,15 +1915,32 @@ Plans:
 **Plans:** 10 plans (6 waves: W1 01/02/04/08 · W2 03/05 · W3 06 · W4 07 · W5 09 · W6 10)
 
 Plans:
+**Wave 1**
+
 - [ ] 82-01-PLAN.md — Owner pre-migration checks (formulas, Executions failures, Railway PITR, row counts, Reservations/Holds activity) [checkpoint]
 - [ ] 82-02-PLAN.md — Apps Script: D-18 lock fixes, D-11 server_token write entries, per-task batch cache-bust
-- [ ] 82-03-PLAN.md — Apps Script: get_ingredients + 6 typed inventory/schedule actions (D-21); delete get_config/update_schedule/update_kits
 - [ ] 82-04-PLAN.md — Middleware: shared forwarder + allowlisted POST /api/admin/proxy (39 actions)
-- [ ] 82-05-PLAN.md — Middleware: /api/batch/public/* token routes + per-IP limiter + guard exemptions
-- [ ] 82-06-PLAN.md — admin.js: proxy transport (reads retry, writes once, 401-only logout), batch_id fixes, delete ADMIN_API_URL fallbacks
-- [ ] 82-07-PLAN.md — admin.js: rewire the ~15 direct-Sheets flows onto typed actions; delete Sheets helpers
 - [ ] 82-08-PLAN.md — batch.js: test seam + move to /api/batch/public/*
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 82-03-PLAN.md — Apps Script: get_ingredients + 6 typed inventory/schedule actions (D-21); delete get_config/update_schedule/update_kits
+- [ ] 82-05-PLAN.md — Middleware: /api/batch/public/* token routes + per-IP limiter + guard exemptions
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 82-06-PLAN.md — admin.js: proxy transport (reads retry, writes once, 401-only logout), batch_id fixes, delete ADMIN_API_URL fallbacks
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 82-07-PLAN.md — admin.js: rewire the ~15 direct-Sheets flows onto typed actions; delete Sheets helpers
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 82-09-PLAN.md — Rollout: owner Apps Script redeploy + probes, staging push, full staging walk [checkpoints]
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 82-10-PLAN.md — Gated production cutover + phase notes [checkpoint]
 
 ### Phase 83: Postgres Infrastructure
