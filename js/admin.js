@@ -10178,7 +10178,11 @@
       _setFermSchedulesDataForTest: function (arr) { fermSchedulesData = arr; },
       // 81-10: D-15 blast-radius note load-order regression hook (GAP-01) --
       // the note only renders on this path, and the bug is that it renders too early.
-      openEditScheduleModal: openEditScheduleModal
+      openEditScheduleModal: openEditScheduleModal,
+      // 82-06: batch_id cache-bust regression test hook (D-09) -- showTransferPrompt
+      // has no other public caller that isolates the transfer-confirm/skip-transfer
+      // update_batch_task payloads for direct assertion.
+      _showTransferPromptForTest: showTransferPrompt
     });
   }
 
