@@ -9879,7 +9879,42 @@
       // 82-06: batch_id cache-bust regression test hook (D-09) -- showTransferPrompt
       // has no other public caller that isolates the transfer-confirm/skip-transfer
       // update_batch_task payloads for direct assertion.
-      _showTransferPromptForTest: showTransferPrompt
+      _showTransferPromptForTest: showTransferPrompt,
+      // 82-07 (D-21): test seam for the inventory/holds/orders/import and
+      // scheduling/homepage proxy-rewire regression suites -- these functions have
+      // no other public caller that isolates a single flow's proxy call/payload for
+      // direct assertion.
+      _inventoryForTest: {
+        updateKitStockAfterConfirm: updateKitStockAfterConfirm,
+        updateKitOnHoldAfterRelease: updateKitOnHoldAfterRelease,
+        openManualHoldModal: openManualHoldModal,
+        saveAllChanges: saveAllChanges,
+        openAddKitModal: openAddKitModal,
+        deleteIngredient: deleteIngredient,
+        openAddIngredientModal: openAddIngredientModal,
+        syncOnOrder: syncOnOrder,
+        acceptDelivery: acceptDelivery,
+        applyImport: applyImport
+      },
+      _scheduleForTest: {
+        generateSlotsForMonth: generateSlotsForMonth,
+        toggleSlot: toggleSlot,
+        bulkUpdateDay: bulkUpdateDay,
+        resetDayToDefault: resetDayToDefault,
+        resetMonthToDefaults: resetMonthToDefaults,
+        loadHomepageData: loadHomepageData
+      },
+      _getHomepageConfigForTest: function () { return homepageConfig; },
+      _setSheetStateForTest: function (s) {
+        if (s.kitsData !== undefined) kitsData = s.kitsData;
+        if (s.kitsHeaders !== undefined) kitsHeaders = s.kitsHeaders;
+        if (s.ingredientsData !== undefined) ingredientsData = s.ingredientsData;
+        if (s.ingredientsHeaders !== undefined) ingredientsHeaders = s.ingredientsHeaders;
+        if (s.scheduleData !== undefined) scheduleData = s.scheduleData;
+        if (s.scheduleHeaders !== undefined) scheduleHeaders = s.scheduleHeaders;
+        if (s.pendingChanges !== undefined) pendingChanges = s.pendingChanges;
+        if (s.importPreviewData !== undefined) importPreviewData = s.importPreviewData;
+      }
     });
   }
 
