@@ -25,8 +25,14 @@
     return div.innerHTML;
   }
 
+  // D-13: path is apiUrl (MIDDLEWARE_URL) + /api/batch/public/:id[+suffix];
+  // batchId always goes through encodeURIComponent (T-82-08-01).
+  function publicBatchUrl(suffix) {
+    return apiUrl + '/api/batch/public/' + encodeURIComponent(batchId) + (suffix || '');
+  }
+
   function init() {
-    apiUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.ADMIN_API_URL) || '';
+    apiUrl = (typeof SHEETS_CONFIG !== 'undefined' && SHEETS_CONFIG.MIDDLEWARE_URL) || '';
     if (!apiUrl) { showError('Configuration error'); return; }
 
     var params = new URLSearchParams(window.location.search);
@@ -43,7 +49,7 @@
   }
 
   function loadBatch() {
-    var url = apiUrl + '?action=get_batch_public&batch_id=' + encodeURIComponent(batchId) + '&token=' + encodeURIComponent(batchToken);
+    var url = publicBatchUrl('?token=' + encodeURIComponent(batchToken));
     fetch(url)
       .then(function (res) { return res.json(); })
       .then(function (data) {
@@ -141,16 +147,14 @@
 
   function toggleTask(taskId, completed) {
     var payload = {
-      action: 'update_batch_task',
       batch_token: batchToken,
-      batch_id: batchId,
       task_id: taskId,
       updates: { completed: completed }
     };
 
-    fetch(apiUrl, {
+    fetch(publicBatchUrl('/tasks'), {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     })
     .then(function (res) { return res.json(); })
@@ -291,13 +295,11 @@
     if (_platoStagingRows.length === 0) { showToast('No readings to submit', 'error'); return; }
     submitBtn.disabled = true;
     submitBtn.textContent = 'Submitting...';
-    return fetch(apiUrl, {
+    return fetch(publicBatchUrl('/readings'), {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        action: 'bulk_add_plato_readings',
         batch_token: batchToken,
-        batch_id: batchId,
         readings: _platoStagingRows
       })
     })
@@ -383,7 +385,7 @@
 
   function refreshBatchOnce() {
     _lastRefreshAttempt = Date.now();
-    var url = apiUrl + '?action=get_batch_public&batch_id=' + encodeURIComponent(batchId) + '&token=' + encodeURIComponent(batchToken);
+    var url = publicBatchUrl('?token=' + encodeURIComponent(batchToken));
     return fetch(url)
       .then(function (res) { return res.json(); })
       .then(function (data) {

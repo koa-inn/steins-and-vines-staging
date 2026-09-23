@@ -2,11 +2,11 @@
 
 // Phase 82-08 (DB-01): parity tests for js/batch.js's public batch page.
 //
-// Task 1 (this file, initial version) characterizes TODAY's transport --
-// direct calls to SHEETS_CONFIG.ADMIN_API_URL (Apps Script) -- so the
-// request shapes are pinned before Task 2 repoints them onto
-// MIDDLEWARE_URL + /api/batch/public/* (D-13). Task 2 updates the
-// assertions below to the new contract in the same RED->GREEN commit.
+// Task 1 pinned TODAY's Apps-Script transport (ADMIN_API_URL) as a
+// characterization suite. Task 2 (this version) flips the assertions to
+// the D-13 contract: MIDDLEWARE_URL + /api/batch/public/:id[/tasks|/readings],
+// built by 82-05 in a later wave -- these tests mock fetch, so there is no
+// runtime dependency on that route existing yet.
 //
 // Harness: DOM-fixture + SHEETS_CONFIG stub pattern from
 // tests/frontend/admin-session-auth.test.js, global-stub pattern from
@@ -53,8 +53,8 @@ document.body.innerHTML =
   '</div>' +
   '<div id="batch-toast-container" class="batch-toast-container"></div>';
 
+// No ADMIN_API_URL -- batch.js must no longer read it (D-13/D-23).
 global.SHEETS_CONFIG = {
-  ADMIN_API_URL: 'https://script.google.com/test/admin',
   MIDDLEWARE_URL: 'http://mw.test'
 };
 
@@ -92,9 +92,18 @@ function mockFetchOnce(body) {
   });
 }
 
-describe('batch.js public transport -- characterization of today\'s Apps-Script calls', function () {
+function toastCount() {
+  return document.getElementById('batch-toast-container').children.length;
+}
+
+function flushPromises() {
+  return new Promise(function (resolve) { setTimeout(resolve, 0); });
+}
+
+describe('batch.js public transport -- /api/batch/public/* (D-13)', function () {
   beforeEach(function () {
     global.fetch.mockClear();
+    global.SHEETS_CONFIG.MIDDLEWARE_URL = 'http://mw.test';
     bp._setStateForTest({ batchId: '', batchToken: '', apiUrl: '' });
   });
 
@@ -106,24 +115,33 @@ describe('batch.js public transport -- characterization of today\'s Apps-Script 
     expect(typeof bp.refreshBatchOnce).toBe('function');
   });
 
-  test('init() fetches ADMIN_API_URL with the get_batch_public query string', function () {
+  test('init() with MIDDLEWARE_URL fetches the middleware batch/public route (GET) and renders', function () {
     mockFetchOnce(minimalBatchPayload());
 
     bp.init();
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    var url = global.fetch.mock.calls[0][0];
-    expect(url).toBe(
-      'https://script.google.com/test/admin?action=get_batch_public&batch_id=' + BATCH_ID + '&token=' + BATCH_TOKEN
-    );
+    var call = global.fetch.mock.calls[0];
+    expect(call[0]).toBe('http://mw.test/api/batch/public/' + BATCH_ID + '?token=' + BATCH_TOKEN);
+    expect(call[1]).toBeUndefined(); // GET, no options body
 
     var state = bp._getStateForTest();
     expect(state.batchId).toBe(BATCH_ID);
     expect(state.batchToken).toBe(BATCH_TOKEN);
   });
 
-  test('toggleTask() POSTs to ADMIN_API_URL as text/plain with the update_batch_task action', function () {
-    bp._setStateForTest({ batchId: BATCH_ID, batchToken: BATCH_TOKEN, apiUrl: 'https://script.google.com/test/admin' });
+  test('init() with MIDDLEWARE_URL empty shows the Configuration error state and issues no fetch', function () {
+    global.SHEETS_CONFIG.MIDDLEWARE_URL = '';
+
+    bp.init();
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(document.getElementById('batch-error').style.display).toBe('');
+    expect(document.getElementById('batch-error').querySelector('p').textContent).toBe('Configuration error');
+  });
+
+  test('toggleTask() POSTs JSON to .../tasks with only batch_token/task_id/updates (no action, no batch_id)', function () {
+    bp._setStateForTest({ batchId: BATCH_ID, batchToken: BATCH_TOKEN, apiUrl: 'http://mw.test' });
     mockFetchOnce({ ok: true });
     mockFetchOnce(minimalBatchPayload()); // toggleTask() calls loadBatch() again on success
 
@@ -131,19 +149,15 @@ describe('batch.js public transport -- characterization of today\'s Apps-Script 
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     var call = global.fetch.mock.calls[0];
-    expect(call[0]).toBe('https://script.google.com/test/admin');
+    expect(call[0]).toBe('http://mw.test/api/batch/public/' + BATCH_ID + '/tasks');
     expect(call[1].method).toBe('POST');
-    expect(call[1].headers['Content-Type']).toBe('text/plain');
+    expect(call[1].headers['Content-Type']).toBe('application/json');
     var body = JSON.parse(call[1].body);
-    expect(body.action).toBe('update_batch_task');
-    expect(body.batch_token).toBe(BATCH_TOKEN);
-    expect(body.batch_id).toBe(BATCH_ID);
-    expect(body.task_id).toBe('BT-000001');
-    expect(body.updates).toEqual({ completed: true });
+    expect(body).toEqual({ batch_token: BATCH_TOKEN, task_id: 'BT-000001', updates: { completed: true } });
   });
 
-  test('submitPlatoReadings() posts bulk_add_plato_readings with the staged rows', function () {
-    bp._setStateForTest({ batchId: BATCH_ID, batchToken: BATCH_TOKEN, apiUrl: 'https://script.google.com/test/admin' });
+  test('submitPlatoReadings() POSTs JSON to .../readings with only batch_token/readings', function () {
+    bp._setStateForTest({ batchId: BATCH_ID, batchToken: BATCH_TOKEN, apiUrl: 'http://mw.test' });
     var rows = [{ timestamp: '2026-09-10', degrees_plato: 12.5, temperature: 20, ph: 4.2, notes: 'ok' }];
     bp._setStagingRowsForTest(rows);
     mockFetchOnce({ ok: true, results: [{ reading_id: 'PR-1' }] });
@@ -153,26 +167,95 @@ describe('batch.js public transport -- characterization of today\'s Apps-Script 
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     var call = global.fetch.mock.calls[0];
-    expect(call[0]).toBe('https://script.google.com/test/admin');
+    expect(call[0]).toBe('http://mw.test/api/batch/public/' + BATCH_ID + '/readings');
     expect(call[1].method).toBe('POST');
-    expect(call[1].headers['Content-Type']).toBe('text/plain');
+    expect(call[1].headers['Content-Type']).toBe('application/json');
     var body = JSON.parse(call[1].body);
-    expect(body.action).toBe('bulk_add_plato_readings');
-    expect(body.batch_token).toBe(BATCH_TOKEN);
-    expect(body.batch_id).toBe(BATCH_ID);
-    expect(body.readings).toEqual(rows);
+    expect(body).toEqual({ batch_token: BATCH_TOKEN, readings: rows });
   });
 
-  test('refreshBatchOnce() fetches the same GET URL as loadBatch()', function () {
-    bp._setStateForTest({ batchId: BATCH_ID, batchToken: BATCH_TOKEN, apiUrl: 'https://script.google.com/test/admin' });
-    mockFetchOnce(minimalBatchPayload());
+  test('refreshBatchOnce() fetches the same GET URL as init() and does not render on {ok:false}', function () {
+    bp._setStateForTest({ batchId: BATCH_ID, batchToken: BATCH_TOKEN, apiUrl: 'http://mw.test' });
 
+    // Seed batchData with a successful load first.
+    mockFetchOnce(minimalBatchPayload());
+    bp.loadBatch();
+    return flushPromises().then(function () {
+      var seeded = bp._getStateForTest().batchData;
+      expect(seeded).not.toBeNull();
+
+      global.fetch.mockClear();
+      mockFetchOnce({ ok: false, error: 'rate_limited' });
+
+      var p = bp.refreshBatchOnce();
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      var url = global.fetch.mock.calls[0][0];
+      expect(url).toBe('http://mw.test/api/batch/public/' + BATCH_ID + '?token=' + BATCH_TOKEN);
+
+      return p.then(function () {
+        // On a failure response the poll increments its failure counter and
+        // does NOT overwrite batchData -- the render path is untouched.
+        expect(bp._getStateForTest().batchData).toBe(seeded);
+      });
+    });
+  });
+
+  test('a 429/502 JSON error response from toggleTask surfaces via the toast path without throwing', function () {
+    bp._setStateForTest({ batchId: BATCH_ID, batchToken: BATCH_TOKEN, apiUrl: 'http://mw.test' });
+    var before = toastCount();
+    mockFetchOnce({ ok: false, error: 'server_error' });
+
+    expect(function () { bp.toggleTask('BT-000001', true); }).not.toThrow();
+
+    return flushPromises().then(function () {
+      expect(toastCount()).toBe(before + 1);
+    });
+  });
+
+  test('a 429/502 JSON error response from submitPlatoReadings surfaces via the toast path without throwing', function () {
+    bp._setStateForTest({ batchId: BATCH_ID, batchToken: BATCH_TOKEN, apiUrl: 'http://mw.test' });
+    bp._setStagingRowsForTest([{ timestamp: '2026-09-10', degrees_plato: 12 }]);
+    var before = toastCount();
+    mockFetchOnce({ ok: false, error: 'server_error' });
+    var submitBtn = document.createElement('button');
+
+    expect(function () { bp.submitPlatoReadings(submitBtn); }).not.toThrow();
+
+    return flushPromises().then(function () {
+      expect(toastCount()).toBe(before + 1);
+    });
+  });
+
+  test('no request URL anywhere contains script.google.com or ?action=', function () {
+    bp._setStateForTest({ batchId: BATCH_ID, batchToken: BATCH_TOKEN, apiUrl: 'http://mw.test' });
+    bp._setStagingRowsForTest([{ timestamp: '2026-09-10', degrees_plato: 12 }]);
+    mockFetchOnce(minimalBatchPayload()); // loadBatch (via init)
+    mockFetchOnce({ ok: true }); // toggleTask
+    mockFetchOnce(minimalBatchPayload()); // toggleTask's follow-up loadBatch
+    mockFetchOnce({ ok: true, results: [] }); // submitPlatoReadings
+    mockFetchOnce(minimalBatchPayload()); // refreshBatchOnce
+
+    bp.init();
+    bp.toggleTask('BT-000001', true);
+    bp.submitPlatoReadings(document.createElement('button'));
     bp.refreshBatchOnce();
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    var urls = global.fetch.mock.calls.map(function (c) { return c[0]; });
+    urls.forEach(function (url) {
+      expect(url).not.toMatch(/script\.google\.com/);
+      expect(url).not.toMatch(/\?action=/);
+    });
+  });
+
+  test('batchId characters needing encoding are passed through encodeURIComponent in the path', function () {
+    var weirdId = 'SV-B-000123/../etc';
+    bp._setStateForTest({ batchId: weirdId, batchToken: BATCH_TOKEN, apiUrl: 'http://mw.test' });
+    mockFetchOnce(minimalBatchPayload());
+
+    bp.loadBatch();
+
     var url = global.fetch.mock.calls[0][0];
-    expect(url).toBe(
-      'https://script.google.com/test/admin?action=get_batch_public&batch_id=' + BATCH_ID + '&token=' + BATCH_TOKEN
-    );
+    expect(url).toBe('http://mw.test/api/batch/public/' + encodeURIComponent(weirdId) + '?token=' + encodeURIComponent(BATCH_TOKEN));
   });
 });
