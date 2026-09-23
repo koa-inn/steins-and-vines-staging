@@ -171,6 +171,7 @@ Deploy. Prefer this to forward-fixing a live deployment.
 
 | Date | Version | Previous (rollback target) | Change |
 |------|---------|----------------------------|--------|
+| 2026-09-23 | 57 | **56** | **Phase 82** (82-02/82-03): admin proxy `server_token` write entries, inventory/schedule actions, `get_ingredients`/`get_homepage` reads, D-18 lock fixes, per-task cache bust, removed `get_config`/`update_schedule`/`update_kits`. Non-mutating probes 1-7 + 9 passed (`scripts/phase82-appsscript-probes.sh`). Pre-paste editor-drift hash check was skipped. |
 | 2026-09-05 14:11 | 56 | **55** | **Phase 81**-01: `schedule_id` column self-migration + `'gfs'` cache-bust on FermSchedules CRUD |
 | 2026-09-04 13:42 | 55 | 54 | Phase 80 waitlist schema (pre-existing record, reconstructed from version history) |
 
