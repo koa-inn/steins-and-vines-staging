@@ -368,16 +368,18 @@ function getIngredients() {
 
 **All other claims in this research are `[VERIFIED]` against live repository code (file:line cited throughout) or `[CITED]` from the Phase 76 CONTEXT/VERIFICATION docs, which were themselves live-verified in production.** No package-registry or external-documentation lookups were needed — this phase touches zero third-party libraries.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `bulkUpdateBatchTasks`'s server-side cache-invalidation gap (Pitfall 1) be fixed in this phase or deferred?**
    - What we know: it is a real, currently-live staleness bug, independent of anything this phase's transport change introduces.
    - What's unclear: whether the owner considers "up to 5 minutes of stale calendar-driven task state" worth fixing now vs. as a follow-up, given the phase's stated boundary is "no user-visible behaviour change."
+   - **RESOLVED → 82-02 Task 2:** fixed in this phase — updateBatchTask returns its row's batch_id and bulkUpdateBatchTasks busts every distinct batch via _uniqueBatchIds (orchestrator guidance 1).
    - Recommendation: fix it — it's a ~5-line Apps Script change (loop `payload.tasks`, invalidate `gb:<task.batch_id_from_lookup>` per task) with no behavior change to anything the phase already touches, and it directly serves D-09's stated intent.
 
 2. **Does `js/batch.js` need a `module.exports` test seam added as its own task, or folded into the transport-rewrite task?**
    - What we know: zero existing test coverage; the file has no seam at all today.
    - What's unclear: whether the planner wants this as a separate, reviewable task (cleaner diff) or bundled with the rewrite.
+   - **RESOLVED → 82-08 Task 1:** the batch.js test seam is its own task, ahead of the transport rewrite in 82-08 Task 2.
    - Recommendation: separate task — mirrors how `admin.js`'s and `brewpad.js`'s seams were each added incrementally as needed, not as one giant diff.
 
 ## Environment Availability
