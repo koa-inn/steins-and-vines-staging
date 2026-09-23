@@ -80,6 +80,11 @@ describe('admin.js inventory/holds/orders/import flows route through /api/admin/
     return JSON.parse(call[1].body);
   }
 
+  function firstFetchBody() {
+    var call = global.fetch.mock.calls[0];
+    return JSON.parse(call[1].body);
+  }
+
   function noSheetsUrl() {
     global.fetch.mock.calls.forEach(function (call) {
       expect(String(call[0])).not.toMatch(/sheets\.googleapis\.com/);
@@ -222,8 +227,10 @@ describe('admin.js inventory/holds/orders/import flows route through /api/admin/
     document.getElementById('add-kit-form').dispatchEvent(new Event('submit', { cancelable: true }));
 
     return flushPromises().then(function () {
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-      var body = lastFetchBody();
+      // The append_inventory_row write is always the FIRST fetch call -- success
+      // then triggers loadAllData()'s Promise.all of proxy reads, as before.
+      expect(global.fetch.mock.calls.length).toBeGreaterThanOrEqual(1);
+      var body = firstFetchBody();
       expect(body.action).toBe('append_inventory_row');
       expect(body.sheet).toBe('Kits');
       expect(body.values[0]).toBe('Acme');
@@ -249,8 +256,8 @@ describe('admin.js inventory/holds/orders/import flows route through /api/admin/
     document.getElementById('add-ing-form').dispatchEvent(new Event('submit', { cancelable: true }));
 
     return flushPromises().then(function () {
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-      var body = lastFetchBody();
+      expect(global.fetch.mock.calls.length).toBeGreaterThanOrEqual(1);
+      var body = firstFetchBody();
       expect(body.action).toBe('append_inventory_row');
       expect(body.sheet).toBe('Ingredients');
       expect(body.values[2]).toBe('Cascade Hops');

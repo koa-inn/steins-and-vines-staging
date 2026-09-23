@@ -780,6 +780,16 @@
     });
   }
 
+  // 82-07 (D-21): shared write helper for the update_inventory_cells typed action --
+  // sheetKey is the literal 'Kits' or 'Ingredients' contract name (not a SHEETS_CONFIG
+  // range). Every rewired inventory function below builds its {row, field, value}
+  // entries and calls this once per sheet touched, so one user action never issues a
+  // per-cell request loop.
+  function inventoryCellsUpdate(sheetKey, updates) {
+    if (!updates.length) return Promise.resolve();
+    return adminApiPost('update_inventory_cells', { sheet: sheetKey, updates: updates });
+  }
+
   // ===== Load All Data =====
 
   function loadAllData() {
@@ -1728,17 +1738,15 @@
     var onHoldCol = kitsHeaders.indexOf('on_hold');
     if (stockCol !== -1) {
       var newStock = Math.max(0, (parseInt(kit.stock, 10) || 0) - qty);
-      var stockRange = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(stockCol) + kit._rowIndex;
-      updates.push(sheetsUpdate(stockRange, [[newStock]]));
+      updates.push({ row: kit._rowIndex, field: 'stock', value: newStock });
       kit.stock = String(newStock);
     }
     if (onHoldCol !== -1) {
       var newOnHold = Math.max(0, (parseInt(kit.on_hold, 10) || 0) - qty);
-      var onHoldRange = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(onHoldCol) + kit._rowIndex;
-      updates.push(sheetsUpdate(onHoldRange, [[newOnHold]]));
+      updates.push({ row: kit._rowIndex, field: 'on_hold', value: newOnHold });
       kit.on_hold = String(newOnHold);
     }
-    return Promise.all(updates);
+    return inventoryCellsUpdate('Kits', updates);
   }
 
   function releaseHold(hold, reservation) {
@@ -1789,9 +1797,8 @@
     var onHoldCol = kitsHeaders.indexOf('on_hold');
     if (onHoldCol !== -1) {
       var newOnHold = Math.max(0, (parseInt(kit.on_hold, 10) || 0) - qty);
-      var onHoldRange = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(onHoldCol) + kit._rowIndex;
       kit.on_hold = String(newOnHold);
-      return sheetsUpdate(onHoldRange, [[newOnHold]]);
+      return inventoryCellsUpdate('Kits', [{ row: kit._rowIndex, field: 'on_hold', value: newOnHold }]);
     }
     return Promise.resolve();
   }
@@ -2191,31 +2198,22 @@
       var dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
       var holdId = 'H-' + dateStr + '-M' + String(Math.floor(Math.random() * 900) + 100);
 
-      var holdRow = [
-        holdId,
-        '', // no reservation_id for manual holds
-        kit.sku || '',
-        (kit.brand || '') + ' ' + (kit.name || ''),
-        qty,
-        'pending',
-        now.toISOString(),
-        '', // resolved_at
-        '', // resolved_by
-        notes
-      ];
-
-      // Append hold row
-      sheetsAppend(SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!A:A', [holdRow])
+      // Append hold row (add_hold)
+      adminApiPost('add_hold', {
+        hold_id: holdId,
+        sku: kit.sku || '',
+        product_name: (kit.brand || '') + ' ' + (kit.name || ''),
+        qty: qty,
+        notes: notes
+      })
         .then(function () {
           // Increment on_hold in Kits sheet
           var onHoldCol = kitsHeaders.indexOf('on_hold');
           if (onHoldCol !== -1) {
             var currentOnHold = parseInt(kit.on_hold, 10) || 0;
             var newOnHold = currentOnHold + qty;
-            var range = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(onHoldCol) + kit._rowIndex;
-            return sheetsUpdate(range, [[newOnHold]]).then(function () {
-              kit.on_hold = String(newOnHold);
-            });
+            kit.on_hold = String(newOnHold);
+            return inventoryCellsUpdate('Kits', [{ row: kit._rowIndex, field: 'on_hold', value: newOnHold }]);
           }
         })
         .then(function () {
@@ -2320,33 +2318,36 @@
     var saveBtn = document.getElementById('admin-save-btn');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
 
-    var updates = [];
+    var kitsUpdates = [];
+    var ingredientsUpdates = [];
     pendingChanges.forEach(function (change) {
-      var headers, sheetName;
+      var headers, updates;
       if (kitsData.indexOf(change.item) !== -1) {
         headers = kitsHeaders;
-        sheetName = SHEETS_CONFIG.SHEET_NAMES.KITS;
+        updates = kitsUpdates;
       } else {
         headers = ingredientsHeaders;
-        sheetName = SHEETS_CONFIG.SHEET_NAMES.INGREDIENTS;
+        updates = ingredientsUpdates;
       }
 
       var colIndex = headers.indexOf(change.field);
       if (colIndex === -1) return;
 
-      var range = sheetName + '!' + colLetter(colIndex) + change.item._rowIndex;
-      updates.push(sheetsUpdate(range, [[change.value]]));
+      updates.push({ row: change.item._rowIndex, field: change.field, value: change.value });
 
       // Also queue last_updated
       var updatedCol = headers.indexOf('last_updated');
       if (updatedCol !== -1) {
-        var updatedRange = sheetName + '!' + colLetter(updatedCol) + change.item._rowIndex;
-        updates.push(sheetsUpdate(updatedRange, [[new Date().toISOString()]]));
-        change.item.last_updated = new Date().toISOString();
+        var now = new Date().toISOString();
+        updates.push({ row: change.item._rowIndex, field: 'last_updated', value: now });
+        change.item.last_updated = now;
       }
     });
 
-    Promise.all(updates).then(function () {
+    Promise.all([
+      inventoryCellsUpdate('Kits', kitsUpdates),
+      inventoryCellsUpdate('Ingredients', ingredientsUpdates)
+    ]).then(function () {
       pendingChanges = [];
       updateSaveBar();
       // Clear changed highlights
@@ -2433,7 +2434,7 @@
         return '';
       });
 
-      sheetsAppend(SHEETS_CONFIG.SHEET_NAMES.KITS + '!A:A', [row])
+      adminApiPost('append_inventory_row', { sheet: 'Kits', values: row })
         .then(function () {
           closeModal();
           loadAllData();
@@ -2498,10 +2499,11 @@
   function deleteIngredient(ing) {
     if (!confirm('Delete ingredient "' + ing.name + '"? This cannot be undone.')) return;
 
-    // Delete row by clearing it (Sheets API doesn't support row delete via values API easily)
-    var range = SHEETS_CONFIG.SHEET_NAMES.INGREDIENTS + '!' + 'A' + ing._rowIndex + ':' + colLetter(ingredientsHeaders.length - 1) + ing._rowIndex;
-    var emptyRow = ingredientsHeaders.map(function () { return ''; });
-    sheetsUpdate(range, [emptyRow])
+    // Delete row by clearing it (no row-delete action; every header field is cleared)
+    var updates = ingredientsHeaders.map(function (h) {
+      return { row: ing._rowIndex, field: h, value: '' };
+    });
+    return inventoryCellsUpdate('Ingredients', updates)
       .then(function () {
         var idx = ingredientsData.indexOf(ing);
         if (idx !== -1) ingredientsData.splice(idx, 1);
@@ -2561,7 +2563,7 @@
         return '';
       });
 
-      sheetsAppend(SHEETS_CONFIG.SHEET_NAMES.INGREDIENTS + '!A:A', [row])
+      adminApiPost('append_inventory_row', { sheet: 'Ingredients', values: row })
         .then(function () {
           closeModal();
           loadAllData();
@@ -2694,7 +2696,9 @@
   }
 
   function syncOnOrder(changedSkus) {
-    if (!accessToken || kitsData.length === 0) return;
+    // D-06: no longer gated on a Google access token -- this data path never needed
+    // one now that it writes through the session-authenticated proxy.
+    if (kitsData.length === 0) return;
     var onOrderCol = kitsHeaders.indexOf('on_order');
     if (onOrderCol === -1) return;
 
@@ -2708,13 +2712,12 @@
       var orderItem = order.find(function (o) { return o.sku === sku; });
       var newOnOrder = orderItem ? orderItem.qty : 0;
 
-      var range = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(onOrderCol) + kit._rowIndex;
-      updates.push(sheetsUpdate(range, [[newOnOrder]]));
+      updates.push({ row: kit._rowIndex, field: 'on_order', value: newOnOrder });
       kit.on_order = String(newOnOrder);
     });
 
     if (updates.length > 0) {
-      Promise.all(updates).then(function () {
+      inventoryCellsUpdate('Kits', updates).then(function () {
         renderKitsTab();
       }).catch(function (err) {
         console.error('Failed to sync on_order:', err); // eslint-disable-line no-console -- operational: reports on_order sync failure for troubleshooting
@@ -3411,28 +3414,25 @@
       var stockCol = kitsHeaders.indexOf('stock');
       if (stockCol !== -1) {
         var newStock = (parseInt(kit.stock, 10) || 0) + item.qty;
-        var stockRange = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(stockCol) + kit._rowIndex;
-        updates.push(sheetsUpdate(stockRange, [[newStock]]));
+        updates.push({ row: kit._rowIndex, field: 'stock', value: newStock });
         kit.stock = String(newStock);
       }
 
       // Reset on_order to 0 (item fulfilled)
       var onOrderCol = kitsHeaders.indexOf('on_order');
       if (onOrderCol !== -1) {
-        var onOrderRange = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(onOrderCol) + kit._rowIndex;
-        updates.push(sheetsUpdate(onOrderRange, [[0]]));
+        updates.push({ row: kit._rowIndex, field: 'on_order', value: 0 });
         kit.on_order = '0';
       }
 
       // Update last_updated
       var updatedCol = kitsHeaders.indexOf('last_updated');
       if (updatedCol !== -1) {
-        var updatedRange = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(updatedCol) + kit._rowIndex;
-        updates.push(sheetsUpdate(updatedRange, [[new Date().toISOString()]]));
+        updates.push({ row: kit._rowIndex, field: 'last_updated', value: new Date().toISOString() });
       }
     });
 
-    Promise.all(updates).then(function () {
+    inventoryCellsUpdate('Kits', updates).then(function () {
       saveOrder(remainingItems);
       renderOrderTab();
       renderKitsTab();
@@ -4387,8 +4387,7 @@
       sheetRows.push(sheetRow);
     });
 
-    var range = SHEETS_CONFIG.SHEET_NAMES.KITS + '!A1:' + colLetter(kitsHeaders.length - 1) + (sheetRows.length);
-    sheetsUpdate(range, sheetRows)
+    adminApiPost('import_kits', { values: sheetRows })
       .then(function () {
         showToast('Import applied successfully.', 'success');
         cancelImport();
