@@ -48,7 +48,7 @@
   }
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-09-23T21:17:22.506Z';
+  var BUILD_TIMESTAMP = '2026-09-23T21:39:45.649Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP); // eslint-disable-line no-console -- deploy build-verification log
 
   var accessToken = null;
@@ -727,60 +727,7 @@
     }, 0).then(handleProxyResponse);
   }
 
-  // ===== Sheets API Helpers =====
-
-  function sheetsGet(range) {
-    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
-      SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range);
-    return fetchWithRetry(url, {
-      headers: { Authorization: 'Bearer ' + accessToken }
-    }).then(function (res) {
-      if (!res.ok) throw new Error('Sheets API error: ' + res.status);
-      return res.json();
-    });
-  }
-
-  // 82-06 (D-16): the server-side authorization pre-check these helpers used
-  // to make is removed -- that action is not on the /api/admin/proxy
-  // allowlist and would now 400. These direct-Sheets helpers remain plain
-  // (unauthenticated client-side) calls until 82-07 deletes them along with
-  // their remaining call sites. After this change admin.js calls no such
-  // pre-check action anywhere.
-  function sheetsUpdate(range, values) {
-    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
-      SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range) +
-      '?valueInputOption=USER_ENTERED';
-    return fetchWithRetry(url, {
-      method: 'PUT',
-      headers: {
-        Authorization: 'Bearer ' + accessToken,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ values: values })
-    }).then(function (res) {
-      if (!res.ok) throw new Error('Sheets API error: ' + res.status);
-      return res.json();
-    });
-  }
-
-  function sheetsAppend(range, values) {
-    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
-      SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range) +
-      ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
-    return fetchWithRetry(url, {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + accessToken,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ values: values })
-    }).then(function (res) {
-      if (!res.ok) throw new Error('Sheets API error: ' + res.status);
-      return res.json();
-    });
-  }
-
-  // 82-07 (D-21): shared write helper for the update_inventory_cells typed action --
+  // 82-07 (D-16/D-21): shared write helper for the update_inventory_cells typed action --
   // sheetKey is the literal 'Kits' or 'Ingredients' contract name (not a SHEETS_CONFIG
   // range). Every rewired inventory function below builds its {row, field, value}
   // entries and calls this once per sheet touched, so one user action never issues a
@@ -5053,15 +5000,6 @@
   initHomepageTab();
 
   // ===== Utilities =====
-
-  function colLetter(index) {
-    var letter = '';
-    while (index >= 0) {
-      letter = String.fromCharCode(65 + (index % 26)) + letter;
-      index = Math.floor(index / 26) - 1;
-    }
-    return letter;
-  }
 
   // Quote-safe HTML escaper (mirrors js/lib/utils.js). Must escape `"` and `'`
   // in addition to `&`, `<`, `>` so values are safe inside quoted HTML
