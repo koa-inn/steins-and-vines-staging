@@ -4169,6 +4169,61 @@ router.post('/api/admin/proxy', function (req, res) {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 82 (D-12/D-13/D-14): public batch page routes — token-authenticated
+// by Apps Script (not by the middleware), rate-limited per IP in server.js,
+// NO server_token.
+//
+// batch.html / js/batch.js (82-08) call these instead of talking to Apps
+// Script directly. Each route forwards exactly one fixed Apps-Script action
+// via forwardToAppsScript, built from an explicit whitelist of fields —
+// NEVER Object.assign(req.body/req.query) — so a client-supplied `action`,
+// `server_token`, or `batch_id` can never smuggle a different action or
+// target a different batch than the one in the route.
+//
+// D-13: the middleware does NOT validate the token format or check it
+// against the batch — Apps Script's handleGetBatchPublic /
+// handleBatchTokenPost remain the sole validator; a malformed token is
+// forwarded as-is and Apps Script's {ok:false,error:'invalid_token'} is
+// passed straight through with HTTP 200.
+//
+// No authTiers wrapper — these routes are exempt from both the Zoho guard
+// and the key/tier guard in server.js (path-prefix '/batch/public/'), and
+// from caching, matching today's behaviour where batch.html talks to Apps
+// Script directly with no staff credential.
+// ---------------------------------------------------------------------------
+router.get('/api/batch/public/:id', function (req, res) {
+  var payload = {
+    action: 'get_batch_public',
+    batch_id: String(req.params.id || ''),
+    token: String((req.query && req.query.token) || '')
+  };
+  forwardToAppsScript(payload.action, payload, true, 'batch/public', res);
+});
+
+router.post('/api/batch/public/:id/tasks', function (req, res) {
+  var body = req.body || {};
+  var payload = {
+    action: 'update_batch_task',
+    batch_id: String(req.params.id || ''),
+    batch_token: body.batch_token,
+    task_id: body.task_id,
+    updates: body.updates
+  };
+  forwardToAppsScript(payload.action, payload, false, 'batch/public', res);
+});
+
+router.post('/api/batch/public/:id/readings', function (req, res) {
+  var body = req.body || {};
+  var payload = {
+    action: 'bulk_add_plato_readings',
+    batch_id: String(req.params.id || ''),
+    batch_token: body.batch_token,
+    readings: body.readings
+  };
+  forwardToAppsScript(payload.action, payload, false, 'batch/public', res);
+});
+
 // Phase 80 D-04-D-09: contact a waitlist customer via Resend, THEN AND ONLY
 // THEN advance the row to 'contacted'. Staff-tier (device rejected), mirrors
 // /api/batch/reassign-customer's auth gate. RESEND_API_KEY/CALCOM_API_KEY
