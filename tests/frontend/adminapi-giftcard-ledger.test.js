@@ -555,11 +555,12 @@ describe('reloadGiftCard — pre-existing business rules survive the rewrite', f
 });
 
 describe('whole-file: other gift-card handlers are unchanged in shape by this plan', function () {
-  test('updateGiftCardInvoice still takes no lock (decision 44-02 stands, deliberately left unmodified)', function () {
+  test('updateGiftCardInvoice now runs under acquireScriptLock (D-18, Phase 82 — supersedes decision 44-02)', function () {
     var src = rawSource();
     var fnSrc = sliceFunctionSource(src, 'updateGiftCardInvoice');
     expect(fnSrc).not.toBeNull();
-    expect(countOccurrences(fnSrc, 'acquireScriptLock(')).toBe(0);
+    expect(fnSrc).toMatch(/acquireScriptLock\(15000\)/);
+    expect(fnSrc).toMatch(/lock\.releaseLock\(\)/);
   });
 
   test("issueGiftCard's appendRow still writes the 10-column GiftCards schema", function () {
