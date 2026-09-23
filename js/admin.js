@@ -9913,6 +9913,7 @@
         if (s.scheduleHeaders !== undefined) scheduleHeaders = s.scheduleHeaders;
         if (s.pendingChanges !== undefined) pendingChanges = s.pendingChanges;
         if (s.importPreviewData !== undefined) importPreviewData = s.importPreviewData;
+        if (s.scheduleCalMonth !== undefined) scheduleCalMonth = s.scheduleCalMonth;
       }
     });
   }
