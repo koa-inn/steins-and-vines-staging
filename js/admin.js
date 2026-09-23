@@ -6345,6 +6345,7 @@
 
       adminApiPost('update_batch_task', {
         task_id: taskId,
+        batch_id: batchId,
         updates: { completed: true },
         transfer_location: { vessel_id: vesselId, shelf_id: shelfId, bin_id: binId }
       }).then(function () {
@@ -6365,7 +6366,7 @@
       skipBtn.disabled = true;
       skipBtn.textContent = 'Saving...';
 
-      adminApiPost('update_batch_task', { task_id: taskId, updates: { completed: true } })
+      adminApiPost('update_batch_task', { task_id: taskId, batch_id: batchId, updates: { completed: true } })
         .then(function () {
           showToast('Task completed', 'success');
           openBatchDetail(batchId);
@@ -6496,7 +6497,7 @@
       });
       saveTasksBtn.disabled = true;
       saveTasksBtn.textContent = 'Saving...';
-      adminApiPost('bulk_update_batch_tasks', { tasks: tasksArr })
+      adminApiPost('bulk_update_batch_tasks', { batch_id: batchId, tasks: tasksArr })
         .then(function () {
           showToast(tasksArr.length + ' task' + (tasksArr.length !== 1 ? 's' : '') + ' updated', 'success');
           // Optimistic UI: checkboxes and row classes already reflect the user's intent.
@@ -8039,6 +8040,10 @@
       });
       calSaveBtn.disabled = true;
       calSaveBtn.textContent = 'Saving...';
+      // No single batch_id here by design (D-09/Pitfall 1): tasksArr can span
+      // multiple batches in one calendar-view save. 82-02 fixed cache staleness
+      // server-side -- bulkUpdateBatchTasks busts every distinct batch_id via
+      // _uniqueBatchIds, independent of what this payload sends.
       adminApiPost('bulk_update_batch_tasks', { tasks: tasksArr })
         .then(function () {
           showToast(tasksArr.length + ' task' + (tasksArr.length !== 1 ? 's' : '') + ' updated', 'success');
@@ -8219,6 +8224,7 @@
 
         var apiCalls = tasks.map(function (t) {
           var payload = { task_id: t.task_id, updates: { completed: true } };
+          if (t.batch_id) payload.batch_id = t.batch_id;
           if (t.is_transfer) {
             var uid = t.task_id.replace(/[^a-z0-9]/gi, '_');
             var vesselId = (document.getElementById('xfer-vessel-' + uid) || {}).value || '';
