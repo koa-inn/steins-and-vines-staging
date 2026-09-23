@@ -56,7 +56,7 @@
   var tokenClient = null;
   var staffEmails = [];
   var _tokenRefreshTimer = null;
-  var _handlingUnauthorized = false;
+  var _enteringLoggedOut = false;
   var _silentRefreshTimer = null;
 
   // Cached sheet data
@@ -494,7 +494,7 @@
 
   function onTokenResponse(response) {
     if (_silentRefreshTimer) { clearTimeout(_silentRefreshTimer); _silentRefreshTimer = null; }
-    _handlingUnauthorized = false; // Reset guard so handleUnauthorized works again if needed
+    _enteringLoggedOut = false; // Reset guard so enterLoggedOutState works again if needed
     if (response.error) {
       console.warn('[Admin] Token response error:', response.error); // eslint-disable-line no-console -- operational: warns staff on auth token response error
       clearSession();
@@ -627,39 +627,48 @@
 
   // ===== Admin API Helper =====
 
-  /**
-   * Fetch with automatic retry on failure (e.g., timeout)
-   * Waits 1 second before retrying once
-   */
-  function fetchWithRetry(url, options, retries) {
+  // Phase 82-06 (D-05..D-08): both helpers now hit the middleware's
+  // session-authenticated /api/admin/proxy instead of SHEETS_CONFIG.ADMIN_API_URL
+  // directly -- mirrors js/brewpad.js's Phase 76-03 migration. No Google token
+  // is sent -- identity is proven solely by the x-session-token header the
+  // fetch-wrapper IIFE (top of file) attaches to every MIDDLEWARE_URL request.
+  // Errors are handled by REAL HTTP status (handleProxyResponse), never a body
+  // substring -- a real 401 is routed to enterLoggedOutState(), D-07.
+
+  // retryStatuses (optional) -- HTTP status codes that should be retried even
+  // though the fetch RESOLVED (fetch only rejects on network failure, never on
+  // an HTTP error response). Pass this ONLY for idempotent reads: the proxy
+  // collapses a transient Apps-Script timeout/cold-start into a 502, and
+  // without a status-level retry a heavy read can silently drop. Writes MUST
+  // NOT pass retryStatuses AND must pass retries:0 (D-08) -- re-sending a
+  // non-idempotent write on a 502, or on a dropped connection, risks
+  // double-applying a mutation Apps Script already processed.
+  function fetchWithRetry(url, options, retries, retryStatuses) {
     if (retries === undefined) retries = 1;
-    return fetch(url, options).catch(function (err) {
-      if (retries > 0) {
-        return new Promise(function (resolve) {
-          setTimeout(resolve, 1000);
-        }).then(function () {
-          return fetchWithRetry(url, options, retries - 1);
-        });
+    function backoffRetry() {
+      return new Promise(function (resolve) {
+        setTimeout(resolve, 1000);
+      }).then(function () {
+        return fetchWithRetry(url, options, retries - 1, retryStatuses);
+      });
+    }
+    return fetch(url, options).then(function (r) {
+      if (retryStatuses && retries > 0 && retryStatuses.indexOf(r.status) !== -1) {
+        return backoffRetry();
       }
+      return r;
+    }, function (err) {
+      if (retries > 0) return backoffRetry();
       throw err;
     });
   }
 
-  /**
-   * Call the secure Admin API (server-side auth validation)
-   * Falls back to direct Sheets API if ADMIN_API_URL is not configured
-   * Note: Token is passed as URL parameter because GAS web apps can't read Authorization headers
-   * @param {string} action - The action name (e.g., 'get_reservations')
-   * @param {object} params - Optional additional URL parameters
-   */
-  function isUnauthorizedError(data) {
-    var msg = ((data.message || data.error || '') + '').toLowerCase();
-    return msg.indexOf('unauthorized') !== -1 || msg.indexOf('not authorized') !== -1;
-  }
-
-  function handleUnauthorized() {
-    if (_handlingUnauthorized) return;
-    _handlingUnauthorized = true;
+  // Re-login fires ONLY on a real middleware res.status === 401 (D-07) --
+  // never a body-substring match on an Apps-Script response. Mirrors
+  // js/brewpad.js's _enterLoggedOutState (Phase 76-03).
+  function enterLoggedOutState() {
+    if (_enteringLoggedOut) return;
+    _enteringLoggedOut = true;
     // Stop the refresh timer so it doesn't fire while on the sign-in screen
     if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
     clearSession();
@@ -674,59 +683,48 @@
     showSignInButton();
   }
 
-  function adminApiGet(action, params) {
-    if (!SHEETS_CONFIG.ADMIN_API_URL) {
-      return Promise.reject(new Error('Admin API not configured'));
+  function handleProxyResponse(r) {
+    if (r.status === 401) {
+      enterLoggedOutState();
+      throw new Error('Session expired');
     }
-    // 64-03 (OPS-03 SC#3): reads POST the OAuth token in the JSON body -- the
-    // token no longer appears in the URL where intermediary/proxy/access logs
-    // capture it. Same transport as adminApiPost (text/plain avoids the CORS
-    // preflight Apps Script can't answer); adminApi.gs doPost routes read
-    // actions through the same handlers as doGet (handleReadAction).
-    var body = { action: action, token: accessToken };
-    if (params) {
-      Object.keys(params).forEach(function (key) {
-        body[key] = params[key];
-      });
-    }
-    return fetchWithRetry(SHEETS_CONFIG.ADMIN_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain' // Use text/plain to avoid CORS preflight
-      },
-      body: JSON.stringify(body)
-    }).then(function (res) {
-      return res.json();
-    }).then(function (data) {
-      if (!data.ok) {
-        if (isUnauthorizedError(data)) handleUnauthorized();
-        throw new Error(data.message || data.error || 'API error');
+    return r.json().then(function (data) {
+      if (!r.ok || !data || !data.ok) {
+        throw new Error((data && (data.message || data.error)) || ('HTTP ' + r.status));
       }
       return data;
     });
   }
 
-  function adminApiPost(action, payload) {
-    if (!SHEETS_CONFIG.ADMIN_API_URL) {
-      return Promise.reject(new Error('Admin API not configured'));
+  function adminApiGet(action, params) {
+    var body = { action: action };
+    if (params) {
+      Object.keys(params).forEach(function (key) {
+        body[key] = params[key];
+      });
     }
-    payload.action = action;
-    payload.token = accessToken;
-    return fetchWithRetry(SHEETS_CONFIG.ADMIN_API_URL, {
+    // Reads are idempotent: retry twice on the proxy's transient 502/503/504
+    // (usually an Apps-Script cold-start timeout that succeeds warm on retry).
+    return fetchWithRetry(getMwUrl() + '/api/admin/proxy', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain' // Use text/plain to avoid CORS preflight
-      },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }, 2, [502, 503, 504]).then(handleProxyResponse);
+  }
+
+  function adminApiPost(action, payload) {
+    payload = payload || {};
+    payload.action = action;
+    // Writes are sent ONCE (D-08, stricter than brewpad.js): no retryStatuses,
+    // and retries:0 so even a network rejection is not retried -- a dropped
+    // connection can follow a write Apps Script already applied.
+    return fetchWithRetry(getMwUrl() + '/api/admin/proxy', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }).then(function (res) {
-      return res.json();
-    }).then(function (data) {
-      if (!data.ok) {
-        if (isUnauthorizedError(data)) handleUnauthorized();
-        throw new Error(data.message || data.error || 'API error');
-      }
-      return data;
-    });
+    }, 0).then(handleProxyResponse);
   }
 
   // ===== Sheets API Helpers =====

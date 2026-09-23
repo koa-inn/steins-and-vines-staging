@@ -144,11 +144,13 @@ describe('admin.js data transport: /api/admin/proxy, reads-retry/writes-once, 40
     global.fetch.mockImplementation(mockFetchOnce(503, {}));
 
     var p = admin._adminApiGetForTest('get_kits');
-    await jest.advanceTimersByTimeAsync(5000);
+    // Attach the rejection handler synchronously, before advancing timers,
+    // so Node never sees an unhandled rejection on the intermediate promise.
     var rejected = p.then(
       function () { throw new Error('expected rejection, got resolution'); },
       function (err) { return err; }
     );
+    await jest.advanceTimersByTimeAsync(5000);
     var err = await rejected;
 
     expect(err).toBeInstanceOf(Error);
@@ -172,11 +174,11 @@ describe('admin.js data transport: /api/admin/proxy, reads-retry/writes-once, 40
     global.fetch.mockImplementationOnce(mockFetchOnce(502, {}));
 
     var p = admin._adminApiPostForTest('update_hold', { holdId: 'H-1' });
-    await jest.advanceTimersByTimeAsync(5000);
     var rejected = p.then(
       function () { throw new Error('expected rejection, got resolution'); },
       function (err) { return err; }
     );
+    await jest.advanceTimersByTimeAsync(5000);
     var err = await rejected;
 
     expect(err).toBeInstanceOf(Error);
@@ -187,11 +189,11 @@ describe('admin.js data transport: /api/admin/proxy, reads-retry/writes-once, 40
     global.fetch.mockImplementationOnce(function () { return Promise.reject(new Error('network down')); });
 
     var p = admin._adminApiPostForTest('update_hold', { holdId: 'H-1' });
-    await jest.advanceTimersByTimeAsync(5000);
     var rejected = p.then(
       function () { throw new Error('expected rejection, got resolution'); },
       function (err) { return err; }
     );
+    await jest.advanceTimersByTimeAsync(5000);
     var err = await rejected;
 
     expect(err).toBeInstanceOf(Error);
@@ -202,11 +204,11 @@ describe('admin.js data transport: /api/admin/proxy, reads-retry/writes-once, 40
     global.fetch.mockImplementationOnce(mockFetchOnce(200, { ok: false, message: 'unauthorized' }));
 
     var p = admin._adminApiGetForTest('get_kits');
-    await jest.advanceTimersByTimeAsync(0);
     var rejected = p.then(
       function () { throw new Error('expected rejection, got resolution'); },
       function (err) { return err; }
     );
+    await jest.advanceTimersByTimeAsync(0);
     var err = await rejected;
 
     expect(err).toBeInstanceOf(Error);
@@ -219,11 +221,11 @@ describe('admin.js data transport: /api/admin/proxy, reads-retry/writes-once, 40
     global.fetch.mockImplementationOnce(mockFetchOnce(401, { ok: false, error: 'unauthorized' }));
 
     var p = admin._adminApiGetForTest('get_kits');
-    await jest.advanceTimersByTimeAsync(0);
     var rejected = p.then(
       function () { throw new Error('expected rejection, got resolution'); },
       function (err) { return err; }
     );
+    await jest.advanceTimersByTimeAsync(0);
     var err = await rejected;
 
     expect(err).toBeInstanceOf(Error);
