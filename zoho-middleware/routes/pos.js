@@ -3979,6 +3979,47 @@ router.post('/api/batch/bottling-invite', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 82-04 (D-05): forwarding logic shared by BOTH allow-listed
+// Apps-Script proxies below (/api/batch/admin-proxy and /api/admin/proxy).
+// Each proxy keeps its OWN hardcoded allowlist and calls this helper only
+// after its own 400 invalid_action gate has passed — this function never
+// makes an allowlist decision itself.
+//
+// isRead=true forwards as axios.get (query params) — Apps Script's doGet
+// server_token bypass dispatches any action via handleReadAction with no
+// allowlist (Pitfall 3). isRead=false forwards as axios.post (JSON body) —
+// doPost's server_token if-chain only allow-lists WRITE actions, so a read
+// POSTed there falls through to invalid_action.
+//
+// Upstream failures ALWAYS collapse to 502 {ok:false,error:'server_error'}
+// (T-82-04-04) — never differentiate error types or leak err.message to the
+// client; it is logged server-side only, tagged with logTag so batch/admin
+// vs admin/proxy failures stay distinguishable in the logs.
+// ---------------------------------------------------------------------------
+function forwardToAppsScript(action, payload, isRead, logTag, res) {
+  var upstream = isRead
+    ? axios.get(process.env.APPS_SCRIPT_URL, {
+        params: payload,
+        timeout: 15000,
+        maxRedirects: 5
+      })
+    : axios.post(process.env.APPS_SCRIPT_URL, JSON.stringify(payload), {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 15000,
+        maxRedirects: 5
+      });
+
+  return upstream
+    .then(function (resp) {
+      res.json(resp.data);
+    })
+    .catch(function (err) {
+      log.error('[' + logTag + '] ' + action + ' failed: ' + (err && err.message));
+      res.status(502).json({ ok: false, error: 'server_error' });
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Phase 76-02: single allow-listed Apps-Script proxy for BrewPad's batch/
 // dashboard/reading/schedule reads AND writes (D-76). Session/legacy tier
 // only (device excluded — BrewPad is session-scoped, not kiosk-scoped).
@@ -4052,26 +4093,79 @@ router.post('/api/batch/admin-proxy', function (req, res) {
   });
   delete payload.token;
 
-  var upstream = ADMIN_PROXY_READS[action]
-    ? axios.get(process.env.APPS_SCRIPT_URL, {
-        params: payload,
-        timeout: 15000,
-        maxRedirects: 5
-      })
-    : axios.post(process.env.APPS_SCRIPT_URL, JSON.stringify(payload), {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 15000,
-        maxRedirects: 5
-      });
+  forwardToAppsScript(action, payload, !!ADMIN_PROXY_READS[action], 'batch/admin-proxy', res);
+  });
+});
 
-  upstream
-    .then(function (resp) {
-      res.json(resp.data);
-    })
-    .catch(function (err) {
-      log.error('[batch/admin-proxy] ' + action + ' failed: ' + (err && err.message));
-      res.status(502).json({ ok: false, error: 'server_error' });
+// ---------------------------------------------------------------------------
+// Phase 82 (D-05/D-06): admin-panel proxy for js/admin.js — separate
+// hardcoded allowlist, never a passthrough (T-76-02-01). Session/legacy
+// tier only (device excluded — admin panel is session-scoped). Shares
+// forwardToAppsScript with /api/batch/admin-proxy above, but this route's
+// allowlist is its own and unrelated to BrewPad's.
+// ---------------------------------------------------------------------------
+var ADMIN_PANEL_PROXY_READS = {
+  get_kits: true,
+  get_holds: true,
+  get_schedule: true,
+  get_reservations: true,
+  get_dashboard_summary: true,
+  get_homepage: true,
+  get_ingredients: true,
+  get_batches: true,
+  get_batch: true,
+  get_batch_init: true,
+  get_batch_dashboard_summary: true,
+  get_ferm_schedules: true,
+  get_tasks_calendar: true,
+  get_tasks_upcoming: true,
+  get_vessels: true
+};
+
+var ADMIN_PANEL_PROXY_ACTIONS = Object.assign({}, ADMIN_PANEL_PROXY_READS, {
+  update_reservation: true,
+  update_hold: true,
+  update_homepage: true,
+  create_batch: true,
+  update_batch: true,
+  delete_batch: true,
+  update_batch_schedule: true,
+  update_batch_task: true,
+  bulk_update_batch_tasks: true,
+  add_batch_task: true,
+  bulk_add_plato_readings: true,
+  update_plato_reading: true,
+  delete_plato_reading: true,
+  create_ferm_schedule: true,
+  update_ferm_schedule: true,
+  delete_ferm_schedule: true,
+  propagate_ferm_schedule: true,
+  regenerate_batch_token: true,
+  update_inventory_cells: true,
+  append_inventory_row: true,
+  import_kits: true,
+  add_hold: true,
+  append_schedule_slots: true,
+  update_schedule_slots: true
+});
+
+router.post('/api/admin/proxy', function (req, res) {
+  authTiers.requireTiers(['legacy', 'session'])(req, res, function () {
+    var body = req.body || {};
+    var action = (body.action || '').toLowerCase();
+    if (!ADMIN_PANEL_PROXY_ACTIONS[action]) {
+      return res.status(400).json({ ok: false, error: 'invalid_action' });
+    }
+
+    // identity is proven solely by requireTiers above — never accept a
+    // client-supplied Google token (or server_token) as a fallback identity.
+    var payload = Object.assign({}, body, {
+      action: action,
+      server_token: process.env.APPS_SCRIPT_SERVER_TOKEN
     });
+    delete payload.token;
+
+    forwardToAppsScript(action, payload, !!ADMIN_PANEL_PROXY_READS[action], 'admin/proxy', res);
   });
 });
 
