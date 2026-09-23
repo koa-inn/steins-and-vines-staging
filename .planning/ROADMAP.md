@@ -15,6 +15,7 @@
 - 🚧 **v4.6 Analytics & Conversion Tracking** — Phases 55-56 (in progress)
 - 🚧 **v4.7 Post-Review Polish & Trust** — Phases 57-61 (in progress)
 - 📝 **v4.8 BrewPad Bookkeeping & Inventory Integrity** — Phases 62-66 (planned)
+- 📝 **v4.9 Sheets → Postgres (Full Transition)** — Phases 82-88 (planned)
 
 ## Phases
 
@@ -140,6 +141,18 @@
 - [x] **Phase 64: Linking & Search Correctness** — safe in-repo quick wins, execute first: `search-invoices` detail-fetches so `line_items` are real (list endpoint never returns them — pos.js:2279; pattern exists at pos.js:3112); batch delete clears/re-syncs the invoice's stale `cf_batch_status` (INV-000151 class); `adminApiGet` stops putting the Google OAuth token in the URL query string (adminApiPost body precedent — brewpad.js:1285) (feedback #3, #7, #10). (OPS-03) (completed 2026-07-25)
 - [ ] **Phase 65: Staff Tooling Reliability & Backfill** — pre-flight token check before bulk operations + longer-lived/refreshing staff sessions (builds on the shipped x-session-token auth; 4 expiries in one admin day, one silently dropped a batch of writes); `bulk_update_batches` Apps Script action (72 batches took ~6 min at ~4-5s/call); configurable / one-time-backfill `scan-invoices` window so pre-30-day batches can auto-link (feedback #5, #6, #12, #20). (OPS-04)
 - [ ] **Phase 66: Recipe Data Quality** — lowest priority: structured brewing-schedule fields (hop timing, mash steps — *fermentation time split out to Phase 81*) extending the Phase 15 BeerXML import instead of cramming into free-text notes; normalize hop item units (pcs/g/kg drift across the same product family, e.g. Citra-100g "pcs" vs Mosaic-100g "g") (feedback #15, #16). (OPS-05)
+
+### 📝 v4.9 Sheets → Postgres (Full Transition) (Planned)
+
+**Milestone Goal:** Replace the Google Sheets operational store behind `apps-script/adminApi.gs` with Postgres on Railway — provisioned in BOTH environments — migrated one sheet-group at a time behind a per-store `sheets` | `dual` | `postgres` flag with an instant, lossless rollback, until Apps Script is no longer a system of record for anything. Source of truth: `.planning/research/sheets-to-postgres-migration.md` §4 (Stages 0–6) and `.planning/notes/sheets-to-postgres-data-conversion.md` (conversion traps, DDL, backfill checklist). **Owner decision 2026-09-23: commit to all six stages up front; the research's §9 trigger gating is dropped** (the research recommended Stages 0–2 only — that recommendation is recorded here, not followed). Further owner decisions 2026-09-23: (1) production keeps a fire-and-forget sheet mirror for every migrated table INDEFINITELY — inspection, pivoting and the nightly Drive backup survive; hand-edits stop being authoritative; (2) staging writes only to its own Postgres and NEVER mirrors to the shared workbook — this also closes the long-standing "staging writes to live production data" hazard; (3) Schedule and Homepage never go to Postgres — they move to committed repo content so public opening hours stay CDN-served, not Railway-dependent. Additive: phase numbering continues from Phase 81; nothing renumbered. Execution order is strictly **82 → 83 → 84 → 85 → 86 → 87 → 88** — every later phase depends on the seam (82) and the infrastructure (83). Cross-cutting rules binding every phase: money columns are `numeric(10,2)`, never float; timestamps normalised per row with reject-not-coerce (three shapes exist in the same column); existing zero-padded text IDs kept as primary keys and backed by real sequences; `''` → `NULL`; `'TRUE'`/`'FALSE'` → `boolean`; `FermSchedules.steps` → `jsonb`; `recipe_ingredients` keys on `ingredient_id` only (a recipe legitimately repeats an `item_id` — SV-R-000002); every `dual` window logs discrepancies to Sentry and runs ≥1 week before a flip; every flip has a written rollback (flag flip while dual; ledger replay after); tests run against real Postgres, not mocks. Honest research estimate for the whole path: 25–40 developer-days.
+
+- [ ] **Phase 82: Store-Agnostic Prerequisites** — the seam that makes every later stage cheap: route the 55 direct `js/admin.js` Apps Script calls and `js/batch.js` (public batch view) through the middleware (`/api/batch/admin-proxy` or a sibling), so no browser code talks to `ADMIN_API_URL`; delete the 7 zero-caller actions (`get_config`, `update_schedule`, `update_kits`, `get_homepage` + the Reservations/Holds/Kits legacy trio — verify the `brewpad-integration.js:122` kit registry first); close the two lock holes (`updateGiftCardInvoice` under the lock; `createBatch` dedup guard INSIDE the lock). Owner checks that gate every later estimate: formulas/named ranges/pivots in any tab; Apps Script → Executions filtered to failures; Railway plan (backups/PITR); live row counts per sheet. Phase 79 (the original first Stage 0 item) already shipped to production 2026-09-23. (DB-01)
+- [ ] **Phase 83: Postgres Infrastructure** — Railway Postgres in the `sv-middleware` project for staging AND production; `pg` + `node-pg-migrate` as production deps (`railway.toml` runs `npm install --production`); `lib/db.js` (one `Pool`, `query()`, `withTransaction(fn)`); `migrations/0001_init.sql`; `DATABASE_URL` in `validateEnv.js`; Jest harness (Testcontainers, one DB per test file, BEGIN/ROLLBACK per test) on CI; the generic store-flag helper (`<STORE>_STORE` = `sheets` | `dual` | `postgres`, mirror hard-disabled on staging); the reusable backfill pipeline (`.xlsx` snapshot → per-sheet CSV/API export → normalise in the documented order → rejects file → scratch schema → row-count/min/max checks → promote). Rollback: delete the service; nothing depends on it yet. (DB-02)
+- [ ] **Phase 84: GiftCards → Postgres** — `gift_cards` + append-only `gift_card_transactions` (`tx_ref UNIQUE`); redeem/reload become one transaction (`INSERT … ON CONFLICT (tx_ref) DO NOTHING` + guarded `UPDATE`) — no crash window, no global lock, no 15 s wait; `routes/gift-cards.js`, the four `pos.js` sale sites and the two `lookup_gift_card` sites go behind `GIFT_CARDS_STORE`; backfill to the cent; `dual` ≥1 week with Sentry discrepancy logging; flip; a ledgered balance-adjust control in the kiosk Gift Card Management screen replaces hand-editing the sheet. Supersedes the Sheets-side Phase 51 ledger as balance of record and closes MONEY-03's open M9/M18 items structurally (typed bounded numerics, no cell-injection surface). (DB-03)
+- [ ] **Phase 85: Recipes + RecipeIngredients → Postgres** — both tables together (FK); `ingredient_id` sole key, `(recipe_id, item_id)` NOT unique; `SV-R-`/`RI-` IDs kept, sequence-backed; atomic ingredient rewrite on save; `routes/recipes.js`, `pos-recipe.js` pricing, public `/api/recipes` (`ferment_days` preserved) and the admin recipe editor go behind `RECIPES_STORE`; Phase 73 unit-guard and Phase 79 D-04/D-09 behaviour preserved by parity tests; backfill; dual; flip. The in-app editable unit dropdown (Phase 79) is the replacement for hand-fixing units in the sheet. (DB-04)
+- [ ] **Phase 86: Vessels + FermSchedules + Config → Postgres (+ the missing admin CRUD)** — `vessels`, `ferm_schedules` (`steps jsonb`, real booleans, `FS-` 4-pad IDs), `config`; NEW Vessels admin screen (add/edit/archive vessel_id, shelf, bin, status — no vessel CRUD exists anywhere today); NEW Staff Access screen replacing hand-editing `staff_emails`; `server_token` relocates to a Railway env var, never a DB row; security review attached (this is the auth allowlist); `createFermSchedule` ID generation stops being lock-free; backfill; dual; flip. (DB-05)
+- [ ] **Phase 87: Batches + BatchTasks + PlatoReadings + VesselHistory → Postgres** — the big one; needs its own approved design pass first: `deleteBatch`'s 3-sheet cascade becomes FKs `ON DELETE CASCADE`; `SV-B-`/`PR-` IDs sequence-backed; dashboard/calendar/upcoming/location-conflict queries become indexed SQL; the admin-proxy seam (17 actions) swaps implementation so `js/brewpad.js` needs zero changes; `batch.html`'s public token-authenticated read path and the `pos.js` reconcile/kiosk-sale → batch hooks rewired; **maintenance-window cutover (a Sunday) instead of dual-write** — four correlated tables make dual genuinely hard; backfill rehearsed on staging against a fresh workbook snapshot first; Zoho `cf_batch_status` sync unchanged. (DB-06)
+- [ ] **Phase 88: Retire the Legacy Sheets** — Reservations/Holds/Kits DELETED (with the `onFormSubmit` trigger), not migrated — Zoho is the system of record; Schedule + Homepage move to committed repo content (the `content/zoho-snapshot.json` pattern) with the public pages reading the repo file, so opening hours and footer links stay off Railway; ProductEvents deleted or left as a dead tab (owner call); `adminApi.gs` shrinks to the production mirror writer (or is deleted); nightly Drive backup replaced by verified Railway backups/PITR plus a scheduled `pg_dump` to Drive with a restore drill; `docs/DATA-MODEL.md`, `docs/APPS_SCRIPT.md`, `docs/RUNBOOK.md` (rollback by flag, ledger replay, restore from dump) and CLAUDE.md updated. (DB-07)
 
 ### 📋 Backlog — captured, not yet scheduled
 
@@ -1879,3 +1892,90 @@ Plans:
   1. Recipes support a structured schedule (hop timing, mash steps — scope confirmed at plan time) OR the BeerXML import maps these into a defined structure automatically — no more stuffing into notes. **Fermentation time is NO LONGER in scope here — it moved to Phase 81 (2026-09-05), which has a customer-facing driver. Do not re-claim it.**
   2. Hop item units are normalized or explicitly mapped (the pcs/g/kg drift across the same product family is resolved) so recipe quantity semantics are unambiguous
   3. The hand-imported Hazy Pale Ale (SV-R-000003) round-trips correctly under the new model
+
+
+## Phase Details (v4.9)
+
+### Phase 82: Store-Agnostic Prerequisites
+
+**Goal**: No browser code talks to Apps Script directly, the action surface is trimmed to what has callers, and the two known lock holes are closed — so every later migration stage swaps an implementation behind the middleware instead of rewriting call sites.
+**Depends on**: none (Phase 79, the original first Stage 0 item, shipped to production 2026-09-23)
+**Requirements**: DB-01
+**Success Criteria** (what must be TRUE):
+
+  1. `grep ADMIN_API_URL js/` finds no caller in `js/admin.js` or `js/batch.js` — every admin and public-batch read/write goes through a session- or token-authenticated middleware endpoint, with parity tests per rewired action and the admin surface walked live on staging
+  2. The 7 zero-caller Apps Script actions and their handlers are deleted (the `brewpad-integration.js` kit-registry dependency verified or rehomed first) and the proxy/server_token allowlists shrink to match
+  3. `updateGiftCardInvoice` runs under the script lock and `createBatch`'s dedup guard sits inside the lock — owner Apps Script redeploy done and the rollback version number recorded
+  4. The four owner checks are answered and written into the phase summary: which tabs carry formulas/named ranges/pivots; Apps Script Executions failures in the last 90 days; Railway plan and backup/PITR entitlement; live row count per sheet
+
+### Phase 83: Postgres Infrastructure
+
+**Goal**: Both environments have their own Postgres, the middleware can query it transactionally under test, and the migration, backfill and store-flag machinery every later phase reuses exists and is proven on an empty schema.
+**Depends on**: Phase 82
+**Requirements**: DB-02
+**Success Criteria** (what must be TRUE):
+
+  1. Railway Postgres runs in staging and production with distinct `DATABASE_URL`s; `validateEnv.js` refuses to boot without one; `/health` reports the database alongside redis
+  2. `lib/db.js` exposes a single pool, `query()` and `withTransaction()`; `node-pg-migrate` applies `migrations/0001_init.sql` on deploy as a production step (compatible with `npm install --production`)
+  3. The Jest harness runs a real Postgres (Testcontainers) per test process with per-test rollback; CI runs it; a round-trip test is green on CI
+  4. The store-flag helper resolves `<STORE>_STORE` to `sheets` | `dual` | `postgres` per store with `sheets` as the default and the mirror hard-disabled on staging; the backfill pipeline runs end-to-end on a workbook snapshot into a scratch schema and produces a rejects report — zero rows loaded to real tables yet
+
+### Phase 84: GiftCards → Postgres
+
+**Goal**: Gift-card balances live in Postgres with an atomic redeem/reload — the money-path defect that first justified this milestone is closed structurally, with a rollback path that loses nothing.
+**Depends on**: Phase 83
+**Requirements**: DB-03
+**Success Criteria** (what must be TRUE):
+
+  1. `gift_cards` (`numeric(10,2)` balances, `GC-` text IDs) and append-only `gift_card_transactions` (`tx_ref UNIQUE`) exist; redeem and reload are single transactions — a same-`tx_ref` replay and a crash-then-retry both leave the balance unchanged, proven by tests against real Postgres
+  2. Every gift-card call site (issue, lookup, redeem, reload, void, update-invoice, kiosk management) honours `GIFT_CARDS_STORE`; the backfill loads every live certificate with balances equal to the sheet to the cent and a zero-row rejects file
+  3. `dual` ran ≥1 week on production with the sheet mirrored fire-and-forget and zero unexplained Sentry discrepancies before the flip; after the flip the sheet remains a read-only mirror and a documented flag-flip rollback exists
+  4. Staff can adjust a balance from the kiosk Gift Card Management screen (ledgered, audited) so the hand-edit-the-sheet path is no longer needed; a real kiosk sale with a gift card, a lookup and a void are verified live on production
+
+### Phase 85: Recipes + RecipeIngredients → Postgres
+
+**Goal**: Recipes and their ingredients are relational, saved atomically with stable ingredient IDs, and every pricing and unit rule that protected customers on Sheets is proven unchanged.
+**Depends on**: Phase 84
+**Requirements**: DB-04
+**Success Criteria** (what must be TRUE):
+
+  1. `recipes` and `recipe_ingredients` exist with `ingredient_id` as the sole ingredient key and NO `unique (recipe_id, item_id)`; `SV-R-000002`'s three same-item rows backfill intact; IDs are sequence-backed and unchanged
+  2. Recipe create/update/delete is one transaction (ingredient rewrite included); the recipe list, detail, public `/api/recipes` (`ferment_days` preserved), `pos-recipe.js` pricing and the admin editor all honour `RECIPES_STORE`
+  3. Parity tests prove the Phase 73 unit guard, the Phase 79 D-04 change comparison and D-09 id-honouring behave identically on Postgres; a kiosk recipe sale prices identically on both stores
+  4. `dual` ≥1 week with mirror and discrepancy logging, then flip; a recipe rename completes in under 2 s on production
+
+### Phase 86: Vessels + FermSchedules + Config → Postgres
+
+**Goal**: The three hand-edited-only sheets get real tables AND the admin screens that make hand-editing unnecessary, with the shared secret moved out of data entirely.
+**Depends on**: Phase 85
+**Requirements**: DB-05
+**Success Criteria** (what must be TRUE):
+
+  1. `vessels`, `ferm_schedules` (`steps jsonb`, real booleans, `FS-` IDs) and `config` exist and are backfilled with every existing row parsing (every `steps` blob validated)
+  2. A Vessels admin screen lets staff add, edit and archive vessels; BrewPad and admin dropdowns read from it; `setVesselStatus` goes through the store flag
+  3. A Staff Access screen manages the auth allowlist; `server_token` lives only in Railway env vars; a security review (ASVS L1) signs off the allowlist change path
+  4. Ferm-schedule create/update/delete/propagate are transactional with sequence-backed IDs (the lock-free ID collision is gone); dual, then flip
+
+### Phase 87: Batches + BatchTasks + PlatoReadings + VesselHistory → Postgres
+
+**Goal**: The shop-floor core — batches, their tasks, readings and history — moves to indexed, relational, transactional storage in one rehearsed maintenance-window cutover, with BrewPad untouched.
+**Depends on**: Phase 86
+**Requirements**: DB-06
+**Success Criteria** (what must be TRUE):
+
+  1. A design pass (schema, FKs with cascade, indexes for dashboard/calendar/upcoming/conflict queries, public batch-token read path, Zoho reconcile hooks) is approved before any code; the cutover runbook names the window, the steps, the verification and the rollback
+  2. `js/brewpad.js` is unchanged — all 17 admin-proxy actions swap implementation server-side; `batch.html` and the kiosk-sale → batch creation path work on the new store
+  3. The backfill is rehearsed on staging against a fresh workbook snapshot with a zero-row rejects file and row counts matching per table; the production cutover completes inside the window and every dashboard number matches the pre-cutover snapshot
+  4. Creating a batch, marking tasks, adding readings and transferring vessels all work live on production the next business day; `create_batch` median latency at the middleware is under 2 s
+
+### Phase 88: Retire the Legacy Sheets
+
+**Goal**: Apps Script is no longer a system of record for anything — legacy tabs are gone, public content is repo-committed, backups are Postgres-native, and the docs describe the system that actually exists.
+**Depends on**: Phase 87
+**Requirements**: DB-07
+**Success Criteria** (what must be TRUE):
+
+  1. Reservations, Holds, Kits and the `onFormSubmit` trigger are deleted; nothing in the repo references them; the kit registry reads Zoho
+  2. Opening hours and footer links are served from committed repo content on every public page (no `PUBLISHED_*_CSV_URL` reads remain); a documented edit → commit → deploy path replaces editing the sheet
+  3. Railway backups/PITR are verified by an actual restore drill, plus a scheduled `pg_dump` to Drive; the runbook covers flag-flip rollback, ledger replay and restore-from-dump
+  4. `adminApi.gs` is reduced to the production mirror writer (or deleted), the Apps Script deployment/rollback table is closed out, and `docs/DATA-MODEL.md`, `docs/APPS_SCRIPT.md`, `docs/RUNBOOK.md` and CLAUDE.md describe Postgres as the store
