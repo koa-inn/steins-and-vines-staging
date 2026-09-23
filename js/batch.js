@@ -283,41 +283,45 @@
 
     var submitBtn = document.getElementById('plato-submit-all-btn');
     if (submitBtn) submitBtn.addEventListener('click', function () {
-      if (_platoStagingRows.length === 0) { showToast('No readings to submit', 'error'); return; }
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Submitting...';
-      fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          action: 'bulk_add_plato_readings',
-          batch_token: batchToken,
-          batch_id: batchId,
-          readings: _platoStagingRows
-        })
-      })
-      .then(function (res) { return res.json(); })
-      .then(function (data) {
-        if (!data.ok) { showToast('Failed: ' + (data.message || data.error), 'error'); submitBtn.disabled = false; submitBtn.textContent = 'Submit All (' + _platoStagingRows.length + ')'; return; }
-        showToast(_platoStagingRows.length + ' reading' + (_platoStagingRows.length !== 1 ? 's' : '') + ' recorded', 'success');
-        // Optimistic: merge submitted rows into local readings and re-render
-        var results = (data && data.results) || [];
-        _platoStagingRows.forEach(function (r, i) {
-          _localReadings.push({
-            reading_id: (results[i] && results[i].reading_id) || '',
-            degrees_plato: r.degrees_plato,
-            timestamp: r.timestamp,
-            temperature: r.temperature,
-            ph: r.ph,
-            notes: r.notes || ''
-          });
-        });
-        _platoStagingRows = [];
-        renderStagingTable();
-        renderPlatoReadings(_localReadings, _localStartDate);
-      })
-      .catch(function (err) { showToast('Failed: ' + err.message, 'error'); submitBtn.disabled = false; submitBtn.textContent = 'Submit All (' + _platoStagingRows.length + ')'; });
+      submitPlatoReadings(submitBtn);
     });
+  }
+
+  function submitPlatoReadings(submitBtn) {
+    if (_platoStagingRows.length === 0) { showToast('No readings to submit', 'error'); return; }
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+    return fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action: 'bulk_add_plato_readings',
+        batch_token: batchToken,
+        batch_id: batchId,
+        readings: _platoStagingRows
+      })
+    })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      if (!data.ok) { showToast('Failed: ' + (data.message || data.error), 'error'); submitBtn.disabled = false; submitBtn.textContent = 'Submit All (' + _platoStagingRows.length + ')'; return; }
+      showToast(_platoStagingRows.length + ' reading' + (_platoStagingRows.length !== 1 ? 's' : '') + ' recorded', 'success');
+      // Optimistic: merge submitted rows into local readings and re-render
+      var results = (data && data.results) || [];
+      _platoStagingRows.forEach(function (r, i) {
+        _localReadings.push({
+          reading_id: (results[i] && results[i].reading_id) || '',
+          degrees_plato: r.degrees_plato,
+          timestamp: r.timestamp,
+          temperature: r.temperature,
+          ph: r.ph,
+          notes: r.notes || ''
+        });
+      });
+      _platoStagingRows = [];
+      renderStagingTable();
+      renderPlatoReadings(_localReadings, _localStartDate);
+    })
+    .catch(function (err) { showToast('Failed: ' + err.message, 'error'); submitBtn.disabled = false; submitBtn.textContent = 'Submit All (' + _platoStagingRows.length + ')'; });
   }
 
   function bindPlatoSubmit() {
@@ -375,6 +379,22 @@
   }
 
   var _refreshFailures = 0;
+  var _lastRefreshAttempt = 0;
+
+  function refreshBatchOnce() {
+    _lastRefreshAttempt = Date.now();
+    var url = apiUrl + '?action=get_batch_public&batch_id=' + encodeURIComponent(batchId) + '&token=' + encodeURIComponent(batchToken);
+    return fetch(url)
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.ok) { _refreshFailures++; return; }
+        _refreshFailures = 0;
+        batchData = data.data;
+        renderBatch(batchData);
+      })
+      .catch(function () { _refreshFailures++; });
+  }
+
   function startAutoRefresh() {
     setInterval(function () {
       // Skip refresh when tab is hidden
@@ -384,23 +404,35 @@
         var backoff = Math.min(300000, 60000 * Math.pow(2, _refreshFailures - 1));
         if (Date.now() - _lastRefreshAttempt < backoff) return;
       }
-      _lastRefreshAttempt = Date.now();
-      var url = apiUrl + '?action=get_batch_public&batch_id=' + encodeURIComponent(batchId) + '&token=' + encodeURIComponent(batchToken);
-      fetch(url)
-        .then(function (res) { return res.json(); })
-        .then(function (data) {
-          if (!data.ok) { _refreshFailures++; return; }
-          _refreshFailures = 0;
-          batchData = data.data;
-          renderBatch(batchData);
-        })
-        .catch(function () { _refreshFailures++; });
+      refreshBatchOnce();
     }, 60 * 1000);
   }
-  var _lastRefreshAttempt = 0;
 
   document.addEventListener('DOMContentLoaded', function () {
     init();
     bindPlatoSubmit();
   });
+
+  // Test seam (net-new, phase 82-08): pure refactor, no behaviour change.
+  // Uses Object.assign into module.exports so these closures can access
+  // IIFE-scoped state (batchId, batchToken, apiUrl, batchData).
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = Object.assign(module.exports || {}, {
+      init: init,
+      loadBatch: loadBatch,
+      toggleTask: toggleTask,
+      submitPlatoReadings: submitPlatoReadings,
+      refreshBatchOnce: refreshBatchOnce,
+      _setStateForTest: function (s) {
+        s = s || {};
+        if (s.batchId !== undefined) batchId = s.batchId;
+        if (s.batchToken !== undefined) batchToken = s.batchToken;
+        if (s.apiUrl !== undefined) apiUrl = s.apiUrl;
+      },
+      _setStagingRowsForTest: function (rows) { _platoStagingRows = rows; },
+      _getStateForTest: function () {
+        return { batchId: batchId, batchToken: batchToken, apiUrl: apiUrl, batchData: batchData };
+      }
+    });
+  }
 })();
