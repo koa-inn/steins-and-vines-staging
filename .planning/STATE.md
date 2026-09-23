@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: Phase 81 shipped to production 2026-09-23 (81-09 complete; beer page held back)
+stopped_at: Phase 81 on production; zoho-auth re-persist fix aaf6112a deployed to production 2026-09-23 19:00 UTC (beer page still held back)
 last_updated: "2026-09-05T17:23:26.543Z"
-last_activity: 2026-09-23 -- production cutover done; zoho-auth re-persist fix aaf6112a on staging, prod deploy pending
+last_activity: 2026-09-23 -- second gated deploy (run 35906086255) put b404d061 on production; middleware restarted authenticated:true; beer hold-back verified live
 progress:
   total_phases: 67
   completed_phases: 27
@@ -226,6 +226,6 @@ Last activity: 2026-09-05 -- Phase 81 execution started
 
 ## Session Continuity
 
-Last session: 2026-09-16 21:11 UTC
-Stopped at: Phase 81 plan 81-09 (production cutover) PARKED at the dispatch step by owner choice; pre-flight complete. 13 pre-cutover fixes shipped to staging; legal drafts at 8 lawyer-only markers. See .planning/HANDOFF.json.
+Last session: 2026-09-23 19:05 UTC
+Stopped at: Production fully caught up to staging main (b404d061) via gated-deploy run 35906086255 — Zoho refresh-token re-persistence (aaf6112a) is live; prod `/health` authenticated:true after the restart; Railway deploy id 1d502419 captured correctly this time. Beer page verified held back on prod (noindex, no links from hub/home, BEER_PAGE_LIVE=false). Owner checks still open on prod: kiosk sale, BrewPad sign-in, admin West Coast IPA cost. `links.html` still uncommitted by owner choice. Next: owner prod checks, then pick from open items (alert on authenticated:false; Cloudflare service token for e2e; Update Snapshot workflow failing; Global Payments dead dependency; policy-pages build phase; beer launch).
 Resume file: .planning/phases/81-recipe-fermentation-timeline-give-customers-an-expected-read/.continue-here.md
