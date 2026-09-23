@@ -1908,6 +1908,20 @@ Plans:
   3. `updateGiftCardInvoice` runs under the script lock and `createBatch`'s dedup guard sits inside the lock — owner Apps Script redeploy done and the rollback version number recorded
   4. The four owner checks are answered and written into the phase summary: which tabs carry formulas/named ranges/pivots; Apps Script Executions failures in the last 90 days; Railway plan and backup/PITR entitlement; live row count per sheet
 
+**Plans:** 10 plans
+
+Plans:
+- [ ] 82-01-PLAN.md — Owner pre-migration checks (formulas, Executions failures, Railway PITR, row counts, Reservations/Holds activity) [checkpoint]
+- [ ] 82-02-PLAN.md — Apps Script: D-18 lock fixes, D-11 server_token write entries, per-task batch cache-bust
+- [ ] 82-03-PLAN.md — Apps Script: get_ingredients + 6 typed inventory/schedule actions (D-21); delete get_config/update_schedule/update_kits
+- [ ] 82-04-PLAN.md — Middleware: shared forwarder + allowlisted POST /api/admin/proxy (39 actions)
+- [ ] 82-05-PLAN.md — Middleware: /api/batch/public/* token routes + per-IP limiter + guard exemptions
+- [ ] 82-06-PLAN.md — admin.js: proxy transport (reads retry, writes once, 401-only logout), batch_id fixes, delete ADMIN_API_URL fallbacks
+- [ ] 82-07-PLAN.md — admin.js: rewire the ~15 direct-Sheets flows onto typed actions; delete Sheets helpers
+- [ ] 82-08-PLAN.md — batch.js: test seam + move to /api/batch/public/*
+- [ ] 82-09-PLAN.md — Rollout: owner Apps Script redeploy + probes, staging push, full staging walk [checkpoints]
+- [ ] 82-10-PLAN.md — Gated production cutover + phase notes [checkpoint]
+
 ### Phase 83: Postgres Infrastructure
 
 **Goal**: Both environments have their own Postgres, the middleware can query it transactionally under test, and the migration, backfill and store-flag machinery every later phase reuses exists and is proven on an empty schema.
