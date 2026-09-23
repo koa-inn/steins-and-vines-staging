@@ -379,6 +379,38 @@ function doPost(e) {
       if (action === 'delete_ferm_schedule') {
         return _jsonResponse(deleteFermSchedule(payload));
       }
+      // Admin panel write actions (server_token-gated, Phase 82 D-11)
+      // These mirror the staff-switch cases below (:392-475) so the middleware admin-proxy
+      // (82-04) can forward js/admin.js's writes without staff Google OAuth. The staff switch
+      // cases are left in place, unmodified — the old browser path stays live until the D-19
+      // cutover.
+      if (action === 'update_reservation') {
+        return _jsonResponse(updateReservation(payload, 'middleware'));
+      }
+      if (action === 'update_hold') {
+        return _jsonResponse(updateHold(payload, 'middleware'));
+      }
+      if (action === 'update_homepage') {
+        return _jsonResponse(updateHomepage(payload));
+      }
+      if (action === 'add_batch_task') {
+        var sAddBatchTaskResult = addBatchTask(payload, 'middleware');
+        _invalidateBatchCache(payload.batch_id);
+        return _jsonResponse(sAddBatchTaskResult);
+      }
+      if (action === 'update_batch_task') {
+        var sUpdateBatchTaskResult = updateBatchTask(payload, 'middleware');
+        _invalidateBatchCache(sUpdateBatchTaskResult.batch_id || payload.batch_id);
+        return _jsonResponse(sUpdateBatchTaskResult);
+      }
+      if (action === 'propagate_ferm_schedule') {
+        return _jsonResponse(propagateFermSchedule(payload, 'middleware'));
+      }
+      if (action === 'regenerate_batch_token') {
+        var sRegenerateBatchTokenResult = regenerateBatchToken(payload);
+        _invalidateBatchCache(payload.batch_id);
+        return _jsonResponse(sRegenerateBatchTokenResult);
+      }
       return _jsonResponse({ ok: false, error: 'invalid_action', message: 'Unknown server action: ' + action });
     }
 
@@ -429,7 +461,7 @@ function doPost(e) {
       }
       case 'update_batch_task': {
         var r = updateBatchTask(payload, authResult.email);
-        _invalidateBatchCache(payload.batch_id);
+        _invalidateBatchCache(r.batch_id || payload.batch_id);
         return _jsonResponse(r);
       }
       case 'bulk_update_batch_tasks': {
@@ -2126,47 +2158,47 @@ function setVesselStatus(vesselId, newStatus) {
 
 // --- POST: Create Batch ---
 
-function createBatch(payload, userEmail) {
-  var isPending = !payload.schedule_id || !payload.start_date;
-  if ((!payload.product_sku && !payload.recipe_id) || (!payload.customer_name && !payload.customer_firstname)) {
-    return { ok: false, error: 'missing_fields', message: 'product_sku (or recipe_id) and customer name are required' };
-  }
-
-  // CR-01 fix (gap-closure 29.3): Dedup guard now matches on BOTH zoho_so_number AND product_sku.
-  // Original guard (D-10.2) matched on zoho_so_number alone, which incorrectly blocked the second
-  // kit item of a multi-kit invoice (kiosk path and bulk-create both call createBatch once per SKU
-  // with the same zoho_so_number). A batch is a true duplicate only when BOTH invoice AND SKU match.
-  // Batches with no zoho_so_number are unaffected (guard only fires when field is present).
-  //
-  // 2026-07-11: the invoice+SKU pair is NOT unique — a customer can buy the same kit
-  // several times on one invoice (INV-000137 bought Italy Nebbiolo Style x3), and each
-  // unit is its own fermentation batch. Matching on the pair alone admitted the first
-  // unit and rejected the rest as duplicates, so multi-unit sales silently lost batches
-  // (the middleware queued the rejects for retry, where they failed permanently and
-  // aged out). The caller now sends unit_total = how many batches this invoice+SKU
-  // should have; we allow creates until that many exist. Retry-safety is preserved:
-  // once unit_total rows exist, further creates are still duplicates.
-  //
-  // CONTRACT (grep-checkable):
-  //   createBatch({zoho_so_number:'INV-001', product_sku:'SKU-A', unit_total:3}) x3 — all 3 create
-  //   createBatch({zoho_so_number:'INV-001', product_sku:'SKU-A', unit_total:3}) — 4th call: duplicate_so_number
-  //   createBatch({zoho_so_number:'INV-001', product_sku:'SKU-A'}) — no unit_total: legacy, allows 1
-  //   createBatch({zoho_so_number:'INV-001', product_sku:'SKU-B'}) — different SKU: independent count
-  //
-  // NOTE: This file has no Jest harness. Redeploy to Google Apps Script is required for this fix
-  // to take effect in production. See 29.3-HUMAN-UAT.md for the mandatory redeploy step.
+// CR-01 fix (gap-closure 29.3): Dedup guard now matches on BOTH zoho_so_number AND product_sku.
+// Original guard (D-10.2) matched on zoho_so_number alone, which incorrectly blocked the second
+// kit item of a multi-kit invoice (kiosk path and bulk-create both call createBatch once per SKU
+// with the same zoho_so_number). A batch is a true duplicate only when BOTH invoice AND SKU match.
+// Batches with no zoho_so_number are unaffected (guard only fires when field is present).
+//
+// 2026-07-11: the invoice+SKU pair is NOT unique — a customer can buy the same kit
+// several times on one invoice (INV-000137 bought Italy Nebbiolo Style x3), and each
+// unit is its own fermentation batch. Matching on the pair alone admitted the first
+// unit and rejected the rest as duplicates, so multi-unit sales silently lost batches
+// (the middleware queued the rejects for retry, where they failed permanently and
+// aged out). The caller now sends unit_total = how many batches this invoice+SKU
+// should have; we allow creates until that many exist. Retry-safety is preserved:
+// once unit_total rows exist, further creates are still duplicates.
+//
+// CONTRACT (grep-checkable):
+//   createBatch({zoho_so_number:'INV-001', product_sku:'SKU-A', unit_total:3}) x3 — all 3 create
+//   createBatch({zoho_so_number:'INV-001', product_sku:'SKU-A', unit_total:3}) — 4th call: duplicate_so_number
+//   createBatch({zoho_so_number:'INV-001', product_sku:'SKU-A'}) — no unit_total: legacy, allows 1
+//   createBatch({zoho_so_number:'INV-001', product_sku:'SKU-B'}) — different SKU: independent count
+//
+// D-18 (Phase 82): extracted into a pure top-level function so the decision logic is unit
+// testable without the Apps Script runtime (tests/frontend/adminapi-phase82-locks.test.js).
+// The caller (createBatch) now runs this AFTER acquireScriptLock, inside the same try that
+// generates the batch ID and appends the row, closing the check-then-append TOCTOU race
+// (T-82-02-01) — this function itself does not read the sheet or take the lock.
+// @param {Array<Object>} existingRows - Batches rows (batch_id, zoho_so_number, product_sku)
+// @param {Object} payload - the createBatch payload (zoho_so_number, product_sku, unit_total)
+// @returns {Object|null} null if the create is allowed, or the duplicate_so_number error object
+function batchDedupDecision(existingRows, payload) {
   if (payload.zoho_so_number && payload.product_sku) {
     var allowedUnits = Math.floor(Number(payload.unit_total));
     if (!isFinite(allowedUnits) || allowedUnits < 1) allowedUnits = 1;  // legacy callers
 
-    var existingBatches = sheetToObjects(BATCHES_SHEET_NAME);
     var matching = [];
-    for (var di = 0; di < existingBatches.length; di++) {
-      var sameInvoice = String(existingBatches[di].zoho_so_number || '').trim() ===
+    for (var di = 0; di < existingRows.length; di++) {
+      var sameInvoice = String(existingRows[di].zoho_so_number || '').trim() ===
                         String(payload.zoho_so_number).trim();
-      var sameSku     = String(existingBatches[di].product_sku || '').trim() ===
+      var sameSku     = String(existingRows[di].product_sku || '').trim() ===
                         String(payload.product_sku).trim();
-      if (sameInvoice && sameSku) matching.push(existingBatches[di].batch_id);
+      if (sameInvoice && sameSku) matching.push(existingRows[di].batch_id);
     }
     if (matching.length >= allowedUnits) {
       return {
@@ -2179,17 +2211,24 @@ function createBatch(payload, userEmail) {
     }
   } else if (payload.zoho_so_number && !payload.product_sku) {
     // Fallback: invoice-level dedup when no SKU provided (should not happen from 29.3 paths).
-    var existingBatches2 = sheetToObjects(BATCHES_SHEET_NAME);
-    for (var dj = 0; dj < existingBatches2.length; dj++) {
-      if (String(existingBatches2[dj].zoho_so_number || '').trim() ===
+    for (var dj = 0; dj < existingRows.length; dj++) {
+      if (String(existingRows[dj].zoho_so_number || '').trim() ===
           String(payload.zoho_so_number).trim()) {
         return {
           ok: false,
           error: 'duplicate_so_number',
-          message: 'A batch for SO/invoice ' + payload.zoho_so_number + ' already exists: ' + existingBatches2[dj].batch_id
+          message: 'A batch for SO/invoice ' + payload.zoho_so_number + ' already exists: ' + existingRows[dj].batch_id
         };
       }
     }
+  }
+  return null;
+}
+
+function createBatch(payload, userEmail) {
+  var isPending = !payload.schedule_id || !payload.start_date;
+  if ((!payload.product_sku && !payload.recipe_id) || (!payload.customer_name && !payload.customer_firstname)) {
+    return { ok: false, error: 'missing_fields', message: 'product_sku (or recipe_id) and customer name are required' };
   }
 
   // Auto-compose customer_name from first/last if not provided (backward compat)
@@ -2223,9 +2262,17 @@ function createBatch(payload, userEmail) {
     }
   }
 
-  // Lock to prevent duplicate IDs from concurrent requests
+  // Lock to prevent duplicate IDs from concurrent requests, AND (D-18) to make the
+  // invoice+SKU dedup check-then-append atomic (T-82-02-01) — the read now happens AFTER
+  // the lock via sheetToObjects(..., true) (bypassing the per-request cache), inside the
+  // same try that generates the batch ID and appends the row.
   var lock = acquireScriptLock(15000);
   try {
+    if (payload.zoho_so_number) {
+      var dedup = batchDedupDecision(sheetToObjects(BATCHES_SHEET_NAME, true), payload);
+      if (dedup) return dedup;
+    }
+
     var batchId = generateNextId(BATCHES_SHEET_NAME, 'SV-B-', 6);
     var accessToken = Utilities.getUuid().replace(/-/g, '');
     var now = new Date().toISOString();
@@ -2799,10 +2846,32 @@ function updateBatchTask(payload, completedBy) {
   var luCol = headers.indexOf('last_updated');
   if (luCol !== -1) sheet.getRange(row, luCol + 1).setValue(now);
 
-  return { ok: true, message: 'Task updated' };
+  // D-09 (Phase 82, server half): return the task's own batch_id so callers that omit
+  // payload.batch_id (e.g. admin.js:6346/6368's vessel-transfer-confirm and skip-transfer
+  // flows) can still bust the correct gb:<batchId> cache entry instead of invalidating
+  // undefined.
+  return { ok: true, message: 'Task updated', batch_id: String(current.batch_id || '') };
 }
 
 // --- POST: Bulk Update Batch Tasks ---
+
+// D-09 (Phase 82, server half): de-duplicated, order-preserving list of non-empty batch_id
+// strings from entries whose `ok` is truthy. Pure — tolerates undefined/non-array input.
+function _uniqueBatchIds(results) {
+  if (!Array.isArray(results)) return [];
+  var seen = {};
+  var ids = [];
+  for (var i = 0; i < results.length; i++) {
+    var r = results[i];
+    if (!r || !r.ok) continue;
+    var id = r.batch_id;
+    if (!id) continue;
+    if (seen[id]) continue;
+    seen[id] = true;
+    ids.push(id);
+  }
+  return ids;
+}
 
 function bulkUpdateBatchTasks(payload, email) {
   if (!payload.tasks || !Array.isArray(payload.tasks) || payload.tasks.length === 0) {
@@ -2815,7 +2884,14 @@ function bulkUpdateBatchTasks(payload, email) {
   for (var i = 0; i < payload.tasks.length; i++) {
     results.push(updateBatchTask(payload.tasks[i], email));
   }
-  return { ok: true, results: results };
+  // D-09: bust every distinct batch these tasks belong to — the calendar-view bulk save
+  // (admin.js:8042) can carry tasks spanning multiple batches in one request, and this
+  // function had no per-task cache-invalidation logic of its own before Phase 82.
+  var affected = _uniqueBatchIds(results);
+  for (var a = 0; a < affected.length; a++) {
+    _invalidateBatchCache(affected[a]);
+  }
+  return { ok: true, results: results, affected_batch_ids: affected };
 }
 
 // --- POST: Add Ad-Hoc Batch Task ---
@@ -4850,19 +4926,28 @@ function updateGiftCardInvoice(payload) {
 
   if (!certNum || !invoiceNumber) return { ok: false, error: 'missing_fields' };
 
-  var result = findRowById(GIFT_CARDS_SHEET_NAME, certNum);
-  if (result.row === -1) return { ok: false, error: 'not_found' };
+  // D-18 (Phase 82): whole read-modify-write wrapped under the script lock (T-82-02-02) —
+  // this function previously raced redeemGiftCard/reloadGiftCard/voidGiftCard on the same
+  // GiftCards row with no mutex at all. Matches the acquireScriptLock/finally shape used by
+  // the other locked functions in this file (e.g. createBatch, above).
+  var lock = acquireScriptLock(15000);
+  try {
+    var result = findRowById(GIFT_CARDS_SHEET_NAME, certNum);
+    if (result.row === -1) return { ok: false, error: 'not_found' };
 
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(GIFT_CARDS_SHEET_NAME);
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var invoiceCol = headers.indexOf('zoho_invoice_number') + 1;
-  var updatedCol = headers.indexOf('last_updated') + 1;
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(GIFT_CARDS_SHEET_NAME);
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var invoiceCol = headers.indexOf('zoho_invoice_number') + 1;
+    var updatedCol = headers.indexOf('last_updated') + 1;
 
-  if (invoiceCol > 0) sheet.getRange(result.row, invoiceCol).setValue(invoiceNumber);
-  if (updatedCol > 0) sheet.getRange(result.row, updatedCol).setValue(new Date().toISOString());
+    if (invoiceCol > 0) sheet.getRange(result.row, invoiceCol).setValue(invoiceNumber);
+    if (updatedCol > 0) sheet.getRange(result.row, updatedCol).setValue(new Date().toISOString());
 
-  invalidateSheetCache(GIFT_CARDS_SHEET_NAME);
-  return { ok: true };
+    invalidateSheetCache(GIFT_CARDS_SHEET_NAME);
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
