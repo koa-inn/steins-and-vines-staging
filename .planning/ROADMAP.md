@@ -1912,12 +1912,12 @@ Plans:
   3. `updateGiftCardInvoice` runs under the script lock and `createBatch`'s dedup guard sits inside the lock — owner Apps Script redeploy done and the rollback version number recorded
   4. The four owner checks are answered and written into the phase summary: which tabs carry formulas/named ranges/pivots; Apps Script Executions failures in the last 90 days; Railway plan and backup/PITR entitlement; live row count per sheet
 
-**Plans:** 6/10 plans executed
+**Plans:** 7/10 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 82-01-PLAN.md — Owner pre-migration checks (formulas, Executions failures, Railway PITR, row counts, Reservations/Holds activity) [checkpoint]
+- [x] 82-01-PLAN.md — Owner pre-migration checks (formulas, Executions failures, Railway PITR, row counts, Reservations/Holds activity) [checkpoint]
 - [x] 82-02-PLAN.md — Apps Script: D-18 lock fixes, D-11 server_token write entries, per-task batch cache-bust
 - [x] 82-04-PLAN.md — Middleware: shared forwarder + allowlisted POST /api/admin/proxy (39 actions)
 - [x] 82-08-PLAN.md — batch.js: test seam + move to /api/batch/public/*
