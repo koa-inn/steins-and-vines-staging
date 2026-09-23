@@ -48,7 +48,7 @@
   }
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-09-23T20:36:46.520Z';
+  var BUILD_TIMESTAMP = '2026-09-23T21:17:22.506Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP); // eslint-disable-line no-console -- deploy build-verification log
 
   var accessToken = null;
@@ -740,95 +740,43 @@
     });
   }
 
+  // 82-06 (D-16): the server-side authorization pre-check these helpers used
+  // to make is removed -- that action is not on the /api/admin/proxy
+  // allowlist and would now 400. These direct-Sheets helpers remain plain
+  // (unauthenticated client-side) calls until 82-07 deletes them along with
+  // their remaining call sites. After this change admin.js calls no such
+  // pre-check action anywhere.
   function sheetsUpdate(range, values) {
-    // If Admin API is configured, verify authorization server-side before write
-    var writePromise;
-    if (SHEETS_CONFIG.ADMIN_API_URL) {
-      writePromise = adminApiGet('check_auth').then(function (result) {
-        if (!result.authorized) {
-          throw new Error('Not authorized to make changes');
-        }
-      });
-    } else {
-      writePromise = Promise.resolve();
-    }
-
-    return writePromise.then(function () {
-      var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
-        SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range) +
-        '?valueInputOption=USER_ENTERED';
-      return fetchWithRetry(url, {
-        method: 'PUT',
-        headers: {
-          Authorization: 'Bearer ' + accessToken,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ values: values })
-      }).then(function (res) {
-        if (!res.ok) throw new Error('Sheets API error: ' + res.status);
-        return res.json();
-      });
+    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
+      SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range) +
+      '?valueInputOption=USER_ENTERED';
+    return fetchWithRetry(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer ' + accessToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ values: values })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('Sheets API error: ' + res.status);
+      return res.json();
     });
   }
 
   function sheetsAppend(range, values) {
-    // If Admin API is configured, verify authorization server-side before write
-    var writePromise;
-    if (SHEETS_CONFIG.ADMIN_API_URL) {
-      writePromise = adminApiGet('check_auth').then(function (result) {
-        if (!result.authorized) {
-          throw new Error('Not authorized to make changes');
-        }
-      });
-    } else {
-      writePromise = Promise.resolve();
-    }
-
-    return writePromise.then(function () {
-      var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
-        SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range) +
-        ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
-      return fetchWithRetry(url, {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + accessToken,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ values: values })
-      }).then(function (res) {
-        if (!res.ok) throw new Error('Sheets API error: ' + res.status);
-        return res.json();
-      });
-    });
-  }
-
-  function sheetsBatchUpdate(requests) {
-    // If Admin API is configured, verify authorization server-side before write
-    var writePromise;
-    if (SHEETS_CONFIG.ADMIN_API_URL) {
-      writePromise = adminApiGet('check_auth').then(function (result) {
-        if (!result.authorized) {
-          throw new Error('Not authorized to make changes');
-        }
-      });
-    } else {
-      writePromise = Promise.resolve();
-    }
-
-    return writePromise.then(function () {
-      var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
-        SHEETS_CONFIG.SPREADSHEET_ID + ':batchUpdate';
-      return fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + accessToken,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ requests: requests })
-      }).then(function (res) {
-        if (!res.ok) throw new Error('Sheets API error: ' + res.status);
-        return res.json();
-      });
+    var url = 'https://sheets.googleapis.com/v4/spreadsheets/' +
+      SHEETS_CONFIG.SPREADSHEET_ID + '/values/' + encodeURIComponent(range) +
+      ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
+    return fetchWithRetry(url, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + accessToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ values: values })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('Sheets API error: ' + res.status);
+      return res.json();
     });
   }
 
@@ -840,55 +788,28 @@
     var _resStatusFilterEl = document.getElementById('res-status-filter');
     reservationsPagination.currentFilter = (_resStatusFilterEl ? _resStatusFilterEl.value : '') || 'pending';
 
-    // Use Admin API if configured (server-side auth on every request)
-    if (SHEETS_CONFIG.ADMIN_API_URL) {
-      Promise.all([
-        adminApiGet('get_kits'),
-        loadReservationsPage(), // Use paginated loading
-        adminApiGet('get_holds'),
-        adminApiGet('get_schedule'),
-        adminApiGet('get_dashboard_summary') // Server-side aggregated metrics
-      ]).then(function (results) {
-        parseSheetData(results[0].data, 'kits');
-        // Reservations already parsed in loadReservationsPage
-        parseSheetData(results[2].data, 'holds');
-        parseSheetData(results[3].data, 'schedule');
-
-        // Store dashboard summary for accurate counts with pagination
-        dashboardSummary = results[4].data || null;
-
-        // Ingredients still loaded via public CSV (no auth needed)
-        return sheetsGet(SHEETS_CONFIG.SHEET_NAMES.INGREDIENTS + '!A:Z');
-      }).then(function (ingredientsResult) {
-        parseSheetData(ingredientsResult, 'ingredients');
-        finishDataLoad();
-      }).catch(function (err) {
-        console.error('Failed to load data via Admin API:', err); // eslint-disable-line no-console -- operational: reports dashboard data-load failure to console for troubleshooting
-        // Show error to user
-        showToast('Failed to load data: ' + err.message, 'error');
-      });
-      return;
-    }
-
-    // Fallback: direct Sheets API (less secure, no pagination)
     Promise.all([
-      sheetsGet(SHEETS_CONFIG.SHEET_NAMES.KITS + '!A:Z'),
-      sheetsGet(SHEETS_CONFIG.SHEET_NAMES.INGREDIENTS + '!A:Z'),
-      sheetsGet(SHEETS_CONFIG.SHEET_NAMES.RESERVATIONS + '!A:Z'),
-      sheetsGet(SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!A:Z'),
-      sheetsGet(SHEETS_CONFIG.SHEET_NAMES.SCHEDULE + '!A:Z')
+      adminApiGet('get_kits'),
+      loadReservationsPage(), // Use paginated loading
+      adminApiGet('get_holds'),
+      adminApiGet('get_schedule'),
+      adminApiGet('get_dashboard_summary'), // Server-side aggregated metrics
+      adminApiGet('get_ingredients') // 82-06 D-15: proxied read, replaces the direct Sheets API call
     ]).then(function (results) {
-      parseSheetData(results[0], 'kits');
-      parseSheetData(results[1], 'ingredients');
-      parseSheetData(results[2], 'reservations');
-      parseSheetData(results[3], 'holds');
-      parseSheetData(results[4], 'schedule');
-      // Set pagination totals for fallback mode
-      reservationsPagination.total = reservationsData.length;
-      reservationsPagination.filtered = reservationsData.length;
+      parseSheetData(results[0].data, 'kits');
+      // Reservations already parsed in loadReservationsPage
+      parseSheetData(results[2].data, 'holds');
+      parseSheetData(results[3].data, 'schedule');
+
+      // Store dashboard summary for accurate counts with pagination
+      dashboardSummary = results[4].data || null;
+
+      parseSheetData(results[5].data, 'ingredients');
       finishDataLoad();
     }).catch(function (err) {
-      console.error('Failed to load data:', err); // eslint-disable-line no-console -- operational: reports dashboard data-load failure to console for troubleshooting
+      console.error('Failed to load data via Admin API:', err); // eslint-disable-line no-console -- operational: reports dashboard data-load failure to console for troubleshooting
+      // Show error to user
+      showToast('Failed to load data: ' + err.message, 'error');
     });
   }
 
@@ -896,10 +817,6 @@
    * Load a page of reservations with server-side filtering
    */
   function loadReservationsPage() {
-    if (!SHEETS_CONFIG.ADMIN_API_URL) {
-      return Promise.resolve({ data: { values: [] } });
-    }
-
     var params = {
       limit: reservationsPagination.limit,
       offset: reservationsPagination.offset,
@@ -1377,17 +1294,12 @@
         reservationsPagination.offset = 0;
         reservationsPagination.currentFilter = this.value;
 
-        // If using Admin API, reload from server with new filter
-        if (SHEETS_CONFIG.ADMIN_API_URL) {
-          loadReservationsPage().then(function () {
-            renderReservationsTab();
-          }).catch(function (err) {
-            console.error('Failed to load filtered reservations:', err); // eslint-disable-line no-console -- operational: reports filtered reservations load failure for troubleshooting
-          });
-        } else {
-          // Client-side filtering
+        // Reload from server with the new filter
+        loadReservationsPage().then(function () {
           renderReservationsTab();
-        }
+        }).catch(function (err) {
+          console.error('Failed to load filtered reservations:', err); // eslint-disable-line no-console -- operational: reports filtered reservations load failure for troubleshooting
+        });
       });
     }
 
@@ -1421,39 +1333,8 @@
     var emptyMsg = document.getElementById('reservations-empty');
     if (!tbody) return;
 
-    var filterVal = document.getElementById('res-status-filter').value;
+    // Data is already filtered + sorted server-side (loadReservationsPage).
     var filtered = reservationsData;
-
-    // When using Admin API, data is already filtered server-side
-    // Only apply client-side filtering for fallback mode
-    if (!SHEETS_CONFIG.ADMIN_API_URL) {
-      if (filterVal === 'all') {
-        // Show everything including archived
-        filtered = reservationsData;
-      } else if (filterVal === 'active') {
-        // Show all except archived
-        filtered = reservationsData.filter(function (r) {
-          var status = (r.status || '').toLowerCase().trim();
-          if (!status) status = 'pending';
-          return status !== 'archived';
-        });
-      } else {
-        // Filter by specific status
-        filtered = reservationsData.filter(function (r) {
-          var status = (r.status || '').toLowerCase().trim();
-          if (!status) status = 'pending'; // treat empty status as pending
-          return status === filterVal;
-        });
-      }
-
-      // Sort newest first by submitted_at (client-side)
-      filtered.sort(function (a, b) {
-        return (b.submitted_at || '').localeCompare(a.submitted_at || '');
-      });
-
-      // Update pagination totals for fallback mode
-      reservationsPagination.filtered = filtered.length;
-    }
 
     tbody.innerHTML = '';
 
@@ -1798,108 +1679,47 @@
 
   function confirmHold(hold, reservation) {
     var qty = parseInt(hold.qty, 10) || 0;
-    var holdRow = hold._rowIndex;
 
     // Find the kit row by SKU
     var kit = kitsData.find(function (k) { return k.sku === hold.sku; });
 
-    // Use Admin API with version checking if available
-    if (SHEETS_CONFIG.ADMIN_API_URL) {
-      var now = new Date().toISOString();
-      adminApiPost('update_hold', {
-        holdId: hold.hold_id,
-        expectedVersion: hold.last_updated || null,
-        updates: {
-          status: 'confirmed',
-          resolved_at: now,
-          resolved_by: userEmail
+    var now = new Date().toISOString();
+    adminApiPost('update_hold', {
+      holdId: hold.hold_id,
+      expectedVersion: hold.last_updated || null,
+      updates: {
+        status: 'confirmed',
+        resolved_at: now,
+        resolved_by: userEmail
+      }
+    })
+      .then(function (result) {
+        hold.status = 'confirmed';
+        hold.resolved_at = now;
+        hold.resolved_by = userEmail;
+        if (result.newVersion) {
+          hold.last_updated = result.newVersion;
+        }
+        // Update kit stock via direct API (no version conflict likely for inventory)
+        if (kit) {
+          return updateKitStockAfterConfirm(kit, qty);
         }
       })
-        .then(function (result) {
-          hold.status = 'confirmed';
-          hold.resolved_at = now;
-          hold.resolved_by = userEmail;
-          if (result.newVersion) {
-            hold.last_updated = result.newVersion;
+      .then(function () {
+        checkReservationStatus(reservation);
+        renderReservationsTab();
+        renderKitsTab();
+        renderDashboard();
+      })
+      .catch(function (err) {
+        if (err.message && err.message.indexOf('modified by another user') !== -1) {
+          if (confirm(err.message + '\n\nWould you like to refresh the data now?')) {
+            loadAllData();
           }
-          // Update kit stock via direct API (no version conflict likely for inventory)
-          if (kit) {
-            return updateKitStockAfterConfirm(kit, qty);
-          }
-        })
-        .then(function () {
-          checkReservationStatus(reservation);
-          renderReservationsTab();
-          renderKitsTab();
-          renderDashboard();
-        })
-        .catch(function (err) {
-          if (err.message && err.message.indexOf('modified by another user') !== -1) {
-            if (confirm(err.message + '\n\nWould you like to refresh the data now?')) {
-              loadAllData();
-            }
-          } else {
-            showToast('Failed to confirm hold: ' + err.message, 'error');
-          }
-        });
-      return;
-    }
-
-    // Fallback: direct Sheets API
-    var updates = [];
-
-    // Update hold status to "confirmed"
-    var holdStatusCol = holdsHeaders.indexOf('status');
-    var holdResolvedAtCol = holdsHeaders.indexOf('resolved_at');
-    var holdResolvedByCol = holdsHeaders.indexOf('resolved_by');
-    var holdLastUpdatedCol = holdsHeaders.indexOf('last_updated');
-    if (holdStatusCol !== -1) {
-      var holdRange = SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!' + colLetter(holdStatusCol) + holdRow;
-      updates.push(sheetsUpdate(holdRange, [['confirmed']]));
-    }
-    if (holdResolvedAtCol !== -1) {
-      var resolvedRange = SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!' + colLetter(holdResolvedAtCol) + holdRow;
-      updates.push(sheetsUpdate(resolvedRange, [[new Date().toISOString()]]));
-    }
-    if (holdResolvedByCol !== -1) {
-      var byRange = SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!' + colLetter(holdResolvedByCol) + holdRow;
-      updates.push(sheetsUpdate(byRange, [[userEmail]]));
-    }
-    if (holdLastUpdatedCol !== -1) {
-      var lastUpdatedRange = SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!' + colLetter(holdLastUpdatedCol) + holdRow;
-      updates.push(sheetsUpdate(lastUpdatedRange, [[new Date().toISOString()]]));
-    }
-
-    // Update kit: stock -= qty, on_hold -= qty
-    if (kit) {
-      var stockCol = kitsHeaders.indexOf('stock');
-      var onHoldCol = kitsHeaders.indexOf('on_hold');
-      if (stockCol !== -1) {
-        var newStock = Math.max(0, (parseInt(kit.stock, 10) || 0) - qty);
-        var stockRange = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(stockCol) + kit._rowIndex;
-        updates.push(sheetsUpdate(stockRange, [[newStock]]));
-        kit.stock = String(newStock);
-      }
-      if (onHoldCol !== -1) {
-        var newOnHold = Math.max(0, (parseInt(kit.on_hold, 10) || 0) - qty);
-        var onHoldRange = SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(onHoldCol) + kit._rowIndex;
-        updates.push(sheetsUpdate(onHoldRange, [[newOnHold]]));
-        kit.on_hold = String(newOnHold);
-      }
-    }
-
-    Promise.all(updates).then(function () {
-      hold.status = 'confirmed';
-      hold.resolved_at = new Date().toISOString();
-      hold.resolved_by = userEmail;
-      hold.last_updated = new Date().toISOString();
-      checkReservationStatus(reservation);
-      renderReservationsTab();
-      renderKitsTab();
-      renderDashboard();
-    }).catch(function (err) {
-      showToast('Failed to confirm hold: ' + err.message, 'error');
-    });
+        } else {
+          showToast('Failed to confirm hold: ' + err.message, 'error');
+        }
+      });
   }
 
   function updateKitStockAfterConfirm(kit, qty) {
@@ -1923,109 +1743,46 @@
 
   function releaseHold(hold, reservation) {
     var qty = parseInt(hold.qty, 10) || 0;
-    var holdRow = hold._rowIndex;
 
     var kit = kitsData.find(function (k) { return k.sku === hold.sku; });
 
-    // Use Admin API with version checking if available
-    if (SHEETS_CONFIG.ADMIN_API_URL) {
-      var now = new Date().toISOString();
-      adminApiPost('update_hold', {
-        holdId: hold.hold_id,
-        expectedVersion: hold.last_updated || null,
-        updates: {
-          status: 'released',
-          resolved_at: now,
-          resolved_by: userEmail
+    var now = new Date().toISOString();
+    adminApiPost('update_hold', {
+      holdId: hold.hold_id,
+      expectedVersion: hold.last_updated || null,
+      updates: {
+        status: 'released',
+        resolved_at: now,
+        resolved_by: userEmail
+      }
+    })
+      .then(function (result) {
+        hold.status = 'released';
+        hold.resolved_at = now;
+        hold.resolved_by = userEmail;
+        if (result.newVersion) {
+          hold.last_updated = result.newVersion;
+        }
+        // Release: only decrement on_hold (stock unchanged)
+        if (kit) {
+          return updateKitOnHoldAfterRelease(kit, qty);
         }
       })
-        .then(function (result) {
-          hold.status = 'released';
-          hold.resolved_at = now;
-          hold.resolved_by = userEmail;
-          if (result.newVersion) {
-            hold.last_updated = result.newVersion;
+      .then(function () {
+        checkReservationStatus(reservation);
+        renderReservationsTab();
+        renderKitsTab();
+        renderDashboard();
+      })
+      .catch(function (err) {
+        if (err.message && err.message.indexOf('modified by another user') !== -1) {
+          if (confirm(err.message + '\n\nWould you like to refresh the data now?')) {
+            loadAllData();
           }
-          // Release: only decrement on_hold (stock unchanged)
-          if (kit) {
-            return updateKitOnHoldAfterRelease(kit, qty);
-          }
-        })
-        .then(function () {
-          checkReservationStatus(reservation);
-          renderReservationsTab();
-          renderKitsTab();
-          renderDashboard();
-        })
-        .catch(function (err) {
-          if (err.message && err.message.indexOf('modified by another user') !== -1) {
-            if (confirm(err.message + '\n\nWould you like to refresh the data now?')) {
-              loadAllData();
-            }
-          } else {
-            showToast('Failed to release hold: ' + err.message, 'error');
-          }
-        });
-      return;
-    }
-
-    // Fallback: direct Sheets API
-    var updates = [];
-
-    var holdStatusCol = holdsHeaders.indexOf('status');
-    var holdResolvedAtCol = holdsHeaders.indexOf('resolved_at');
-    var holdResolvedByCol = holdsHeaders.indexOf('resolved_by');
-    var holdLastUpdatedCol = holdsHeaders.indexOf('last_updated');
-    if (holdStatusCol !== -1) {
-      updates.push(sheetsUpdate(
-        SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!' + colLetter(holdStatusCol) + holdRow,
-        [['released']]
-      ));
-    }
-    if (holdResolvedAtCol !== -1) {
-      updates.push(sheetsUpdate(
-        SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!' + colLetter(holdResolvedAtCol) + holdRow,
-        [[new Date().toISOString()]]
-      ));
-    }
-    if (holdResolvedByCol !== -1) {
-      updates.push(sheetsUpdate(
-        SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!' + colLetter(holdResolvedByCol) + holdRow,
-        [[userEmail]]
-      ));
-    }
-    if (holdLastUpdatedCol !== -1) {
-      updates.push(sheetsUpdate(
-        SHEETS_CONFIG.SHEET_NAMES.HOLDS + '!' + colLetter(holdLastUpdatedCol) + holdRow,
-        [[new Date().toISOString()]]
-      ));
-    }
-
-    // Release: only decrement on_hold (stock unchanged)
-    if (kit) {
-      var onHoldCol = kitsHeaders.indexOf('on_hold');
-      if (onHoldCol !== -1) {
-        var newOnHold = Math.max(0, (parseInt(kit.on_hold, 10) || 0) - qty);
-        updates.push(sheetsUpdate(
-          SHEETS_CONFIG.SHEET_NAMES.KITS + '!' + colLetter(onHoldCol) + kit._rowIndex,
-          [[newOnHold]]
-        ));
-        kit.on_hold = String(newOnHold);
-      }
-    }
-
-    Promise.all(updates).then(function () {
-      hold.status = 'released';
-      hold.resolved_at = new Date().toISOString();
-      hold.resolved_by = userEmail;
-      hold.last_updated = new Date().toISOString();
-      checkReservationStatus(reservation);
-      renderReservationsTab();
-      renderKitsTab();
-      renderDashboard();
-    }).catch(function (err) {
-      showToast('Failed to release hold: ' + err.message, 'error');
-    });
+        } else {
+          showToast('Failed to release hold: ' + err.message, 'error');
+        }
+      });
   }
 
   function updateKitOnHoldAfterRelease(kit, qty) {
@@ -2056,53 +1813,17 @@
   }
 
   function setReservationStatus(reservation, newStatus) {
-    var statusCol = reservationsHeaders.indexOf('status');
-    if (statusCol === -1) { showToast('Cannot find status column.', 'warning'); return; }
-
     var wasNotConfirmed = reservation.status !== 'confirmed';
 
-    // Use Admin API with version checking if available
-    if (SHEETS_CONFIG.ADMIN_API_URL) {
-      adminApiPost('update_reservation', {
-        reservationId: reservation.reservation_id,
-        expectedVersion: reservation.last_updated || null,
-        updates: { status: newStatus }
-      })
-        .then(function (result) {
-          reservation.status = newStatus;
-          if (result.newVersion) {
-            reservation.last_updated = result.newVersion;
-          }
-          renderReservationsTab();
-          renderDashboard();
-          if (newStatus === 'confirmed' && wasNotConfirmed && reservation.customer_email) {
-            openConfirmationEmail(reservation);
-          }
-        })
-        .catch(function (err) {
-          if (err.message && err.message.indexOf('modified by another user') !== -1) {
-            if (confirm(err.message + '\n\nWould you like to refresh the data now?')) {
-              loadAllData();
-            }
-          } else {
-            showToast('Failed to update reservation: ' + err.message, 'error');
-          }
-        });
-      return;
-    }
-
-    // Fallback: direct Sheets API (no version checking)
-    var cellRef = SHEETS_CONFIG.SHEET_NAMES.RESERVATIONS + '!' + colLetter(statusCol) + reservation._rowIndex;
-    sheetsUpdate(cellRef, [[newStatus]])
-      .then(function () {
+    adminApiPost('update_reservation', {
+      reservationId: reservation.reservation_id,
+      expectedVersion: reservation.last_updated || null,
+      updates: { status: newStatus }
+    })
+      .then(function (result) {
         reservation.status = newStatus;
-        // Update last_updated locally
-        var updatedCol = reservationsHeaders.indexOf('last_updated');
-        if (updatedCol !== -1) {
-          var now = new Date().toISOString();
-          var updatedRef = SHEETS_CONFIG.SHEET_NAMES.RESERVATIONS + '!' + colLetter(updatedCol) + reservation._rowIndex;
-          sheetsUpdate(updatedRef, [[now]]);
-          reservation.last_updated = now;
+        if (result.newVersion) {
+          reservation.last_updated = result.newVersion;
         }
         renderReservationsTab();
         renderDashboard();
@@ -2111,7 +1832,13 @@
         }
       })
       .catch(function (err) {
-        showToast('Failed to update reservation: ' + err.message, 'error');
+        if (err.message && err.message.indexOf('modified by another user') !== -1) {
+          if (confirm(err.message + '\n\nWould you like to refresh the data now?')) {
+            loadAllData();
+          }
+        } else {
+          showToast('Failed to update reservation: ' + err.message, 'error');
+        }
       });
   }
 
@@ -2134,40 +1861,20 @@
       var wasNotConfirmed = reservation.status !== 'confirmed';
       reservation.status = newStatus;
 
-      // Use Admin API if available (no version check since this is auto-triggered)
-      if (SHEETS_CONFIG.ADMIN_API_URL) {
-        adminApiPost('update_reservation', {
-          reservationId: reservation.reservation_id,
-          expectedVersion: null, // Skip version check for auto-updates
-          updates: { status: newStatus }
-        })
-          .then(function (result) {
-            if (result.newVersion) {
-              reservation.last_updated = result.newVersion;
-            }
-          })
-          .catch(function (err) {
-            console.error('Failed to auto-update reservation status:', err); // eslint-disable-line no-console -- operational: reports auto-update reservation status failure for troubleshooting
-          });
-      } else {
-        var statusCol = reservationsHeaders.indexOf('status');
-        if (statusCol !== -1) {
-          sheetsUpdate(
-            SHEETS_CONFIG.SHEET_NAMES.RESERVATIONS + '!' + colLetter(statusCol) + reservation._rowIndex,
-            [[newStatus]]
-          );
-          // Also update last_updated
-          var updatedCol = reservationsHeaders.indexOf('last_updated');
-          if (updatedCol !== -1) {
-            var now = new Date().toISOString();
-            sheetsUpdate(
-              SHEETS_CONFIG.SHEET_NAMES.RESERVATIONS + '!' + colLetter(updatedCol) + reservation._rowIndex,
-              [[now]]
-            );
-            reservation.last_updated = now;
+      // No version check since this is auto-triggered
+      adminApiPost('update_reservation', {
+        reservationId: reservation.reservation_id,
+        expectedVersion: null, // Skip version check for auto-updates
+        updates: { status: newStatus }
+      })
+        .then(function (result) {
+          if (result.newVersion) {
+            reservation.last_updated = result.newVersion;
           }
-        }
-      }
+        })
+        .catch(function (err) {
+          console.error('Failed to auto-update reservation status:', err); // eslint-disable-line no-console -- operational: reports auto-update reservation status failure for troubleshooting
+        });
 
       // Auto-open confirmation email when reservation transitions to confirmed
       if (newStatus === 'confirmed' && wasNotConfirmed && reservation.customer_email) {
@@ -5143,34 +4850,20 @@
 
     // Save via Admin API — this writes to the sheet AND syncs featured SKUs
     // to PropertiesService so the public FEATURED_API_URL endpoint stays current.
-    if (SHEETS_CONFIG.ADMIN_API_URL) {
-      adminApiPost('update_homepage', { values: rows })
-        .then(function (result) {
-          if (!result.ok) throw new Error(result.message || 'Save failed');
-          // Clear local cache so homepage re-fetches fresh featured data
-          try {
-            localStorage.removeItem('sv-homepage-featured');
-            localStorage.removeItem('sv-homepage-featured-ts');
-          } catch (e) {}
-          showToast('Homepage settings saved!', 'success');
-        })
-        .catch(function (err) {
-          console.error('[Homepage] Error saving via Admin API:', err); // eslint-disable-line no-console -- operational: reports homepage settings save failure for troubleshooting
-          showToast('Error saving homepage settings: ' + err.message, 'error');
-        });
-    } else {
-      // Fallback: direct Sheets API (does not update the public featured endpoint)
-      var clearUrl = 'https://sheets.googleapis.com/v4/spreadsheets/' +
-        SHEETS_CONFIG.SPREADSHEET_ID + '/values/' +
-        encodeURIComponent(SHEETS_CONFIG.SHEET_NAMES.HOMEPAGE + '!A:E') + ':clear';
-      fetch(clearUrl, { method: 'POST', headers: { 'Authorization': 'Bearer ' + accessToken } })
-        .then(function () { return sheetsUpdate(SHEETS_CONFIG.SHEET_NAMES.HOMEPAGE + '!A1', rows); })
-        .then(function () { showToast('Homepage settings saved to Google Sheets!', 'success'); })
-        .catch(function (err) {
-          console.error('[Homepage] Error saving:', err); // eslint-disable-line no-console -- operational: reports homepage settings save failure for troubleshooting
-          showToast('Error saving homepage settings: ' + err.message, 'error');
-        });
-    }
+    adminApiPost('update_homepage', { values: rows })
+      .then(function (result) {
+        if (!result.ok) throw new Error(result.message || 'Save failed');
+        // Clear local cache so homepage re-fetches fresh featured data
+        try {
+          localStorage.removeItem('sv-homepage-featured');
+          localStorage.removeItem('sv-homepage-featured-ts');
+        } catch (e) {}
+        showToast('Homepage settings saved!', 'success');
+      })
+      .catch(function (err) {
+        console.error('[Homepage] Error saving via Admin API:', err); // eslint-disable-line no-console -- operational: reports homepage settings save failure for troubleshooting
+        showToast('Error saving homepage settings: ' + err.message, 'error');
+      });
   }
 
   function collectHomepageData() {
@@ -8606,9 +8299,7 @@
   var _origFinishDataLoad = finishDataLoad;
   finishDataLoad = function () {
     _origFinishDataLoad();
-    if (SHEETS_CONFIG.ADMIN_API_URL) {
-      loadBatchDashboardSummary();
-    }
+    loadBatchDashboardSummary();
   };
 
   function triggerBatchLoad() {
