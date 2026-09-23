@@ -148,6 +148,8 @@ function handleReadAction(action, getParam, authEmail) {
   var status = getParam('status') || ''; // Filter by status
 
   switch (action) {
+    // Phase 82: browser caller removed at cutover; kept until the old admin.js is gone from
+    // prod (D-16/D-19) — delete in a later phase.
     case 'check_auth':
       return { ok: true, email: authEmail, authorized: true };
 
@@ -168,9 +170,6 @@ function handleReadAction(action, getParam, authEmail) {
 
     case 'get_ingredients':
       return { ok: true, data: getIngredients() };
-
-    case 'get_config':
-      return { ok: true, data: getConfig() };
 
     case 'get_dashboard_summary':
       return { ok: true, data: _cachedGet('gds', 60, function() { return getDashboardSummary(); }) };
@@ -415,6 +414,27 @@ function doPost(e) {
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sRegenerateBatchTokenResult);
       }
+      // Admin panel inventory/schedule actions (Phase 82 D-21). Six typed, locked write
+      // actions replacing admin.js's direct Google Sheets API calls — never a generic cell
+      // writer (T-82-03-01). server_token only, never the staff switch (T-82-03-07).
+      if (action === 'update_inventory_cells') {
+        return _jsonResponse(updateInventoryCells(payload));
+      }
+      if (action === 'append_inventory_row') {
+        return _jsonResponse(appendInventoryRow(payload));
+      }
+      if (action === 'import_kits') {
+        return _jsonResponse(importKits(payload));
+      }
+      if (action === 'add_hold') {
+        return _jsonResponse(addManualHold(payload));
+      }
+      if (action === 'append_schedule_slots') {
+        return _jsonResponse(appendScheduleSlots(payload));
+      }
+      if (action === 'update_schedule_slots') {
+        return _jsonResponse(updateScheduleSlots(payload));
+      }
       return _jsonResponse({ ok: false, error: 'invalid_action', message: 'Unknown server action: ' + action });
     }
 
@@ -431,14 +451,8 @@ function doPost(e) {
       case 'update_hold':
         return _jsonResponse(updateHold(payload, authResult.email));
 
-      case 'update_schedule':
-        return _jsonResponse(updateSchedule(payload));
-
       case 'update_homepage':
         return _jsonResponse(updateHomepage(payload));
-
-      case 'update_kits':
-        return _jsonResponse(updateKits(payload));
 
       // Batch tracking endpoints (all invalidate batch cache after write)
       case 'create_batch': {
@@ -991,19 +1005,6 @@ function planScheduleSlotUpdates(updates, currentStatusByRow) {
   return { writes: writes, skipped: skipped };
 }
 
-function getConfig() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
-  if (!sheet) return { values: [] };
-
-  var data = sheet.getDataRange().getValues();
-  // Filter out sensitive data like staff_emails from being returned
-  var filtered = data.filter(function(row) {
-    return row[0] !== 'staff_emails';
-  });
-  return { values: filtered };
-}
-
 /**
  * Get dashboard summary metrics for the admin overview
  * Returns counts of reservations by status, pending holds, low stock kits, etc.
@@ -1378,37 +1379,6 @@ function updateHold(payload, userEmail) {
 }
 
 /**
- * Update the entire Schedule sheet
- * payload: { values: [[...], [...]] }
- */
-function updateSchedule(payload) {
-  var values = payload.values;
-  if (!values || !Array.isArray(values)) {
-    return { ok: false, error: 'invalid_data', message: 'values array required' };
-  }
-
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(SCHEDULE_SHEET_NAME);
-  if (!sheet) return { ok: false, error: 'sheet_not_found' };
-
-  // Sanitize all string values to prevent XSS
-  var sanitizedValues = values.map(function(row) {
-    return row.map(function(cell) {
-      return typeof cell === 'string' ? sanitizeInput(cell) : cell;
-    });
-  });
-
-  // Clear existing data and write new
-  sheet.clearContents();
-  if (sanitizedValues.length > 0) {
-    var numCols = sanitizedValues[0].length;
-    sheet.getRange(1, 1, sanitizedValues.length, numCols).setValues(sanitizedValues);
-  }
-
-  return { ok: true, message: 'Schedule updated' };
-}
-
-/**
  * Update the entire Homepage sheet
  * payload: { values: [[...], [...]] }
  */
@@ -1452,32 +1422,6 @@ function updateHomepage(payload) {
   return { ok: true, message: 'Homepage updated' };
 }
 
-/**
- * Update specific cells in the Kits sheet
- * payload: { updates: [{ row, col, value }, ...] }
- */
-function updateKits(payload) {
-  var updates = payload.updates;
-  if (!updates || !Array.isArray(updates)) {
-    return { ok: false, error: 'invalid_data', message: 'updates array required' };
-  }
-
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(KITS_SHEET_NAME);
-  if (!sheet) return { ok: false, error: 'sheet_not_found' };
-
-  for (var i = 0; i < updates.length; i++) {
-    var u = updates[i];
-    if (u.row && u.col && u.value !== undefined) {
-      // Sanitize string values to prevent XSS
-      var value = typeof u.value === 'string' ? sanitizeInput(u.value) : u.value;
-      sheet.getRange(u.row, u.col).setValue(value);
-    }
-  }
-
-  return { ok: true, message: 'Kits updated', count: updates.length };
-}
-
 // ===== BATCH TRACKING =====
 
 /**
@@ -1494,6 +1438,174 @@ function acquireScriptLock(timeoutMs) {
   var lock = LockService.getScriptLock();
   lock.waitLock(timeoutMs || 10000);
   return lock;
+}
+
+// ===== Phase 82 D-21: 6 typed, locked inventory/schedule write actions =====
+// Each wrapper: resolve sheet (or use its one fixed sheet) -> acquire the 15s script lock ->
+// validate with its pure helper (see the block above getConfig's old location, near
+// getIngredients) -> sanitize every string value with sanitizeInput before writing -> write ->
+// release the lock in a finally. None is a generic cell writer (T-82-03-01) — sheet, field,
+// and row are all constrained by the pure validators.
+
+/**
+ * Update specific cells in the Kits or Ingredients sheet, addressed by header name (not raw
+ * column index) — the header-name addressing (D-21) survives a column reorder that a raw
+ * column-index writer would silently corrupt.
+ * payload: { sheet: 'Kits'|'Ingredients', updates: [{ row, field, value }, ...] }
+ */
+function updateInventoryCells(payload) {
+  var sheetName = resolveInventorySheetName(payload.sheet);
+  if (!sheetName) return { ok: false, error: 'invalid_sheet' };
+  var lock = acquireScriptLock(15000);
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    if (!sheet) return { ok: false, error: 'invalid_sheet' };
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var lastRow = sheet.getLastRow();
+    var result = validateInventoryCellUpdates(headers, lastRow, payload.updates);
+    if (!result.ok) return result;
+    for (var i = 0; i < result.writes.length; i++) {
+      var w = result.writes[i];
+      var value = typeof w.value === 'string' ? sanitizeInput(w.value) : w.value;
+      sheet.getRange(w.row, w.col).setValue(value);
+    }
+    return { ok: true, count: result.writes.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Append one row to the Kits or Ingredients sheet, padded with '' to header length.
+ * payload: { sheet: 'Kits'|'Ingredients', values: [...] }
+ */
+function appendInventoryRow(payload) {
+  var sheetName = resolveInventorySheetName(payload.sheet);
+  if (!sheetName) return { ok: false, error: 'invalid_sheet' };
+  var lock = acquireScriptLock(15000);
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    if (!sheet) return { ok: false, error: 'invalid_sheet' };
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var result = validateAppendRow(headers, payload.values);
+    if (!result.ok) return result;
+    var padded = payload.values.slice();
+    while (padded.length < headers.length) padded.push('');
+    var sanitized = padded.map(function (cell) {
+      return typeof cell === 'string' ? sanitizeInput(cell) : cell;
+    });
+    sheet.appendRow(sanitized);
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Overwrite the entire Kits sheet from an imported table. values[0] must equal the live
+ * header row exactly; every data row must match header length. Same overwrite-from-A1, no
+ * clear, as the direct Sheets API call this replaces.
+ * payload: { values: [[...header...], [...row...], ...] }
+ */
+function importKits(payload) {
+  var lock = acquireScriptLock(15000);
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(KITS_SHEET_NAME);
+    if (!sheet) return { ok: false, error: 'invalid_values' };
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var result = validateKitsImport(headers, payload.values);
+    if (!result.ok) return result;
+    var sanitizedValues = payload.values.map(function (row) {
+      return row.map(function (cell) {
+        return typeof cell === 'string' ? sanitizeInput(cell) : cell;
+      });
+    });
+    sheet.getRange(1, 1, sanitizedValues.length, headers.length).setValues(sanitizedValues);
+    return { ok: true, rows: sanitizedValues.length - 1 };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Append a manual hold row to the Holds sheet in the exact 10-column order admin.js builds
+ * today.
+ * payload: { hold_id, sku, product_name, qty, notes }
+ */
+function addManualHold(payload) {
+  var lock = acquireScriptLock(15000);
+  try {
+    var rowOrError = buildManualHoldRow(payload, new Date().toISOString());
+    if (!Array.isArray(rowOrError)) return rowOrError;
+    var sanitizedRow = rowOrError.map(function (cell) {
+      return typeof cell === 'string' ? sanitizeInput(cell) : cell;
+    });
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOLDS_SHEET_NAME);
+    if (!sheet) return { ok: false, error: 'invalid_hold' };
+    sheet.appendRow(sanitizedRow);
+    return { ok: true, hold_id: rowOrError[0] };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Append rows to the Schedule sheet (columns A:C — date, time, status). Status is limited to
+ * 'available'|'blocked' — 'booked' can never be created this way.
+ * payload: { rows: [['YYYY-MM-DD', time, 'available'|'blocked'], ...] }
+ */
+function appendScheduleSlots(payload) {
+  var lock = acquireScriptLock(15000);
+  try {
+    var result = validateScheduleSlotRows(payload.rows);
+    if (!result.ok) return result;
+    var sanitizedRows = result.rows.map(function (row) {
+      return row.map(function (cell) {
+        return typeof cell === 'string' ? sanitizeInput(cell) : cell;
+      });
+    });
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SCHEDULE_SHEET_NAME);
+    if (!sheet) return { ok: false, error: 'invalid_rows' };
+    sheet.getRange(sheet.getLastRow() + 1, 1, sanitizedRows.length, 3).setValues(sanitizedRows);
+    return { ok: true, count: sanitizedRows.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Update the status of existing Schedule rows. Re-reads each row's CURRENT status under the
+ * lock before deciding to write — a row whose current status is 'booked' is skipped, never
+ * overwritten (T-82-03-04). 'booked' is never a settable target status.
+ * payload: { updates: [{ row, status: 'available'|'blocked' }, ...] }
+ */
+function updateScheduleSlots(payload) {
+  var lock = acquireScriptLock(15000);
+  try {
+    var updates = payload.updates;
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SCHEDULE_SHEET_NAME);
+    if (!sheet) return { ok: false, error: 'invalid_updates' };
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var statusCol = headers.indexOf('status') + 1;
+    if (statusCol <= 0) return { ok: false, error: 'invalid_updates' };
+    var currentStatusByRow = {};
+    if (Array.isArray(updates)) {
+      for (var i = 0; i < updates.length; i++) {
+        var row = updates[i] && updates[i].row;
+        if (typeof row === 'number' && row >= 2 && currentStatusByRow[row] === undefined) {
+          currentStatusByRow[row] = sheet.getRange(row, statusCol).getValue();
+        }
+      }
+    }
+    var plan = planScheduleSlotUpdates(updates, currentStatusByRow);
+    if (plan.ok === false) return plan;
+    for (var w = 0; w < plan.writes.length; w++) {
+      sheet.getRange(plan.writes[w].row, statusCol).setValue(plan.writes[w].status);
+    }
+    return { ok: true, updated: plan.writes.length, skipped: plan.skipped };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function generateNextId(sheetName, prefix, padLength) {
