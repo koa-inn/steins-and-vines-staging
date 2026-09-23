@@ -117,3 +117,15 @@ None — every trust boundary and threat register entry in the plan's `<threat_m
 ---
 *Phase: 82-store-agnostic-prerequisites*
 *Completed: 2026-09-23*
+
+## Self-Check: PASSED
+
+- FOUND: zoho-middleware/__tests__/batch-public.test.js
+- FOUND: zoho-middleware/__tests__/batch-public-guard.test.js
+- FOUND: zoho-middleware/routes/pos.js
+- FOUND: zoho-middleware/server.js
+- FOUND: .planning/phases/82-store-agnostic-prerequisites/82-05-SUMMARY.md
+- FOUND commit: df108397 (test, Task 1 RED)
+- FOUND commit: cfa1e895 (feat, Task 1 GREEN)
+- FOUND commit: 11d4902b (test, Task 2 RED)
+- FOUND commit: 4709917f (feat, Task 2 GREEN)
