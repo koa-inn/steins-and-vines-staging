@@ -379,6 +379,38 @@ function doPost(e) {
       if (action === 'delete_ferm_schedule') {
         return _jsonResponse(deleteFermSchedule(payload));
       }
+      // Admin panel write actions (server_token-gated, Phase 82 D-11)
+      // These mirror the staff-switch cases below (:392-475) so the middleware admin-proxy
+      // (82-04) can forward js/admin.js's writes without staff Google OAuth. The staff switch
+      // cases are left in place, unmodified — the old browser path stays live until the D-19
+      // cutover.
+      if (action === 'update_reservation') {
+        return _jsonResponse(updateReservation(payload, 'middleware'));
+      }
+      if (action === 'update_hold') {
+        return _jsonResponse(updateHold(payload, 'middleware'));
+      }
+      if (action === 'update_homepage') {
+        return _jsonResponse(updateHomepage(payload));
+      }
+      if (action === 'add_batch_task') {
+        var sAddBatchTaskResult = addBatchTask(payload, 'middleware');
+        _invalidateBatchCache(payload.batch_id);
+        return _jsonResponse(sAddBatchTaskResult);
+      }
+      if (action === 'update_batch_task') {
+        var sUpdateBatchTaskResult = updateBatchTask(payload, 'middleware');
+        _invalidateBatchCache(sUpdateBatchTaskResult.batch_id || payload.batch_id);
+        return _jsonResponse(sUpdateBatchTaskResult);
+      }
+      if (action === 'propagate_ferm_schedule') {
+        return _jsonResponse(propagateFermSchedule(payload, 'middleware'));
+      }
+      if (action === 'regenerate_batch_token') {
+        var sRegenerateBatchTokenResult = regenerateBatchToken(payload);
+        _invalidateBatchCache(payload.batch_id);
+        return _jsonResponse(sRegenerateBatchTokenResult);
+      }
       return _jsonResponse({ ok: false, error: 'invalid_action', message: 'Unknown server action: ' + action });
     }
 
@@ -429,7 +461,7 @@ function doPost(e) {
       }
       case 'update_batch_task': {
         var r = updateBatchTask(payload, authResult.email);
-        _invalidateBatchCache(payload.batch_id);
+        _invalidateBatchCache(r.batch_id || payload.batch_id);
         return _jsonResponse(r);
       }
       case 'bulk_update_batch_tasks': {
@@ -2814,10 +2846,32 @@ function updateBatchTask(payload, completedBy) {
   var luCol = headers.indexOf('last_updated');
   if (luCol !== -1) sheet.getRange(row, luCol + 1).setValue(now);
 
-  return { ok: true, message: 'Task updated' };
+  // D-09 (Phase 82, server half): return the task's own batch_id so callers that omit
+  // payload.batch_id (e.g. admin.js:6346/6368's vessel-transfer-confirm and skip-transfer
+  // flows) can still bust the correct gb:<batchId> cache entry instead of invalidating
+  // undefined.
+  return { ok: true, message: 'Task updated', batch_id: String(current.batch_id || '') };
 }
 
 // --- POST: Bulk Update Batch Tasks ---
+
+// D-09 (Phase 82, server half): de-duplicated, order-preserving list of non-empty batch_id
+// strings from entries whose `ok` is truthy. Pure — tolerates undefined/non-array input.
+function _uniqueBatchIds(results) {
+  if (!Array.isArray(results)) return [];
+  var seen = {};
+  var ids = [];
+  for (var i = 0; i < results.length; i++) {
+    var r = results[i];
+    if (!r || !r.ok) continue;
+    var id = r.batch_id;
+    if (!id) continue;
+    if (seen[id]) continue;
+    seen[id] = true;
+    ids.push(id);
+  }
+  return ids;
+}
 
 function bulkUpdateBatchTasks(payload, email) {
   if (!payload.tasks || !Array.isArray(payload.tasks) || payload.tasks.length === 0) {
@@ -2830,7 +2884,14 @@ function bulkUpdateBatchTasks(payload, email) {
   for (var i = 0; i < payload.tasks.length; i++) {
     results.push(updateBatchTask(payload.tasks[i], email));
   }
-  return { ok: true, results: results };
+  // D-09: bust every distinct batch these tasks belong to — the calendar-view bulk save
+  // (admin.js:8042) can carry tasks spanning multiple batches in one request, and this
+  // function had no per-task cache-invalidation logic of its own before Phase 82.
+  var affected = _uniqueBatchIds(results);
+  for (var a = 0; a < affected.length; a++) {
+    _invalidateBatchCache(affected[a]);
+  }
+  return { ok: true, results: results, affected_batch_ids: affected };
 }
 
 // --- POST: Add Ad-Hoc Batch Task ---
