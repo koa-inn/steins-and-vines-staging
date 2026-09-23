@@ -310,6 +310,8 @@ app.post('/api/waitlist', waitlistLimiter, async function (req, res) {
 var OFFLINE_CAPABLE_POSTS = ['/contacts', '/bookings', '/checkout'];
 
 app.use('/api', function (req, res, next) {
+  // Phase 82 D-13: public batch routes only proxy Apps Script — never Zoho.
+  if (req.path.indexOf('/batch/public/') === 0) return next();
   // Promo validate is Redis-only — never needs Zoho
   if (req.method === 'POST' && req.path === '/promo/validate') return next();
   if (!zohoAuth.isAuthenticated()) {
@@ -362,6 +364,9 @@ app.use('/api', async function (req, res, next) {
   // Webhooks are protected by HMAC signature verification, not API key
   if (req.path.indexOf('/webhooks/') === 0) return next();
   if (KEYLESS_POSTS.indexOf(req.path) !== -1) return next();
+  // Phase 82 D-13/D-14: batch-token-authenticated by Apps Script; protected
+  // by batchPublicLimiter + referer guard.
+  if (req.path.indexOf('/batch/public/') === 0) return next();
 
   // Fail closed if NO credential path can EVER succeed — no legacy key
   // (either half of the unified API_SECRET_KEY/MW_API_KEY pair), no device
@@ -614,11 +619,30 @@ var telemetryLimiter = rateLimit({
   message: { error: 'Too many telemetry reports, slow down' }
 });
 
+// Phase 82 D-14: public batch page (batch.html) routes are fully
+// unauthenticated at the middleware — the batch token is the only
+// credential, validated by Apps Script. No `skip` (like apiLimiter/
+// paymentLimiter/pinLimiter): the in-process memStore fallback keeps this
+// unauthenticated write surface throttled even when Redis is down (D-07
+// rationale applies here too). 30/min: the page polls once per 60s and a
+// staff member ticks at most a few tasks per minute; the global 60/min
+// apiLimiter still applies on top.
+var batchPublicLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: makeRedisStore(60 * 1000, 'batch-public'),
+  validate: { singleCount: false },
+  message: { ok: false, error: 'rate_limited', message: 'Too many requests, slow down' }
+});
+
 app.use('/api', apiLimiter);
 app.use('/api', requireAllowedReferer);
 app.use('/api/kiosk/verify-pin', pinLimiter);
 app.use('/api/kiosk/client-error', clientErrorLimiter);
 app.use('/api/kiosk/telemetry', telemetryLimiter);
+app.use('/api/batch/public', batchPublicLimiter);
 app.use('/api/payment', paymentLimiter);
 app.use('/api/checkout', paymentLimiter);
 app.use('/api/pos/sale', paymentLimiter);
