@@ -190,6 +190,14 @@ so there is no runtime dependency to wire up here.
   batch.html, `connect-src` must allow the middleware origin per CLAUDE.md
   rule 12.
 
+## Self-Check: PASSED
+
+All 11 declared files verified present on disk (`js/batch.js`, `js/batch.min.js`,
+`batch.html`, `tests/frontend/batch-public-proxy.test.js`, `js/admin.js`,
+`js/admin.min.js`, `admin.html`, `kiosk.html`, `brewpad.html`, `index.html`,
+this SUMMARY). All 3 commit hashes (`41721bca`, `c1817b3b`, `2fcc6ace`)
+verified present in `git log`.
+
 ---
 *Phase: 82-store-agnostic-prerequisites*
 *Completed: 2026-09-23*
