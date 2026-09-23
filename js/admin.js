@@ -3732,6 +3732,15 @@
     return year + '-' + (m < 10 ? '0' + m : m);
   }
 
+  // 82-07 (D-21): shared write helper for the update_schedule_slots typed action.
+  // Server re-checks each row's CURRENT status under its own lock and skips any
+  // row already 'booked' (T-82-03-04) -- callers must honor result.skipped and
+  // NOT flip local status for a skipped row.
+  function scheduleSlotsUpdate(updates) {
+    if (!updates.length) return Promise.resolve({ ok: true, updated: 0, skipped: [] });
+    return adminApiPost('update_schedule_slots', { updates: updates });
+  }
+
   function generateSlotsForMonth() {
     if (!scheduleCalMonth) return;
     var defaults = getDefaultSchedule();
@@ -3775,7 +3784,7 @@
 
     if (!confirm('Generate ' + newRows.length + ' new slot(s) for ' + monthName + '?')) return;
 
-    sheetsAppend(SHEETS_CONFIG.SHEET_NAMES.SCHEDULE + '!A:C', newRows)
+    adminApiPost('append_schedule_slots', { rows: newRows })
       .then(function () {
         showToast(newRows.length + ' slots generated for ' + monthName + '.', 'success');
         loadAllData();
@@ -3972,13 +3981,13 @@
     if (!slot || slot.status === 'booked') return;
 
     var newStatus = slot.status === 'available' ? 'blocked' : 'available';
-    var statusCol = scheduleHeaders.indexOf('status');
-    if (statusCol === -1) return;
 
-    var cellRef = SHEETS_CONFIG.SHEET_NAMES.SCHEDULE + '!' + colLetter(statusCol) + rowIndex;
-    sheetsUpdate(cellRef, [[newStatus]])
-      .then(function () {
-        slot.status = newStatus;
+    scheduleSlotsUpdate([{ row: rowIndex, status: newStatus }])
+      .then(function (result) {
+        var skipped = (result && result.skipped) || [];
+        if (skipped.indexOf(rowIndex) === -1) {
+          slot.status = newStatus;
+        }
         renderScheduleCalendar();
       })
       .catch(function (err) {
@@ -3992,18 +4001,18 @@
     });
     if (daySlots.length === 0) return;
 
-    var statusCol = scheduleHeaders.indexOf('status');
-    if (statusCol === -1) return;
-
-    var promises = daySlots.map(function (slot) {
-      var cellRef = SHEETS_CONFIG.SHEET_NAMES.SCHEDULE + '!' + colLetter(statusCol) + slot._rowIndex;
-      return sheetsUpdate(cellRef, [[newStatus]]).then(function () {
-        slot.status = newStatus;
-      });
+    var updates = daySlots.map(function (slot) {
+      return { row: slot._rowIndex, status: newStatus };
     });
 
-    Promise.all(promises)
-      .then(function () {
+    scheduleSlotsUpdate(updates)
+      .then(function (result) {
+        var skipped = (result && result.skipped) || [];
+        daySlots.forEach(function (slot) {
+          if (skipped.indexOf(slot._rowIndex) === -1) {
+            slot.status = newStatus;
+          }
+        });
         renderScheduleCalendar();
       })
       .catch(function (err) {
@@ -4016,8 +4025,6 @@
     var date = new Date(dateStr + 'T00:00:00');
     var dayOfWeek = date.getDay();
     var def = defaults[dayOfWeek];
-    var statusCol = scheduleHeaders.indexOf('status');
-    if (statusCol === -1) return;
 
     // Build set of times that should be available per defaults
     var shouldBeAvailable = {};
@@ -4048,15 +4055,18 @@
       return;
     }
 
-    var promises = updates.map(function (u) {
-      var cellRef = SHEETS_CONFIG.SHEET_NAMES.SCHEDULE + '!' + colLetter(statusCol) + u.slot._rowIndex;
-      return sheetsUpdate(cellRef, [[u.newStatus]]).then(function () {
-        u.slot.status = u.newStatus;
-      });
+    var payload = updates.map(function (u) {
+      return { row: u.slot._rowIndex, status: u.newStatus };
     });
 
-    Promise.all(promises)
-      .then(function () {
+    scheduleSlotsUpdate(payload)
+      .then(function (result) {
+        var skipped = (result && result.skipped) || [];
+        updates.forEach(function (u) {
+          if (skipped.indexOf(u.slot._rowIndex) === -1) {
+            u.slot.status = u.newStatus;
+          }
+        });
         renderScheduleCalendar();
       })
       .catch(function (err) {
@@ -4070,8 +4080,6 @@
     var year = scheduleCalMonth.getFullYear();
     var month = scheduleCalMonth.getMonth();
     var daysInMonth = new Date(year, month + 1, 0).getDate();
-    var statusCol = scheduleHeaders.indexOf('status');
-    if (statusCol === -1) { showToast('Cannot find status column.', 'warning'); return; }
 
     var today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -4121,15 +4129,18 @@
       scheduleCalMonth.toLocaleString('default', { month: 'long', year: 'numeric' }) +
       ' to match your default schedule. Booked slots will not be changed. Continue?')) return;
 
-    var promises = updates.map(function (u) {
-      var cellRef = SHEETS_CONFIG.SHEET_NAMES.SCHEDULE + '!' + colLetter(statusCol) + u.slot._rowIndex;
-      return sheetsUpdate(cellRef, [[u.newStatus]]).then(function () {
-        u.slot.status = u.newStatus;
-      });
+    var payload = updates.map(function (u) {
+      return { row: u.slot._rowIndex, status: u.newStatus };
     });
 
-    Promise.all(promises)
-      .then(function () {
+    scheduleSlotsUpdate(payload)
+      .then(function (result) {
+        var skipped = (result && result.skipped) || [];
+        updates.forEach(function (u) {
+          if (skipped.indexOf(u.slot._rowIndex) === -1) {
+            u.slot.status = u.newStatus;
+          }
+        });
         showToast(updates.length + ' slot(s) updated to match defaults.', 'success');
         renderScheduleCalendar();
       })
@@ -4647,10 +4658,13 @@
   var homepageHeaders = [];
 
   function loadHomepageData() {
-    // Load from Google Sheets
-    sheetsGet(SHEETS_CONFIG.SHEET_NAMES.HOMEPAGE + '!A:E')
-      .then(function (data) {
-        var rows = data.values || [];
+    adminApiGet('get_homepage')
+      .then(function (result) {
+        // get_homepage returns the full display-value data range -- slice to the
+        // A:E column window the old direct-Sheets-API read used to be restricted to.
+        var rows = ((result.data && result.data.values) || []).map(function (r) {
+          return r.slice(0, 5);
+        });
         if (rows.length > 0) {
           homepageHeaders = rows[0];
         }
