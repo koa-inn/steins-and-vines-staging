@@ -86,8 +86,7 @@ function doGet(e) {
   // Public endpoint: batch detail via access token (no staff auth required)
   if (action === 'get_batch_public') {
     try {
-      var batchPublicKey = 'gbp:' + (e.parameter.batch_id || '');
-      return _jsonResponse(_cachedGet(batchPublicKey, 5, function() {
+      return _jsonResponse(_getBatchPublicCached(e.parameter.batch_id || '', e.parameter.token || '', function() {
         return handleGetBatchPublic(e);
       }));
     } catch (err) {
@@ -3841,6 +3840,31 @@ function _cachedGet(cacheKey, ttl, fetchFn) {
   if (cached) return JSON.parse(cached);
   var result = fetchFn();
   try { cache.put(cacheKey, JSON.stringify(result), ttl); } catch (e) { /* value too large, skip */ }
+  return result;
+}
+
+/**
+ * Token-bound cache for the public batch view. The previous _cachedGet('gbp:<id>') cached the
+ * whole result without the token, and the token check ran inside the cached fetch — so for 5 s
+ * after any valid view ANY token got the batch data (and a cached invalid_token made the valid
+ * token fail). Now only successful lookups are cached, stored with the token that passed, and a
+ * hit is served only to that same token; everything else takes the full validating fetch.
+ * The key stays 'gbp:<batch_id>' so regenerateBatchToken / _invalidateBatchCache still evict it.
+ */
+function _getBatchPublicCached(batchId, token, fetchFn) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'gbp:' + batchId;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      var entry = JSON.parse(cached);
+      if (entry && entry.token && entry.token === String(token)) return entry.result;
+    } catch (e) { /* malformed entry -- fall through to a fresh, validating fetch */ }
+  }
+  var result = fetchFn();
+  if (result && result.ok) {
+    try { cache.put(cacheKey, JSON.stringify({ token: String(token), result: result }), 5); } catch (e) { /* value too large, skip */ }
+  }
   return result;
 }
 
