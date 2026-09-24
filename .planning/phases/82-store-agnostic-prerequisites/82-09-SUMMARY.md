@@ -54,7 +54,7 @@ Probe-harness note: first two runs failed on harness input (literal `…` placeh
 
 - Static-site deploy could not be verified from the CLI (staging.steinsandvines.ca returns 403 to curl; `gh` unauthenticated) — verified in the browser as step 0 of the walk.
 
-## Task 3 — Staging walk — IN PROGRESS (Claude-driven via Chrome, 2026-09-23; owner signed in)
+## Task 3 — Staging walk — WALK COMPLETE, awaiting owner approval (Claude-driven via Chrome, 2026-09-23/24; owner signed in)
 
 ### Staging walk
 
@@ -69,11 +69,10 @@ Probe-harness note: first two runs failed on harness input (literal `…` placeh
 | 6 Scheduling | not exercisable | Pre-existing bug: calendar never shows slots (dates arrive as ISO timestamps, UI compares `YYYY-MM-DD`); sheet has no slots after 2026-04-30. `update_schedule_slots` covered by probe 6 |
 | 7 Export/Sync | not exercised | per checklist |
 | 8 Homepage | ✓ | Loads featured + social; save-unchanged re-read confirms all 4 rows intact (incl. instafeed) |
-| 9 Batches | partial | Created SV-B-000218 (4 tasks) ✓; completed transfer task (without transfer) → reopened detail shows it completed immediately ✓ (D-09 cache-bust). Batch **list** row still showed 0/4 until list reload (minor). Remaining 9.x (tick+Save Tasks, calendar two-batch save, add task, plato add/edit/delete, regenerate token, ferm schedule propagate) — owner |
-| 10 Idle >10 min | pending | owner |
-| 11 Public batch page | pending | owner (SV-B-000218 QR URL) |
-| 12 BrewPad smoke | pending | owner |
-
+| 9 Batches | ✓ (propagate: pre-existing defects) | Session 1: created SV-B-000218 ✓; transfer-task completion shows immediately on reopen ✓ (D-09). Session 2 (2026-09-23, Claude): tick + Save Tasks ✓ ("1 task updated", detail re-read shows done); add task ✓; plato add ✓ / inline edit 12.5→11.8 ✓ / delete ✓ (native confirm() auto-accepted once via a one-shot `window.confirm` override, restored after); regenerate URL ✓ (new token serves the batch, old token rejected); calendar two-batch save (SV-B-000218 + SV-B-000221, same due day) ✓ — both batch details show the new state immediately; ferm-schedule edit + propagate on a throwaway template (confirm said "1 active batch") ran, but see findings: stale detail up to 300 s and wrong task set. All writes observed only on `/api/admin/proxy` (200). Batch **list** progress still lags until list reload (minor, as before) |
+| 10 Idle >10 min | ✓ | Admin tab untouched 11 min, then reopened a batch detail → server read succeeded, no forced re-login |
+| 11 Public batch page | ✓ (auto-refresh not observable) | Opened the regenerated QR URL (normal tab, not private — automation limit): view loads ✓, ticked non-packaging task "Filtering" → "Task completed" ✓, submitted plato 10.2 → "1 reading recorded" ✓; page re-fetched after the task toggle. 60 s auto-refresh **not observed**: automation tab reports `document.hidden=true` and `batch.js:403` skips refresh when hidden (by design) — owner to eyeball on a visible screen if wanted |
+| 12 BrewPad smoke | ✓ | Owner signed in; dashboard loads (needs-attention, needs-scheduling, ready-to-bottle); opened SV-B-000218 → detail matches admin (4/5 tasks, TEST/82, lifecycle) via `/api/batch/admin-proxy` 200. Only console error: GIS popup blocked at sign-in (non-blocking). "Wine Breakdown: unable to load catalog data" — see findings (staging Cloudflare Access, not Phase 82) |
 No 429s or console errors observed.
 
 ### Findings (not Phase 82 regressions unless marked)
@@ -84,6 +83,12 @@ No 429s or console errors observed.
 - Manual holds are invisible in the admin UI (the stale Feb-6 hold).
 - Admin page reload logs the user out when GIS silent refresh exceeds 5 s.
 - Transfer dialog: shelf maxlength 1 / bin maxlength 2 silently truncate input; an unsaved task tick is dropped when the transfer dialog opens.
+- **SECURITY (pre-existing since 526f907b, Feb 2026; live on prod — shared Apps Script):** `doGet` `get_batch_public` caches its *result* under `gbp:<batch_id>` for 5 s, keyed without the token, and the token check runs inside the cached fetch. Verified on SV-B-000218: within 5 s of a valid view, a bogus 32-hex token and a malformed token both returned `ok:true` with customer name/tasks/readings. Batch IDs are sequential. Also the inverse: a cached `invalid_token` result makes the *valid* token fail for 5 s (seen right after regenerate). Fix: validate token before the cache, or key the cache on batch_id+token. Writes validate separately (unaffected).
+- **Propagate (pre-existing, 4468e429 / 61f48035, Feb 2026) — affects real batches whenever staff edit+propagate a template:** (a) `propagate_ferm_schedule` never calls `_invalidateBatchCache` on either dispatch path (`adminApi.gs:409` server_token, `:521` OAuth), so affected batch details stay stale up to 300 s — the D-09 guarantee does not cover propagate; (b) `propagateFermSchedule` matches by `step_number` over *pending* tasks only, so every completed step is re-appended as an open duplicate (SV-B-000221 got a second "ZZ Step A"); (c) inserting a step shifts step numbers, so the existing packaging task was rewritten in place into the new step but kept `is_packaging=TRUE` ("ZZ Step B" shown with PACKAGING), and a fresh packaging task was appended. Toast "1 updated, 2 added" matches.
+- **Fixed 2026-09-24 (outside Phase 82 scope, owner-requested):** public-cache token binding `0d460a6e`; propagate matching + cache eviction `ff1436b7`. Needs Apps Script redeploy (v58, rollback v57) — shared by staging + prod.
+- Staging-only: once the Cloudflare Access session on `staging.steinsandvines.ca` lapses, every same-origin fetch (e.g. `/content/zoho-snapshot.json`, even `/js/*.js`) returns an `opaqueredirect` → "Failed to fetch", so BrewPad's Wine Breakdown shows "Unable to load catalog data". Middleware calls (Railway origin) are unaffected; production has no Access gate.
+- Task `completed_at` is stamped in UTC: ticking at ~17:00 PT on 09-23 shows "Done 2026-09-24".
+- New-batch bin input clamps to 36 on blur (`admin.js:6597`, by design) — typing 83 silently becomes 36.
 
 ### Test records to clean up (owner)
 
@@ -91,5 +96,7 @@ No 429s or console errors observed.
 - Holds: 1 manual hold on TEST-82, note "Phase 82 staging test - safe to delete"
 - Ingredients: **TEST-82-ING** (use the admin Delete button — also exercises the delete path)
 - Supplier order list: TEST-82 line (Remove)
-- Batches: **SV-B-000218** "ZZ Test Customer" + its 4 BatchTasks + VesselHistory rows
+- Batches: **SV-B-000218** "ZZ Test Customer" + its BatchTasks (now 5, incl. "ZZ Phase 82 test task") + 1 plato reading (10.2, "ZZ public page test") + VesselHistory rows
+- Batches: **SV-B-000221** "ZZ Test Customer 2" (shelf T / bin 36) + its BatchTasks (incl. propagate duplicates) + VesselHistory rows
+- Schedule template: **ZZ Test Template Phase 82** (Schedule Templates → Delete) — delete after SV-B-000221 so no active batch references it
 - Homepage: rewritten with identical content (no cleanup)
