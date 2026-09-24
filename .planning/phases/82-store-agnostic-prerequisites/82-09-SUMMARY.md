@@ -9,7 +9,7 @@ affects: [82-10]
 key-files:
   created: [scripts/phase82-appsscript-probes.sh, .planning/phases/82-store-agnostic-prerequisites/82-09-SUMMARY.md]
   modified: [docs/RUNBOOK.md]
-status: in-progress
+status: complete
 ---
 
 # Phase 82 Plan 09: Apps Script + Staging Deploy Summary
@@ -54,7 +54,7 @@ Probe-harness note: first two runs failed on harness input (literal `…` placeh
 
 - Static-site deploy could not be verified from the CLI (staging.steinsandvines.ca returns 403 to curl; `gh` unauthenticated) — verified in the browser as step 0 of the walk.
 
-## Task 3 — Staging walk — WALK COMPLETE, awaiting owner approval (Claude-driven via Chrome, 2026-09-23/24; owner signed in)
+## Task 3 — Staging walk — APPROVED by owner 2026-09-24 (Claude-driven via Chrome, 2026-09-23/24; owner signed in)
 
 ### Staging walk
 
@@ -71,13 +71,13 @@ Probe-harness note: first two runs failed on harness input (literal `…` placeh
 | 8 Homepage | ✓ | Loads featured + social; save-unchanged re-read confirms all 4 rows intact (incl. instafeed) |
 | 9 Batches | ✓ (propagate: pre-existing defects) | Session 1: created SV-B-000218 ✓; transfer-task completion shows immediately on reopen ✓ (D-09). Session 2 (2026-09-23, Claude): tick + Save Tasks ✓ ("1 task updated", detail re-read shows done); add task ✓; plato add ✓ / inline edit 12.5→11.8 ✓ / delete ✓ (native confirm() auto-accepted once via a one-shot `window.confirm` override, restored after); regenerate URL ✓ (new token serves the batch, old token rejected); calendar two-batch save (SV-B-000218 + SV-B-000221, same due day) ✓ — both batch details show the new state immediately; ferm-schedule edit + propagate on a throwaway template (confirm said "1 active batch") ran, but see findings: stale detail up to 300 s and wrong task set. All writes observed only on `/api/admin/proxy` (200). Batch **list** progress still lags until list reload (minor, as before) |
 | 10 Idle >10 min | ✓ | Admin tab untouched 11 min, then reopened a batch detail → server read succeeded, no forced re-login |
-| 11 Public batch page | ✓ (auto-refresh not observable) | Opened the regenerated QR URL (normal tab, not private — automation limit): view loads ✓, ticked non-packaging task "Filtering" → "Task completed" ✓, submitted plato 10.2 → "1 reading recorded" ✓; page re-fetched after the task toggle. 60 s auto-refresh **not observed**: automation tab reports `document.hidden=true` and `batch.js:403` skips refresh when hidden (by design) — owner to eyeball on a visible screen if wanted |
+| 11 Public batch page | ✓ (auto-refresh not observable) | Opened the regenerated QR URL (normal tab, not private — automation limit): view loads ✓, ticked non-packaging task "Filtering" → "Task completed" ✓, submitted plato 10.2 → "1 reading recorded" ✓; page re-fetched after the task toggle. 60 s auto-refresh: not observable from automation (`document.hidden=true`; `batch.js:403` skips when hidden) — **owner verified on a visible screen 2026-09-24: admin task tick appeared on the public page within ~60 s ✓** |
 | 12 BrewPad smoke | ✓ | Owner signed in; dashboard loads (needs-attention, needs-scheduling, ready-to-bottle); opened SV-B-000218 → detail matches admin (4/5 tasks, TEST/82, lifecycle) via `/api/batch/admin-proxy` 200. Only console error: GIS popup blocked at sign-in (non-blocking). "Wine Breakdown: unable to load catalog data" — see findings (staging Cloudflare Access, not Phase 82) |
 No 429s or console errors observed.
 
 ### Findings (not Phase 82 regressions unless marked)
 
-- **Phase 82 behaviour change:** admin-created batches are now attributed `kiosk-middleware` in VesselHistory/`created_by` (admin writes reach Apps Script via server_token, which hard-codes that actor). Audit trail loses the staff email. Consider passing the session email through the proxy.
+- **Phase 82 behaviour change (owner 2026-09-24: follow-up, not a 82-10 blocker → `.planning/todos/pending/admin-write-attribution-kiosk-middleware.md`):** admin-created batches are now attributed `kiosk-middleware` in VesselHistory/`created_by` (admin writes reach Apps Script via server_token, which hard-codes that actor). Audit trail loses the staff email. Consider passing the session email through the proxy.
 - Scheduling calendar date-format bug (above) — pre-existing, schedule feature appears unused since April.
 - Kit Inventory shows 8 blank rows (sheet rows with only formula/empty values); inflates "kits low stock".
 - Manual holds are invisible in the admin UI (the stale Feb-6 hold).
