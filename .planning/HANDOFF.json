@@ -1,0 +1,47 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-24T00:56:17.320Z",
+  "phase": "82",
+  "phase_name": "store-agnostic-prerequisites",
+  "phase_dir": ".planning/phases/82-store-agnostic-prerequisites",
+  "plan": 9,
+  "task": 3,
+  "total_tasks": 3,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": "82-01", "name": "Owner pre-migration checks", "status": "done", "commit": "5d1a4cca"},
+    {"id": "82-02", "name": "Apps Script lock fixes + server_token dispatch", "status": "done", "commit": "merged"},
+    {"id": "82-03", "name": "Typed Apps Script inventory/schedule/homepage actions", "status": "done", "commit": "merged"},
+    {"id": "82-04", "name": "/api/admin/proxy", "status": "done", "commit": "merged"},
+    {"id": "82-05", "name": "/api/batch/public routes", "status": "done", "commit": "merged"},
+    {"id": "82-06", "name": "admin.js proxy transport + batch_id cache bust", "status": "done", "commit": "merged"},
+    {"id": "82-07", "name": "admin.js direct-Sheets rewire + helper deletion", "status": "done", "commit": "merged"},
+    {"id": "82-08", "name": "batch.js onto public token routes", "status": "done", "commit": "merged"},
+    {"id": "82-09-T1", "name": "Apps Script redeploy v57 (rollback v56) + probes", "status": "done", "commit": "abd4485e"},
+    {"id": "82-09-T2", "name": "Push to staging + smoke checks", "status": "done", "commit": "abd4485e pushed to origin/main"},
+    {"id": "82-09-T3", "name": "Staging walk", "status": "in_progress", "progress": "Steps 0,1,3,4(add),5(add-to-order),8 pass; 9 partial (create batch + transfer-task cache-bust pass). Recorded in 82-09-SUMMARY.md (commit 3af5b44c)"}
+  ],
+  "remaining_tasks": [
+    {"id": "82-09-T3", "name": "Owner finishes staging walk: step 9 remainder, 10 idle, 11 public batch page, 12 BrewPad; then 'approved'", "status": "in_progress"},
+    {"id": "82-09-close", "name": "Mark 82-09 SUMMARY complete (status), update ROADMAP/STATE, commit", "status": "not_started"},
+    {"id": "82-10", "name": "Production promotion (gated, owner approval)", "status": "not_started"},
+    {"id": "phase-close", "name": "code review gate, regression gate, gsd-verifier, phase.complete", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "Owner decision: admin-created batches now attributed 'kiosk-middleware' (server_token path) — fix before 82-10 or log follow-up?", "type": "human_action", "workaround": "none"}
+  ],
+  "human_actions_pending": [
+    {"action": "Finish staging walk steps 9 remainder/10/11/12 and reply approved or list failures", "context": "82-09 Task 3 gate", "blocking": true},
+    {"action": "Clean up test records: Kits TEST-82 + its hold; Ingredients TEST-82-ING (via admin Delete); supplier-order TEST-82 line; batch SV-B-000218 + tasks", "context": "Staging shares the production Google Sheet", "blocking": false},
+    {"action": "Decide on kiosk-middleware attribution fix", "context": "audit-trail change introduced by Phase 82", "blocking": true},
+    {"action": "Rotate Apps Script server token after 82-10", "context": "value was typed into the session in plain text", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Keep modified gift-card ledger assertion (D-18 supersedes 44-02)", "rationale": "owner approved", "phase": "82"},
+    {"decision": "Skip hold confirm/release + reservation status in staging walk", "rationale": "owner choice; manual holds never render; only real reservations exist", "phase": "82"},
+    {"decision": "Scheduling: test only existing slots, no generation", "rationale": "owner choice; turned out calendar never renders slots (pre-existing date-format bug)", "phase": "82"}
+  ],
+  "uncommitted_files": ["links.html (owner's unrelated edit — never commit)"],
+  "next_action": "Ask owner for staging-walk result + attribution decision; then close 82-09 and present 82-10 production cutover checklist",
+  "context_notes": "Apps Script v57 live (shared by staging+prod). origin/main = abd4485e (staging); local main is ahead by docs commits 3af5b44c etc. Production remote untouched."
+}
