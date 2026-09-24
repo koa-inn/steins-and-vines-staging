@@ -3678,6 +3678,7 @@ function propagateFermSchedule(payload, userEmail) {
   var descCol  = tHeaders.indexOf('description');
   var dayCol   = tHeaders.indexOf('day_offset');
   var dateCol  = tHeaders.indexOf('due_date');
+  var stepCol  = tHeaders.indexOf('step_number');
   var luCol    = tHeaders.indexOf('last_updated');
 
   var totalUpdated = 0, totalCreated = 0, totalRemoved = 0;
@@ -3690,29 +3691,41 @@ function propagateFermSchedule(payload, userEmail) {
     // Get this batch's tasks
     var batchTasks = allTasks.filter(function (t) { return String(t.batch_id) === batchId; });
 
-    // Index pending tasks by step_number (skip completed)
-    var pendingByStep = {};
+    // Index ALL tasks (completed included) so a completed step matches its task and is left
+    // alone instead of looking "missing" and being re-appended as an open duplicate. Regular
+    // steps match by step_number; the packaging step matches the packaging task by flag, since
+    // it is always last and its number shifts whenever a step is inserted or removed. A
+    // completed task wins over a pending duplicate of the same step.
+    function isDone(t) { return String(t.completed).toUpperCase() === 'TRUE'; }
+    var regularByStep = {};
+    var packagingTask = null;
     batchTasks.forEach(function (t) {
-      if (String(t.completed).toUpperCase() !== 'TRUE') {
-        pendingByStep[String(t.step_number)] = t;
+      if (String(t.is_packaging).toUpperCase() === 'TRUE') {
+        if (!packagingTask || (isDone(t) && !isDone(packagingTask))) packagingTask = t;
+        return;
       }
+      var key = String(t.step_number);
+      if (!regularByStep[key] || (isDone(t) && !isDone(regularByStep[key]))) regularByStep[key] = t;
     });
 
-    // Track which step numbers the new template has
-    var newStepNums = {};
+    // Task ids matched to a template step -- any other pending task is no longer in the template
+    var matchedIds = {};
 
     steps.forEach(function (step) {
-      var stepNum = String(step.step_number);
-      newStepNums[stepNum] = true;
-      var existing = pendingByStep[stepNum];
+      var existing = step.is_packaging ? packagingTask : regularByStep[String(step.step_number)];
 
-      if (existing) {
+      if (existing) matchedIds[String(existing.task_id)] = true;
+
+      if (existing && isDone(existing)) {
+        // Completed tasks are history -- never rewritten
+      } else if (existing) {
         // Update pending task in place
         var dueDate = calculateDueDate(startDate, step.day_offset);
         if (titleCol !== -1) tasksSheet.getRange(existing._row, titleCol + 1).setValue(sanitizeInput(step.title || ''));
         if (descCol  !== -1) tasksSheet.getRange(existing._row, descCol  + 1).setValue(sanitizeInput(step.description || ''));
         if (dayCol   !== -1) tasksSheet.getRange(existing._row, dayCol   + 1).setValue(step.day_offset);
         if (dateCol  !== -1) tasksSheet.getRange(existing._row, dateCol  + 1).setValue(dueDate);
+        if (stepCol  !== -1) tasksSheet.getRange(existing._row, stepCol  + 1).setValue(step.step_number);
         if (luCol    !== -1) tasksSheet.getRange(existing._row, luCol    + 1).setValue(now);
         totalUpdated++;
       } else {
@@ -3733,10 +3746,10 @@ function propagateFermSchedule(payload, userEmail) {
       }
     });
 
-    // Remove pending tasks whose step no longer exists in the template
+    // Remove pending tasks no template step matched (dropped steps, stale pending duplicates)
     var rowsToRemove = [];
     batchTasks.forEach(function (t) {
-      if (String(t.completed).toUpperCase() !== 'TRUE' && !newStepNums[String(t.step_number)]) {
+      if (!isDone(t) && !matchedIds[String(t.task_id)]) {
         rowsToRemove.push(t._row);
         totalRemoved++;
       }
@@ -3746,8 +3759,12 @@ function propagateFermSchedule(payload, userEmail) {
 
     // After deletes, row numbers shift — refresh allTasks for next iteration
     if (rowsToRemove.length > 0) {
-      allTasks = sheetToObjects(BATCH_TASKS_SHEET_NAME);
+      allTasks = sheetToObjects(BATCH_TASKS_SHEET_NAME, true);
     }
+
+    // Evict this batch's detail/public caches so the change shows immediately (D-09 parity
+    // with the other batch writes; previously stale for up to 300 s)
+    _invalidateBatchCache(batchId);
   });
 
   return {
