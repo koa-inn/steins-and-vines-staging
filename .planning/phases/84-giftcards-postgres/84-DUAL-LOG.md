@@ -8,10 +8,10 @@ supports. No balances, no customer names — cert numbers and classifications on
 
 | Field | Value |
 |-------|-------|
-| Environment | _(staging / production)_ |
-| `GIFT_CARDS_STORE=dual` set at | _(timestamp)_ |
-| Window day 1 date | _(date)_ |
-| Current window start (resets to day 1 on any bug-classified discrepancy) | _(date)_ |
+| Environment | production |
+| `GIFT_CARDS_STORE=dual` set at | 2026-10-06 22:56:50Z (variable set); live 23:00:40Z (deploy `d85b5fca`, startup `store modes: {"GIFT_CARDS_STORE":"dual"}`) |
+| Window day 1 date | 2026-10-06 |
+| Current window start (resets to day 1 on any bug-classified discrepancy) | 2026-10-06 |
 
 ## Op-coverage table
 
@@ -100,3 +100,20 @@ Evidence key: **server** = staging ledger row and/or deploy-log line; **client-s
 | Guard chain + migration | 2026-10-06 | Production pre-deploy log: `migration-guard: 2 file(s) additive-only OK`, `migration-allowlist: 2 file(s) additive-only OK`, `0002_gift_cards` applied, "Migrations complete!". |
 | Post-deploy smoke | 2026-10-06 | `/health`: status ok, authenticated:true, redis:true, database:true, **database_required:false**. Startup: `store modes: {"GIFT_CARDS_STORE":"sheets"}`; Zoho refresh token loaded from Redis and refreshed. Site serves the new build (`main.min.js?v=muwy75vy`); `kiosk-core.min.js` carries the gift-cert digit entry. |
 | Beer hold-back | 2026-10-06 | Verified live (browser UA — plain curl gets a Cloudflare 403): `beer.html` `noindex, nofollow`; zero `beer.html` links on index, ferment-in-store hub, products, wine; served `BEER_PAGE_LIVE=!1`. |
+
+## Production cutover (84-11 Task 2)
+
+Store closed, kiosk idle (owner-confirmed). Owner ran the tunnel + CLI steps in their own terminal (password never in the session); Claude set the Railway variable and verified.
+
+| Step | Time (UTC) | Outcome |
+|------|------------|---------|
+| 1. Snapshot | 2026-10-06 ~22:50 | "STEINS AND VINES" → `~/sv-backfill/prod-before.xlsx` (outside the repo). |
+| 2. Tunnel | 2026-10-06 | `railway connect Postgres-EMVk --tunnel-only --environment production`. |
+| 3. Dry run | 22:55:13 | Read 1 card / 0 ledger rows; TEST-* excluded 0/0; cards accepted 1 rejected **0**; ledger accepted 0 rejected **0**; total balance $0.00; seq seed 1; unmapped headers `issued_date`, `last_tx_ref` (not needed — same as staging). Note: the CLI needs `--file=PATH` (equals form); RUNBOOK §3 shorthand `--file <snapshot>` errors "unknown flag". |
+| 4. Promote | 22:56:15 | "Promoted 1 cards, 1 ledger rows; sequence at 1" (target `railway` on the tunnel; DB-name prompt answered). |
+| 5. `GIFT_CARDS_STORE=dual` | 22:56:50 → live 23:00:40 | Railway CLI, production `sv_middleware`. Deploy `d85b5fca` SUCCESS; `/health` database:true, **database_required:true**; Zoho refresh OK. Rollback target: unset/`sheets` (previous deploy `b6f160c1`). |
+| 6. Fresh snapshot | ~23:01 | `~/sv-backfill/prod-after.xlsx`. |
+| 7. Verify | ~23:03 | `gift-cards-verify.js` → **"Verified 1 cards: 0 mismatches"**. |
+| 8. Close-up | — | Tunnel closed, `BACKFILL_DATABASE_URL` unset (owner). |
+
+Window day 1 = 2026-10-06. Next: 84-11 Task 3 opening-day smoke (real active-card lookup on the production kiosk, Adjust visible, no `[dual-write] giftcards` discrepancy in Sentry). Note the live sheet holds a single void $0 card, so the first real `issue` will be the first meaningful dual write.

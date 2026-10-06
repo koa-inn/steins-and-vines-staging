@@ -555,15 +555,15 @@ Run only when the store is closed and the kiosk is idle. Numbered checklist:
    Microsoft Excel).
 2. Open the owner's private Railway tunnel to production Postgres (see
    `zoho-middleware/scripts/backfill/README.md`).
-3. `gift-cards-backfill.js --dry-run --file <snapshot>` — **zero rejects required.** If any
+3. `gift-cards-backfill.js --file=<snapshot> --dry-run` (equals form — `--file <path>` errors "unknown flag") — **zero rejects required.** If any
    row rejects (`needs_manual_review`, an unsettled claim, a malformed cell), resolve it in the
    live sheet first and re-run the dry run; do not proceed with any reject outstanding (D-13,
    unconditional — no `--accept-rejects` escape hatch exists for this CLI).
-4. `gift-cards-backfill.js --promote --file <snapshot>` once the dry run is clean.
+4. `gift-cards-backfill.js --file=<snapshot> --promote` once the dry run is clean.
 5. Set `GIFT_CARDS_STORE=dual` in Railway (production). Wait for the redeploy to finish, then
    confirm `/health` reports `database:true` and `database_required:true`.
 6. Download a SECOND, FRESH `.xlsx` (the live sheet may have moved since step 1).
-7. `gift-cards-verify.js --file <fresh snapshot>` must report 0 mismatches before the store
+7. `gift-cards-verify.js --file=<fresh snapshot>` must report 0 mismatches before the store
    reopens.
 8. **If any mismatch is reported:** set `GIFT_CARDS_STORE=sheets` immediately, investigate the
    named cert(s) + field(s), and do not re-promote into the same tables. Truncate nothing by
