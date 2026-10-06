@@ -59,6 +59,7 @@ error + no tracking, but avoid it):
 
 | Date | Git SHA | Railway Deploy ID | Deploy URL | Notes |
 |------|---------|-------------------|------------|-------|
+| 2026-10-06 22:36 UTC | `bb97c735` | `b6f160c1-1617-4e82-aef0-f976a198b93a` | [Run](https://github.com/koa-inn/steins-and-vines-staging/actions/runs/37541167223) | Helcim reversal/refund webhooks no longer treated as approved charges (fe6e8eb2); beer page held back |
 | 2026-10-06 22:17 UTC | `c229d919` | `6a143c36-0371-494e-afcc-de664c7480e9` | [Run](https://github.com/koa-inn/steins-and-vines-staging/actions/runs/37539256410) | Money-path fixes: Helcim void/refund v2 fields (c229d919), kiosk per-rate tax rounding (26be3828), manual-confirm void txn id (c961e6bb), Buy Kit kit-only price (7eb2b0f8); beer page held back |
 | 2026-10-06 17:51 UTC | `af261d83` | `8db27979-f611-4fe3-a8c5-108f36a5fc48` | [Run](https://github.com/koa-inn/steins-and-vines-staging/actions/runs/37506054882) | Phase 84 code + Phase 83 gap-closure + gift-cert digit entry (11b5c27b) + proxy-addr 2.0.8 (af261d83); GIFT_CARDS_STORE unset = sheets; beer page held back |
 | 2026-10-02 18:51 UTC | `d47dab85` | `f104c500-2ae4-4550-813e-3f3c79825ebc` | [Run](https://github.com/koa-inn/steins-and-vines-staging/actions/runs/37049773828) | Phase 83 Postgres infrastructure (DB-02): lib/db.js, migrations on deploy, /health database field, store-flag + mirror gate; empty schema |
