@@ -2136,8 +2136,8 @@ Plans:
 
 **Wave 5**
 
-- [ ] 86-15-PLAN.md — /api/vessels routes + server mount + ops mirror sweep
-- [ ] 86-16-PLAN.md — Proxy overlay (reads, schedule writes, status deltas, create_batch steps) + recipes schedule lookup
+- [x] 86-15-PLAN.md — /api/vessels routes + server mount + ops mirror sweep
+- [x] 86-16-PLAN.md — Proxy overlay (reads, schedule writes, status deltas, create_batch steps) + recipes schedule lookup
 
 **Wave 6**
 
