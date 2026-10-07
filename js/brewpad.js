@@ -1774,7 +1774,10 @@ function parseWaitlistRecipeIds(value) {
       .then(function (r) {
         return r.json().then(function (data) {
           if (!r.ok || !data || !data.ok) {
-            throw new Error((data && (data.message || data.error)) || ('HTTP ' + r.status));
+            var err = new Error((data && (data.message || data.error)) || ('HTTP ' + r.status));
+            err.code = data && data.code ? data.code : (data && data.error);
+            err.status = r.status;
+            throw err;
           }
           return data;
         });
@@ -6902,6 +6905,7 @@ function parseWaitlistRecipeIds(value) {
   function buildVesselLabel(v) {
     var vid = String(v.vessel_id || '');
     var parts = [vid];
+    if (typeof v.label === 'string' && v.label) parts.push(v.label);
     if (v.type) parts.push(v.type);
     if (v.capacity_liters) parts.push(v.capacity_liters + 'L');
     if (v.material) parts.push(v.material);
@@ -6917,7 +6921,7 @@ function parseWaitlistRecipeIds(value) {
         var available = !status || status === 'available' || status === 'empty';
         if (!available && vid !== currentVesselId) return false;
         if (!term) return true;
-        var s = (vid + ' ' + (v.type || '') + ' ' + (v.capacity_liters || '') + ' ' + (v.location || '')).toLowerCase();
+        var s = (vid + ' ' + (typeof v.label === 'string' ? v.label : '') + ' ' + (v.type || '') + ' ' + (v.capacity_liters || '') + ' ' + (v.location || '')).toLowerCase();
         return s.indexOf(term.toLowerCase()) !== -1;
       });
       if (matches.length === 0) {
@@ -9464,6 +9468,63 @@ function parseWaitlistRecipeIds(value) {
       });
   }
 
+  // D-16: body for delete/archive of an existing schedule -- carries the
+  // last_updated the editor loaded as expected_updated_at (omitted if unknown).
+  function scheduleTokenPayload(sid) {
+    var payload = { schedule_id: sid };
+    for (var i = 0; i < _fermSchedules.length; i++) {
+      if (String(_fermSchedules[i].schedule_id) === String(sid)) {
+        if (_fermSchedules[i].last_updated) payload.expected_updated_at = _fermSchedules[i].last_updated;
+        break;
+      }
+    }
+    return payload;
+  }
+
+  var STALE_SCHEDULE_MESSAGE = 'This schedule was changed since you opened it \u2014 reload to see the latest';
+
+  function showStaleScheduleToast(err) {
+    showToast((err && err.message) || STALE_SCHEDULE_MESSAGE, 'error', {
+      actionLabel: 'Reload',
+      duration: 15000,
+      onAction: reloadSchedules
+    });
+  }
+
+  function archiveSchedule(sid) {
+    return adminApiPost('archive_ferm_schedule', scheduleTokenPayload(sid))
+      .then(function () {
+        showToast('Schedule archived', 'success');
+        reloadSchedules();
+      })
+      .catch(function (err) {
+        if (err && err.code === 'stale_schedule') { showStaleScheduleToast(err); return; }
+        showToast('Failed: ' + err.message, 'error');
+      });
+  }
+
+  // D-15: a schedule that recipes or batches still reference cannot be deleted;
+  // the server answers 409 schedule_in_use and the toast offers Archive instead.
+  function deleteSchedule(sid) {
+    return adminApiPost('delete_ferm_schedule', scheduleTokenPayload(sid))
+      .then(function () {
+        showToast('Schedule deleted', 'success');
+        reloadSchedules();
+      })
+      .catch(function (err) {
+        if (err && err.code === 'stale_schedule') { showStaleScheduleToast(err); return; }
+        if (err && err.code === 'schedule_in_use') {
+          showToast(err.message || 'This schedule is in use. Archive it instead.', 'error', {
+            actionLabel: 'Archive instead',
+            duration: 15000,
+            onAction: function () { archiveSchedule(sid); }
+          });
+          return;
+        }
+        showToast('Failed: ' + err.message, 'error');
+      });
+  }
+
   function renderBrewpadSchedules() {
     var container = document.getElementById('bp-schedules-list');
     if (!container) return;
@@ -9748,7 +9809,10 @@ function parseWaitlistRecipeIds(value) {
       };
 
       var action = isEdit ? 'update_ferm_schedule' : 'create_ferm_schedule';
-      if (isEdit) payload.schedule_id = existing.schedule_id;
+      if (isEdit) {
+        payload.schedule_id = existing.schedule_id;
+        if (existing.last_updated) payload.expected_updated_at = existing.last_updated;
+      }
 
       var submitBtn = document.getElementById('bp-sched-submit');
       submitBtn.disabled = true;
@@ -9763,6 +9827,11 @@ function parseWaitlistRecipeIds(value) {
         .catch(function (err) {
           submitBtn.disabled = false;
           submitBtn.textContent = isEdit ? 'Update Template' : 'Create Template';
+          // D-16: stale editor -- 409 is never auto-retried; the draft stays in the form.
+          if (err && err.code === 'stale_schedule') {
+            showStaleScheduleToast(err);
+            return;
+          }
           showToast('Failed: ' + err.message, 'error');
         });
     });
@@ -10081,12 +10150,7 @@ function parseWaitlistRecipeIds(value) {
         if (schedDelete) {
           var sid = schedDelete.getAttribute('data-sched-id');
           showConfirmSheet('Delete this schedule template?', 'Delete', 'bp-confirm-btn--danger', function () {
-            adminApiPost('delete_ferm_schedule', { schedule_id: sid })
-              .then(function () {
-                showToast('Schedule deleted', 'success');
-                reloadSchedules();
-              })
-              .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+            deleteSchedule(sid);
           });
           return;
         }
@@ -10876,6 +10940,12 @@ function parseWaitlistRecipeIds(value) {
       _initGoogleAuth: initGoogleAuth,
       _countRecipesUsingScheduleForTest: countRecipesUsingSchedule,
       _buildSchedFormForTest: buildSchedForm,
+      _deleteScheduleForTest: deleteSchedule,
+      _archiveScheduleForTest: archiveSchedule,
+      _setFermSchedulesForTest: function (list) { _fermSchedules = list; },
+      _setVesselsDataForTest: function (list) { _vesselsData = list; },
+      _buildVesselLabelForTest: buildVesselLabel,
+      _bindVesselSearchForTest: bindVesselSearch,
       _setRecipesListForTest: function (list) { _recipesState.list = list; },
       _getAccessToken: function () { return accessToken; },
       _setAccessTokenForTest: function (v) { accessToken = v; },

@@ -48,7 +48,7 @@
   }
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-10-07T19:04:59.970Z';
+  var BUILD_TIMESTAMP = '2026-10-07T22:05:37.909Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP); // eslint-disable-line no-console -- deploy build-verification log
 
   var accessToken = null;
@@ -701,7 +701,10 @@
     }
     return r.json().then(function (data) {
       if (!r.ok || !data || !data.ok) {
-        throw new Error((data && (data.message || data.error)) || ('HTTP ' + r.status));
+        var err = new Error((data && (data.message || data.error)) || ('HTTP ' + r.status));
+        err.code = data && data.code ? data.code : (data && data.error);
+        err.status = r.status;
+        throw err;
       }
       return data;
     });
@@ -7234,7 +7237,8 @@
       html += '<strong>' + (s.name || 'Untitled') + '</strong>';
       html += '<span class="schedule-card-actions">';
       html += '<button type="button" class="btn-secondary admin-btn-sm sched-edit-btn" data-sched-id="' + s.schedule_id + '">Edit</button>';
-      html += '<button type="button" class="btn-secondary admin-btn-sm admin-btn-danger sched-delete-btn" data-sched-id="' + s.schedule_id + '">Delete</button>';
+      html += '<button type="button" class="btn admin-btn-sm sched-archive-btn" data-sched-id="' + escapeHTML(String(s.schedule_id)) + '" title="Archive hides this schedule from pickers; recipes and batches that use it keep it.">Archive</button>';
+      html += '<button type="button" class="btn-secondary admin-btn-sm admin-btn-danger sched-delete-btn" data-sched-id="' + escapeHTML(String(s.schedule_id)) + '" title="Delete permanently? Only possible if no recipe or batch uses it.">Delete</button>';
       html += '</span>';
       html += '</div>';
       if (s.category) html += '<div class="schedule-card-meta">Category: ' + s.category + '</div>';
@@ -7258,18 +7262,108 @@
       });
     });
 
+    container.querySelectorAll('.sched-archive-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var sid = btn.getAttribute('data-sched-id');
+        showConfirm('Archive this schedule? It will be hidden from pickers; recipes and batches that use it keep it.', function () {
+          archiveSchedule(sid);
+        });
+      });
+    });
+
     container.querySelectorAll('.sched-delete-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var sid = btn.getAttribute('data-sched-id');
-        showConfirm('Delete this schedule template?', function () {
-          adminApiPost('delete_ferm_schedule', { schedule_id: sid })
+        showConfirm('Delete permanently? Only possible if no recipe or batch uses it.', function () {
+          adminApiPost('delete_ferm_schedule', scheduleTokenPayload(sid))
             .then(function () {
               showToast('Schedule deleted', 'success');
               loadScheduleTemplates();
             })
-            .catch(function (err) { showToast('Failed: ' + err.message, 'error'); });
+            .catch(function (err) {
+              if (err && err.code === 'stale_schedule') {
+                showStaleScheduleToast(err, loadScheduleTemplates);
+              } else if (err && err.code === 'schedule_in_use') {
+                showScheduleInUseToast(err, function () { archiveSchedule(sid); });
+              } else {
+                showToast('Failed: ' + err.message, 'error');
+              }
+            });
         });
       });
+    });
+  }
+
+  // D-16: body for update/delete/archive of an existing schedule -- carries the
+  // last_updated the editor loaded as expected_updated_at (omitted if unknown).
+  function scheduleTokenPayload(sid) {
+    var sched = fermSchedulesData.find(function (x) { return String(x.schedule_id) === String(sid); });
+    var payload = { schedule_id: sid };
+    if (sched && sched.last_updated) payload.expected_updated_at = sched.last_updated;
+    return payload;
+  }
+
+  function archiveSchedule(sid) {
+    return adminApiPost('archive_ferm_schedule', scheduleTokenPayload(sid))
+      .then(function () {
+        showToast('Schedule archived', 'success');
+        loadScheduleTemplates();
+      })
+      .catch(function (err) {
+        if (err && err.code === 'stale_schedule') {
+          showStaleScheduleToast(err, loadScheduleTemplates);
+        } else {
+          showToast('Failed: ' + err.message, 'error');
+        }
+      });
+  }
+
+  // D-16 / D-15 / D-14: schedule toasts (siblings of the stale_recipe helpers)
+  var STALE_SCHEDULE_MESSAGE = 'This schedule was changed since you opened it \u2014 reload to see the latest';
+
+  function showStaleScheduleToast(err, onReload) {
+    showToast((err && err.message) || STALE_SCHEDULE_MESSAGE, 'error', {
+      actionLabel: 'Reload',
+      duration: 15000,
+      onAction: onReload
+    });
+  }
+
+  function showScheduleInUseToast(err, onArchive) {
+    showToast((err && err.message) || 'This schedule is in use. Archive it instead.', 'error', {
+      actionLabel: 'Archive instead',
+      duration: 15000,
+      onAction: onArchive
+    });
+  }
+
+  // D-14: propagate partial failure. The saved schedule is not rolled back; the
+  // toast lists the batch ids that did not update and Retry re-posts propagate.
+  function propagateSchedule(scheduleId, steps) {
+    return adminApiPost('propagate_ferm_schedule', { schedule_id: scheduleId, steps: steps })
+      .then(function (r) {
+        var failed = (r && r.batches_failed) || [];
+        if (failed.length > 0) {
+          showPropagateFailuresToast(scheduleId, steps, failed);
+        } else {
+          var msg = 'Propagated to ' + r.batches_updated + ' batch' + (r.batches_updated === 1 ? '' : 'es');
+          if (r.tasks_updated) msg += ', ' + r.tasks_updated + ' updated';
+          if (r.tasks_created) msg += ', ' + r.tasks_created + ' added';
+          if (r.tasks_removed) msg += ', ' + r.tasks_removed + ' removed';
+          showToast(msg, 'success');
+        }
+        loadBatchesData();
+      })
+      .catch(function (err) { showToast('Propagation failed: ' + err.message, 'error'); });
+  }
+
+  function showPropagateFailuresToast(scheduleId, steps, failures) {
+    var ids = failures.map(function (f) { return String((f && f.batch_id) || f); }).join(', ');
+    // showToast renders via textContent, so the ids are inert text; no markup is built.
+    showToast('These batches did not update: ' + ids + '. The schedule itself was saved.', 'error', {
+      actionLabel: 'Retry',
+      duration: 20000,
+      onAction: function () { propagateSchedule(scheduleId, steps); }
     });
   }
 
@@ -7482,7 +7576,10 @@
       };
 
       var action = isEdit ? 'update_ferm_schedule' : 'create_ferm_schedule';
-      if (isEdit) payload.schedule_id = existing.schedule_id;
+      if (isEdit) {
+        payload.schedule_id = existing.schedule_id;
+        if (existing.last_updated) payload.expected_updated_at = existing.last_updated;
+      }
 
       var schedSubmitBtn = document.getElementById('sched-submit');
       schedSubmitBtn.disabled = true;
@@ -7504,16 +7601,7 @@
               showConfirm(
                 'Apply template changes to ' + affectedBatches.length + ' active batch' + (affectedBatches.length === 1 ? '' : 'es') + '? Completed tasks will not be changed.',
                 function () {
-                  adminApiPost('propagate_ferm_schedule', { schedule_id: existing.schedule_id, steps: steps })
-                    .then(function (r) {
-                      var msg = 'Propagated to ' + r.batches_updated + ' batch' + (r.batches_updated === 1 ? '' : 'es');
-                      if (r.tasks_updated) msg += ', ' + r.tasks_updated + ' updated';
-                      if (r.tasks_created) msg += ', ' + r.tasks_created + ' added';
-                      if (r.tasks_removed) msg += ', ' + r.tasks_removed + ' removed';
-                      showToast(msg, 'success');
-                      loadBatchesData();
-                    })
-                    .catch(function (err) { showToast('Propagation failed: ' + err.message, 'error'); });
+                  propagateSchedule(existing.schedule_id, steps);
                 }
               );
             }
@@ -7522,6 +7610,10 @@
         .catch(function (err) {
           schedSubmitBtn.disabled = false;
           schedSubmitBtn.textContent = isEdit ? 'Update Template' : 'Create Template';
+          if (err && err.code === 'stale_schedule') {
+            showStaleScheduleToast(err, function () { closeModal(); loadScheduleTemplates(); });
+            return;
+          }
           showToast('Failed: ' + err.message, 'error');
         });
     });
@@ -9881,6 +9973,10 @@
       // only by an async Apps-Script fetch (triggerBatchLoad), which unit
       // tests must not depend on.
       _setFermSchedulesDataForTest: function (arr) { fermSchedulesData = arr; },
+      _setBatchesDataForTest: function (arr) { batchesData = arr; },
+      _renderScheduleTemplatesForTest: renderScheduleTemplates,
+      _scheduleFormForTest: renderScheduleForm,
+      _propagateScheduleForTest: propagateSchedule,
       // 81-10: D-15 blast-radius note load-order regression hook (GAP-01) --
       // the note only renders on this path, and the bug is that it renders too early.
       openEditScheduleModal: openEditScheduleModal,
