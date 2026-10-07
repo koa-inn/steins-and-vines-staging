@@ -74,12 +74,8 @@ app.use(express.json({
 // every request, including GETs the global guard skips (46-03).
 app.use(cookieParser());
 // H3: CORS origin whitelist — only allow requests from known frontend origins
-var allowedOrigins = [
-  'https://steinsandvines.ca',
-  'https://staging.steinsandvines.ca',
-  'http://localhost:3001',
-  'http://localhost:8080'
-];
+var allowedOriginsLib = require('./lib/allowed-origins');
+var allowedOrigins = allowedOriginsLib.ALLOWED_ORIGINS;
 app.use(cors({
   origin: function(origin, callback) {
     // Allow requests with no origin (server-to-server, curl, etc.) and whitelisted origins
@@ -795,6 +791,7 @@ app.use('/', require('./routes/discounts'));
 app.use('/', require('./routes/promo'));
 app.use('/', require('./routes/recipes'));
 app.use('/', require('./routes/pos-recipe'));
+app.use('/', require('./routes/staff-access'));
 app.use(require('./routes/webhooks'));
 
 // Sentry error handler (must be after routes, before other error handlers)
