@@ -698,6 +698,168 @@ them, not this plan):
 
 ---
 
+## Recipes → Postgres (Phase 85)
+
+Owner-run cutover, dual window, flip and rollback procedure for the Recipes + RecipeIngredients
+store (DB-04). Same shape as the Phase 84 section above. No recipe values, no staff emails and
+no customer names appear below or in any terminal output this section references: every script
+in this flow prints recipe ids, ingredient ids, field names and counts only. Evidence is logged
+in `.planning/phases/85-recipes-recipeingredients-postgres/85-DUAL-LOG.md`.
+
+### 0. Ordering gate (D-08)
+
+Production `RECIPES_STORE` stays **unset (sheets)** until `GIFT_CARDS_STORE=postgres` is set on
+production. One production dual window runs at a time. Staging may run `dual` any time.
+Do not start §5 on production while the Phase 84 window is still open.
+
+### 1. Store flag
+
+`RECIPES_STORE` is a Railway environment variable per environment on the middleware service.
+Valid values: `sheets` | `dual` | `postgres`. Unset means `sheets`. Any other value refuses to
+boot with an error naming the variable. `dual` and `postgres` make `/health`
+`database_required` true. Changing it needs a Railway redeploy (about 1 minute).
+
+### 2. Staging rehearsal
+
+1. Push to staging (`git push origin main`).
+2. Redeploy Apps Script (§3).
+3. Staging backfill (dry run, then promote) and `recipes-verify.js`.
+4. Set `RECIPES_STORE=dual` on staging.
+
+Staging has no sheet leg: the mirror (`mirror_recipe_state` / `mirror_recipe_delete`) and the
+D-05 dual-price comparison are production-only. The delete guard `recipe_batch_ref_count` is
+read against the shared production workbook even from staging, so a staging delete of a recipe
+that a live batch references will deactivate rather than delete. Staging `recipes-verify.js`
+compares against the same shared sheet production reads, so expect differences for anything
+staging wrote.
+
+### 3. Apps Script redeploy
+
+Three new actions: `mirror_recipe_state`, `mirror_recipe_delete`, `recipe_batch_ref_count`.
+Follow the Apps Script deploy sequence earlier in this file. Before pasting, record the
+currently active version (rollback target, currently 59 per the Phase 84 record). After
+deploying, fill in this line:
+
+- **Phase 85 Apps Script versions:** new version `___`, rollback version `___` (59 unless the
+  active version changed since Phase 84).
+
+### 4. Owner fix before the production dry run
+
+In the live Recipes tab, SV-R-000001 has its `created_at` and `created_by` cells swapped. Swap
+them back by hand before the dry run. The backfill rejects the row otherwise (it never
+coerces). A dry run with **0 rejects** is the gate.
+
+If the first dry run rejects other legacy rows (the backfill rejects blank `status` or
+`pricing_mode` rather than defaulting them), fix each listed cell in the live sheet (the
+reject output names sheet, row, id and field only), re-download and re-run. If the owner would
+rather default blank `pricing_mode` to `locked`, that is a code change, not a runbook step.
+
+### 5. After-hours production cutover
+
+Run from `zoho-middleware/`. The Railway tunnel runs in the owner's own terminal; the database
+URL comes from `read -s BACKFILL_DATABASE_URL && export BACKFILL_DATABASE_URL`, never argv.
+Snapshots are File, Download .xlsx, kept outside the repo, equals-form `--file=`.
+
+1. Fresh .xlsx, then
+   `node scripts/backfill/recipes-backfill.js --file=<path> --dry-run` (0 rejects required).
+2. `node scripts/backfill/recipes-backfill.js --file=<path> --promote` (needs empty tables,
+   prompts for the database name, one transaction, seeds both sequences).
+3. Set `RECIPES_STORE=dual` on production. Confirm `/health` shows `database_required:true`.
+4. Second fresh .xlsx, then
+   `node scripts/backfill/recipes-verify.js --file=<path>` must print 0 mismatches.
+5. Do the pre-open mirror write: via production admin make a harmless notes edit on a DRAFT recipe
+   with at least 2 ingredient rows. Wait 60 s. Confirm the recipe-mirror success log and no
+   `recipes-mirror` error. Take a third fresh .xlsx and run `recipes-verify.js` again: 0
+   mismatches. Do a read-only ExcelJS cell-type check (types and counts only) that the mirrored
+   row's `created_at` / `updated_at` are text like untouched rows and that its ingredient rows
+   are complete (no missing or duplicated rows).
+6. Any mismatch, failed mirror, timestamp type change or missing/duplicated ingredient row:
+   set `RECIPES_STORE=sheets` **before opening**, then investigate.
+
+### 6. Dual window (D-07)
+
+At least 7 days, all ops observed, zero unexplained discrepancies. No auto-rollback.
+
+- Daily Sentry check: `[dual-write] recipes.quote`, `[dual-write] recipes.sale`, component
+  `recipes-mirror`, component `recipes-dual-price`. A `recipes-dual-price` warning means a
+  recipe stayed dirty for more than 10 minutes: investigate the dirty marker / mirror the same
+  day. While it persists that recipe is not being price-compared.
+- Daily D-05 coverage count from Railway logs: number of `[dual-price] compared` lines versus
+  `[dual-price] skip` lines split by `reason=settle` and `reason=dirty` (or read the latest
+  running totals `compared=<N> skipped=<M>`). Record a row in 85-DUAL-LOG.md "D-05 compare
+  coverage".
+- Every discrepancy goes in 85-DUAL-LOG.md classified `explained` or `bug`. A bug fix restarts
+  the 7 days.
+- A persistent mirror failure is caught by `recipes-verify.js` and repaired with
+  `node scripts/backfill/recipes-replay-to-sheet.js` (dry run) then `--apply`.
+
+### 7. Scripted test-recipe runsheet (D-07)
+
+1. Create a draft recipe "ZZ TEST RECIPE <date>" with one cheap ingredient.
+2. Activate it with a locked price.
+3. Edit it with an ingredient change.
+4. Rename it and time the PUT in browser devtools: under 2 s (ROADMAP SC4).
+5. View it on the public recipe list and detail pages.
+6. Sell it once on the kiosk at the smallest volume: cash tender if the recipe-sale flow offers
+   it, otherwise a card sale reversed with the Phase 84 INV-000229 procedure.
+7. Within a minute (production) check the sheet row and ingredient rows updated and there is no
+   `[dual-write] recipes` warning.
+8. Delete it. A batch-referenced recipe deactivates instead of deleting; record which happened.
+9. Clean up the live-books sale exactly as INV-000229 in Phase 84 (void the invoice / delete the
+   payment). Staging and production share the Zoho org and the Helcim token.
+10. Run `recipes-verify.js` (0 mismatches).
+
+Tick the rows in 85-DUAL-LOG.md "Op-coverage table" as each op is seen.
+
+### 8. Flip to postgres
+
+Owner decision, after hours, once the §6 bar is met. Set `RECIPES_STORE=postgres`, confirm
+`/health`, run `recipes-verify.js` again. The mirror to the sheet **remains permanent on
+production** in `postgres` mode.
+
+### 9. Rollback dual → sheets
+
+Set `RECIPES_STORE=sheets`, then run `recipes-verify.js`. On any mismatch run
+`node scripts/backfill/recipes-replay-to-sheet.js --apply`, then verify again.
+
+### 10. Rollback postgres → sheets
+
+Same as §9: the sheet is a full state copy kept by the mirror. Replay with
+`recipes-replay-to-sheet.js --apply` if verify shows drift.
+
+### 11. D-03 rollout rule
+
+The editor bundle (Plan 85-09) must be live before any environment leaves `sheets`: missing
+concurrency tokens are rejected in `dual` / `postgres`.
+
+### 12. Explained differences (known up front)
+
+- A missing recipe detail returns 404 in Postgres modes (Sheets returned 200 with an error
+  object).
+- Postgres serves current data where Sheets could serve up to 300 s stale.
+- Ids are never reused after deleting the highest id.
+- SV-R-000001 sorts last after its cell fix.
+- Invalid status / NaN numerics now return 422 instead of being stored.
+- Invalid ingredients JSON writes nothing (Sheets wrote the row fields first).
+- D-05 skips within 60 s of an edit are logged, not compared.
+- A failed promote rolls back rows but not `setval`; harmless, re-seeded on the next promote.
+
+**Known limitation, delete TOCTOU:** in `dual` / `postgres` the delete asks Apps Script
+`recipe_batch_ref_count` and then deletes in Postgres. A batch created for that recipe in the
+seconds between the two steps is not seen, so the recipe is hard-deleted although a batch now
+references it (Batches stay on Sheets with no foreign key until Phase 87, which replaces the
+count with SQL in the same transaction). Operating rule: do not delete a recipe while a batch
+for it is being created. If it happens the batch keeps a dangling `recipe_id` (the mirror also
+removed the sheet row): log it in 85-DUAL-LOG.md as explained and, if the recipe is still
+needed, recreate it from the most recent .xlsx snapshot or the Railway backup.
+
+### 13. Release checklist
+
+- **Staging candidate commit SHA:** `___` (filled in by Plan 85-13).
+
+
+---
+
 ## Phase 46 Auth Cutover (CRITICAL — leaked-key neutralization)
 
 Closes the audit CRITICAL: the storefront previously shipped `MW_API_KEY` in client JS, so the

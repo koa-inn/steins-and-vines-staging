@@ -224,3 +224,24 @@ node scripts/backfill/gift-cards-backfill.js --file="$HOME/sv-backfill/snapshot.
   imported-row count) INSIDE the same transaction before committing — any failed check rolls
   back everything.
 - Output files under `backfill-output/` are gitignored and must never be committed.
+
+## Recipes (Phase 85)
+
+Three dedicated CLIs for the Recipes + RecipeIngredients tabs. Run from `zoho-middleware/`.
+Equals-form flags only; the database comes from `BACKFILL_DATABASE_URL` (never argv), and
+output is ids, field names and counts only. Full procedure: `docs/RUNBOOK.md`, "Recipes →
+Postgres (Phase 85)".
+
+```bash
+# One-time load (dry run first: 0 rejects required; any reject blocks promote).
+node scripts/backfill/recipes-backfill.js --file="$HOME/sv-backfill/snapshot.xlsx" --dry-run
+node scripts/backfill/recipes-backfill.js --file="$HOME/sv-backfill/snapshot.xlsx" --promote
+
+# Read-only comparison of Postgres against a FRESH .xlsx (exit 3 on any mismatch).
+node scripts/backfill/recipes-verify.js --file="$HOME/sv-backfill/fresh.xlsx"
+
+# Push Postgres state back onto the sheet (repair / dual->sheets rollback).
+# Dry run by default; also needs APPS_SCRIPT_URL and APPS_SCRIPT_SERVER_TOKEN for --apply.
+node scripts/backfill/recipes-replay-to-sheet.js
+node scripts/backfill/recipes-replay-to-sheet.js --apply
+```
