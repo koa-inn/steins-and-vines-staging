@@ -258,3 +258,175 @@ describe('recipes routes - read endpoints by store mode (85-07 task 1)', functio
     });
   });
 });
+
+describe('recipes routes - write endpoints by store mode (85-07 task 2)', function () {
+  beforeEach(function () {
+    process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
+    process.env.APPS_SCRIPT_SERVER_TOKEN = 'tok';
+    delete process.env.RECIPES_STORE;
+  });
+
+  afterEach(function () {
+    delete process.env.APPS_SCRIPT_URL;
+    delete process.env.APPS_SCRIPT_SERVER_TOKEN;
+    jest.dontMock('../lib/recipe-store');
+  });
+
+  describe('sheets mode (real facade)', function () {
+    it('PUT strips expected_updated_at and forwards update_recipe', function () {
+      var m = load({ staff: true });
+      m.cache.get.mockResolvedValue(null);
+      m.cache.del.mockResolvedValue(1);
+      m.axios.post.mockResolvedValue({ data: { ok: true } });
+      return callHandler('PUT', '/api/recipes/:id', {
+        params: { id: 'R1' },
+        body: { name: 'X', expected_updated_at: '2026-01-01T00:00:00.000Z' }
+      }).then(function (res) {
+        expect(res._body).toEqual({ ok: true });
+        var sent = JSON.parse(m.axios.post.mock.calls[0][1]);
+        expect(sent.action).toBe('update_recipe');
+        expect(sent.recipe_id).toBe('R1');
+        expect(sent).not.toHaveProperty('expected_updated_at');
+      });
+    });
+
+    it('DELETE forwards delete_recipe only', function () {
+      var m = load({ staff: true });
+      m.cache.del.mockResolvedValue(1);
+      m.axios.post.mockResolvedValue({ data: { ok: true } });
+      return callHandler('DELETE', '/api/recipes/:id', { params: { id: 'R1' } }).then(function (res) {
+        expect(res._body).toEqual({ ok: true });
+        expect(m.axios.post).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(m.axios.post.mock.calls[0][1])).toMatchObject({ action: 'delete_recipe', recipe_id: 'R1' });
+      });
+    });
+  });
+
+  ['dual', 'postgres'].forEach(function (mode) {
+    describe(mode + ' mode (mocked store)', function () {
+      it('POST -> 201 with recipe_id and busts cache', function () {
+        var store = mockStore(mode, { create: jest.fn().mockResolvedValue({ ok: true, recipe_id: 'R9' }) });
+        var m = load({ staff: true });
+        m.cache.get.mockResolvedValue(null);
+        m.cache.del.mockResolvedValue(1);
+        return callHandler('POST', '/api/recipes', { body: { name: 'N' } }).then(function (res) {
+          expect(store.create).toHaveBeenCalledWith({ name: 'N' });
+          expect(res._status).toBe(201);
+          expect(res._body).toEqual({ ok: true, recipe_id: 'R9' });
+          expect(m.cache.del).toHaveBeenCalled();
+        });
+      });
+
+      it('PUT passes the token to the store without it in the payload', function () {
+        var store = mockStore(mode, { update: jest.fn().mockResolvedValue({ ok: true }) });
+        var m = load({ staff: true });
+        m.cache.get.mockResolvedValue(null);
+        m.cache.del.mockResolvedValue(1);
+        return callHandler('PUT', '/api/recipes/:id', {
+          params: { id: 'R1' },
+          body: { name: 'X', expected_updated_at: 'T1' }
+        }).then(function (res) {
+          expect(store.update).toHaveBeenCalledWith({ name: 'X', recipe_id: 'R1' }, { expectedUpdatedAt: 'T1' });
+          expect(res._body).toEqual({ ok: true });
+        });
+      });
+
+      it('PUT stale or missing token -> 409 D-03 body', function () {
+        var store = mockStore(mode, {
+          update: jest.fn().mockResolvedValue({ ok: false, error: 'stale_recipe', message: 'stale' })
+        });
+        load({ staff: true }).cache.get.mockResolvedValue(null);
+        return callHandler('PUT', '/api/recipes/:id', { params: { id: 'R1' }, body: { name: 'X' } }).then(function (res) {
+          expect(store.update).toHaveBeenCalledWith(expect.any(Object), { expectedUpdatedAt: undefined });
+          expect(res._status).toBe(409);
+          expect(res._body).toEqual(STALE_BODY);
+        });
+      });
+
+      it('PUT other store failure -> 422 save_failed', function () {
+        mockStore(mode, { update: jest.fn().mockResolvedValue({ ok: false, error: 'invalid_data', message: 'bad' }) });
+        load({ staff: true }).cache.get.mockResolvedValue(null);
+        return callHandler('PUT', '/api/recipes/:id', { params: { id: 'R1' }, body: {} }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body).toEqual({ error: 'bad', code: 'save_failed' });
+        });
+      });
+
+      it('DELETE passes ?expected_updated_at; stale -> 409; not_found -> 422', function () {
+        var store = mockStore(mode, {
+          remove: jest.fn().mockResolvedValueOnce({ ok: true })
+            .mockResolvedValueOnce({ ok: false, error: 'stale_recipe' })
+            .mockResolvedValueOnce({ ok: false, error: 'not_found', message: 'Recipe not found' })
+        });
+        var m = load({ staff: true });
+        m.cache.del.mockResolvedValue(1);
+        var req = { params: { id: 'R1' }, query: { expected_updated_at: 'T1' } };
+        return callHandler('DELETE', '/api/recipes/:id', req).then(function (res) {
+          expect(store.remove).toHaveBeenCalledWith('R1', { expectedUpdatedAt: 'T1' });
+          expect(res._body).toEqual({ ok: true });
+          return callHandler('DELETE', '/api/recipes/:id', req);
+        }).then(function (res) {
+          expect(res._status).toBe(409);
+          expect(res._body).toEqual(STALE_BODY);
+          return callHandler('DELETE', '/api/recipes/:id', req);
+        }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body).toEqual({ error: 'Recipe not found' });
+        });
+      });
+
+      it('DELETE store rejection (batch_ref_unavailable) -> 502', function () {
+        var err = new Error('no ref');
+        err.code = 'batch_ref_unavailable';
+        mockStore(mode, { remove: jest.fn().mockRejectedValue(err) });
+        load({ staff: true });
+        return callHandler('DELETE', '/api/recipes/:id', { params: { id: 'R1' } }).then(function (res) {
+          expect(res._status).toBe(502);
+          expect(res._body).toEqual({ error: 'Unable to delete recipe' });
+        });
+      });
+
+      it('unit mismatch -> 422 and no store write (POST and PUT)', function () {
+        var store = mockStore(mode);
+        var m = load({ staff: true });
+        m.cache.get.mockImplementation(function (key) {
+          if (key === 'zoho:ingredients:all') return Promise.resolve([{ item_id: 'I1', rate: 5, unit: 'kg' }]);
+          return Promise.resolve(null);
+        });
+        var body = { name: 'X', ingredients: [{ item_id: 'I1', quantity: 1, unit: 'L' }] };
+        return callHandler('POST', '/api/recipes', { body: body }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body.code).toBe('unit_mismatch');
+          return callHandler('PUT', '/api/recipes/:id', { params: { id: 'R1' }, body: Object.assign({}, body) });
+        }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body.code).toBe('unit_mismatch');
+          expect(store.create).not.toHaveBeenCalled();
+          expect(store.update).not.toHaveBeenCalled();
+        });
+      });
+
+      it('activation without locked price -> 422 and no store call', function () {
+        var store = mockStore(mode);
+        load({ staff: true });
+        return callHandler('PUT', '/api/recipes/:id', {
+          params: { id: 'R1' },
+          body: { status: 'active', pricing_mode: 'locked', locked_price: 0, ingredient_count: 2 }
+        }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body.code).toBe('activation_locked_price');
+          expect(store.update).not.toHaveBeenCalled();
+        });
+      });
+
+      it('bust-cache route still works', function () {
+        mockStore(mode);
+        var m = load({ staff: true });
+        m.cache.del.mockResolvedValue(1);
+        return callHandler('POST', '/api/recipes/bust-cache').then(function (res) {
+          expect(res._body).toEqual({ ok: true, message: 'Recipe cache cleared' });
+        });
+      });
+    });
+  });
+});

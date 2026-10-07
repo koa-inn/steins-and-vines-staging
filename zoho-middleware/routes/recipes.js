@@ -20,29 +20,6 @@ var INGREDIENTS_ALL_FILE_CACHE = path.join(__dirname, '..', 'ingredients-all-cac
 var RECIPES_CACHE_TTL = 600; // 10 minutes (D-09)
 
 // ---------------------------------------------------------------------------
-// Helpers — Apps Script communication
-// ---------------------------------------------------------------------------
-
-function callAppsScriptPost(action, payload) {
-  var url = process.env.APPS_SCRIPT_URL;
-  var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
-  if (!url || !token) {
-    log.warn('[recipes] APPS_SCRIPT_URL or APPS_SCRIPT_SERVER_TOKEN not configured');
-    return Promise.reject(new Error('Apps Script not configured'));
-  }
-  return axios.post(url, JSON.stringify(Object.assign({}, payload, {
-    action: action,
-    server_token: token
-  })), {
-    headers: { 'Content-Type': 'application/json' },
-    timeout: 15000,
-    maxRedirects: 5
-  }).then(function (resp) {
-    return resp.data;
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Helper — Cache invalidation
 // ---------------------------------------------------------------------------
 
@@ -720,7 +697,7 @@ router.post('/api/recipes', function (req, res) {
     if (rejection) {
       return res.status(422).json(rejection);
     }
-    return callAppsScriptPost('create_recipe', payload).then(function (data) {
+    return recipeStore.create(payload).then(function (data) {
       if (!data.ok) {
         return res.status(422).json({ error: data.message || data.error || 'Create failed', code: 'save_failed' });
       }
@@ -741,6 +718,10 @@ router.post('/api/recipes', function (req, res) {
 router.put('/api/recipes/:id', function (req, res) {
   var payload = req.body || {};
   payload.recipe_id = req.params.id;
+  // D-03 optimistic-lock token: stripped in every mode, honoured only by the
+  // Postgres store (the sheets facade ignores it, D-04).
+  var expectedUpdatedAt = payload.expected_updated_at;
+  delete payload.expected_updated_at;
 
   // D-02 activation guardrail — enforce server-side (Pitfall 7, T-13-04)
   // NOTE: this fires whenever status is 'active', including on a plain edit of
@@ -771,7 +752,13 @@ router.put('/api/recipes/:id', function (req, res) {
     if (rejection) {
       return res.status(422).json(rejection);
     }
-    return callAppsScriptPost('update_recipe', payload).then(function (data) {
+    return recipeStore.update(payload, { expectedUpdatedAt: expectedUpdatedAt }).then(function (data) {
+      if (data && data.ok === false && data.error === 'stale_recipe') {
+        return res.status(409).json({
+          error: 'This recipe was changed since you opened it — reload to see the latest',
+          code: 'stale_recipe'
+        });
+      }
       if (!data.ok) {
         return res.status(422).json({ error: data.message || data.error || 'Update failed', code: 'save_failed' });
       }
@@ -790,9 +777,13 @@ router.put('/api/recipes/:id', function (req, res) {
 // ---------------------------------------------------------------------------
 
 router.delete('/api/recipes/:id', function (req, res) {
-  var payload = { recipe_id: req.params.id };
-
-  callAppsScriptPost('delete_recipe', payload).then(function (data) {
+  recipeStore.remove(req.params.id, { expectedUpdatedAt: req.query && req.query.expected_updated_at }).then(function (data) {
+    if (data && data.ok === false && data.error === 'stale_recipe') {
+      return res.status(409).json({
+        error: 'This recipe was changed since you opened it — reload to see the latest',
+        code: 'stale_recipe'
+      });
+    }
     if (!data.ok) {
       return res.status(422).json({ error: data.message || data.error || 'Delete failed' });
     }
