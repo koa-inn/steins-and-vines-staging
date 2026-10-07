@@ -6,6 +6,7 @@ var helcimLib = require('../lib/helcim');
 var C = require('../lib/constants');
 var googleVerify = require('../lib/googleVerify');
 var session = require('../lib/session');
+var staffAccess = require('../lib/staff-access');
 
 var OAUTH_STATE_TTL = 600; // 10 minutes
 var SESSION_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -80,7 +81,7 @@ router.get('/api/payment/config', function (req, res) {
  *
  * The server independently derives the staff email from the access token via
  * lib/googleVerify.js (T-46-09) — it NEVER reads an email from req.body. Only
- * allowlisted (STAFF_EMAILS), Google-verified emails get a session (D-46-07;
+ * allowlisted (staffAccess.resolve: STAFF_EMAILS break-glass or staff_access row), Google-verified emails get a session (D-46-07;
  * one flat tier, equal — D-46-08).
  */
 router.post('/auth/google', function (req, res) {
@@ -91,25 +92,24 @@ router.post('/auth/google', function (req, res) {
 
   googleVerify.verifyStaffAccessToken(accessToken)
     .then(function (email) {
-      var allowlist = (process.env.STAFF_EMAILS || '').split(',').map(function (e) {
-        return e.trim().toLowerCase();
-      });
-      if (allowlist.indexOf(email) === -1) {
-        return res.status(403).json({ authorized: false });
-      }
-      return session.createSession(email).then(function (sid) {
-        res.cookie('sv_session', sid, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-          maxAge: SESSION_COOKIE_MAX_AGE_MS,
-          path: '/'
+      return staffAccess.resolve(email).then(function (decision) {
+        if (!decision.allowed) {
+          return res.status(403).json({ authorized: false });
+        }
+        return session.createSession(email).then(function (sid) {
+          res.cookie('sv_session', sid, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            maxAge: SESSION_COOKIE_MAX_AGE_MS,
+            path: '/'
+          });
+          // Also return the session id in the body so cross-site staff surfaces
+          // (BrewPad/admin on steinsandvines.ca) can store it and send it as an
+          // x-session-token header — the sv_session cookie above is not delivered
+          // to this Railway origin cross-site by modern browsers. Same opaque id.
+          res.json({ authorized: true, email: email, token: sid });
         });
-        // Also return the session id in the body so cross-site staff surfaces
-        // (BrewPad/admin on steinsandvines.ca) can store it and send it as an
-        // x-session-token header — the sv_session cookie above is not delivered
-        // to this Railway origin cross-site by modern browsers. Same opaque id.
-        res.json({ authorized: true, email: email, token: sid });
       });
     })
     .catch(function (err) {

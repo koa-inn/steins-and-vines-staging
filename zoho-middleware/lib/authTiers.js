@@ -129,6 +129,22 @@ async function resolveTier(req) {
   if (sid) {
     var payload = await session.getSession(sid);
     if (payload) {
+      // Phase 86 (D-03): outside sheets mode the allowlist is re-checked on
+      // every session request so removal/demotion takes effect immediately.
+      // Role is always re-derived, never read from the session payload.
+      var staffAccess = require('./staff-access');
+      if (staffAccess.getMode() !== 'sheets') {
+        var decision = await staffAccess.resolve(payload.email);
+        if (!decision.allowed) {
+          // Definitive denial ends the session; a degraded (DB down) denial must
+          // not, so the person recovers when the database is back (D-20).
+          if (!decision.degraded) {
+            session.destroySession(sid).catch(function () {});
+          }
+          return null;
+        }
+        req.staffRole = decision.role;
+      }
       req.staffEmail = payload.email;
       // Sliding expiry (RESEARCH.md Pitfall 2): fire-and-forget — the
       // request must not block on (or fail because of) this Redis write.
