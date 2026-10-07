@@ -2053,6 +2053,47 @@ Plans:
   3. Parity tests prove the Phase 73 unit guard, the Phase 79 D-04 change comparison and D-09 id-honouring behave identically on Postgres; a kiosk recipe sale prices identically on both stores
   4. `dual` ≥1 week with mirror and discrepancy logging, then flip; a recipe rename completes in under 2 s on production
 
+**Plans:** 14 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 85-01-PLAN.md — Migration 0003 (recipes, recipe_ingredients, sequences, no unique (recipe_id,item_id)) + lib/recipe-rules.js ports, parity-proven against the real adminApi.gs (incl. updateRecipe D-04/D-09 runtime parity)
+- [ ] 85-04-PLAN.md — Apps Script: mirror_recipe_state / mirror_recipe_delete (D-01 state copy) + read-only recipe_batch_ref_count
+- [ ] 85-09-PLAN.md — Admin editor, admin kiosk quick-edit + BrewPad: expected_updated_at token (quick-edit refreshes it after save), 409 stale_recipe message + Reload (D-03), rebuild min artifacts
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 85-02-PLAN.md — lib/recipe-pg.js serializers, list/detail with Apps Script shape parity, atomic create
+- [ ] 85-10-PLAN.md — Recipes backfill: two-table spec, reject-not-coerce planner, one-transaction promote with sequence seeding
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 85-03-PLAN.md — recipe-pg update/delete: row lock, D-03 token, Phase 79 D-04/D-09, soft-deactivate delete, rename latency
+- [ ] 85-05-PLAN.md — lib/recipe-mirror.js: production-only, durable, coalescing state-copy mirror + 5-minute sweep (D-01/D-02)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 85-06-PLAN.md — lib/recipe-store.js facade: sheets byte-identical, dual/postgres authoritative, fail-closed delete
+- [ ] 85-11-PLAN.md — recipes-verify + replay-to-sheet CLIs, RUNBOOK Phase 85 section (D-07 runsheet, D-08 gate), 85-DUAL-LOG.md (D-05 coverage table, delete TOCTOU note)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 85-07-PLAN.md — routes/recipes.js through the store: cache bypass in PG modes, public shape + ferment_days preserved, 409 mapping
+- [ ] 85-08-PLAN.md — pos-recipe.js through the store + D-05/D-06 live dual price compare
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 85-12-PLAN.md — Full gate, staging push, Apps Script redeploy, SV-R-000001 cell fix, staging backfill/verify/dual, UAT (checkpoints)
+
+**Wave 7** *(blocked on Wave 6 completion; production dual only after gift cards flip — D-08)*
+
+- [ ] 85-13-PLAN.md — D-08 gate + production deploy approval, after-hours cutover to dual, opening smoke (checkpoints)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 85-14-PLAN.md — ≥7-day dual window, owner flip decision, flip to postgres + production rename < 2 s (checkpoints)
+
 ### Phase 86: Vessels + FermSchedules + Config → Postgres
 
 **Goal**: The three hand-edited-only sheets get real tables AND the admin screens that make hand-editing unnecessary, with the shared secret moved out of data entirely.

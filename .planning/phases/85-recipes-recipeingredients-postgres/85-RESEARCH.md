@@ -451,18 +451,23 @@ var gs = new Function(src + '\nreturn {normalizeRecipeIngredientTuple: normalize
 | A9 | Mirror retry schedule (2 s/10 s/60 s/5 min) and 60 s settle window for D-05 | Patterns 5/7 | Tunable; wrong values only change alert noise |
 | A10 | Docker daemon is not running on the dev machine right now (`docker info` failed) | Environment Availability | `npm run test:db` skips locally (D-14) but fails on CI if Docker absent — start Docker Desktop before executing real-PG tasks |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Delete when Apps Script is unreachable (PG mode).**
    - Known: the soft-deactivate rule needs the Batches tab; no PG equivalent until Phase 87.
    - Unclear: owner tolerance for "delete fails while Apps Script is down" vs risk of hard-deleting a referenced recipe.
    - Recommendation: fail closed (502, "try again") — matches today's behaviour when Apps Script is down.
+   - RESOLVED: delete fails closed with 502 'Unable to delete recipe' when Apps Script (recipe_batch_ref_count) is unreachable or answers ok:false; nothing is deleted (implemented in 85-06/85-07).
 2. **Strict vs lenient token requirement for D-03.**
    - Recommendation: strict in `dual`/`postgres`; ship both editors' change to staging first and verify before flipping any flag (see A6). Confirm with owner at plan time.
+   - RESOLVED: a missing expected_updated_at is rejected (409 stale_recipe) in dual/postgres; every recipe PUT/DELETE caller (admin editor, admin kiosk quick-edit, BrewPad) ships the token first (85-09) and is confirmed live on staging before any RECIPES_STORE change (85-12); sheets mode is unchanged (token ignored, D-04).
 3. **Should staging `dual` also call `recipe_batch_ref_count` against the shared production workbook?**
    - It is read-only, so safe; it is the only way to exercise delete end-to-end on staging. Recommend yes.
+   - RESOLVED: yes — staging dual calls the read-only recipe_batch_ref_count against the shared production workbook (85-06), so delete is exercised end-to-end on staging.
 4. **`SV-R-000001` swap:** owner fix in the live sheet (recommended) vs a one-off backfill transform. Recommend the sheet fix; the dry-run enforces it.
+   - RESOLVED: the owner swaps SV-R-000001's created_at/created_by cells in the live Recipes tab before the first dry run (85-12 Task 2, re-confirmed in 85-13 Task 2); no backfill transform.
 5. **Durable dirty-set vs in-memory-only retry.** CONTEXT D-02 only requires "retried in the background" + Sentry + verify catch. A Redis marker + sweep is the recommended robust form given frequent Railway redeploys; the minimal form (in-memory retries only) satisfies the letter but loses retries on restart. Planner to decide scope; recommendation above.
+   - RESOLVED: durable Redis marker recipe:mirror-dirty:<id> (30-day TTL) plus a 5-minute sweep that re-drives surviving markers, on top of the in-process backoff retries (85-05).
 
 ## Environment Availability
 
