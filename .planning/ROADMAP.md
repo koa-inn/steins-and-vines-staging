@@ -2126,8 +2126,8 @@ Plans:
 
 **Wave 3**
 
-- [ ] 86-11-PLAN.md — ops-mirror.js entity-keyed production mirror + sweep
-- [ ] 86-12-PLAN.md — Auth wiring: per-request revalidation, /auth/google via resolve, owner-only /api/staff-access routes
+- [x] 86-11-PLAN.md — ops-mirror.js entity-keyed production mirror + sweep
+- [x] 86-12-PLAN.md — Auth wiring: per-request revalidation, /auth/google via resolve, owner-only /api/staff-access routes
 
 **Wave 4**
 
