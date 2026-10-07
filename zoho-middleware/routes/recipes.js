@@ -9,6 +9,7 @@ var C = require('../lib/constants');
 var axios = require('axios');
 var authTiers = require('../lib/authTiers');
 var scaling = require('../lib/recipe-scaling');
+var recipeStore = require('../lib/recipe-store');
 
 var router = express.Router();
 
@@ -313,14 +314,16 @@ function enrichListPrices(recipes) {
       }
     }
 
+    // Postgres modes bypass the sv:recipes detail cache (no stale price/token).
+    var useDetailCache = recipeStore.getMode() === 'sheets';
     return Promise.all(dynamicRecipes.map(function (recipe) {
       var detailKey = C.CACHE_KEYS.RECIPES + ':' + recipe.recipe_id;
-      return cache.get(detailKey).then(function (detail) {
+      return (useDetailCache ? cache.get(detailKey) : Promise.resolve(null)).then(function (detail) {
         if (!detail || !detail.ingredients) {
-          return callAppsScriptPost('get_recipe', { recipe_id: recipe.recipe_id }).then(function (data) {
+          return recipeStore.get(recipe.recipe_id).then(function (data) {
             if (!data || !data.ok || !data.data) return null;
             var result = { recipe: data.data.recipe || data.data, ingredients: data.data.ingredients || [] };
-            cache.set(detailKey, result, RECIPES_CACHE_TTL);
+            if (useDetailCache) cache.set(detailKey, result, RECIPES_CACHE_TTL);
             return result;
           }).catch(function () { return null; });
         }
@@ -409,6 +412,8 @@ router.get('/api/recipes', function (req, res) {
     var limit  = parseInt(req.query.limit, 10) || 0;
     var offset = parseInt(req.query.offset, 10) || 0;
     var cacheKey = C.CACHE_KEYS.RECIPES + ':' + status + ':' + limit + ':' + offset;
+    // Postgres modes bypass the sv:recipes caches entirely (no stale D-03 token or price).
+    var useCache = recipeStore.getMode() === 'sheets';
 
     // Staff tiers get today's payload byte-for-byte. Non-staff callers get
     // the array re-filtered to status=active server-side (T-74-01) — this
@@ -426,7 +431,7 @@ router.get('/api/recipes', function (req, res) {
       res.json({ source: source, recipes: publicRecipes, total: publicRecipes.length });
     }
 
-    return cache.get(cacheKey).then(function (cached) {
+    return (useCache ? cache.get(cacheKey) : Promise.resolve(null)).then(function (cached) {
       if (cached && cached.recipes) {
         log.info('[api/recipes] Cache hit status=' + status);
         return Promise.all([
@@ -436,14 +441,14 @@ router.get('/api/recipes', function (req, res) {
           sendRecipeList('cache', cached.recipes, cached.total);
         });
       }
-      return callAppsScriptPost('get_recipes', { status: status, limit: limit, offset: offset })
+      return recipeStore.list({ status: status, limit: limit, offset: offset })
         .then(function (data) {
           if (data && data.ok === false) {
             log.warn('[api/recipes] Apps Script rejected: ' + (data.error || '') + ' ' + (data.message || ''));
             return res.status(502).json({ error: 'Apps Script error: ' + (data.error || 'unknown'), detail: data.message || '' });
           }
           var payload = data.data || {};
-          if (payload.recipes && payload.recipes.length > 0) {
+          if (useCache && payload.recipes && payload.recipes.length > 0) {
             cache.set(cacheKey, payload, RECIPES_CACHE_TTL);
             cache.set(C.CACHE_KEYS.RECIPES_TS, Date.now(), RECIPES_CACHE_TTL);
           }
@@ -452,7 +457,7 @@ router.get('/api/recipes', function (req, res) {
             enrichListPrices(recipeList),
             enrichFermentDays(recipeList)
           ]).then(function () {
-            sendRecipeList('apps-script', recipeList, payload.total || 0);
+            sendRecipeList(useCache ? 'apps-script' : 'postgres', recipeList, payload.total || 0);
           });
         });
     }).catch(function (err) {
@@ -469,6 +474,7 @@ router.get('/api/recipes', function (req, res) {
 router.get('/api/recipes/:id', function (req, res) {
   var recipeId = req.params.id;
   var cacheKey = C.CACHE_KEYS.RECIPES + ':' + recipeId;
+  var useCache = recipeStore.getMode() === 'sheets';
 
   return isRecipeStaff(req).then(function (isStaff) {
     // Staff/kiosk tiers keep today's full response (recipe + ingredients)
@@ -488,7 +494,7 @@ router.get('/api/recipes/:id', function (req, res) {
       return res.json({ recipe: toPublicRecipe(result.recipe) });
     }
 
-    return cache.get(cacheKey).then(function (cached) {
+    return (useCache ? cache.get(cacheKey) : Promise.resolve(null)).then(function (cached) {
       if (cached) {
         log.info('[api/recipes/' + recipeId + '] Cache hit');
         return Promise.all([
@@ -503,7 +509,7 @@ router.get('/api/recipes/:id', function (req, res) {
           sendRecipeDetail(cached);
         });
       }
-      return callAppsScriptPost('get_recipe', { recipe_id: recipeId })
+      return recipeStore.get(recipeId)
         .then(function (data) {
           if (!data.ok) {
             return res.status(404).json({ error: data.message || 'Recipe not found' });
@@ -516,7 +522,7 @@ router.get('/api/recipes/:id', function (req, res) {
             }),
             enrichFermentDays([result.recipe])
           ]).then(function () {
-            cache.set(cacheKey, result, RECIPES_CACHE_TTL);
+            if (useCache) cache.set(cacheKey, result, RECIPES_CACHE_TTL);
             sendRecipeDetail(result);
           });
         });
@@ -546,7 +552,7 @@ router.get('/api/recipes/:id/availability', function (req, res) {
       }
 
       // Step 1: Fetch recipe ingredients from Apps Script (server fetches item_ids, never client — API-02)
-      return callAppsScriptPost('get_recipe', { recipe_id: recipeId }).then(function (data) {
+      return recipeStore.get(recipeId).then(function (data) {
         if (!data.ok) {
           return res.status(404).json({ error: data.message || 'Recipe not found' });
         }
