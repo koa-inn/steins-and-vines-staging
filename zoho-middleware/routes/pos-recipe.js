@@ -2,6 +2,8 @@
 
 var express = require('express');
 var crypto = require('crypto');
+var fs = require('fs');
+var path = require('path');
 var helcimLib = require('../lib/helcim');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
@@ -25,6 +27,28 @@ var router = express.Router();
 // M12 (D-13 parity): 7-day TTL for the recipe-sale pending-charge record —
 // mirrors KIOSK_PENDING_CHARGE_TTL in routes/pos.js.
 var KIOSK_PENDING_CHARGE_TTL = 604800;
+
+// Same file routes/catalog.js writes on every ingredients refresh (and reads
+// on a cold admin request). zoho:ingredients:all has a 1 h TTL but is only
+// warmed at 05:00/13:00 UTC or by an admin page, so without this fallback
+// quote, sale and the post-charge confirm 503 for most of the day.
+var INGREDIENTS_ALL_FILE_CACHE = path.join(__dirname, '..', 'ingredients-all-cache.json');
+
+/** Full ingredient catalog: Redis first, then the file cache; null when neither has an array. */
+function getIngredientCatalog() {
+  return cache.get(C.CACHE_KEYS.INGREDIENTS_ALL).then(function (catalog) {
+    if (Array.isArray(catalog)) return catalog;
+    var fileCatalog = null;
+    try {
+      fileCatalog = JSON.parse(fs.readFileSync(INGREDIENTS_ALL_FILE_CACHE, 'utf8'));
+    } catch {
+      fileCatalog = null;
+    }
+    if (!Array.isArray(fileCatalog)) return null;
+    log.warn('[pos-recipe] Ingredient catalog not in Redis; using file cache (' + fileCatalog.length + ' items)');
+    return fileCatalog;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Recipe discount helpers
@@ -382,7 +406,7 @@ function priceRecipe(data, rawTarget, saleType, millGrain, modifiedIngredients, 
   var isModified = Array.isArray(modifiedIngredients);
   var baseIngredients = isModified ? modifiedIngredients : ingredients;
 
-  return cache.get(C.CACHE_KEYS.INGREDIENTS_ALL).then(function (ingredientCatalog) {
+  return getIngredientCatalog().then(function (ingredientCatalog) {
     if (!ingredientCatalog || !Array.isArray(ingredientCatalog)) {
       return Promise.reject({ status: 503, body: { error: 'Ingredient catalog not available — try again shortly' } });
     }
@@ -940,7 +964,7 @@ function _runRecipeConfirm(body, confirmIdemKey, req, res) {
       log.info('[pos-recipe/confirm] target_volume_l=' + targetVolumeLConfirm + ' base_vol=' + baseVolC + ' scale_factor=' + scaleFactorConfirm);
 
       // Re-compute total server-side from full ingredient catalog (includes internal-only items)
-      cache.get(C.CACHE_KEYS.INGREDIENTS_ALL).then(function (ingredientCatalog) {
+      getIngredientCatalog().then(function (ingredientCatalog) {
         if (!ingredientCatalog || !Array.isArray(ingredientCatalog)) {
           return res.status(503).json({ error: 'Ingredient catalog not available — try again shortly' });
         }
