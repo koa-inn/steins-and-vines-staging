@@ -70,6 +70,28 @@ var INSERT_INGREDIENT_SQL =
   'insert into recipe_ingredients (recipe_id, position, item_id, item_name, quantity, unit) ' +
   'values ($1, $2, $3, $4, $5, $6)';
 
+var LOCK_RECIPE_SQL = RECIPE_SELECT + 'where recipe_id = $1 for update';
+
+var STORED_INGREDIENTS_SQL =
+  'select ingredient_id, item_id, quantity, unit from recipe_ingredients ' +
+  'where recipe_id = $1 order by position asc';
+
+var DELETE_INGREDIENTS_SQL = 'delete from recipe_ingredients where recipe_id = $1';
+
+var INSERT_INGREDIENT_WITH_ID_SQL =
+  'insert into recipe_ingredients (ingredient_id, recipe_id, position, item_id, item_name, quantity, unit) ' +
+  'values ($1, $2, $3, $4, $5, $6, $7)';
+
+var DEACTIVATE_RECIPE_SQL = "update recipes set status = 'inactive', updated_at = $2 where recipe_id = $1";
+
+var DELETE_RECIPE_SQL = 'delete from recipes where recipe_id = $1';
+
+// Fixed column allow-lists for the dynamic SET clause (never built from payload keys).
+var UPDATE_STRING_FIELDS = ['name', 'style', 'description', 'status', 'notes', 'schedule_id'];
+var UPDATE_NUMERIC_FIELDS = ['locked_price', 'service_fee', 'materials_fee', 'batch_size_l', 'abv', 'ibu', 'colour_srm'];
+
+var STALE_MESSAGE = 'This recipe was changed since you opened it \u2014 reload to see the latest';
+
 // ─── Serializers ───────────────────────────────────────────────────────────
 
 function textOut(value) {
@@ -237,6 +259,143 @@ async function createRecipe(client, payload, opts) {
   return { ok: true, recipe_id: recipeId, ingredients_created: prepared.length, _recipeId: recipeId };
 }
 
+// ─── Update / delete ───────────────────────────────────────────────────────
+
+/** D-03: stale when the token is missing/unparseable or differs (epoch-ms) from the locked row. */
+function isStale(expected, row) {
+  if (expected === undefined || expected === null || expected === '') return true;
+  var t = new Date(expected).getTime();
+  if (isNaN(t)) return true;
+  var stored = row.updated_at instanceof Date ? row.updated_at.getTime() : new Date(row.updated_at).getTime();
+  return t !== stored;
+}
+
+function staleResult() {
+  return { ok: false, error: 'stale_recipe', message: STALE_MESSAGE };
+}
+
+async function updateRecipe(client, payload, opts) {
+  payload = payload || {};
+  opts = opts || {};
+  var now = opts.now || new Date();
+  var recipeId = payload.recipe_id;
+  if (!recipeId) return { ok: false, error: 'missing_id', message: 'recipe_id is required' };
+
+  // Validate everything before the lock or any write (Sheets wrote row fields first; improvement).
+  var incomingRaw;
+  if (payload.ingredients !== undefined) {
+    try {
+      incomingRaw = typeof payload.ingredients === 'string' ? JSON.parse(payload.ingredients) : payload.ingredients;
+    } catch {
+      return invalid('Invalid ingredients JSON');
+    }
+    if (!Array.isArray(incomingRaw)) return invalid('ingredients must be an array');
+  }
+
+  var sets = [];
+  var params = [recipeId];
+  var i;
+  function addSet(col, value) {
+    params.push(value);
+    sets.push(col + ' = $' + params.length);
+  }
+
+  for (i = 0; i < UPDATE_STRING_FIELDS.length; i++) {
+    var sf = UPDATE_STRING_FIELDS[i];
+    if (payload[sf] === undefined) continue;
+    var sv = recipeRules.sanitizeInput(payload[sf]);
+    if (sf === 'status') {
+      if (ALLOWED_STATUSES.indexOf(sv) === -1) return invalid('status must be draft, active or inactive');
+      addSet(sf, sv);
+    } else if (sf === 'name') {
+      addSet(sf, sv);
+    } else {
+      addSet(sf, emptyToNull(sv));
+    }
+  }
+  for (i = 0; i < UPDATE_NUMERIC_FIELDS.length; i++) {
+    var nf = UPDATE_NUMERIC_FIELDS[i];
+    if (payload[nf] === undefined) continue;
+    var nv = Number(payload[nf]);
+    if (!isFinite(nv)) return invalid('Numeric field is not a finite number');
+    addSet(nf, nv);
+  }
+  if (payload.pricing_mode !== undefined) addSet('pricing_mode', recipeRules.normalizePricingMode(payload.pricing_mode));
+
+  var incoming;
+  if (incomingRaw !== undefined) {
+    incoming = [];
+    for (i = 0; i < incomingRaw.length; i++) {
+      var ing = incomingRaw[i] || {};
+      var qty = ing.quantity !== undefined ? Number(ing.quantity) : 0;
+      if (!isFinite(qty)) return invalid('Ingredient ' + (i + 1) + ': quantity is not a finite number');
+      incoming.push({
+        ingredient_id: String(ing.ingredient_id || '').trim(),
+        item_id: recipeRules.sanitizeInput(ing.item_id || ''),
+        item_name: emptyToNull(recipeRules.sanitizeInput(ing.item_name || '')),
+        quantity: qty,
+        unit: emptyToNull(recipeRules.sanitizeInput(ing.unit || ''))
+      });
+    }
+  }
+
+  var locked = await client.query(LOCK_RECIPE_SQL, [recipeId]);
+  if (locked.rows.length === 0) return { ok: false, error: 'not_found', message: 'Recipe not found: ' + recipeId };
+  if (isStale(opts.expectedUpdatedAt, locked.rows[0])) return staleResult();
+
+  addSet('updated_at', now);
+  await client.query('update recipes set ' + sets.join(', ') + ' where recipe_id = $1', params);
+
+  var rewritten = false;
+  if (incoming !== undefined) {
+    var stored = await client.query(STORED_INGREDIENTS_SQL, [recipeId]);
+    var storedTuples = stored.rows.map(function (r) {
+      return recipeRules.normalizeRecipeIngredientTuple(r.item_id, Number(r.quantity), r.unit);
+    });
+    var incomingTuples = incoming.map(function (r) {
+      return recipeRules.normalizeRecipeIngredientTuple(r.item_id, r.quantity, r.unit);
+    });
+    if (!recipeRules.recipeIngredientsUnchanged(incomingTuples, storedTuples)) {
+      var plan = recipeRules.planIngredientIds(incoming, stored.rows.map(function (r) { return r.ingredient_id; }));
+      await client.query(DELETE_INGREDIENTS_SQL, [recipeId]);
+      for (var k = 0; k < plan.length; k++) {
+        var p = plan[k];
+        if (p.ingredient_id) {
+          await client.query(INSERT_INGREDIENT_WITH_ID_SQL,
+            [p.ingredient_id, recipeId, p.position, p.item_id, p.item_name, p.quantity, p.unit]);
+        } else {
+          await client.query(INSERT_INGREDIENT_SQL,
+            [recipeId, p.position, p.item_id, p.item_name, p.quantity, p.unit]);
+        }
+      }
+      rewritten = true;
+    }
+  }
+
+  return { ok: true, _recipeId: recipeId, _ingredientsRewritten: rewritten };
+}
+
+async function deleteRecipe(client, recipeId, opts) {
+  opts = opts || {};
+  if (!recipeId) return { ok: false, error: 'missing_id', message: 'recipe_id is required' };
+  var refs = opts.batchRefCount;
+  if (typeof refs !== 'number' || !isFinite(refs) || refs < 0 || Math.floor(refs) !== refs) {
+    throw new Error('batchRefCount required');
+  }
+  var now = opts.now || new Date();
+
+  var locked = await client.query(LOCK_RECIPE_SQL, [recipeId]);
+  if (locked.rows.length === 0) return { ok: false, error: 'not_found', message: 'Recipe not found: ' + recipeId };
+  if (isStale(opts.expectedUpdatedAt, locked.rows[0])) return staleResult();
+
+  if (refs > 0) {
+    await client.query(DEACTIVATE_RECIPE_SQL, [recipeId, now]);
+    return { ok: true, deactivated: true, message: 'Recipe deactivated (has batch references)', _recipeId: recipeId };
+  }
+  await client.query(DELETE_RECIPE_SQL, [recipeId]);
+  return { ok: true, deleted: true, message: 'Recipe deleted', _recipeId: recipeId };
+}
+
 module.exports = {
   RECIPE_COLUMNS: RECIPE_COLUMNS,
   INGREDIENT_COLUMNS: INGREDIENT_COLUMNS,
@@ -245,5 +404,7 @@ module.exports = {
   listRecipes: listRecipes,
   getRecipe: getRecipe,
   listRecipeIds: listRecipeIds,
-  createRecipe: createRecipe
+  createRecipe: createRecipe,
+  updateRecipe: updateRecipe,
+  deleteRecipe: deleteRecipe
 };
