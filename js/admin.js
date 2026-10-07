@@ -154,6 +154,17 @@
       toast.appendChild(undoBtn);
     }
 
+    if (typeof opts.actionLabel === 'string' && typeof opts.onAction === 'function') {
+      var actionBtn = document.createElement('button');
+      actionBtn.className = 'admin-toast-undo';
+      actionBtn.textContent = opts.actionLabel;
+      actionBtn.addEventListener('click', function () {
+        opts.onAction();
+        removeToast(toast);
+      });
+      toast.appendChild(actionBtn);
+    }
+
     var closeBtn = document.createElement('button');
     closeBtn.className = 'admin-toast-close';
     closeBtn.innerHTML = '&times;';
@@ -8984,6 +8995,11 @@
       ? mwUrl + '/api/recipes/' + encodeURIComponent(recipeId)
       : mwUrl + '/api/recipes';
 
+    // D-03: optimistic-concurrency token, only when editing an existing recipe
+    if (recipeId && _recipesState.currentRecipe && _recipesState.currentRecipe.updated_at) {
+      formData.expected_updated_at = _recipesState.currentRecipe.updated_at;
+    }
+
     var saveBtn = document.getElementById('recipes-save-btn');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
 
@@ -8993,8 +9009,10 @@
       headers: getRecipesMwHeaders(),
       body: JSON.stringify(formData)
     })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
+      .then(recipeStatusPreservingJson)
+      .then(function (result) {
+        throwIfStaleRecipe(result);
+        var data = result.data;
         if (!data.ok && data.error) throw new Error(data.error);
         showToast(recipeId ? 'Recipe saved.' : 'Recipe created.', 'success');
         // If new recipe, switch to editing the created recipe
@@ -9007,7 +9025,11 @@
         // Refresh list in background
         loadRecipeList();
       })
-      .catch(function () {
+      .catch(function (err) {
+        if (err && err.code === 'stale_recipe') {
+          showStaleRecipeToast(err, function () { openRecipeDetail(recipeId); });
+          return;
+        }
         showToast('Could not save recipe. Please try again.', 'error');
       })
       .finally(function () {
@@ -9025,21 +9047,56 @@
     var mwUrl = getRecipesMwUrl();
     if (!mwUrl) return;
 
-    fetch(mwUrl + '/api/recipes/' + encodeURIComponent(recipeId), {
+    var delUrl = mwUrl + '/api/recipes/' + encodeURIComponent(recipeId);
+    var delToken = _recipesState.currentRecipe && _recipesState.currentRecipe.updated_at;
+    if (delToken) delUrl += '?expected_updated_at=' + encodeURIComponent(delToken);
+
+    fetch(delUrl, {
       method: 'DELETE',
       credentials: 'include',
       headers: getRecipesMwHeaders()
     })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
+      .then(recipeStatusPreservingJson)
+      .then(function (result) {
+        throwIfStaleRecipe(result);
+        var data = result.data;
         if (!data.ok && data.error) throw new Error(data.error);
         showToast('Recipe deleted.', 'success');
         showRecipesListView();
         loadRecipeList();
       })
-      .catch(function () {
+      .catch(function (err) {
+        if (err && err.code === 'stale_recipe') {
+          showStaleRecipeToast(err, function () { openRecipeDetail(recipeId); });
+          return;
+        }
         showToast('Could not delete recipe. Please try again.', 'error');
       });
+  }
+
+  // D-03: shared helpers for the stale_recipe (409) rejection
+  var STALE_RECIPE_MESSAGE = 'This recipe was changed since you opened it — reload to see the latest';
+
+  function recipeStatusPreservingJson(r) {
+    return r.json().catch(function () { return {}; }).then(function (data) {
+      return { status: r.status, data: data };
+    });
+  }
+
+  function throwIfStaleRecipe(result) {
+    if (result.status === 409 && result.data && result.data.code === 'stale_recipe') {
+      var e = new Error(result.data.error || STALE_RECIPE_MESSAGE);
+      e.code = 'stale_recipe';
+      throw e;
+    }
+  }
+
+  function showStaleRecipeToast(err, onReload) {
+    showToast(err.message || STALE_RECIPE_MESSAGE, 'error', {
+      actionLabel: 'Reload',
+      duration: 15000,
+      onAction: onReload
+    });
   }
 
   // Controls initialization
@@ -10887,6 +10944,8 @@
           var wrap = document.getElementById('kiosk-recipe-quick-edit-wrap');
           if (!wrap) return;
           qeBtn.style.display = 'none';
+          // D-03: capture the concurrency token when the form opens
+          var qeToken = recipe.updated_at || '';
           wrap.innerHTML =
             '<label style="display:block;margin-bottom:0.5rem;font-size:0.85rem;font-weight:600;">Recipe Name</label>' +
             '<input type="text" id="kqe-name" class="bp-inline-input" style="width:100%;margin-bottom:0.75rem;font-size:16px;" value="' + escapeHTML(recipe.name || '') + '">' +
@@ -10910,7 +10969,7 @@
           });
 
           document.getElementById('kqe-save').addEventListener('click', function () {
-            kioskSaveRecipeQuickEdit(recipe, wrap, qeBtn);
+            kioskSaveRecipeQuickEdit(recipe, wrap, qeBtn, qeToken);
           });
         });
       }
@@ -11065,7 +11124,29 @@
     kioskCheckRecipeAvailability(recipe.recipe_id);
   }
 
-  function kioskSaveRecipeQuickEdit(recipe, wrap, qeBtn) {
+  // D-03: re-fetch recipe detail (staff projection) to refresh the local concurrency token.
+  // Resolves true on success, false on any failure (errors are swallowed; callers decide).
+  function kioskRefreshRecipeFromDetail(recipe) {
+    return fetch(kioskMwUrl() + '/api/recipes/' + encodeURIComponent(recipe.recipe_id), {
+      credentials: 'include',
+      headers: getRecipesMwHeaders()
+    })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function (data) {
+        var d = data && data.recipe;
+        if (!d) return false;
+        if (d.name !== undefined) recipe.name = d.name;
+        if (d.notes !== undefined) recipe.notes = d.notes;
+        if (d.locked_price !== undefined) recipe.locked_price = d.locked_price;
+        if (d.status !== undefined) recipe.status = d.status;
+        if (typeof d.updated_at === 'string' && d.updated_at) recipe.updated_at = d.updated_at;
+        recipe._fetchedDetail = data;
+        return true;
+      })
+      .catch(function () { return false; });
+  }
+
+  function kioskSaveRecipeQuickEdit(recipe, wrap, qeBtn, expectedUpdatedAt) {
     var saveBtn = document.getElementById('kqe-save');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
 
@@ -11075,6 +11156,15 @@
       locked_price: parseFloat((document.getElementById('kqe-price') || {}).value) || 0,
       status: (document.getElementById('kqe-status') || {}).value || recipe.status
     };
+    var body = {
+      name: fields.name,
+      notes: fields.notes,
+      locked_price: fields.locked_price,
+      status: fields.status
+    };
+    if (typeof expectedUpdatedAt === 'string' && expectedUpdatedAt) {
+      body.expected_updated_at = expectedUpdatedAt;
+    }
 
     var mw = kioskMwUrl();
     var headers = { 'Content-Type': 'application/json' };
@@ -11083,10 +11173,12 @@
       method: 'PUT',
       credentials: 'include',
       headers: headers,
-      body: JSON.stringify(fields)
+      body: JSON.stringify(body)
     })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
+      .then(recipeStatusPreservingJson)
+      .then(function (result) {
+        throwIfStaleRecipe(result);
+        var data = result.data;
         if (!data.ok && data.error) throw new Error(data.error);
         recipe.name = fields.name;
         recipe.notes = fields.notes;
@@ -11097,8 +11189,22 @@
         qeBtn.style.display = '';
         var nameEl = document.getElementById('kiosk-recipe-selected-name');
         if (nameEl) nameEl.textContent = fields.name;
+        // PUT returns only {ok:true}: refresh the token so the next quick-edit does not self-409
+        kioskRefreshRecipeFromDetail(recipe);
       })
       .catch(function (err) {
+        if (err && err.code === 'stale_recipe') {
+          showStaleRecipeToast(err, function () {
+            kioskRefreshRecipeFromDetail(recipe).then(function () {
+              var n = document.getElementById('kiosk-recipe-selected-name');
+              if (n) n.textContent = recipe.name || '';
+              wrap.innerHTML = '';
+              qeBtn.style.display = '';
+            });
+          });
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+          return;
+        }
         showToast('Could not update recipe: ' + (err.message || 'unknown error'), 'error');
         if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
       });
@@ -11197,6 +11303,11 @@
       _kioskSetModifiedIngredients: function (v) { _kioskModifiedIngredients = v; },
       renderKioskModifyRows: renderKioskModifyRows,
       kioskSaveAsNewRecipe: kioskSaveAsNewRecipe,
+      // 85-09: D-03 stale-save test hooks
+      kioskSaveRecipeQuickEdit: kioskSaveRecipeQuickEdit,
+      kioskRefreshRecipeFromDetail: kioskRefreshRecipeFromDetail,
+      _recipesSaveForTest: saveRecipe,
+      _recipesDeleteForTest: deleteRecipe,
       // Phase 36 GAP-1 test hook (36-09): allows tests to invoke the expand body
       // without wiring up the full kioskShowRecipePrompt DOM context.
       _kioskOpenModifyPanel: function (r) { return kioskOpenModifyPanel(r); },
