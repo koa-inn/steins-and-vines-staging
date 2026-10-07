@@ -262,6 +262,7 @@ Deploy. Prefer this to forward-fixing a live deployment.
 
 | Date | Version | Previous (rollback target) | Change |
 |------|---------|----------------------------|--------|
+| 2026-10-07 | 60 | **59** | **Phase 85** (85-04): additive `mirror_recipe_state`, `mirror_recipe_delete`, `recipe_batch_ref_count` (server_token-gated). Editor-drift hash check passed before paste; post-paste hash matched repo. `GET /api/recipes` returned 3 active recipes from Apps Script on production and staging after deploy. |
 | 2026-09-24 | 58 | **57** | Pre-existing fixes found in the Phase 82 staging walk: public batch cache bound to the token that passed (`0d460a6e` — closes a 5 s any-token read of `get_batch_public`); `propagateFermSchedule` no longer duplicates completed steps / mislabels packaging, and evicts per-batch caches (`ff1436b7`). Live-verified on staging test batch SV-B-000221: bogus + malformed tokens rejected right after a valid view, valid token works right after a bogus one; propagate of an added step produced A(done), B, C, one Packaging, visible immediately. |
 | 2026-09-23 | 57 | **56** | **Phase 82** (82-02/82-03): admin proxy `server_token` write entries, inventory/schedule actions, `get_ingredients`/`get_homepage` reads, D-18 lock fixes, per-task cache bust, removed `get_config`/`update_schedule`/`update_kits`. Non-mutating probes 1-7 + 9 passed (`scripts/phase82-appsscript-probes.sh`). Pre-paste editor-drift hash check was skipped. |
 | 2026-09-05 14:11 | 56 | **55** | **Phase 81**-01: `schedule_id` column self-migration + `'gfs'` cache-bust on FermSchedules CRUD |
@@ -740,8 +741,9 @@ Follow the Apps Script deploy sequence earlier in this file. Before pasting, rec
 currently active version (rollback target, currently 59 per the Phase 84 record). After
 deploying, fill in this line:
 
-- **Phase 85 Apps Script versions:** new version `___`, rollback version `___` (59 unless the
-  active version changed since Phase 84).
+- **Phase 85 Apps Script versions:** new version `60`, rollback version `59` (deployed 2026-10-07 on
+  deployment `AKfycb…DI968g`; pre-paste editor-drift hash matched the pre-Phase-85 repo file, post-paste
+  hash `d779448b…` matched `apps-script/adminApi.gs`).
 
 ### 4. Owner fix before the production dry run
 
