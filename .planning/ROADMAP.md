@@ -2053,7 +2053,7 @@ Plans:
   3. Parity tests prove the Phase 73 unit guard, the Phase 79 D-04 change comparison and D-09 id-honouring behave identically on Postgres; a kiosk recipe sale prices identically on both stores
   4. `dual` ≥1 week with mirror and discrepancy logging, then flip; a recipe rename completes in under 2 s on production
 
-**Plans:** 9/14 plans executed
+**Plans:** 11/14 plans executed
 
 Plans:
 **Wave 1**
@@ -2079,8 +2079,8 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 85-07-PLAN.md — routes/recipes.js through the store: cache bypass in PG modes, public shape + ferment_days preserved, 409 mapping
-- [ ] 85-08-PLAN.md — pos-recipe.js through the store + D-05/D-06 live dual price compare
+- [x] 85-07-PLAN.md — routes/recipes.js through the store: cache bypass in PG modes, public shape + ferment_days preserved, 409 mapping
+- [x] 85-08-PLAN.md — pos-recipe.js through the store + D-05/D-06 live dual price compare
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
