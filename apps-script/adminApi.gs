@@ -486,6 +486,8 @@ function doPost(e) {
 
       // Batch tracking endpoints (all invalidate batch cache after write)
       case 'create_batch': {
+        // Phase 86-03: trusted schedule steps are server_token-only; never honour them from staff OAuth
+        delete payload.schedule_steps_json;
         var r = createBatch(payload, authResult.email);
         _invalidateBatchCache(r.batch_id || payload.batch_id);
         return _jsonResponse(r);
@@ -2598,10 +2600,22 @@ function createBatch(payload, userEmail) {
 
   // Validate schedule exists (skip for pending batches)
   var schedResult = null;
+  var trustedStepsJson = null;
   if (!isPending) {
-    schedResult = findRowById(FERM_SCHEDULES_SHEET_NAME, payload.schedule_id);
-    if (schedResult.row === -1) {
-      return { ok: false, error: 'not_found', message: 'Schedule not found: ' + payload.schedule_id };
+    // Phase 86-03: server_token callers may supply the schedule steps (Postgres-authoritative);
+    // doPost deletes this field on the staff-OAuth path before calling createBatch.
+    if (typeof payload.schedule_steps_json === 'string') {
+      var trustedSteps = null;
+      try { trustedSteps = JSON.parse(payload.schedule_steps_json); } catch (stepsErr) { trustedSteps = null; }
+      if (!(trustedSteps instanceof Array)) {
+        return { ok: false, error: 'invalid_steps', message: 'Schedule steps could not be read' };
+      }
+      trustedStepsJson = payload.schedule_steps_json;
+    } else {
+      schedResult = findRowById(FERM_SCHEDULES_SHEET_NAME, payload.schedule_id);
+      if (schedResult.row === -1) {
+        return { ok: false, error: 'not_found', message: 'Schedule not found: ' + payload.schedule_id };
+      }
     }
   }
 
@@ -2636,7 +2650,7 @@ function createBatch(payload, userEmail) {
     var batchId = generateNextId(BATCHES_SHEET_NAME, 'SV-B-', 6);
     var accessToken = Utilities.getUuid().replace(/-/g, '');
     var now = new Date().toISOString();
-    var scheduleSnapshot = isPending ? '' : (schedResult.data.steps || '[]');
+    var scheduleSnapshot = isPending ? '' : (trustedStepsJson !== null ? trustedStepsJson : (schedResult.data.steps || '[]'));
     var steps = [];
     if (!isPending) {
       try { steps = JSON.parse(scheduleSnapshot); } catch (e) { steps = []; }
