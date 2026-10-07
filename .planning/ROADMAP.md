@@ -2117,12 +2117,12 @@ Plans:
 
 **Wave 2**
 
-- [ ] 86-05-PLAN.md — vessel-pg.js: read/create/update/archive/status deltas (real PG)
-- [ ] 86-06-PLAN.md — ferm-schedule-pg.js: sequence ids, stale update, archive, reference-guarded delete (real PG)
-- [ ] 86-07-PLAN.md — staff-access.js resolve (break-glass, fail closed) + staff-access-pg.js audited owner-safe mutations
-- [ ] 86-08-PLAN.md — Apps Script v61 part B: vessel/schedule mirror actions, ferm_schedule_ref_count, per-batch propagate failures
-- [ ] 86-09-PLAN.md — ops-backfill CLI (vessels, ferm_schedules, config, staff_access) with rejects + sequence seeding
-- [ ] 86-10-PLAN.md — Admin Vessels tab + owner-only Staff Access tab
+- [x] 86-05-PLAN.md — vessel-pg.js: read/create/update/archive/status deltas (real PG)
+- [x] 86-06-PLAN.md — ferm-schedule-pg.js: sequence ids, stale update, archive, reference-guarded delete (real PG)
+- [x] 86-07-PLAN.md — staff-access.js resolve (break-glass, fail closed) + staff-access-pg.js audited owner-safe mutations
+- [x] 86-08-PLAN.md — Apps Script v61 part B: vessel/schedule mirror actions, ferm_schedule_ref_count, per-batch propagate failures
+- [x] 86-09-PLAN.md — ops-backfill CLI (vessels, ferm_schedules, config, staff_access) with rejects + sequence seeding
+- [x] 86-10-PLAN.md — Admin Vessels tab + owner-only Staff Access tab
 
 **Wave 3**
 
