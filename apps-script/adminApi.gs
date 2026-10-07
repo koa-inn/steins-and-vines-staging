@@ -249,12 +249,18 @@ function handleReadAction(action, getParam, authEmail) {
  * Used for: updating data
  */
 function doPost(e) {
+  // Phase 86-03: vessel status delta log is request-scoped; reset before anything else
+  _vesselStatusLog = null;
+  _vesselStatusOptions = { collect: false, sheetWrite: true };
   try {
     var payload = JSON.parse(e.postData.contents);
     var action = (payload.action || '').toLowerCase();
 
     // Check if this is a batch-token-authenticated request (public batch URL)
     if (payload.batch_token && payload.batch_id) {
+      // Public batch page: honour collect_vessel_status only; vessel_sheet_write is never read
+      // here (anyone holding a batch token can call Apps Script directly).
+      if (payload.collect_vessel_status === true) _vesselStatusLog = [];
       var tokenResult = handleBatchTokenPost(payload, action);
       if (tokenResult.ok) _invalidateBatchCache(payload.batch_id);
       return _jsonResponse(tokenResult);
@@ -269,6 +275,10 @@ function doPost(e) {
       }
       // Phase 86-03: real staff attribution forwarded by the middleware (server_token path only)
       var actor = _actingUser(payload);
+      // Phase 86-03: vessel status deltas for the middleware (Postgres follows sheet-side flows)
+      _vesselStatusOptions.collect = payload.collect_vessel_status === true;
+      _vesselStatusOptions.sheetWrite = payload.vessel_sheet_write !== false;
+      if (_vesselStatusOptions.collect) _vesselStatusLog = [];
       if (action === 'add_reservation') {
         return _jsonResponse(addReservation(payload));
       }
@@ -2470,6 +2480,10 @@ function getVessels() {
   return { vessels: vessels };
 }
 
+// Phase 86-03: request-scoped vessel status delta log (reset at the top of doPost)
+var _vesselStatusLog = null;
+var _vesselStatusOptions = { collect: false, sheetWrite: true };
+
 /**
  * Update the status column of a vessel in the Vessels sheet.
  * @param {string} vesselId - The vessel_id to update
@@ -2477,6 +2491,11 @@ function getVessels() {
  */
 function setVesselStatus(vesselId, newStatus) {
   if (!vesselId) return;
+  // Phase 86-03: record the delta for the middleware; optionally skip the cell write
+  if (_vesselStatusLog instanceof Array) {
+    _vesselStatusLog.push({ vessel_id: String(vesselId), status: String(newStatus) });
+  }
+  if (_vesselStatusOptions.sheetWrite === false) return;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('Vessels');
   if (!sheet || sheet.getLastRow() <= 1) return;
@@ -3873,6 +3892,10 @@ function _actingUser(payload) {
 }
 
 function _jsonResponse(obj) {
+  if (_vesselStatusLog instanceof Array && _vesselStatusLog.length > 0 &&
+      obj && typeof obj === 'object' && !(obj instanceof Array)) {
+    obj.vessel_status_changes = _vesselStatusLog.slice();
+  }
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
