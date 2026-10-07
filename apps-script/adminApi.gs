@@ -360,6 +360,20 @@ function doPost(e) {
       if (action === 'recipe_batch_ref_count') {
         return _jsonResponse(recipeBatchRefCount(payload));
       }
+      // Phase 86 D-10/D-15: vessel + ferm schedule state-copy mirror and schedule batch ref count.
+      // Deliberately no staff/config action: the staff list is never mirrored.
+      if (action === 'mirror_vessel_state') {
+        return _jsonResponse(mirrorVesselState(payload));
+      }
+      if (action === 'mirror_ferm_schedule_state') {
+        return _jsonResponse(mirrorFermScheduleState(payload));
+      }
+      if (action === 'mirror_ferm_schedule_delete') {
+        return _jsonResponse(mirrorFermScheduleDelete(payload));
+      }
+      if (action === 'ferm_schedule_ref_count') {
+        return _jsonResponse(fermScheduleRefCount(payload));
+      }
       // Waitlist actions (server_token-gated, Phase 78)
       if (action === 'add_waitlist_entry') {
         return _jsonResponse(addWaitlistEntry(payload));
@@ -3723,7 +3737,7 @@ function propagateFermSchedule(payload, userEmail) {
   });
 
   if (activeBatches.length === 0) {
-    return { ok: true, batches_updated: 0, tasks_updated: 0, tasks_created: 0, tasks_removed: 0, message: 'No active batches use this template' };
+    return { ok: true, batches_updated: 0, tasks_updated: 0, tasks_created: 0, tasks_removed: 0, batches_failed: [], message: 'No active batches use this template' };
   }
 
   var now = new Date().toISOString();
@@ -3738,7 +3752,9 @@ function propagateFermSchedule(payload, userEmail) {
   var totalUpdated = 0, totalCreated = 0, totalRemoved = 0;
   var allTasks = sheetToObjects(BATCH_TASKS_SHEET_NAME);
 
-  activeBatches.forEach(function (batch) {
+  // Phase 86 D-14: a failing batch is recorded and skipped; the schedule itself is never rolled back.
+  var batchesFailed = [];
+  var propagateOneBatch = function (batch) {
     var startDate = toDateOnly(batch.start_date);
     var batchId   = String(batch.batch_id);
 
@@ -3819,14 +3835,27 @@ function propagateFermSchedule(payload, userEmail) {
     // Evict this batch's detail/public caches so the change shows immediately (D-09 parity
     // with the other batch writes; previously stale for up to 300 s)
     _invalidateBatchCache(batchId);
+  };
+
+  activeBatches.forEach(function (batch) {
+    var before = { u: totalUpdated, c: totalCreated, r: totalRemoved };
+    try {
+      propagateOneBatch(batch);
+    } catch (err) {
+      // Counts reflect successful batches only
+      totalUpdated = before.u; totalCreated = before.c; totalRemoved = before.r;
+      batchesFailed.push({ batch_id: String(batch.batch_id), error: String((err && err.message) || err) });
+      allTasks = sheetToObjects(BATCH_TASKS_SHEET_NAME, true);
+    }
   });
 
   return {
     ok: true,
-    batches_updated: activeBatches.length,
+    batches_updated: activeBatches.length - batchesFailed.length,
     tasks_updated: totalUpdated,
     tasks_created: totalCreated,
-    tasks_removed: totalRemoved
+    tasks_removed: totalRemoved,
+    batches_failed: batchesFailed
   };
   } finally {
     lock.releaseLock();
@@ -4769,6 +4798,158 @@ function recipeBatchRefCount(payload) {
     if (col !== -1) {
       for (var i = 1; i < data.length; i++) {
         if (String(data[i][col] || '') === String(recipeId)) count++;
+      }
+    }
+  }
+  return { ok: true, count: count };
+}
+
+// --- Phase 86: vessel + ferm schedule state-copy mirror (Postgres authoritative) ---
+
+/**
+ * Header-addressed single-row upsert shared by the Phase 86 mirrors. Writes only the headed
+ * columns present in obj, preserves every other column and row, and writes values verbatim
+ * (no sanitiser: values were sanitised on the Postgres path). Columns in textCols are forced to
+ * plain text so Sheets cannot turn ISO timestamps into date serials.
+ * @return {{ok:boolean, error?:string, created?:boolean}}
+ */
+function _mirrorUpsertRow(sheetName, idHeader, idValue, obj, textCols) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) return { ok: false, error: 'sheet_not_found' };
+  var lastCol = sheet.getLastColumn();
+  if (sheet.getLastRow() < 1 || lastCol < 1) return { ok: false, error: 'sheet_not_found' };
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0].map(function (h) { return String(h).trim(); });
+  var idCol = headers.indexOf(idHeader);
+  if (idCol === -1) return { ok: false, error: 'sheet_not_found' };
+
+  var existingRow = -1;
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][idCol]).trim() === String(idValue)) { existingRow = r + 1; break; }
+  }
+  var base = existingRow === -1 ? [] : data[existingRow - 1];
+  var rowValues = headers.map(function (h, i) {
+    if (Object.prototype.hasOwnProperty.call(obj, h) && obj[h] !== undefined) {
+      return obj[h] === null ? '' : obj[h];
+    }
+    return base[i] === undefined ? '' : base[i];
+  });
+
+  var targetRow = existingRow === -1 ? sheet.getLastRow() + 1 : existingRow;
+  var textHeaders = (textCols || []).filter(function (h) { return headers.indexOf(h) !== -1; });
+  if (existingRow === -1 && textHeaders.length === 0) {
+    sheet.appendRow(rowValues);
+  } else {
+    textHeaders.forEach(function (h) {
+      var cell = sheet.getRange(targetRow, headers.indexOf(h) + 1);
+      if (cell && typeof cell.setNumberFormat === 'function') cell.setNumberFormat('@');
+    });
+    sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
+  }
+  return { ok: true, created: existingRow === -1 };
+}
+
+/**
+ * Phase 86 D-10: copy one Vessels row. Archived vessels are written as 'Disabled/Retired'.
+ * payload: { vessel: {vessel_id, label?, type, material, capacity_liters, status, archived, ...} }
+ */
+function mirrorVesselState(payload) {
+  var vessel = payload && payload.vessel;
+  if (!vessel || typeof vessel !== 'object') return { ok: false, error: 'missing_fields' };
+  if (!/^[A-Z]{2,6}-[0-9]{3,}$/.test(String(vessel.vessel_id || ''))) {
+    return { ok: false, error: 'invalid_id' };
+  }
+  var obj = {};
+  Object.keys(vessel).forEach(function (k) { obj[k] = vessel[k]; });
+  if (vessel.archived === true) obj.status = 'Disabled/Retired';
+
+  var lock = acquireScriptLock(15000);
+  try {
+    var res = _mirrorUpsertRow('Vessels', 'vessel_id', vessel.vessel_id, obj, []);
+    if (!res.ok) return res;
+    invalidateSheetCache('Vessels');
+    return { ok: true, vessel_id: String(vessel.vessel_id), created: res.created };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _evictFermScheduleCaches() {
+  CacheService.getScriptCache().removeAll(['gfs', 'gbi']);
+  invalidateSheetCache(FERM_SCHEDULES_SHEET_NAME);
+}
+
+/**
+ * Phase 86 D-10: copy one FermSchedules row (is_active real boolean, steps JSON string verbatim,
+ * timestamps kept as text).
+ * payload: { schedule: {schedule_id, name, description, category, steps, is_active, created_at,
+ *   created_by, last_updated} }
+ */
+function mirrorFermScheduleState(payload) {
+  var schedule = payload && payload.schedule;
+  if (!schedule || typeof schedule !== 'object') return { ok: false, error: 'missing_fields' };
+  if (!/^FS-[0-9]{4,}$/.test(String(schedule.schedule_id || ''))) {
+    return { ok: false, error: 'invalid_id' };
+  }
+  var obj = {};
+  Object.keys(schedule).forEach(function (k) { obj[k] = schedule[k]; });
+  if (obj.is_active !== undefined && obj.is_active !== null) {
+    obj.is_active = (obj.is_active === true || String(obj.is_active).toLowerCase() === 'true');
+  }
+
+  var lock = acquireScriptLock(15000);
+  try {
+    var res = _mirrorUpsertRow(FERM_SCHEDULES_SHEET_NAME, 'schedule_id', schedule.schedule_id, obj,
+      ['created_at', 'last_updated']);
+    if (!res.ok) return res;
+    _evictFermScheduleCaches();
+    return { ok: true, schedule_id: String(schedule.schedule_id), created: res.created };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Phase 86 D-10: remove a FermSchedules row. Idempotent when absent. payload: { schedule_id } */
+function mirrorFermScheduleDelete(payload) {
+  var scheduleId = payload && payload.schedule_id;
+  if (!/^FS-[0-9]{4,}$/.test(String(scheduleId || ''))) return { ok: false, error: 'invalid_id' };
+  var lock = acquireScriptLock(15000);
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(FERM_SCHEDULES_SHEET_NAME);
+    if (!sheet) return { ok: false, error: 'sheet_not_found' };
+    var deleted = false;
+    if (sheet.getLastRow() > 1) {
+      var data = sheet.getDataRange().getValues();
+      var idCol = data[0].map(function (h) { return String(h).trim(); }).indexOf('schedule_id');
+      if (idCol !== -1) {
+        for (var r = data.length - 1; r >= 1; r--) {
+          if (String(data[r][idCol]).trim() === String(scheduleId)) { sheet.deleteRow(r + 1); deleted = true; }
+        }
+      }
+    }
+    _evictFermScheduleCaches();
+    return { ok: true, schedule_id: String(scheduleId), deleted: deleted };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Phase 86 D-15: read-only count of batches (any status) that reference a schedule. Reads the
+ * Batches sheet fresh (no cache, no lock). payload: { schedule_id }
+ */
+function fermScheduleRefCount(payload) {
+  var scheduleId = payload && payload.schedule_id;
+  if (!/^FS-[0-9]{4,}$/.test(String(scheduleId || ''))) return { ok: false, error: 'invalid_id' };
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BATCHES_SHEET_NAME);
+  if (!sheet) return { ok: false, error: 'sheet_not_found' };
+  var count = 0;
+  if (sheet.getLastRow() > 1) {
+    var data = sheet.getDataRange().getValues();
+    var col = data[0].indexOf('schedule_id');
+    if (col !== -1) {
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][col] || '') === String(scheduleId)) count++;
       }
     }
   }
