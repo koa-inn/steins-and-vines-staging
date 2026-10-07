@@ -16,6 +16,7 @@ var buildContactPayload = require('../lib/checkout-helpers').buildContactPayload
 var moneyPath = require('../lib/money-path');
 var captureExceptionSafe = require('../lib/sentry-capture').captureExceptionSafe;
 var giftCardStore = require('../lib/gift-card-store');
+var opsProxy = require('../lib/ops-proxy');
 // 57-04: reuse routes/catalog.js's rebuildKioskCatalog() for the sale-time
 // auto-reconcile (bounded one-shot rebuild on a catalog-miss). No require
 // cycle — catalog.js never requires pos.js.
@@ -4009,6 +4010,7 @@ router.post('/api/batch/bottling-invite', function (req, res) {
 // vs admin/proxy failures stay distinguishable in the logs.
 // ---------------------------------------------------------------------------
 function forwardToAppsScript(action, payload, isRead, logTag, res) {
+  opsProxy.decorateForward(payload, isRead);
   var upstream = isRead
     ? axios.get(process.env.APPS_SCRIPT_URL, {
         params: payload,
@@ -4023,7 +4025,9 @@ function forwardToAppsScript(action, payload, isRead, logTag, res) {
 
   return upstream
     .then(function (resp) {
-      res.json(resp.data);
+      return opsProxy.afterUpstream(resp.data, payload).then(function (data) {
+        res.json(data);
+      });
     })
     .catch(function (err) {
       log.error('[' + logTag + '] ' + action + ' failed: ' + (err && err.message));
@@ -4076,6 +4080,7 @@ var ADMIN_PROXY_ACTIONS = {
   create_ferm_schedule: true,
   update_ferm_schedule: true,
   delete_ferm_schedule: true,
+  archive_ferm_schedule: true,
   update_waitlist_status: true,
   // Phase 80 D-21: staff manual-add makes this action reachable from BrewPad.
   // The row write is identical to the public POST /api/waitlist path's — it
@@ -4120,7 +4125,14 @@ router.post('/api/batch/admin-proxy', function (req, res) {
   delete payload.token;
   hardenProxyPayload(payload, req);
 
-  forwardToAppsScript(action, payload, !!ADMIN_PROXY_READS[action], 'batch/admin-proxy', res);
+  action = opsProxy.mapSheetsAction(action);
+  payload.action = action;
+  var isReadFlag = !!ADMIN_PROXY_READS[action];
+  if (opsProxy.intercept(action, payload, req, res, 'batch/admin-proxy', function () {
+    forwardToAppsScript(action, payload, isReadFlag, 'batch/admin-proxy', res);
+  })) return;
+
+  forwardToAppsScript(action, payload, isReadFlag, 'batch/admin-proxy', res);
   });
 });
 
@@ -4166,6 +4178,7 @@ var ADMIN_PANEL_PROXY_ACTIONS = Object.assign({}, ADMIN_PANEL_PROXY_READS, {
   create_ferm_schedule: true,
   update_ferm_schedule: true,
   delete_ferm_schedule: true,
+  archive_ferm_schedule: true,
   propagate_ferm_schedule: true,
   regenerate_batch_token: true,
   update_inventory_cells: true,
@@ -4193,7 +4206,14 @@ router.post('/api/admin/proxy', function (req, res) {
     delete payload.token;
     hardenProxyPayload(payload, req);
 
-    forwardToAppsScript(action, payload, !!ADMIN_PANEL_PROXY_READS[action], 'admin/proxy', res);
+    action = opsProxy.mapSheetsAction(action);
+    payload.action = action;
+    var isReadFlag = !!ADMIN_PANEL_PROXY_READS[action];
+    if (opsProxy.intercept(action, payload, req, res, 'admin/proxy', function () {
+      forwardToAppsScript(action, payload, isReadFlag, 'admin/proxy', res);
+    })) return;
+
+    forwardToAppsScript(action, payload, isReadFlag, 'admin/proxy', res);
   });
 });
 

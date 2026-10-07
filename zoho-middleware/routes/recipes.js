@@ -177,6 +177,17 @@ function maxNonPackagingOffset(schedule) {
 // ---------------------------------------------------------------------------
 
 function fetchFermSchedules() {
+  // Phase 86-16 (D-15): in dual/postgres the schedules live in Postgres; archived ones are
+  // included so recipes keep their ferment days. Sheets mode falls through untouched.
+  var scheduleStore = require('../lib/ferm-schedule-store');
+  if (scheduleStore.getMode() !== 'sheets') {
+    return scheduleStore.list({ includeArchived: true }).then(function (r) {
+      return (r && r.data && r.data.schedules) || [];
+    }).catch(function (err) {
+      log.warn('[api/recipes] fetchFermSchedules (store) failed: ' + err.message);
+      return [];
+    });
+  }
   return cache.get(C.CACHE_KEYS.FERM_SCHEDULES).then(function (cached) {
     if (cached) return cached;
 
