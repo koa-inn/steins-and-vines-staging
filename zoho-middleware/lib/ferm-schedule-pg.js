@@ -9,7 +9,7 @@
  * Underscore-prefixed result keys (e.g. `_scheduleId`) are for the facade and stripped there.
  *
  * IDs come from ferm_schedule_id_seq via the column default (D-13) — the lock-free
- * max()+1 collision of the Sheets implementation cannot happen here.
+ * read-then-increment id collision of the Sheets implementation cannot happen here.
  *
  * Read shape matches Apps Script get_ferm_schedules: sheet key order, `steps` as a JSON string,
  * `steps_parsed` as the array, is_active boolean, ISO-ms timestamps, '' for empty text cells.
