@@ -2053,7 +2053,7 @@ Plans:
   3. Parity tests prove the Phase 73 unit guard, the Phase 79 D-04 change comparison and D-09 id-honouring behave identically on Postgres; a kiosk recipe sale prices identically on both stores
   4. `dual` ≥1 week with mirror and discrepancy logging, then flip; a recipe rename completes in under 2 s on production
 
-**Plans:** 11/14 plans executed
+**Plans:** 12/14 plans executed
 
 Plans:
 **Wave 1**
@@ -2084,7 +2084,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 85-12-PLAN.md — Full gate, staging push, Apps Script redeploy, SV-R-000001 cell fix, staging backfill/verify/dual, UAT (checkpoints)
+- [x] 85-12-PLAN.md — Full gate, staging push, Apps Script redeploy, SV-R-000001 cell fix, staging backfill/verify/dual, UAT (checkpoints)
 
 **Wave 7** *(blocked on Wave 6 completion; production dual only after gift cards flip — D-08)*
 
