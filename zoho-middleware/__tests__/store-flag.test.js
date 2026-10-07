@@ -48,7 +48,7 @@ describe('store-flag', function () {
 
   test('exports VALID_MODES and STORE_ENV_NAMES', function () {
     expect(storeFlag.VALID_MODES).toEqual(['sheets', 'dual', 'postgres']);
-    expect(storeFlag.STORE_ENV_NAMES).toEqual(['GIFT_CARDS_STORE', 'RECIPES_STORE']);
+    expect(storeFlag.STORE_ENV_NAMES).toEqual(['GIFT_CARDS_STORE', 'RECIPES_STORE', 'OPS_DATA_STORE', 'STAFF_ACCESS_STORE']);
   });
 
   describe('resolveStoreMode', function () {
@@ -89,7 +89,7 @@ describe('store-flag', function () {
   describe('validateStoreFlags', function () {
     test('with all unset -> returns sheets defaults for both stores, no exit', function () {
       var result = storeFlag.validateStoreFlags();
-      expect(result).toEqual({ GIFT_CARDS_STORE: 'sheets', RECIPES_STORE: 'sheets' });
+      expect(result).toEqual({ GIFT_CARDS_STORE: 'sheets', RECIPES_STORE: 'sheets', OPS_DATA_STORE: 'sheets', STAFF_ACCESS_STORE: 'sheets' });
       expect(process.exit).not.toHaveBeenCalled();
     });
 

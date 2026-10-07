@@ -28,7 +28,7 @@ var VALID_MODES = ['sheets', 'dual', 'postgres'];
 
 // Later phases append their store's env var name here as each store adopts
 // this flag (Phase 84: GIFT_CARDS_STORE, Phase 87ish: RECIPES_STORE, ...).
-var STORE_ENV_NAMES = ['GIFT_CARDS_STORE', 'RECIPES_STORE'];
+var STORE_ENV_NAMES = ['GIFT_CARDS_STORE', 'RECIPES_STORE', 'OPS_DATA_STORE', 'STAFF_ACCESS_STORE'];
 
 /**
  * Resolve a single store's mode from its Railway env var.
