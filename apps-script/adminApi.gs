@@ -334,6 +334,20 @@ function doPost(e) {
       if (action === 'mirror_gift_card_state') {
         return _jsonResponse(mirrorGiftCardState(payload));
       }
+      // Phase 85 D-01: recipe state-copy mirror (Postgres authoritative) + read-only batch ref count
+      if (action === 'mirror_recipe_state') {
+        var mrsResult = mirrorRecipeState(payload);
+        _invalidateRecipeCache(payload.recipe && payload.recipe.recipe_id || payload.recipe_id);
+        return _jsonResponse(mrsResult);
+      }
+      if (action === 'mirror_recipe_delete') {
+        var mrdResult = mirrorRecipeDelete(payload);
+        _invalidateRecipeCache(payload.recipe && payload.recipe.recipe_id || payload.recipe_id);
+        return _jsonResponse(mrdResult);
+      }
+      if (action === 'recipe_batch_ref_count') {
+        return _jsonResponse(recipeBatchRefCount(payload));
+      }
       // Waitlist actions (server_token-gated, Phase 78)
       if (action === 'add_waitlist_entry') {
         return _jsonResponse(addWaitlistEntry(payload));
@@ -4548,6 +4562,165 @@ function deleteRecipe(payload, userEmail) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Delete this recipe's rows from a sheet as maximal contiguous runs in DESCENDING start order
+ * (Phase 79 D-07 technique), matching on the header-indexed recipe_id column.
+ * @returns {number} rows removed
+ */
+function _mirrorDeleteRecipeRows(sheet, recipeId) {
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  var data = sheet.getDataRange().getValues();
+  var col = data[0].indexOf('recipe_id');
+  if (col === -1) return 0;
+  var rows = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][col]) === String(recipeId)) rows.push(i + 1);
+  }
+  var runs = [];
+  for (var j = 0; j < rows.length; j++) {
+    var last = runs[runs.length - 1];
+    if (last && rows[j] === last.start + last.count) last.count++;
+    else runs.push({ start: rows[j], count: 1 });
+  }
+  for (var k = runs.length - 1; k >= 0; k--) {
+    sheet.deleteRows(runs[k].start, runs[k].count);
+  }
+  return rows.length;
+}
+
+/**
+ * Phase 85 D-01 state-copy mirror. Postgres is authoritative; this writes the finished recipe +
+ * ingredient rows verbatim and runs NO createRecipe/updateRecipe logic (no D-04 skip, no D-09 id
+ * decisions, no sanitizeInput -- values were sanitised by the Postgres path; re-sanitising is
+ * non-idempotent for nested tags and would create spurious verify mismatches). Redeploy
+ * required; 85-12 records the version and rollback version.
+ * payload: { recipe: {...18 fields}, ingredients: [{ingredient_id, recipe_id, item_id, item_name, quantity, unit}] }
+ */
+function mirrorRecipeState(payload) {
+  var recipe = payload && payload.recipe;
+  var ingredients = payload && payload.ingredients;
+  if (!recipe || typeof recipe !== 'object' || !Array.isArray(ingredients)) {
+    return { ok: false, error: 'missing_fields' };
+  }
+  if (!/^SV-R-[0-9]{6,}$/.test(String(recipe.recipe_id || ''))) {
+    return { ok: false, error: 'invalid_id' };
+  }
+  for (var v = 0; v < ingredients.length; v++) {
+    var ing = ingredients[v];
+    if (!ing || !/^RI-[0-9]{6,}$/.test(String(ing.ingredient_id || '')) ||
+        String(ing.recipe_id) !== String(recipe.recipe_id)) {
+      return { ok: false, error: 'invalid_id' };
+    }
+  }
+
+  var lock = acquireScriptLock(15000);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var recipesSheet = ss.getSheetByName(RECIPES_SHEET_NAME);
+    var ingSheet = ss.getSheetByName(RECIPE_INGREDIENTS_SHEET_NAME);
+    if (!recipesSheet || !ingSheet) return { ok: false, error: 'sheet_not_found' };
+
+    // Same self-migration as createRecipe so a legacy header never drops these values.
+    ensureRecipesPricingModeColumn(recipesSheet);
+    ensureRecipesScheduleIdColumn(recipesSheet);
+
+    var headers = recipesSheet.getRange(1, 1, 1, recipesSheet.getLastColumn()).getValues()[0];
+    var ridCol = headers.indexOf('recipe_id');
+    var rowValues = headers.map(function (h) {
+      var val = recipe[h];
+      return (val === undefined || val === null) ? '' : val;
+    });
+
+    var existingRow = -1;
+    if (ridCol !== -1 && recipesSheet.getLastRow() > 1) {
+      var data = recipesSheet.getDataRange().getValues();
+      for (var r = 1; r < data.length; r++) {
+        if (String(data[r][ridCol]) === String(recipe.recipe_id)) { existingRow = r + 1; break; }
+      }
+    }
+
+    var rowAction;
+    if (existingRow === -1) {
+      recipesSheet.appendRow(rowValues);
+      rowAction = 'inserted';
+    } else {
+      recipesSheet.getRange(existingRow, 1, 1, rowValues.length).setValues([rowValues]);
+      rowAction = 'updated';
+    }
+
+    _mirrorDeleteRecipeRows(ingSheet, recipe.recipe_id);
+    if (ingredients.length > 0) {
+      var ingHeaders = ingSheet.getRange(1, 1, 1, ingSheet.getLastColumn()).getValues()[0];
+      var block = ingredients.map(function (row) {
+        return ingHeaders.map(function (h) {
+          var val = row[h];
+          return (val === undefined || val === null) ? '' : val;
+        });
+      });
+      ingSheet.getRange(ingSheet.getLastRow() + 1, 1, block.length, ingHeaders.length).setValues(block);
+    }
+
+    invalidateSheetCache(RECIPES_SHEET_NAME);
+    invalidateSheetCache(RECIPE_INGREDIENTS_SHEET_NAME);
+    return { ok: true, row_action: rowAction, ingredient_rows: ingredients.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Phase 85 D-01: remove a recipe's ingredient rows then its recipe row. Idempotent when absent.
+ * payload: { recipe_id }
+ */
+function mirrorRecipeDelete(payload) {
+  var recipeId = payload && payload.recipe_id;
+  if (!/^SV-R-[0-9]{6,}$/.test(String(recipeId || ''))) {
+    return { ok: false, error: 'invalid_id' };
+  }
+  var lock = acquireScriptLock(15000);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var recipesSheet = ss.getSheetByName(RECIPES_SHEET_NAME);
+    var ingSheet = ss.getSheetByName(RECIPE_INGREDIENTS_SHEET_NAME);
+    if (!recipesSheet || !ingSheet) return { ok: false, error: 'sheet_not_found' };
+
+    var ingRemoved = _mirrorDeleteRecipeRows(ingSheet, recipeId);
+    var recipeRemoved = _mirrorDeleteRecipeRows(recipesSheet, recipeId) > 0;
+
+    invalidateSheetCache(RECIPES_SHEET_NAME);
+    invalidateSheetCache(RECIPE_INGREDIENTS_SHEET_NAME);
+    return { ok: true, recipe_removed: recipeRemoved, ingredient_rows_removed: ingRemoved };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Phase 85: read-only. Lets the Postgres delete path keep deleteRecipe's
+ * soft-deactivate-when-referenced rule while Batches remain on Sheets (Phase 87 replaces this
+ * with SQL via recipe-store.hasBatchReferences). Reads the sheet fresh (no cache, no lock).
+ * payload: { recipe_id }
+ */
+function recipeBatchRefCount(payload) {
+  var recipeId = payload && payload.recipe_id;
+  if (!/^SV-R-[0-9]{6,}$/.test(String(recipeId || ''))) {
+    return { ok: false, error: 'invalid_id' };
+  }
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BATCHES_SHEET_NAME);
+  if (!sheet) return { ok: false, error: 'sheet_not_found' };
+  var count = 0;
+  if (sheet.getLastRow() > 1) {
+    var data = sheet.getDataRange().getValues();
+    var col = data[0].indexOf('recipe_id');
+    if (col !== -1) {
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][col] || '') === String(recipeId)) count++;
+      }
+    }
+  }
+  return { ok: true, count: count };
 }
 
 /**
