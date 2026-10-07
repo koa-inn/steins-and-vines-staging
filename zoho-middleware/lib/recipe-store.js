@@ -24,6 +24,7 @@ var axios = require('axios');
 var storeFlag = require('./store-flag');
 var db = require('./db');
 var recipePg = require('./recipe-pg');
+var recipeMirror = require('./recipe-mirror');
 var log = require('./logger');
 
 // ─── mode / config ───────────────────────────────────────────────────────
@@ -111,17 +112,85 @@ function getFromSheet(recipeId) {
   return callAppsScript('get_recipe', { recipe_id: recipeId });
 }
 
+// ─── writes ───────────────────────────────────────────────────────────────
+
+/** D-01: schedule the state-copy mirror after a committed save. Never fails the save. */
+function scheduleMirror(raw) {
+  if (!raw || !raw.ok) return;
+  try {
+    recipeMirror.schedule(raw._recipeId);
+  } catch (err) {
+    log.warn('[recipes] mirror schedule failed recipe=' + raw._recipeId + ': ' +
+      ((err && err.message) || String(err)));
+  }
+}
+
+function finish(raw) {
+  scheduleMirror(raw);
+  return strip(raw);
+}
+
+function create(payload) {
+  if (getMode() === 'sheets') return callAppsScript('create_recipe', payload);
+  return runPg(function (client) {
+    return recipePg.createRecipe(client, payload, { actor: 'middleware', now: new Date() });
+  }).then(finish);
+}
+
+function update(payload, opts) {
+  if (getMode() === 'sheets') return callAppsScript('update_recipe', payload);
+  opts = opts || {};
+  return runPg(function (client) {
+    return recipePg.updateRecipe(client, payload, {
+      expectedUpdatedAt: opts.expectedUpdatedAt,
+      now: new Date()
+    });
+  }).then(finish);
+}
+
+/**
+ * Batch reference count from Apps Script (also on staging; read-only). Seam: Phase 87
+ * replaces the body with SQL. Rejects with err.code 'batch_ref_unavailable' on any
+ * transport or shape failure so delete fails closed.
+ */
+function hasBatchReferences(recipeId) {
+  function unavailable(reason) {
+    var err = new Error('Batch reference check unavailable: ' + reason);
+    err.code = 'batch_ref_unavailable';
+    return err;
+  }
+  return callAppsScript('recipe_batch_ref_count', { recipe_id: recipeId }).then(function (body) {
+    if (!body || body.ok !== true || typeof body.count !== 'number' || !isFinite(body.count)) {
+      throw unavailable('unexpected response');
+    }
+    return body.count;
+  }, function (err) {
+    throw unavailable((err && err.message) || String(err));
+  });
+}
+
+function remove(recipeId, opts) {
+  if (getMode() === 'sheets') return callAppsScript('delete_recipe', { recipe_id: recipeId });
+  opts = opts || {};
+  return hasBatchReferences(recipeId).then(function (count) {
+    return runPg(function (client) {
+      return recipePg.deleteRecipe(client, recipeId, {
+        expectedUpdatedAt: opts.expectedUpdatedAt,
+        batchRefCount: count,
+        now: new Date()
+      });
+    });
+  }).then(finish);
+}
+
 module.exports = {
   getMode: getMode,
   isConfigured: isConfigured,
   list: list,
   get: get,
-  getFromSheet: getFromSheet
-};
-
-// Internal helpers shared with the write half (Task 2).
-module.exports._internal = {
-  callAppsScript: callAppsScript,
-  runPg: runPg,
-  strip: strip
+  getFromSheet: getFromSheet,
+  create: create,
+  update: update,
+  remove: remove,
+  hasBatchReferences: hasBatchReferences
 };
