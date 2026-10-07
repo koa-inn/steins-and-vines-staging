@@ -567,6 +567,7 @@
     localStorage.setItem('sv-admin-email', userEmail);
     loadAllData();
     loadEmailTemplates();
+    checkStaffAccessVisibility();
 
     // Auto-switch to tab from URL param (e.g. admin.html?tab=kiosk), now that dashboard is visible
     (function () {
@@ -6506,6 +6507,7 @@
   function buildVesselLabel(v) {
     var vid = String(v.vessel_id || '');
     var parts = [vid];
+    if (v.label) parts.push(v.label);
     if (v.type) parts.push(v.type);
     if (v.capacity_liters) parts.push(v.capacity_liters + 'L');
     if (v.material) parts.push(v.material);
@@ -6555,7 +6557,7 @@
       if (!isAvailable && !isCurrent) return false;
 
       if (!term) return true;
-      var searchStr = (vid + ' ' + (v.type || '') + ' ' + (v.capacity_liters || '') + ' ' + (v.material || '') + ' ' + (v.location || '')).toLowerCase();
+      var searchStr = (vid + ' ' + (v.label || '') + ' ' + (v.type || '') + ' ' + (v.capacity_liters || '') + ' ' + (v.material || '') + ' ' + (v.location || '')).toLowerCase();
       return searchStr.indexOf(term) !== -1;
     });
 
@@ -6568,10 +6570,10 @@
     var dHtml = '';
     matches.forEach(function (v) {
       var vid = String(v.vessel_id || '');
-      var label = buildVesselLabel(v);
-      var loc = v.location ? ' <span class="batch-cust-email-hint">' + v.location + '</span>' : '';
+      var label = escapeHTML(buildVesselLabel(v));
+      var loc = v.location ? ' <span class="batch-cust-email-hint">' + escapeHTML(String(v.location)) + '</span>' : '';
       var current = vid === currentVesselId ? ' <span class="batch-cust-email-hint">(current)</span>' : '';
-      dHtml += '<div class="admin-kit-search-option" data-vid="' + vid + '">' + label + loc + current + '</div>';
+      dHtml += '<div class="admin-kit-search-option" data-vid="' + escapeHTML(vid) + '">' + label + loc + current + '</div>';
     });
 
     dropdownEl.innerHTML = dHtml;
@@ -9939,9 +9941,418 @@
     return true;
   }
 
+  // ===== Phase 86-10: Vessels tab (D-05..D-08, D-16, D-17) =====
+
+  var STALE_VESSEL_MESSAGE = 'This vessel was changed since you opened it — reload to see the latest';
+  var _vesselsTabState = { list: [], showArchived: false, unavailable: false };
+  var _vesselsTabLoaded = false;
+  var _vesselsTabLoading = false;
+
+  function vesselsMwFetch(path, method, body) {
+    var mwUrl = getRecipesMwUrl();
+    var opts = { credentials: 'include', headers: getRecipesMwHeaders() };
+    if (method) opts.method = method;
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    return fetch(mwUrl + path, opts).then(recipeStatusPreservingJson);
+  }
+
+  function showStaleVesselToast(err, onReload) {
+    showToast((err && err.message) || STALE_VESSEL_MESSAGE, 'error', {
+      actionLabel: 'Reload',
+      duration: 15000,
+      onAction: onReload
+    });
+  }
+
+  var _vesselsOrigInitTabNav = initTabNavigation;
+  initTabNavigation = function () {
+    _vesselsOrigInitTabNav();
+    document.querySelectorAll('.admin-tab-btn').forEach(function (btn) {
+      var tab = btn.getAttribute('data-tab');
+      if (tab === 'vessels') {
+        btn.addEventListener('click', function () { triggerVesselsLoad(); });
+      } else if (tab === 'staff-access') {
+        btn.addEventListener('click', function () { triggerStaffAccessLoad(); });
+      }
+    });
+  };
+
+  function triggerVesselsLoad() {
+    if (_vesselsTabLoaded || _vesselsTabLoading) return;
+    _vesselsTabLoading = true;
+    _vesselsTabLoaded = true;
+    initVesselsTab();
+  }
+
+  function initVesselsTab() {
+    var addBtn = document.getElementById('vessels-add-btn');
+    if (addBtn) addBtn.addEventListener('click', function () { openVesselForm(null); });
+    var chk = document.getElementById('vessels-show-archived');
+    if (chk) {
+      chk.addEventListener('change', function () {
+        _vesselsTabState.showArchived = !!chk.checked;
+        renderVesselsTable();
+      });
+    }
+    return loadVesselsTabList();
+  }
+
+  function loadVesselsTabList() {
+    return vesselsMwFetch('/api/vessels').then(function (result) {
+      if (result.status === 503 && result.data && result.data.code === 'vessels_editor_requires_postgres') {
+        _vesselsTabState.list = [];
+        _vesselsTabState.unavailable = true;
+        renderVesselsTable(result.data.error);
+        return;
+      }
+      if (result.status < 200 || result.status >= 300) {
+        throw new Error((result.data && result.data.error) || ('HTTP ' + result.status));
+      }
+      _vesselsTabState.unavailable = false;
+      _vesselsTabState.list = (result.data && result.data.vessels) || [];
+      renderVesselsTable();
+    }).catch(function (err) {
+      showToast('Could not load vessels: ' + (err && err.message ? err.message : 'unknown error'), 'error');
+    });
+  }
+
+  function renderVesselsTable(unavailableMsg) {
+    var tbody = document.getElementById('vessels-tbody');
+    var empty = document.getElementById('vessels-empty');
+    if (!tbody) return;
+    var addBtn = document.getElementById('vessels-add-btn');
+    if (addBtn) addBtn.disabled = !!_vesselsTabState.unavailable;
+    if (_vesselsTabState.unavailable) {
+      tbody.innerHTML = '';
+      if (empty) {
+        empty.textContent = unavailableMsg || 'The vessels editor is available once vessels move to the database';
+        empty.style.display = '';
+      }
+      return;
+    }
+    var rows = _vesselsTabState.list.filter(function (v) {
+      return _vesselsTabState.showArchived || !v.archived;
+    });
+    if (empty) {
+      empty.textContent = 'No vessels to show.';
+      empty.style.display = rows.length ? 'none' : '';
+    }
+    var html = '';
+    rows.forEach(function (v) {
+      var vid = escapeHTML(String(v.vessel_id || ''));
+      html += '<tr data-vessel-id="' + vid + '">' +
+        '<td>' + vid + '</td>' +
+        '<td>' + escapeHTML(String(v.label || '')) + '</td>' +
+        '<td>' + escapeHTML(String(v.type || '')) + '</td>' +
+        '<td>' + escapeHTML(String(v.capacity_liters == null ? '' : v.capacity_liters)) + '</td>' +
+        '<td>' + escapeHTML(String(v.location || '')) + '</td>' +
+        '<td>' + escapeHTML(String(v.status || '')) + '</td>' +
+        '<td>' + (v.archived ? 'Archived' : '') + '</td>' +
+        '<td>' +
+          '<button type="button" class="btn-secondary vessel-edit-btn" data-vid="' + vid + '">Edit</button> ' +
+          (v.archived
+            ? '<button type="button" class="btn-secondary vessel-unarchive-btn" data-vid="' + vid + '">Unarchive</button>'
+            : '<button type="button" class="btn-secondary vessel-archive-btn" data-vid="' + vid + '">Archive</button>') +
+        '</td></tr>';
+    });
+    tbody.innerHTML = html;
+    function findV(btn) {
+      var id = btn.getAttribute('data-vid');
+      return _vesselsTabState.list.filter(function (x) { return String(x.vessel_id) === id; })[0];
+    }
+    tbody.querySelectorAll('.vessel-edit-btn').forEach(function (b) {
+      b.addEventListener('click', function () { openVesselForm(findV(b)); });
+    });
+    tbody.querySelectorAll('.vessel-archive-btn').forEach(function (b) {
+      b.addEventListener('click', function () { archiveVessel(findV(b), false); });
+    });
+    tbody.querySelectorAll('.vessel-unarchive-btn').forEach(function (b) {
+      b.addEventListener('click', function () { archiveVessel(findV(b), true); });
+    });
+  }
+
+  function archiveVessel(v, unarchive) {
+    if (!v) return;
+    var run = function () {
+      var path = '/api/vessels/' + encodeURIComponent(v.vessel_id) + (unarchive ? '/unarchive' : '/archive');
+      return vesselsMwFetch(path, 'POST', { expected_updated_at: v.updated_at }).then(function (result) {
+        if (result.status >= 200 && result.status < 300) {
+          showToast(unarchive ? 'Vessel unarchived.' : 'Vessel archived.', 'success');
+          return loadVesselsTabList();
+        }
+        handleVesselError(result);
+      }).catch(function () {
+        showToast('Could not update the vessel. Please try again.', 'error');
+      });
+    };
+    if (unarchive) return run();
+    showConfirm('Archive vessel ' + v.vessel_id + '? It will be hidden from pickers but its history is kept.', run);
+  }
+
+  function handleVesselError(result) {
+    var code = result.data && result.data.code;
+    if (result.status === 409 && code === 'stale_vessel') {
+      showStaleVesselToast({ message: result.data.error }, function () { loadVesselsTabList(); });
+      return;
+    }
+    showToast((result.data && result.data.error) || ('Request failed (HTTP ' + result.status + ')'), 'error');
+  }
+
+  function vesselFieldHTML(id, label, value, attrs) {
+    return '<div class="admin-form-group"><label for="' + id + '">' + escapeHTML(label) + '</label>' +
+      '<input type="text" id="' + id + '" class="admin-input" value="' + escapeHTML(String(value == null ? '' : value)) + '" ' + (attrs || '') + ' /></div>';
+  }
+
+  function openVesselForm(v) {
+    var isEdit = !!v;
+    v = v || {};
+    var html = '';
+    if (isEdit) {
+      html += vesselFieldHTML('vessel-f-id', 'Vessel ID', v.vessel_id, 'disabled readonly');
+    } else {
+      html += vesselFieldHTML('vessel-f-prefix', 'ID prefix (e.g. PCB)', '', 'maxlength="8"');
+      html += vesselFieldHTML('vessel-f-id', 'Vessel ID', '', '');
+    }
+    html += vesselFieldHTML('vessel-f-label', 'Label', v.label);
+    html += vesselFieldHTML('vessel-f-type', 'Type', v.type);
+    html += vesselFieldHTML('vessel-f-material', 'Material', v.material);
+    html += vesselFieldHTML('vessel-f-capacity', 'Capacity (L)', v.capacity_liters, 'inputmode="decimal"');
+    html += vesselFieldHTML('vessel-f-bottom', 'Bottom diameter (cm)', v.bottom_diameter_cm, 'inputmode="decimal"');
+    html += vesselFieldHTML('vessel-f-top', 'Top diameter (cm)', v.top_diameter_cm, 'inputmode="decimal"');
+    html += vesselFieldHTML('vessel-f-depth', 'Depth (cm)', v.depth_cm, 'inputmode="decimal"');
+    html += vesselFieldHTML('vessel-f-location', 'Location', v.location);
+    html += vesselFieldHTML('vessel-f-brand', 'Brand', v.brand);
+    html += '<div class="admin-form-group"><label for="vessel-f-notes">Notes</label>' +
+      '<textarea id="vessel-f-notes" class="admin-input" rows="2">' + escapeHTML(String(v.notes || '')) + '</textarea></div>';
+    if (isEdit) {
+      var st = String(v.status || '').toLowerCase() === 'in-use' ? 'In-Use' : 'Empty';
+      html += '<div class="admin-form-group"><label for="vessel-f-status">Status</label>' +
+        '<select id="vessel-f-status" class="admin-select">' +
+        '<option value="Empty"' + (st === 'Empty' ? ' selected' : '') + '>Empty</option>' +
+        '<option value="In-Use"' + (st === 'In-Use' ? ' selected' : '') + '>In-Use</option></select>' +
+        '<small>Normally set by batches — override only to correct it</small></div>';
+    }
+    html += '<div class="admin-form-actions"><button type="button" class="btn" id="vessel-f-save">Save</button> ' +
+      '<button type="button" class="btn-secondary" id="vessel-f-cancel">Cancel</button></div>';
+    openModal(isEdit ? 'Edit Vessel' : 'Add Vessel', html);
+
+    var prefix = document.getElementById('vessel-f-prefix');
+    if (prefix) {
+      prefix.addEventListener('change', function () {
+        var p = prefix.value.trim().toUpperCase();
+        if (!p) return;
+        vesselsMwFetch('/api/vessels/next-id?prefix=' + encodeURIComponent(p)).then(function (r) {
+          if (r.status >= 200 && r.status < 300 && r.data && r.data.vessel_id) {
+            document.getElementById('vessel-f-id').value = r.data.vessel_id;
+          }
+        }).catch(function () { /* id can be typed by hand */ });
+      });
+    }
+    document.getElementById('vessel-f-cancel').addEventListener('click', closeModal);
+    document.getElementById('vessel-f-save').addEventListener('click', function () { saveVesselForm(v, isEdit); });
+  }
+
+  function saveVesselForm(v, isEdit) {
+    function val(id) { return document.getElementById(id).value.trim(); }
+    function num(id) { var s = val(id); return s === '' ? null : Number(s); }
+    var body = {
+      label: val('vessel-f-label'),
+      type: val('vessel-f-type'),
+      material: val('vessel-f-material'),
+      capacity_liters: num('vessel-f-capacity'),
+      bottom_diameter_cm: num('vessel-f-bottom'),
+      top_diameter_cm: num('vessel-f-top'),
+      depth_cm: num('vessel-f-depth'),
+      location: val('vessel-f-location'),
+      brand: val('vessel-f-brand'),
+      notes: val('vessel-f-notes')
+    };
+    var req;
+    if (isEdit) {
+      body.status = val('vessel-f-status');
+      body.expected_updated_at = v.updated_at;
+      req = vesselsMwFetch('/api/vessels/' + encodeURIComponent(v.vessel_id), 'PUT', body);
+    } else {
+      body.vessel_id = val('vessel-f-id');
+      if (!body.vessel_id) { showToast('Vessel ID is required.', 'warning'); return; }
+      req = vesselsMwFetch('/api/vessels', 'POST', body);
+    }
+    return req.then(function (result) {
+      if (result.status >= 200 && result.status < 300) {
+        closeModal();
+        showToast('Vessel saved.', 'success');
+        return loadVesselsTabList();
+      }
+      handleVesselError(result);
+    }).catch(function () {
+      showToast('Could not save the vessel. Please try again.', 'error');
+    });
+  }
+
+  // ===== Phase 86-10: Staff Access tab (owner-only, D-02, D-03) =====
+  // Visibility is cosmetic: every rule is enforced server-side (86-12).
+
+  var _staffAccessLoaded = false;
+  var _staffAccessLoading = false;
+  var _staffAccessState = { staff: [], breakGlassOnly: [], audit: [] };
+
+  function hideStaffAccessTab() {
+    var btn = document.querySelector('.admin-tab-btn[data-tab="staff-access"]');
+    if (btn) btn.style.display = 'none';
+    var panel = document.getElementById('tab-staff-access');
+    if (panel) panel.classList.remove('active');
+  }
+
+  function checkStaffAccessVisibility() {
+    var btn = document.querySelector('.admin-tab-btn[data-tab="staff-access"]');
+    if (!btn) return Promise.resolve();
+    return vesselsMwFetch('/api/staff-access/me').then(function (result) {
+      var d = result.data || {};
+      var show = result.status >= 200 && result.status < 300 && d.role === 'owner' && d.store !== 'sheets';
+      btn.style.display = show ? '' : 'none';
+    }).catch(function () {
+      btn.style.display = 'none';
+    });
+  }
+
+  function triggerStaffAccessLoad() {
+    if (_staffAccessLoaded || _staffAccessLoading) return;
+    _staffAccessLoading = true;
+    _staffAccessLoaded = true;
+    initStaffAccessTab();
+  }
+
+  function initStaffAccessTab() {
+    var addBtn = document.getElementById('staff-access-add-btn');
+    if (addBtn) addBtn.addEventListener('click', openStaffAddForm);
+    return loadStaffAccessList();
+  }
+
+  function staffAccessFailed(result) {
+    var code = result.data && result.data.code;
+    if (result.status === 403 && code === 'owner_required') {
+      hideStaffAccessTab();
+      showToast('Only owners can manage staff access', 'error');
+      return true;
+    }
+    return false;
+  }
+
+  function loadStaffAccessList() {
+    return vesselsMwFetch('/api/staff-access').then(function (result) {
+      if (staffAccessFailed(result)) return;
+      if (result.status < 200 || result.status >= 300) {
+        showToast((result.data && result.data.error) || 'Could not load staff access', 'error');
+        return;
+      }
+      _staffAccessState.staff = result.data.staff || [];
+      _staffAccessState.breakGlassOnly = result.data.break_glass_only || [];
+      _staffAccessState.audit = result.data.audit || [];
+      renderStaffAccess();
+    }).catch(function () {
+      showToast('Could not load staff access', 'error');
+    });
+  }
+
+  function renderStaffAccess() {
+    var tbody = document.getElementById('staff-access-tbody');
+    if (tbody) {
+      var html = '';
+      _staffAccessState.staff.forEach(function (s) {
+        var em = escapeHTML(String(s.email || ''));
+        var actions = s.break_glass
+          ? '<span class="admin-chip">Break-glass (Railway)</span>'
+          : '<button type="button" class="btn-secondary staff-role-btn" data-email="' + em + '" data-role="' + escapeHTML(String(s.role)) + '">Change role</button> ' +
+            '<button type="button" class="btn-secondary staff-remove-btn" data-email="' + em + '">Remove</button>';
+        html += '<tr><td>' + em + '</td><td>' + escapeHTML(String(s.role || '')) + '</td>' +
+          '<td>' + escapeHTML(String(s.added_by || '')) + '</td>' +
+          '<td>' + escapeHTML(String(s.added_at || '')) + '</td><td>' + actions + '</td></tr>';
+      });
+      _staffAccessState.breakGlassOnly.forEach(function (e) {
+        html += '<tr><td>' + escapeHTML(String(e)) + '</td><td>owner</td><td></td><td></td>' +
+          '<td><span class="admin-chip">Break-glass (Railway)</span></td></tr>';
+      });
+      tbody.innerHTML = html;
+      tbody.querySelectorAll('.staff-role-btn').forEach(function (b) {
+        b.addEventListener('click', function () {
+          changeStaffRole(b.getAttribute('data-email'), b.getAttribute('data-role'));
+        });
+      });
+      tbody.querySelectorAll('.staff-remove-btn').forEach(function (b) {
+        b.addEventListener('click', function () { removeStaff(b.getAttribute('data-email')); });
+      });
+    }
+    var atbody = document.getElementById('staff-access-audit-tbody');
+    if (atbody) {
+      var ah = '';
+      _staffAccessState.audit.forEach(function (a) {
+        ah += '<tr><td>' + escapeHTML(String(a.occurred_at || '')) + '</td>' +
+          '<td>' + escapeHTML(String(a.action || '')) + '</td>' +
+          '<td>' + escapeHTML(String(a.actor_email || '')) + '</td>' +
+          '<td>' + escapeHTML(String(a.target_email || '')) + '</td>' +
+          '<td>' + escapeHTML(String(a.role_before || '')) + (a.role_after ? ' &rarr; ' + escapeHTML(String(a.role_after)) : '') + '</td></tr>';
+      });
+      atbody.innerHTML = ah;
+    }
+  }
+
+  function staffMutation(path, method, body, okMsg) {
+    return vesselsMwFetch(path, method, body).then(function (result) {
+      if (result.status >= 200 && result.status < 300) {
+        showToast(okMsg, 'success');
+        return loadStaffAccessList();
+      }
+      if (staffAccessFailed(result)) return;
+      showToast((result.data && result.data.error) || ('Request failed (HTTP ' + result.status + ')'), 'error');
+    }).catch(function () {
+      showToast('Could not update staff access. Please try again.', 'error');
+    });
+  }
+
+  function openStaffAddForm() {
+    openModal('Add Staff',
+      '<div class="admin-form-group"><label for="staff-f-email">Email</label>' +
+      '<input type="email" id="staff-f-email" class="admin-input" /></div>' +
+      '<div class="admin-form-group"><label for="staff-f-role">Role</label>' +
+      '<select id="staff-f-role" class="admin-select"><option value="staff">Staff</option><option value="owner">Owner</option></select></div>' +
+      '<div class="admin-form-actions"><button type="button" class="btn" id="staff-f-save">Add</button> ' +
+      '<button type="button" class="btn-secondary" id="staff-f-cancel">Cancel</button></div>');
+    document.getElementById('staff-f-cancel').addEventListener('click', closeModal);
+    document.getElementById('staff-f-save').addEventListener('click', function () {
+      var email = document.getElementById('staff-f-email').value.trim();
+      var role = document.getElementById('staff-f-role').value;
+      if (!email) { showToast('Email is required.', 'warning'); return; }
+      closeModal();
+      staffMutation('/api/staff-access', 'POST', { email: email, role: role }, 'Staff member added.');
+    });
+  }
+
+  function changeStaffRole(email, currentRole) {
+    var next = currentRole === 'owner' ? 'staff' : 'owner';
+    showConfirm('Change ' + email + ' from ' + currentRole + ' to ' + next + '?', function () {
+      staffMutation('/api/staff-access/' + encodeURIComponent(email), 'PUT', { role: next }, 'Role updated.');
+    });
+  }
+
+  function removeStaff(email) {
+    showConfirm('Remove ' + email + '? Their sessions end immediately.', function () {
+      staffMutation('/api/staff-access/' + encodeURIComponent(email), 'DELETE', undefined, 'Staff member removed.');
+    });
+  }
+
   // Module exports for testing
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = Object.assign(module.exports || {}, {
+      // 86-10: Vessels + Staff Access tab test seams
+      _initVesselsTabForTest: initVesselsTab,
+      _initTabNavigationForTest: function () { return initTabNavigation(); },
+      _vesselsTabState: _vesselsTabState,
+      _openVesselFormForTest: openVesselForm,
+      _checkStaffAccessVisibilityForTest: checkStaffAccessVisibility,
+      _initStaffAccessTabForTest: initStaffAccessTab,
+      _buildVesselLabelForTest: buildVesselLabel,
+      _showVesselOptionsForTest: showVesselOptions,
+      _setVesselsDataForTest: function (arr) { vesselsData = arr; },
       canActivateRecipe: canActivateRecipe,
       recipeLineCost: recipeLineCost,
       formatLineCost: formatLineCost,

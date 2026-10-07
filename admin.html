@@ -128,11 +128,13 @@
             <button type="button" class="admin-tab-btn" data-tab="kiosk">Kiosk Sale</button>
             <button type="button" class="admin-tab-btn" data-tab="kits">Kit Inventory</button>
             <button type="button" class="admin-tab-btn" data-tab="ingredients">Ingredients</button>
+            <button type="button" class="admin-tab-btn" data-tab="vessels">Vessels</button>
             <button type="button" class="admin-tab-btn" data-tab="orders">Supplier Orders</button>
             <button type="button" class="admin-tab-btn" data-tab="consignment">Consignment</button>
             <span class="admin-tab-divider"></span>
             <button type="button" class="admin-tab-btn" data-tab="homepage">Homepage</button>
             <button type="button" class="admin-tab-btn" data-tab="export">Export / Sync</button>
+            <button type="button" class="admin-tab-btn" data-tab="staff-access" style="display:none">Staff Access</button>
           </div>
 
           <!-- Tab 1: Reservations & Holds -->
@@ -439,6 +441,76 @@
               </div>
               <div id="schedules-list" class="schedules-list"></div>
               <p class="admin-empty" id="schedules-empty" style="display:none;">No schedule templates. Create one to get started.</p>
+            </div>
+          </div>
+
+          <!-- Tab: Vessels (86-10) -->
+          <div class="admin-tab-panel" id="tab-vessels">
+            <div class="admin-panel-header">
+              <h2>Vessels</h2>
+              <div class="admin-panel-actions">
+                <div class="admin-filter-row">
+                  <label for="vessels-show-archived"><input type="checkbox" id="vessels-show-archived"> Show archived</label>
+                </div>
+                <button type="button" class="btn" id="vessels-add-btn">+ Add Vessel</button>
+              </div>
+            </div>
+            <p class="admin-empty" id="vessels-empty" style="display:none;"></p>
+            <div class="admin-table-wrap">
+              <table class="admin-table" id="vessels-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Label</th>
+                    <th>Type</th>
+                    <th>Capacity (L)</th>
+                    <th>Location</th>
+                    <th>Status</th>
+                    <th>Archived</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="vessels-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tab: Staff Access (86-10, owner-only) -->
+          <div class="admin-tab-panel" id="tab-staff-access">
+            <div class="admin-panel-header">
+              <h2>Staff Access</h2>
+              <div class="admin-panel-actions">
+                <button type="button" class="btn" id="staff-access-add-btn">+ Add Staff</button>
+              </div>
+            </div>
+            <div class="admin-table-wrap">
+              <table class="admin-table" id="staff-access-table">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Added by</th>
+                    <th>Added</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="staff-access-tbody"></tbody>
+              </table>
+            </div>
+            <h3>Recent changes</h3>
+            <div class="admin-table-wrap">
+              <table class="admin-table" id="staff-access-audit-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Action</th>
+                    <th>By</th>
+                    <th>Target</th>
+                    <th>Role</th>
+                  </tr>
+                </thead>
+                <tbody id="staff-access-audit-tbody"></tbody>
+              </table>
             </div>
           </div>
 
