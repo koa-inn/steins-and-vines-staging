@@ -149,7 +149,8 @@ describe('runVerify', function () {
         }
         if (/from recipes where recipe_id/.test(sql)) {
           return Promise.resolve({ rows: [Object.assign({}, rec, {
-            created_at: new Date(rec.created_at), updated_at: new Date(rec.updated_at), abv: '5.0'
+            created_at: new Date(rec.created_at), updated_at: new Date(rec.updated_at), abv: '5.0', service_fee: null, materials_fee: null,
+            description: null, notes: null, schedule_id: null
           })] });
         }
         return Promise.reject(new Error('unexpected query in test: ' + sql));
