@@ -2053,7 +2053,7 @@ Plans:
   3. Parity tests prove the Phase 73 unit guard, the Phase 79 D-04 change comparison and D-09 id-honouring behave identically on Postgres; a kiosk recipe sale prices identically on both stores
   4. `dual` ≥1 week with mirror and discrepancy logging, then flip; a recipe rename completes in under 2 s on production
 
-**Plans:** 7/14 plans executed
+**Plans:** 9/14 plans executed
 
 Plans:
 **Wave 1**
@@ -2074,8 +2074,8 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 85-06-PLAN.md — lib/recipe-store.js facade: sheets byte-identical, dual/postgres authoritative, fail-closed delete
-- [ ] 85-11-PLAN.md — recipes-verify + replay-to-sheet CLIs, RUNBOOK Phase 85 section (D-07 runsheet, D-08 gate), 85-DUAL-LOG.md (D-05 coverage table, delete TOCTOU note)
+- [x] 85-06-PLAN.md — lib/recipe-store.js facade: sheets byte-identical, dual/postgres authoritative, fail-closed delete
+- [x] 85-11-PLAN.md — recipes-verify + replay-to-sheet CLIs, RUNBOOK Phase 85 section (D-07 runsheet, D-08 gate), 85-DUAL-LOG.md (D-05 coverage table, delete TOCTOU note)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
