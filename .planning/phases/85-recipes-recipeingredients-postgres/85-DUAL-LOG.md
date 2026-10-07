@@ -74,6 +74,14 @@ observed, zero unexplained discrepancies) is met and the owner decides to flip t
 
 ## Staging rehearsal
 
+- 2026-10-07: staging push `57a44b84` (`git push origin main`); staging `/health` `database:true`.
+- 2026-10-07: Apps Script deployed as version 60 (rollback 59) on deployment `…DI968g`. Pre-paste
+  drift hash matched the pre-Phase-85 repo file; post-paste hash matched `apps-script/adminApi.gs`.
+  `GET /api/recipes` 200 with 3 active recipes on production and staging afterwards.
+- 2026-10-07: owner fixed SV-R-000001 (`created_at` / `created_by` swap) in the live Recipes tab.
+- 2026-10-07 19:29Z: dry run on fresh snapshot: 10 recipe rows, 117 ingredient rows read;
+  plan 10 recipes / 117 ingredients; sequence seeds recipe 13, ingredient 184; **0 rejects**.
+
 ## Production prerequisites
 
 ## Production cutover
