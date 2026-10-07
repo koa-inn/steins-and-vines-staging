@@ -111,6 +111,30 @@ Findings outside Phase 85 scope (pre-existing):
 
 ## Production prerequisites
 
+### 2026-10-07: D-08 gate NOT met; owner chose deploy-only (option 1)
+
+- Production `GIFT_CARDS_STORE=dual` (Phase 84 window day 2; flip no earlier than ~2026-10-13).
+  Per D-08, production `RECIPES_STORE=dual` waits for the gift-card flip.
+- Owner decision 2026-10-07: deploy `main` to production tonight after close with `RECIPES_STORE`
+  unset (sheets). Deviation from 85-13 Task 1, which also holds the deploy; rationale: a sheets-mode
+  deploy opens no second dual window, ships the kiosk catalog-503 fix (`a509e397`) and the D-03 editor
+  bundles. 85-13 Task 2 (backfill + dual) stays gated on the Phase 84 flip.
+- Deploy contents vs production `ef3be1e3`: middleware changes are recipe-only (`lib/recipe-*`,
+  `routes/recipes.js`, `routes/pos-recipe.js`, `server.js` mirror-sweep registration, additive
+  `0003_recipes.sql`, backfill/verify/replay CLIs); no gift-card code changed. Frontend: `admin.js`,
+  `brewpad.js` (+ min); public pages differ only in `?v=` stamps; `BEER_PAGE_LIVE = false`.
+- Backups: production `pg-backup` ran 2026-10-07 10:02Z, dump ok, uploaded.
+
+### Tonight's runsheet (deploy-only, sheets)
+
+1. After close, kiosk idle. `git push production main --force` (gated-deploy workflow).
+2. Production `/health`: `database:true`; startup log `store modes` shows `RECIPES_STORE` absent/sheets
+   and `GIFT_CARDS_STORE: dual` unchanged; pre-deploy guard chain passed with `0003_recipes` applied.
+3. `GET /api/recipes` 200 with `source: apps-script`; kiosk `recipe-quote` 200 for SV-R-000002 at 23 L.
+4. Public `beer.html` still hidden; spot-check one gift-card lookup still works (Phase 84 dual untouched).
+5. Rollback: redeploy `ef3be1e3` (Railway rollback to the previous deployment); the empty recipe tables
+   are harmless.
+
 ## Production cutover
 
 ## Post-flip verification
