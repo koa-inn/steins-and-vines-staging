@@ -451,15 +451,15 @@ if (req.staffEmail) payload.acting_user = req.staffEmail;
 | A11 | Archive of an `In-Use` vessel should be blocked (409) until it is emptied or overridden | Pattern 2 | Staff could archive a vessel with a live batch |
 | A12 | Hard-delete a staff row (not soft-delete); audit table keeps history | Pattern 6 | Re-adding after removal has no tombstone (audit has the history) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **D-06 "shelf + bin" vs reality.** What we know: vessel rows carry `location` (values: Brew House, Storage, Mobile Beer/Wine Racking, blank), not shelf/bin; shelf/bin are per-batch. Recommendation: edit `location` (+ type/material/capacity/dimensions/brand/notes/status override); confirm with owner at plan time. Not blocking.
-2. **Blank the Config `staff_emails` value at the production flip?** Recommendation: yes (Pattern 6); needs explicit owner OK because D-04 says "leave a note".
-3. **One flag vs two (A2).** Recommend two.
-4. **FS-0011 test template and `[gfs-probe]` description** — owner deletes/cleans before the dry run (or accepts importing them).
-5. **PG-down behaviour for regular staff (A4).** Recommend fail closed; owner may choose a bounded grace.
-6. **When to trim Railway `STAFF_EMAILS` to owners-only** — recommend after flip + verification that every regular staff member is in `staff_access`; the Staff Access screen cannot be the only recovery path.
-7. **Timeline.** Production dual for this phase starts only after prod `RECIPES_STORE=postgres` (85-13 prod cutover is "deploy-only tonight", then a ≥7-day window), so prod cutover is at the earliest mid/late October; build + staging rehearsal can proceed now.
+1. **D-06 "shelf + bin" vs reality.** What we know: vessel rows carry `location` (values: Brew House, Storage, Mobile Beer/Wine Racking, blank), not shelf/bin; shelf/bin are per-batch. Recommendation: edit `location` (+ type/material/capacity/dimensions/brand/notes/status override); confirm with owner at plan time. Not blocking. RESOLVED: D-17 (free-text `location` only).
+2. **Blank the Config `staff_emails` value at the production flip?** Recommendation: yes (Pattern 6); needs explicit owner OK because D-04 says "leave a note". RESOLVED: D-18 (blank at flip + note).
+3. **One flag vs two (A2).** Recommend two. RESOLVED: D-19 (`OPS_DATA_STORE` + `STAFF_ACCESS_STORE`).
+4. **FS-0011 test template and `[gfs-probe]` description** — owner deletes/cleans before the dry run (or accepts importing them). RESOLVED: Claude's Discretion in CONTEXT (backfill as-is, surface in rehearsal).
+5. **PG-down behaviour for regular staff (A4).** Recommend fail closed; owner may choose a bounded grace. RESOLVED: D-20 (fail closed).
+6. **When to trim Railway `STAFF_EMAILS` to owners-only** — recommend after flip + verification that every regular staff member is in `staff_access`; the Staff Access screen cannot be the only recovery path. RESOLVED: Claude's Discretion in CONTEXT (trim after flip + verification).
+7. **Timeline.** Production dual for this phase starts only after prod `RECIPES_STORE=postgres` (85-13 prod cutover is "deploy-only tonight", then a ≥7-day window), so prod cutover is at the earliest mid/late October; build + staging rehearsal can proceed now. RESOLVED: D-12 (gated prod cutover).
 
 ## Environment Availability
 
