@@ -170,7 +170,7 @@ async function createRecipe(client, payload, opts) {
   if (payload.ingredients !== undefined) {
     try {
       ingredients = typeof payload.ingredients === 'string' ? JSON.parse(payload.ingredients) : payload.ingredients;
-    } catch (e) {
+    } catch {
       return invalid('Invalid ingredients JSON');
     }
   }
