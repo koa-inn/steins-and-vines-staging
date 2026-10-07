@@ -2131,8 +2131,8 @@ Plans:
 
 **Wave 4**
 
-- [ ] 86-13-PLAN.md — vessel-store.js + ferm-schedule-store.js facades
-- [ ] 86-14-PLAN.md — ops-verify + ops-replay-to-sheet, RUNBOOK Phase 86, APPS_SCRIPT.md server_token fix, 86-DUAL-LOG
+- [x] 86-13-PLAN.md — vessel-store.js + ferm-schedule-store.js facades
+- [x] 86-14-PLAN.md — ops-verify + ops-replay-to-sheet, RUNBOOK Phase 86, APPS_SCRIPT.md server_token fix, 86-DUAL-LOG
 
 **Wave 5**
 
