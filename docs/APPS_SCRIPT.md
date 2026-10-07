@@ -33,7 +33,7 @@ The Steins & Vines spreadsheet runs four Apps Script files. Three are deployed a
 Every request to `adminApi.gs` is validated in two layers:
 
 1. **Google OAuth** — the script is deployed with _Execute as: User accessing the web app_, so `Session.getActiveUser().getEmail()` returns the caller's actual email. Unauthenticated requests are rejected by Google before reaching the script.
-2. **Staff whitelist** — every handler checks the caller's email against the `staff_emails` list in the Config sheet.
+2. **Staff whitelist** — every handler checks the caller's email against the `staff_emails` list in the Config sheet. This list is retired (Phase 86, D-04/D-18): staff sign-in is managed in admin → Staff Access, the Config cell is blanked at the flip, and the code limb is removed in Phase 88.
 
 **Public endpoints** (no auth, no staff whitelist check):
 
@@ -42,7 +42,7 @@ Every request to `adminApi.gs` is validated in two layers:
 
 ### Middleware server-to-server calls
 
-The Railway middleware (`zoho-middleware/routes/checkout.js`) calls `APPS_SCRIPT_URL` directly via `axios.post` with a `server_token` field in the JSON body. This bypasses Google OAuth; the script validates the token against the `server_token` value stored in the Config sheet. This is used to write new reservations to the admin panel immediately after checkout.
+The Railway middleware (`zoho-middleware/routes/checkout.js`) calls `APPS_SCRIPT_URL` directly via `axios.post` with a `server_token` field in the JSON body. This bypasses Google OAuth; the script validates the token against its Script Properties (`SERVER_WRITE_TOKEN` for writes, `SERVER_TOKEN` or `SERVER_WRITE_TOKEN` for reads). The token lives only in Railway `APPS_SCRIPT_SERVER_TOKEN` and the Apps Script Script Properties; the Config sheet never holds it. This is used to write new reservations to the admin panel immediately after checkout.
 
 ---
 
@@ -66,7 +66,7 @@ Two env vars are set in Railway for the production service:
 | Env var | Value |
 |---------|-------|
 | `APPS_SCRIPT_URL` | The same web app URL as `ADMIN_API_URL` above |
-| `APPS_SCRIPT_SERVER_TOKEN` | A shared secret stored in the Config sheet under key `server_token` |
+| `APPS_SCRIPT_SERVER_TOKEN` | A shared secret that lives only in Railway and in the Apps Script Script Properties (`SERVER_WRITE_TOKEN` / `SERVER_TOKEN`). The Config sheet never holds it. |
 
 Both are read from `process.env` in `zoho-middleware/routes/checkout.js` — they are never hardcoded in source.
 
@@ -390,7 +390,7 @@ When setting up a new Railway deployment from scratch:
 
 ```
 APPS_SCRIPT_URL=https://script.google.com/macros/s/<deployment-id>/exec
-APPS_SCRIPT_SERVER_TOKEN=<32+ char secret matching Config sheet server_token>
+APPS_SCRIPT_SERVER_TOKEN=<32+ char secret matching the Script Properties SERVER_WRITE_TOKEN / SERVER_TOKEN; never stored in the Config sheet>
 ```
 
 Both vars are validated at startup by `zoho-middleware/lib/validateEnv.js`. A missing value will cause a startup warning and silently skip reservation notifications.

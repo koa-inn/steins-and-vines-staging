@@ -245,3 +245,34 @@ node scripts/backfill/recipes-verify.js --file="$HOME/sv-backfill/fresh.xlsx"
 node scripts/backfill/recipes-replay-to-sheet.js
 node scripts/backfill/recipes-replay-to-sheet.js --apply
 ```
+
+## Phase 86 ops tooling
+
+Vessels, FermSchedules, Config (two keys) and the staff sign-in list. Run from
+`zoho-middleware/`. Equals-form flags only; the database comes from `BACKFILL_DATABASE_URL`
+(never argv); output is ids, field names and counts only (emails are never printed). Full
+procedure: `docs/RUNBOOK.md`, "Ops data → Postgres (Phase 86)".
+
+```bash
+read -s BACKFILL_DATABASE_URL && export BACKFILL_DATABASE_URL
+read -s BACKFILL_STAFF_EMAILS && export BACKFILL_STAFF_EMAILS   # the Railway STAFF_EMAILS value
+
+# One-time load (dry run first: 0 rejects required).
+node scripts/backfill/ops-backfill.js --file="$HOME/sv-backfill/snapshot.xlsx" --owners=a@x,b@y --dry-run
+node scripts/backfill/ops-backfill.js --file="$HOME/sv-backfill/snapshot.xlsx" --owners=a@x,b@y --promote
+
+# Read-only comparison of Postgres against a FRESH .xlsx. Also checks the Config tab holds no
+# token/secret row and that the Vessels tab has a `label` header. BACKFILL_STAFF_EMAILS is
+# optional: without it the staff leg is skipped with a notice.
+node scripts/backfill/ops-verify.js --file="$HOME/sv-backfill/fresh.xlsx"
+
+# Push Postgres vessels + schedules back onto the sheet (repair / dual->sheets rollback).
+# Dry run by default; --apply needs APPS_SCRIPT_URL and APPS_SCRIPT_SERVER_TOKEN (read -s).
+# The staff list is never replayed.
+node scripts/backfill/ops-replay-to-sheet.js
+node scripts/backfill/ops-replay-to-sheet.js --apply [--only=vessels|schedules] [--id=X]
+```
+
+Exit codes: `ops-verify` 0 = "0 mismatches", 4 = mismatches, 1 = error. `ops-replay-to-sheet`
+0 = ok, 1 = error or stopped at the first `{ok:false}`. `ops-backfill` as documented in its
+header (2 rejects, 3 promote check failed).

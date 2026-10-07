@@ -262,6 +262,7 @@ Deploy. Prefer this to forward-fixing a live deployment.
 
 | Date | Version | Previous (rollback target) | Change |
 |------|---------|----------------------------|--------|
+| _pending_ | 61 | **60** | **Phase 86** (planned): additive `mirror_vessel_state`, `mirror_ferm_schedule_state`, `mirror_ferm_schedule_delete` (server_token-gated); staff email recorded in VesselHistory. Fill in date and probe results at deploy time (Ops data → Postgres §3). |
 | 2026-10-07 | 60 | **59** | **Phase 85** (85-04): additive `mirror_recipe_state`, `mirror_recipe_delete`, `recipe_batch_ref_count` (server_token-gated). Editor-drift hash check passed before paste; post-paste hash matched repo. `GET /api/recipes` returned 3 active recipes from Apps Script on production and staging after deploy. |
 | 2026-09-24 | 58 | **57** | Pre-existing fixes found in the Phase 82 staging walk: public batch cache bound to the token that passed (`0d460a6e` — closes a 5 s any-token read of `get_batch_public`); `propagateFermSchedule` no longer duplicates completed steps / mislabels packaging, and evicts per-batch caches (`ff1436b7`). Live-verified on staging test batch SV-B-000221: bogus + malformed tokens rejected right after a valid view, valid token works right after a bogus one; propagate of an added step produced A(done), B, C, one Packaging, visible immediately. |
 | 2026-09-23 | 57 | **56** | **Phase 82** (82-02/82-03): admin proxy `server_token` write entries, inventory/schedule actions, `get_ingredients`/`get_homepage` reads, D-18 lock fixes, per-task cache bust, removed `get_config`/`update_schedule`/`update_kits`. Non-mutating probes 1-7 + 9 passed (`scripts/phase82-appsscript-probes.sh`). Pre-paste editor-drift hash check was skipped. |
@@ -858,6 +859,149 @@ needed, recreate it from the most recent .xlsx snapshot or the Railway backup.
 ### 13. Release checklist
 
 - **Staging candidate commit SHA:** `bd12df33` (85-12 Task 1 green gate; later commits are docs-only). Production SHA to be filled in by Plan 85-13.
+
+
+---
+
+## Ops data → Postgres (Phase 86)
+
+Owner-run cutover, dual window, flip and rollback procedure for the Vessels and FermSchedules
+stores, the two imported Config keys and the staff sign-in list (DB-05). Same shape as the
+Phase 85 section above. No vessel notes, schedule step text, staff emails or secrets appear below
+or in any terminal output this section references: every script prints ids, field names and
+counts only. Evidence is logged in
+`.planning/phases/86-vessels-fermschedules-config-postgres/86-DUAL-LOG.md`.
+
+Two independent flags drive this phase: `OPS_DATA_STORE` (vessels, schedules, config) and
+`STAFF_ACCESS_STORE` (the staff sign-in list). Each takes `sheets` | `dual` | `postgres` and each
+rolls back on its own (D-19).
+
+### 0. Ordering gate (D-12)
+
+Production `dual` for either flag starts only after production `RECIPES_STORE=postgres` is recorded
+in `85-DUAL-LOG.md` ("Flip decision") together with its post-flip verification. One production
+dual window runs at a time. Staging may run ahead of that gate.
+
+### 1. Prerequisites
+
+- Docker is running locally (`npm run test:db` in `zoho-middleware/` uses testcontainers).
+- Railway tunnel to the target database works (see `zoho-middleware/scripts/backfill/README.md`
+  step 3) and the database backups are live (Phase 83).
+- A fresh Postgres 16-compatible test pass is recorded for the release candidate (§12).
+
+### 2. Data-hygiene decisions (before the dry run)
+
+Decide and record in `86-DUAL-LOG.md` before the first dry run:
+
+- **FS-0011 "ZZ Test Template":** the owner either deletes it from the sheet or accepts importing it.
+- **"[gfs-probe]" suffix on FS-0001's description:** the owner either cleans it or accepts it.
+- Default when the owner has no preference: import both as-is and record that decision.
+
+### 3. Apps Script v61 deploy
+
+1. Follow "Apps Script (`adminApi.gs`)" above: record the active version as the rollback target
+   (expected: **60**), hash-check the editor for drift, paste `apps-script/adminApi.gs`, save, then
+   Deploy → Manage deployments → pencil → **New version** on the existing deployment.
+2. Record in `86-DUAL-LOG.md` under "Phase 86 Apps Script versions": new = **61**, rollback = **60**.
+3. Probes: production `get_vessels` and `get_ferm_schedules` still return `ok`; an `update_batch`
+   through the proxy writes the staff email into VesselHistory.
+
+### 4. Backfill
+
+Precondition: the Vessels tab has a `label` header (§11).
+
+```bash
+cd zoho-middleware
+read -s BACKFILL_DATABASE_URL && export BACKFILL_DATABASE_URL
+read -s BACKFILL_STAFF_EMAILS && export BACKFILL_STAFF_EMAILS   # the current Railway STAFF_EMAILS value
+node scripts/backfill/ops-backfill.js --file="$HOME/sv-backfill/snapshot.xlsx" --owners=<owner1>,<owner2> --dry-run
+```
+
+Dry run must show 0 rejects. Then `--promote`, download a fresh .xlsx and run
+`node scripts/backfill/ops-verify.js --file="$HOME/sv-backfill/fresh.xlsx"`: it must print
+"0 mismatches" (exit 0; exit 4 means mismatches).
+
+### 5. Cutover
+
+1. Confirm the editors bundle that reads the new admin responses is live first.
+2. Set `OPS_DATA_STORE=dual` **and** `STAFF_ACCESS_STORE=dual` together (D-09; two flags per D-19).
+3. Check `/health` shows `database_required: true` and the startup log has
+   "Ops mirror sweep registered".
+4. Pre-open mirror write: edit the notes of one harmless vessel, download a fresh snapshot and
+   run `ops-verify.js`: 0 mismatches.
+5. Every regular staff member signs in once (confirms their sign-in works from the table).
+
+### 6. Dual window
+
+Daily checks: Sentry component `ops-mirror`, `[dual-write] staff-access` log lines, and
+`ops:mirror-dirty` Redis markers (a surviving marker means a mirror write is still pending).
+
+**D-11 flip bar:** at least 7 consecutive days where every action below was observed and there
+were zero unexplained mismatches: vessel add / edit / archive / status override; schedule
+create / edit / delete-or-archive / propagate; staff add / remove. Any bug-classified
+discrepancy restarts the window.
+
+**Staff dual verification (the un-mirrored list, D-10)** means: the shadow compare shows no
+unexplained disagreements, plus the `ops-verify.js` staff leg (every Railway STAFF_EMAILS member
+has a staff_access row), plus one removal with proof that the removed person gets an immediate 403.
+
+During the window add people through the Staff Access screen only, never via Railway STAFF_EMAILS.
+
+### 7. Scripted runsheet (actions not seen in real traffic)
+
+- **Vessel:** add a test vessel with a valid-format id "TST-901", edit it, override its status,
+  then archive it.
+- **Schedule:** create "ZZ Test Schedule <date>", edit it, propagate it to no batch, archive it,
+  then delete it.
+- **Staff:** add a test staff account, change its role, then remove it while it is signed in; its
+  next request must return 403.
+
+Record each action's first-seen time in the Op-coverage table.
+
+### 8. Flip
+
+1. Set `OPS_DATA_STORE=postgres` and `STAFF_ACCESS_STORE=postgres` after hours, then verify
+   (`ops-verify.js` 0 mismatches).
+2. **D-18:** blank the Config sheet `staff_emails` VALUE cell and write in the adjacent cell:
+   "Retired 2026-xx: staff sign-in is managed in admin → Staff Access (Phase 86). Do not re-add."
+3. Wait 5 minutes (Apps Script cache), then probe a direct Apps Script call using a non-owner
+   staff Google token: it must return `unauthorized`.
+4. Only after the `ops-verify.js` staff leg shows `missing from Postgres 0`, trim Railway
+   `STAFF_EMAILS` to the owner break-glass accounts only. Confirm a regular staff member can still
+   sign in (via the table) and an owner still can.
+
+### 9. Rollback, per flag independently (D-19)
+
+- **`OPS_DATA_STORE` → `sheets`:** verify first. If the sheet lags, run
+  `node scripts/backfill/ops-replay-to-sheet.js` (dry run), then `--apply`. Re-run `ops-verify.js`.
+- **`STAFF_ACCESS_STORE` → `sheets`:** reverts sign-in to the env list only. **First** make sure
+  Railway `STAFF_EMAILS` contains everyone who must keep access, otherwise they are locked out.
+- Apps Script: roll back to version **60** (Deploy → Manage deployments → pencil → previous version).
+
+### 10. Database outage behaviour (D-20)
+
+Fail-closed: when Postgres is unreachable only the `STAFF_EMAILS` break-glass members can sign in
+or keep working. Kiosk device traffic is unaffected.
+
+### 11. Explained differences (known up front)
+
+- Vessel status can drift when a Postgres status apply failed: Sentry names the vessel and a
+  replay (`ops-replay-to-sheet.js --apply --only=vessels --id=<id>`) fixes it.
+- jsonb stores schedule step keys in a different order than the sheet text; verify compares parsed.
+- Vessel `location` is trimmed on import.
+- **label header REQUIRED (owner decision 2026-10-07):** the owner adds a `label` header in row 1
+  of the Vessels tab, in the first empty column right of `notes`. Apps Script reads Vessels by
+  header, so no existing column shifts. Add it BEFORE the staging backfill in 86-18 and in any
+  case before production dual. `ops-verify.js` prints "Vessels label header: MISSING" and counts
+  it as a mismatch (exit 4) until it exists; with it, the mirror, `ops-replay-to-sheet.js` and a
+  §9 rollback keep labels in the sheet.
+- New vessels do not get Zoho inventory items (Pitfall 11).
+
+### 12. Release checklist
+
+- **Staging candidate commit SHA:** _to be filled in by the staging plan_.
+- Production SHA: _to be filled in by the production cutover plan_.
+- Apps Script v61 recorded with rollback 60 (§3).
 
 
 ---
