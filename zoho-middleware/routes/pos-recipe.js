@@ -1,7 +1,6 @@
 'use strict';
 
 var express = require('express');
-var axios = require('axios');
 var crypto = require('crypto');
 var helcimLib = require('../lib/helcim');
 var zohoApi = require('../lib/zoho-api');
@@ -13,6 +12,11 @@ var C = require('../lib/constants');
 var brewpadIntegration = require('../lib/brewpad-integration');
 var scaling = require('../lib/recipe-scaling');
 var moneyPath = require('../lib/money-path');
+var recipeStore = require('../lib/recipe-store');
+var recipeMirror = require('../lib/recipe-mirror');
+var sheetMirror = require('../lib/sheet-mirror');
+var dualWriteCompare = require('../lib/dual-write-compare');
+var sentryCapture = require('../lib/sentry-capture');
 
 var zohoPost = zohoApi.zohoPost;
 
@@ -21,26 +25,6 @@ var router = express.Router();
 // M12 (D-13 parity): 7-day TTL for the recipe-sale pending-charge record —
 // mirrors KIOSK_PENDING_CHARGE_TTL in routes/pos.js.
 var KIOSK_PENDING_CHARGE_TTL = 604800;
-
-// ---------------------------------------------------------------------------
-// Helpers — Apps Script communication (same pattern as routes/recipes.js)
-// ---------------------------------------------------------------------------
-
-function callAppsScriptPost(action, payload) {
-  var url = process.env.APPS_SCRIPT_URL;
-  var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
-  if (!url || !token) {
-    return Promise.reject(new Error('Apps Script not configured'));
-  }
-  return axios.post(url, JSON.stringify(Object.assign({}, payload, {
-    action: action,
-    server_token: token
-  })), {
-    headers: { 'Content-Type': 'application/json' },
-    timeout: 15000,
-    maxRedirects: 5
-  }).then(function (resp) { return resp.data; });
-}
 
 // ---------------------------------------------------------------------------
 // Recipe discount helpers
@@ -164,151 +148,350 @@ function distributeRecipeDiscount(lineItems, feeItemIds, preset, discountAmount)
 //                                         when present, prices via computeModifiedRecipeTotal
 // ---------------------------------------------------------------------------
 
-function computeRecipeQuote(recipeId, rawTarget, saleType, millGrain, modifiedIngredients, discountReq) {
-  return callAppsScriptPost('get_recipe', { recipe_id: recipeId })
-    .then(function (data) {
-      if (!data || !data.ok || !data.data || !data.data.recipe) {
-        return Promise.reject({ status: 404, body: { error: 'Recipe not found' } });
+// ---------------------------------------------------------------------------
+// D-05 dual price compare (Phase 85, production + RECIPES_STORE=dual only)
+//
+// Every real quote/sale is priced a second time from the recipe read back
+// through the sheet path; any difference goes to Sentry via dual-write-compare.
+// D-06: the sale ALWAYS charges the Postgres price. This compare is
+// observational: fire-and-forget, never awaited, never throws into the route.
+// ---------------------------------------------------------------------------
+
+var DUAL_PRICE_SETTLE_MS = 60000;
+var SHEET_RECIPE_MEMO_MS = 5000;
+var DIRTY_ALERT_MS = 10 * 60 * 1000;
+var DIRTY_ALERT_THROTTLE_MS = 60 * 60 * 1000;
+
+var dualPriceStats = { compared: 0, skipped_settle: 0, skipped_dirty: 0, sheet_failed: 0 };
+var dirtySince = {};
+var dirtyAlertedAt = {};
+var sheetRecipeMemo = {};
+
+function _dualPriceStats() {
+  return {
+    compared: dualPriceStats.compared,
+    skipped_settle: dualPriceStats.skipped_settle,
+    skipped_dirty: dualPriceStats.skipped_dirty,
+    sheet_failed: dualPriceStats.sheet_failed
+  };
+}
+
+function _resetDualPriceStats() {
+  dualPriceStats.compared = 0;
+  dualPriceStats.skipped_settle = 0;
+  dualPriceStats.skipped_dirty = 0;
+  dualPriceStats.sheet_failed = 0;
+  dirtySince = {};
+  dirtyAlertedAt = {};
+  sheetRecipeMemo = {};
+}
+
+function skippedTotal() {
+  return dualPriceStats.skipped_settle + dualPriceStats.skipped_dirty;
+}
+
+function totalsSuffix() {
+  return ' compared=' + dualPriceStats.compared + ' skipped=' + skippedTotal() +
+    ' sheet_failed=' + dualPriceStats.sheet_failed;
+}
+
+function settleOutcome(promise) {
+  return Promise.resolve(promise).then(
+    function (value) { return { ok: true, value: value }; },
+    function (err) { return { ok: false, err: err }; }
+  );
+}
+
+/** Price projection compared across stores: totals, mode, scale and line item/qty/unit only. */
+function projectPrice(outcome) {
+  if (!outcome.ok) {
+    var e = outcome.err;
+    var msg = e && e.body && e.body.error ? e.body.error : ((e && e.message) || String(e));
+    return {
+      status: (e && e.status) || null, error: msg, pricingMode: null, baseVol: null,
+      targetVolumeL: null, scaleFactor: null, grandTotal: null, totalBeforeDiscount: null,
+      feePortion: null, discountTotal: null, lines: []
+    };
+  }
+  var r = outcome.value;
+  return {
+    status: null,
+    error: null,
+    pricingMode: r.pricingMode,
+    baseVol: r.baseVol,
+    targetVolumeL: r.targetVolumeL,
+    scaleFactor: r.scaleFactor,
+    grandTotal: r.grandTotal,
+    totalBeforeDiscount: r.totalBeforeDiscount,
+    feePortion: r.feePortion,
+    discountTotal: r.discount && r.discount.discountAmount !== undefined ? r.discount.discountAmount : null,
+    lines: (r.scaledIngredients || []).map(function (l) {
+      return { item_id: l.item_id, quantity: l.quantity, unit: l.unit };
+    })
+  };
+}
+
+function cloneJson(v) {
+  return v === undefined ? v : JSON.parse(JSON.stringify(v));
+}
+
+function memoSheetRecipe(recipeId) {
+  var now = Date.now();
+  var hit = sheetRecipeMemo[recipeId];
+  if (hit && now - hit.at < SHEET_RECIPE_MEMO_MS) return hit.promise;
+  var p = Promise.resolve().then(function () {
+    return recipeStore.getFromSheet(recipeId);
+  });
+  sheetRecipeMemo[recipeId] = { promise: p, at: now };
+  p.catch(function () {
+    if (sheetRecipeMemo[recipeId] && sheetRecipeMemo[recipeId].promise === p) delete sheetRecipeMemo[recipeId];
+  });
+  return p;
+}
+
+function clearDirtyState(recipeId) {
+  delete dirtySince[recipeId];
+  delete dirtyAlertedAt[recipeId];
+}
+
+function noteDirtySkip(recipeId) {
+  var now = Date.now();
+  if (!dirtySince[recipeId]) {
+    dirtySince[recipeId] = now;
+    return;
+  }
+  var dirtyMs = now - dirtySince[recipeId];
+  if (dirtyMs <= DIRTY_ALERT_MS) return;
+  if (dirtyAlertedAt[recipeId] && now - dirtyAlertedAt[recipeId] < DIRTY_ALERT_THROTTLE_MS) return;
+  dirtyAlertedAt[recipeId] = now;
+  var minutes = Math.round(dirtyMs / 60000);
+  sentryCapture.captureExceptionSafe(
+    new Error('[dual-price] recipe ' + recipeId + ' dirty > 10 min — D-05 compare skipped'),
+    {
+      level: 'warning',
+      tags: { component: 'recipes-dual-price' },
+      extra: { recipe_id: recipeId, dirty_minutes: minutes }
+    }
+  );
+}
+
+/**
+ * @param {string} op        'quote' | 'sale'
+ * @param {string} recipeId
+ * @param {Object} pgData    recipe-store.get result (Postgres, authoritative)
+ * @param {Array}  args      [rawTarget, saleType, millGrain, modifiedIngredients, discountReq]
+ * @param {Promise|null} pgOutcomePromise  settled Postgres price; null => price a clone of pgData
+ */
+function scheduleDualPriceCompare(op, recipeId, pgData, args, pgOutcomePromise) {
+  try {
+    if (recipeStore.getMode() !== 'dual') return;
+    var pgClone = pgOutcomePromise ? null : cloneJson(pgData);
+    var updatedAt = pgData && pgData.data && pgData.data.recipe ? pgData.data.recipe.updated_at : null;
+    sheetMirror.mirrorFireAndForget('recipes.price', function () {
+      var updatedMs = updatedAt ? new Date(updatedAt).getTime() : NaN;
+      if (!isNaN(updatedMs) && Date.now() - updatedMs < DUAL_PRICE_SETTLE_MS) {
+        dualPriceStats.skipped_settle++;
+        clearDirtyState(recipeId);
+        log.info('[dual-price] skip recipe=' + recipeId + ' op=' + op + ' reason=settle' + totalsSuffix());
+        return undefined;
       }
-      var recipe = data.data.recipe;
-      var ingredients = data.data.ingredients || [];
-
-      if (recipe.status !== 'active') {
-        return Promise.reject({ status: 400, body: { error: 'Recipe is not active' } });
-      }
-
-      // Validate batch_size_l and target_volume_l (D-11)
-      var baseVol = Number(recipe.batch_size_l) || 0;
-      if (baseVol <= 0) {
-        return Promise.reject({ status: 400, body: { error: 'Recipe has no base batch size set. Cannot scale.' } });
-      }
-
-      // Default target_volume_l to batch_size_l if absent/blank (=> scale_factor 1.0, backward compat D-05)
-      var targetVolumeL = (rawTarget === undefined || rawTarget === null || rawTarget === '')
-        ? baseVol
-        : Number(rawTarget);
-
-      if (isNaN(targetVolumeL) || targetVolumeL <= 0) {
-        return Promise.reject({ status: 400, body: { error: 'target_volume_l must be > 0' } });
-      }
-      if (targetVolumeL > baseVol * 10) {
-        return Promise.reject({ status: 400, body: { error: 'target_volume_l exceeds maximum (10x base)' } });
-      }
-
-      var scaleFactor = targetVolumeL / baseVol;
-      recipe._scale_factor = scaleFactor;
-
-      // Determine pricing mode for logging/response
-      var hasLockedPrice = Number(recipe.locked_price) > 0;
-      var pricingMode = recipe.pricing_mode || (hasLockedPrice ? 'locked' : 'dynamic');
-
-      // MOD-02 (36-03): determine which ingredient list to scale for stock check + response
-      // When modifiedIngredients is provided, the response ingredient list reflects the modified list;
-      // the server fetched originalIngredients (ingredients) are still used for locked-add detection.
-      var isModified = Array.isArray(modifiedIngredients);
-      var baseIngredients = isModified ? modifiedIngredients : ingredients;
-
-      return cache.get(C.CACHE_KEYS.INGREDIENTS_ALL).then(function (ingredientCatalog) {
-        if (!ingredientCatalog || !Array.isArray(ingredientCatalog)) {
-          return Promise.reject({ status: 503, body: { error: 'Ingredient catalog not available — try again shortly' } });
+      return recipeMirror.isDirty(recipeId).then(function (dirty) {
+        if (dirty) {
+          dualPriceStats.skipped_dirty++;
+          noteDirtySkip(recipeId);
+          log.info('[dual-price] skip recipe=' + recipeId + ' op=' + op + ' reason=dirty' + totalsSuffix());
+          return undefined;
         }
-
-        // Build item_id -> catalog entry lookup
-        var catalogMap = {};
-        ingredientCatalog.forEach(function (item) {
-          if (item && item.item_id) catalogMap[item.item_id] = item;
-        });
-
-        // Scale the base ingredient list (modified or original) for stock check + response
-        var scaledIngredients = scaling.scaleIngredients(baseIngredients, scaleFactor);
-
-        // D-02 tiered fail-closed (PRE-CHARGE): every catalog-matched line must
-        // convert cleanly to its item's unit BEFORE any terminal charge is
-        // attempted. This runs regardless of pricing_mode — a LOCKED recipe's
-        // grand total never sums ingredient costs, so without this pass a bad
-        // unit on a base ingredient would only surface later at the invoice
-        // build (post-charge). Mirrors the resolveGstTaxId precedent (pos.js):
-        // resolve-or-fail in a separate pass, never inside a downstream .map().
-        // Items absent from the catalog are skipped (T-36-07 — unknown items
-        // are already tolerated elsewhere; this guards UNIT mismatches only).
-        for (var pcI = 0; pcI < scaledIngredients.length; pcI++) {
-          var pcEntry = catalogMap[scaledIngredients[pcI].item_id];
-          if (pcEntry) {
-            var pcCheck = scaling.ingredientLineCost(pcEntry, scaledIngredients[pcI]);
-            if (!pcCheck.ok) {
-              return Promise.reject({ status: 422, body: { error: pcCheck.error } });
-            }
+        clearDirtyState(recipeId);
+        return memoSheetRecipe(recipeId).then(function (sheetData) {
+          if (!sheetData || sheetData.ok === false) {
+            throw new Error('sheet recipe read failed for ' + recipeId);
           }
-        }
-
-        // Stock check (D-08) — always run on the scaled (potentially modified) list
-        var stockCheck = scaling.checkScaledStock(scaledIngredients, catalogMap);
-
-        // Re-price via tested helper (SCALE-03, D-04/D-05/D-07)
-        // MOD-02 (36-03): when modified list present, use computeModifiedRecipeTotal (server-authoritative)
-        var grandTotal;
-        if (isModified) {
-          grandTotal = scaling.computeModifiedRecipeTotal(recipe, ingredients, modifiedIngredients, catalogMap, scaleFactor, saleType);
-        } else {
-          grandTotal = scaling.computeScaledRecipeTotal(recipe, scaledIngredients, catalogMap, saleType);
-        }
-
-        // Take-out milling fee — added on top of helper result (helper does not know about milling)
-        var millingFeeAdded = 0;
-        if (saleType === 'take-out' && millGrain) {
-          if (!process.env.MILLING_FEE_ITEM_ID) {
-            return Promise.reject({ status: 400, body: { error: 'Milling fee not configured. Contact admin.' } });
-          }
-          var millingEntry = catalogMap[process.env.MILLING_FEE_ITEM_ID];
-          if (millingEntry) {
-            millingFeeAdded = Number(millingEntry.rate) || 0;
-            grandTotal += millingFeeAdded;
-            grandTotal = Math.round(grandTotal * 100) / 100;
-          }
-        }
-
-        // Fixed fee portion (never scaled): service + materials in-store, milling take-out
-        var feePortion = 0;
-        if (saleType === 'in-store') {
-          feePortion += (Number(recipe.service_fee) || 0) + (Number(recipe.materials_fee) || 0);
-        }
-        feePortion += millingFeeAdded;
-        feePortion = round2(feePortion);
-
-        var totalBeforeDiscount = grandTotal;
-
-        var baseResult = {
-          recipe: recipe,
-          ingredients: ingredients,
-          baseVol: baseVol,
-          targetVolumeL: targetVolumeL,
-          scaleFactor: scaleFactor,
-          pricingMode: pricingMode,
-          catalogMap: catalogMap,
-          scaledIngredients: scaledIngredients,
-          stockCheck: stockCheck,
-          grandTotal: grandTotal,
-          totalBeforeDiscount: totalBeforeDiscount,
-          feePortion: feePortion,
-          discount: null,
-          isModified: isModified
-        };
-
-        // Apply discount (if any). Server-authoritative — preset re-read from cache.
-        if (discountReq && discountReq.preset_id) {
-          return loadDiscountPreset(discountReq.preset_id).then(function (preset) {
-            if (!preset) return Promise.reject({ status: 400, body: { error: 'Discount preset not found' } });
-            var disc = computeRecipeDiscount(preset, grandTotal, feePortion);
-            if (disc.error) return Promise.reject({ status: disc.status, body: { error: disc.error } });
-            baseResult.grandTotal = disc.total;
-            baseResult.discount = disc;
-            return baseResult;
+          return sheetData;
+        }).then(function (sheetData) {
+          var sheetOutcomeP = settleOutcome(priceRecipe(cloneJson(sheetData), args[0], args[1], args[2], args[3], args[4]));
+          var pgOutcomeP = pgOutcomePromise
+            ? settleOutcome(pgOutcomePromise)
+            : settleOutcome(priceRecipe(pgClone, args[0], args[1], args[2], args[3], args[4]));
+          return Promise.all([sheetOutcomeP, pgOutcomeP]);
+        }, function (err) {
+          dualPriceStats.sheet_failed++;
+          log.warn('[dual-price] sheet read failed recipe=' + recipeId + ' op=' + op + totalsSuffix());
+          throw err; // gate reports as a sheet-mirror warning, never a price mismatch
+        }).then(function (pair) {
+          dualWriteCompare.compareAndReport({
+            store: 'recipes',
+            operation: op,
+            sheets: projectPrice(pair[0]),
+            postgres: projectPrice(pair[1]),
+            reportValuesFor: ['grandTotal', 'totalBeforeDiscount', 'feePortion', 'discountTotal', 'quantity', 'scaleFactor']
           });
-        }
-
-        return baseResult;
+          dualPriceStats.compared++;
+          log.info('[dual-price] compared recipe=' + recipeId + ' op=' + op + totalsSuffix());
+        });
       });
     });
+  } catch (err) {
+    log.warn('[dual-price] schedule failed recipe=' + recipeId + ': ' + ((err && err.message) || String(err)));
+  }
+}
+
+function loadRecipe(recipeId) {
+  return recipeStore.get(recipeId);
+}
+
+function priceRecipe(data, rawTarget, saleType, millGrain, modifiedIngredients, discountReq) {
+  if (!data || !data.ok || !data.data || !data.data.recipe) {
+    return Promise.reject({ status: 404, body: { error: 'Recipe not found' } });
+  }
+  var recipe = data.data.recipe;
+  var ingredients = data.data.ingredients || [];
+
+  if (recipe.status !== 'active') {
+    return Promise.reject({ status: 400, body: { error: 'Recipe is not active' } });
+  }
+
+  // Validate batch_size_l and target_volume_l (D-11)
+  var baseVol = Number(recipe.batch_size_l) || 0;
+  if (baseVol <= 0) {
+    return Promise.reject({ status: 400, body: { error: 'Recipe has no base batch size set. Cannot scale.' } });
+  }
+
+  // Default target_volume_l to batch_size_l if absent/blank (=> scale_factor 1.0, backward compat D-05)
+  var targetVolumeL = (rawTarget === undefined || rawTarget === null || rawTarget === '')
+    ? baseVol
+    : Number(rawTarget);
+
+  if (isNaN(targetVolumeL) || targetVolumeL <= 0) {
+    return Promise.reject({ status: 400, body: { error: 'target_volume_l must be > 0' } });
+  }
+  if (targetVolumeL > baseVol * 10) {
+    return Promise.reject({ status: 400, body: { error: 'target_volume_l exceeds maximum (10x base)' } });
+  }
+
+  var scaleFactor = targetVolumeL / baseVol;
+  recipe._scale_factor = scaleFactor;
+
+  // Determine pricing mode for logging/response
+  var hasLockedPrice = Number(recipe.locked_price) > 0;
+  var pricingMode = recipe.pricing_mode || (hasLockedPrice ? 'locked' : 'dynamic');
+
+  // MOD-02 (36-03): determine which ingredient list to scale for stock check + response
+  // When modifiedIngredients is provided, the response ingredient list reflects the modified list;
+  // the server fetched originalIngredients (ingredients) are still used for locked-add detection.
+  var isModified = Array.isArray(modifiedIngredients);
+  var baseIngredients = isModified ? modifiedIngredients : ingredients;
+
+  return cache.get(C.CACHE_KEYS.INGREDIENTS_ALL).then(function (ingredientCatalog) {
+    if (!ingredientCatalog || !Array.isArray(ingredientCatalog)) {
+      return Promise.reject({ status: 503, body: { error: 'Ingredient catalog not available — try again shortly' } });
+    }
+
+    // Build item_id -> catalog entry lookup
+    var catalogMap = {};
+    ingredientCatalog.forEach(function (item) {
+      if (item && item.item_id) catalogMap[item.item_id] = item;
+    });
+
+    // Scale the base ingredient list (modified or original) for stock check + response
+    var scaledIngredients = scaling.scaleIngredients(baseIngredients, scaleFactor);
+
+    // D-02 tiered fail-closed (PRE-CHARGE): every catalog-matched line must
+    // convert cleanly to its item's unit BEFORE any terminal charge is
+    // attempted. This runs regardless of pricing_mode — a LOCKED recipe's
+    // grand total never sums ingredient costs, so without this pass a bad
+    // unit on a base ingredient would only surface later at the invoice
+    // build (post-charge). Mirrors the resolveGstTaxId precedent (pos.js):
+    // resolve-or-fail in a separate pass, never inside a downstream .map().
+    // Items absent from the catalog are skipped (T-36-07 — unknown items
+    // are already tolerated elsewhere; this guards UNIT mismatches only).
+    for (var pcI = 0; pcI < scaledIngredients.length; pcI++) {
+      var pcEntry = catalogMap[scaledIngredients[pcI].item_id];
+      if (pcEntry) {
+        var pcCheck = scaling.ingredientLineCost(pcEntry, scaledIngredients[pcI]);
+        if (!pcCheck.ok) {
+          return Promise.reject({ status: 422, body: { error: pcCheck.error } });
+        }
+      }
+    }
+
+    // Stock check (D-08) — always run on the scaled (potentially modified) list
+    var stockCheck = scaling.checkScaledStock(scaledIngredients, catalogMap);
+
+    // Re-price via tested helper (SCALE-03, D-04/D-05/D-07)
+    // MOD-02 (36-03): when modified list present, use computeModifiedRecipeTotal (server-authoritative)
+    var grandTotal;
+    if (isModified) {
+      grandTotal = scaling.computeModifiedRecipeTotal(recipe, ingredients, modifiedIngredients, catalogMap, scaleFactor, saleType);
+    } else {
+      grandTotal = scaling.computeScaledRecipeTotal(recipe, scaledIngredients, catalogMap, saleType);
+    }
+
+    // Take-out milling fee — added on top of helper result (helper does not know about milling)
+    var millingFeeAdded = 0;
+    if (saleType === 'take-out' && millGrain) {
+      if (!process.env.MILLING_FEE_ITEM_ID) {
+        return Promise.reject({ status: 400, body: { error: 'Milling fee not configured. Contact admin.' } });
+      }
+      var millingEntry = catalogMap[process.env.MILLING_FEE_ITEM_ID];
+      if (millingEntry) {
+        millingFeeAdded = Number(millingEntry.rate) || 0;
+        grandTotal += millingFeeAdded;
+        grandTotal = Math.round(grandTotal * 100) / 100;
+      }
+    }
+
+    // Fixed fee portion (never scaled): service + materials in-store, milling take-out
+    var feePortion = 0;
+    if (saleType === 'in-store') {
+      feePortion += (Number(recipe.service_fee) || 0) + (Number(recipe.materials_fee) || 0);
+    }
+    feePortion += millingFeeAdded;
+    feePortion = round2(feePortion);
+
+    var totalBeforeDiscount = grandTotal;
+
+    var baseResult = {
+      recipe: recipe,
+      ingredients: ingredients,
+      baseVol: baseVol,
+      targetVolumeL: targetVolumeL,
+      scaleFactor: scaleFactor,
+      pricingMode: pricingMode,
+      catalogMap: catalogMap,
+      scaledIngredients: scaledIngredients,
+      stockCheck: stockCheck,
+      grandTotal: grandTotal,
+      totalBeforeDiscount: totalBeforeDiscount,
+      feePortion: feePortion,
+      discount: null,
+      isModified: isModified
+    };
+
+    // Apply discount (if any). Server-authoritative — preset re-read from cache.
+    if (discountReq && discountReq.preset_id) {
+      return loadDiscountPreset(discountReq.preset_id).then(function (preset) {
+        if (!preset) return Promise.reject({ status: 400, body: { error: 'Discount preset not found' } });
+        var disc = computeRecipeDiscount(preset, grandTotal, feePortion);
+        if (disc.error) return Promise.reject({ status: disc.status, body: { error: disc.error } });
+        baseResult.grandTotal = disc.total;
+        baseResult.discount = disc;
+        return baseResult;
+      });
+    }
+
+    return baseResult;
+  });
+}
+
+function computeRecipeQuote(recipeId, rawTarget, saleType, millGrain, modifiedIngredients, discountReq, compareOp) {
+  return loadRecipe(recipeId).then(function (data) {
+    var outcome = priceRecipe(data, rawTarget, saleType, millGrain, modifiedIngredients, discountReq);
+    // D-06: the sale always uses the Postgres price; this compare is observational only.
+    scheduleDualPriceCompare(compareOp || 'quote', recipeId, data,
+      [rawTarget, saleType, millGrain, modifiedIngredients, discountReq], outcome);
+    return outcome;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +557,7 @@ router.post('/api/kiosk/recipe-sale', function (req, res) {
 });
 
 function _runRecipeSale(body, idempotencyKey, millGrain, modifiedIngredients, discountReq, req, res) {
-  computeRecipeQuote(body.recipe_id, body.target_volume_l, body.sale_type, millGrain, modifiedIngredients, discountReq)
+  computeRecipeQuote(body.recipe_id, body.target_volume_l, body.sale_type, millGrain, modifiedIngredients, discountReq, 'sale')
     .then(function (quote) {
       var grandTotal = quote.grandTotal;
       var scaleFactor = quote.scaleFactor;
@@ -718,8 +901,11 @@ function _runRecipeConfirm(body, confirmIdemKey, req, res) {
     }
 
   // Re-fetch recipe server-side (never trust client data)
-  return callAppsScriptPost('get_recipe', { recipe_id: body.recipe_id })
+  return loadRecipe(body.recipe_id)
     .then(function (data) {
+      // D-06: the charge below always uses the Postgres recipe; the D-05 compare is observational only.
+      scheduleDualPriceCompare('sale', body.recipe_id, data,
+        [body.target_volume_l, body.sale_type, millGrain, modifiedConfirm || undefined, discountReq], null);
       if (!data || !data.ok || !data.data || !data.data.recipe) {
         return res.status(404).json({ error: 'Recipe not found' });
       }
@@ -1101,3 +1287,5 @@ module.exports = router;
 // Exposed for unit testing (pure helpers)
 module.exports.computeRecipeDiscount = computeRecipeDiscount;
 module.exports.distributeRecipeDiscount = distributeRecipeDiscount;
+module.exports._dualPriceStats = _dualPriceStats;
+module.exports._resetDualPriceStats = _resetDualPriceStats;
