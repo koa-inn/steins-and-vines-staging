@@ -1,0 +1,432 @@
+'use strict';
+
+// ---------------------------------------------------------------------------
+// Phase 85 Plan 07 - store-mode dispatch for routes/recipes.js.
+// sheets mode: real facade, mocked axios (parity with recipes.test.js).
+// dual/postgres: lib/recipe-store mocked entirely.
+// ---------------------------------------------------------------------------
+
+var mockRouteHandlers = {};
+
+jest.mock('express', function () {
+  var router = {
+    get:    jest.fn(function (path, handler) { mockRouteHandlers['GET:' + path] = handler; }),
+    post:   jest.fn(function (path, handler) { mockRouteHandlers['POST:' + path] = handler; }),
+    put:    jest.fn(function (path, handler) { mockRouteHandlers['PUT:' + path] = handler; }),
+    delete: jest.fn(function (path, handler) { mockRouteHandlers['DELETE:' + path] = handler; })
+  };
+  var express = function () {};
+  express.Router = function () { return router; };
+  return express;
+});
+
+jest.mock('axios', function () {
+  return { get: jest.fn(), post: jest.fn() };
+});
+
+jest.mock('../lib/cache', function () {
+  return { get: jest.fn(), set: jest.fn(), del: jest.fn() };
+});
+
+jest.mock('../lib/logger', function () {
+  return { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+});
+
+jest.mock('../lib/constants', function () {
+  return {
+    CACHE_KEYS: {
+      RECIPES: 'sv:recipes',
+      RECIPES_TS: 'sv:recipes:ts',
+      INGREDIENTS: 'zoho:ingredients',
+      INGREDIENTS_ALL: 'zoho:ingredients:all',
+      RECIPE_AVAILABILITY: 'sv:recipe-availability',
+      FERM_SCHEDULES: 'sv:ferm-schedules'
+    }
+  };
+});
+
+var STALE_BODY = {
+  error: 'This recipe was changed since you opened it — reload to see the latest',
+  code: 'stale_recipe'
+};
+
+function mockStore(mode, overrides) {
+  var store = Object.assign({
+    getMode: jest.fn().mockReturnValue(mode),
+    list: jest.fn(),
+    get: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    remove: jest.fn()
+  }, overrides || {});
+  jest.doMock('../lib/recipe-store', function () { return store; });
+  return store;
+}
+
+function load(opts) {
+  opts = opts || {};
+  mockRouteHandlers = {};
+  jest.resetModules();
+  jest.doMock('../lib/authTiers', function () {
+    return {
+      resolveTier: jest.fn().mockResolvedValue(opts.staff ? 'session' : 'anonymous'),
+      allowKiosk: jest.fn().mockReturnValue(!!opts.staff),
+      requireTiers: function () { return function (req, res, next) { return next(); }; }
+    };
+  });
+  var out = {
+    axios: require('axios'),
+    cache: require('../lib/cache')
+  };
+  require('../routes/recipes');
+  return out;
+}
+
+function callHandler(method, path, req) {
+  return new Promise(function (resolve, reject) {
+    var handler = mockRouteHandlers[method + ':' + path];
+    if (!handler) return reject(new Error('No handler for ' + method + ':' + path));
+    var res = {
+      _status: 200,
+      _body: null,
+      status: jest.fn(function (s) { res._status = s; return res; }),
+      json: jest.fn(function (b) { res._body = b; resolve(res); return res; })
+    };
+    var p = handler(Object.assign({ query: {}, params: {}, body: {}, headers: {} }, req || {}), res);
+    if (p && p.catch) p.catch(reject);
+  });
+}
+
+describe('recipes routes - read endpoints by store mode (85-07 task 1)', function () {
+  beforeEach(function () {
+    process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
+    process.env.APPS_SCRIPT_SERVER_TOKEN = 'tok';
+    delete process.env.RECIPES_STORE;
+  });
+
+  afterEach(function () {
+    delete process.env.APPS_SCRIPT_URL;
+    delete process.env.APPS_SCRIPT_SERVER_TOKEN;
+    jest.dontMock('../lib/recipe-store');
+  });
+
+  describe('sheets mode (real facade)', function () {
+    it('list reads cache first, calls Apps Script get_recipes, then caches', function () {
+      var m = load({ staff: true });
+      m.cache.get.mockResolvedValue(null);
+      m.axios.post.mockResolvedValue({ data: { ok: true, data: { recipes: [{ recipe_id: 'R1', status: 'active' }], total: 1 } } });
+      return callHandler('GET', '/api/recipes').then(function (res) {
+        expect(m.cache.get).toHaveBeenCalledWith('sv:recipes:all:0:0');
+        var body = JSON.parse(m.axios.post.mock.calls[0][1]);
+        expect(body.action).toBe('get_recipes');
+        expect(m.cache.set).toHaveBeenCalledWith('sv:recipes:all:0:0', expect.any(Object), 600);
+        expect(res._body.source).toBe('apps-script');
+      });
+    });
+
+    it('detail uses Apps Script get_recipe and caches', function () {
+      var m = load({ staff: true });
+      m.cache.get.mockResolvedValue(null);
+      m.axios.post.mockResolvedValue({ data: { ok: true, data: { recipe: { recipe_id: 'R1' }, ingredients: [] } } });
+      return callHandler('GET', '/api/recipes/:id', { params: { id: 'R1' } }).then(function (res) {
+        expect(JSON.parse(m.axios.post.mock.calls[0][1]).action).toBe('get_recipe');
+        expect(m.cache.set).toHaveBeenCalledWith('sv:recipes:R1', expect.any(Object), 600);
+        expect(res._body.recipe.recipe_id).toBe('R1');
+      });
+    });
+  });
+
+  ['dual', 'postgres'].forEach(function (mode) {
+    describe(mode + ' mode (mocked store)', function () {
+      function recipesCacheCalls(fn) {
+        return fn.mock.calls.filter(function (c) { return String(c[0]).indexOf('sv:recipes') === 0; });
+      }
+
+      it('staff list returns source postgres and never touches sv:recipes cache', function () {
+        mockStore(mode, {
+          list: jest.fn().mockResolvedValue({ ok: true, data: { recipes: [{ recipe_id: 'R1', status: 'draft' }], total: 7 } })
+        });
+        var m = load({ staff: true });
+        m.cache.get.mockResolvedValue(null);
+        return callHandler('GET', '/api/recipes').then(function (res) {
+          expect(res._body).toEqual({ source: 'postgres', recipes: [{ recipe_id: 'R1', status: 'draft' }], total: 7 });
+          expect(recipesCacheCalls(m.cache.get)).toHaveLength(0);
+          expect(recipesCacheCalls(m.cache.set)).toHaveLength(0);
+        });
+      });
+
+      it('anonymous list is active-only, projected, with ferment_days from schedule', function () {
+        var store = mockStore(mode, {
+          list: jest.fn().mockResolvedValue({ ok: true, data: { recipes: [
+            { recipe_id: 'R1', name: 'IPA', status: 'active', schedule_id: 'S1', locked_price: 50, secret: 'x', pricing_mode: 'locked' },
+            { recipe_id: 'R2', name: 'Draft', status: 'draft' }
+          ], total: 2 } })
+        });
+        var m = load({ staff: false });
+        m.cache.get.mockResolvedValue(null);
+        m.axios.get.mockResolvedValue({ data: { ok: true, data: { schedules: [
+          { schedule_id: 'S1', steps_parsed: [{ day_offset: 14 }, { day_offset: 20, is_packaging: true }] }
+        ] } } });
+        return callHandler('GET', '/api/recipes', { query: { status: 'all' } }).then(function (res) {
+          expect(store.list).toHaveBeenCalledWith({ status: 'active', limit: 0, offset: 0 });
+          expect(res._body.total).toBe(1);
+          expect(res._body.recipes).toHaveLength(1);
+          expect(res._body.recipes[0].ferment_days).toBe(14);
+          expect(res._body.recipes[0].secret).toBeUndefined();
+          expect(res._body.recipes[0].price).toBe(50);
+        });
+      });
+
+      it('anonymous detail of a draft is 404, of an active recipe is projected without ingredients', function () {
+        var store = mockStore(mode);
+        var m = load({ staff: false });
+        m.cache.get.mockResolvedValue(null);
+        store.get.mockResolvedValueOnce({ ok: true, data: { recipe: { recipe_id: 'R2', status: 'draft' }, ingredients: [] } });
+        return callHandler('GET', '/api/recipes/:id', { params: { id: 'R2' } }).then(function (res) {
+          expect(res._status).toBe(404);
+          expect(res._body).toEqual({ error: 'Recipe not found' });
+          store.get.mockResolvedValueOnce({ ok: true, data: { recipe: { recipe_id: 'R1', name: 'IPA', status: 'active', cost: 9 }, ingredients: [{ item_id: 'i' }] } });
+          return callHandler('GET', '/api/recipes/:id', { params: { id: 'R1' } });
+        }).then(function (res) {
+          expect(res._body.recipe.name).toBe('IPA');
+          expect(res._body.recipe.cost).toBeUndefined();
+          expect(res._body.ingredients).toBeUndefined();
+          expect(recipesCacheCalls(m.cache.get)).toHaveLength(0);
+          expect(recipesCacheCalls(m.cache.set)).toHaveLength(0);
+        });
+      });
+
+      it('staff detail of a missing recipe is 404', function () {
+        mockStore(mode, { get: jest.fn().mockResolvedValue({ ok: false, error: 'not_found', message: 'Recipe not found' }) });
+        load({ staff: true }).cache.get.mockResolvedValue(null);
+        return callHandler('GET', '/api/recipes/:id', { params: { id: 'NOPE' } }).then(function (res) {
+          expect(res._status).toBe(404);
+          expect(res._body).toEqual({ error: 'Recipe not found' });
+        });
+      });
+
+      it('dynamic price in list obtains ingredients via recipeStore.get without detail cache', function () {
+        var store = mockStore(mode, {
+          list: jest.fn().mockResolvedValue({ ok: true, data: { recipes: [{ recipe_id: 'R1', status: 'active', pricing_mode: 'dynamic', service_fee: 0, materials_fee: 0 }], total: 1 } }),
+          get: jest.fn().mockResolvedValue({ ok: true, data: { recipe: { recipe_id: 'R1' }, ingredients: [{ item_id: 'I1', quantity: 2, unit: 'kg' }] } })
+        });
+        var m = load({ staff: true });
+        m.cache.get.mockImplementation(function (key) {
+          if (key === 'zoho:ingredients:all') return Promise.resolve([{ item_id: 'I1', rate: 5, unit: 'kg' }]);
+          return Promise.resolve(null);
+        });
+        return callHandler('GET', '/api/recipes').then(function (res) {
+          expect(store.get).toHaveBeenCalledWith('R1');
+          expect(m.axios.post).not.toHaveBeenCalled();
+          expect(res._body.recipes[0].computed_price).toBe(10);
+          expect(recipesCacheCalls(m.cache.get)).toHaveLength(0);
+          expect(recipesCacheCalls(m.cache.set)).toHaveLength(0);
+        });
+      });
+
+      it('availability reads ingredients via recipeStore.get and caches availability', function () {
+        var store = mockStore(mode, {
+          get: jest.fn().mockResolvedValue({ ok: true, data: { recipe: { recipe_id: 'R1' }, ingredients: [{ item_id: 'I1', quantity: 2, unit: 'kg' }] } })
+        });
+        var m = load({ staff: true });
+        m.cache.get.mockImplementation(function (key) {
+          if (key === 'zoho:ingredients:all') return Promise.resolve([{ item_id: 'I1', unit: 'kg', stock_on_hand: 10 }]);
+          return Promise.resolve(null);
+        });
+        return callHandler('GET', '/api/recipes/:id/availability', { params: { id: 'R1' } }).then(function (res) {
+          expect(store.get).toHaveBeenCalledWith('R1');
+          expect(res._body.summary).toBe('all_ok');
+          expect(m.cache.set).toHaveBeenCalledWith('sv:recipe-availability:R1', expect.any(Object), 600);
+        });
+      });
+
+      it('store rejection maps to 502 with today\'s messages', function () {
+        mockStore(mode, {
+          list: jest.fn().mockRejectedValue(new Error('db down')),
+          get: jest.fn().mockRejectedValue(new Error('db down'))
+        });
+        load({ staff: true }).cache.get.mockResolvedValue(null);
+        return callHandler('GET', '/api/recipes').then(function (res) {
+          expect(res._status).toBe(502);
+          expect(res._body).toEqual({ error: 'Unable to fetch recipes' });
+          return callHandler('GET', '/api/recipes/:id', { params: { id: 'R1' } });
+        }).then(function (res) {
+          expect(res._status).toBe(502);
+          expect(res._body).toEqual({ error: 'Unable to fetch recipe' });
+        });
+      });
+    });
+  });
+});
+
+describe('recipes routes - write endpoints by store mode (85-07 task 2)', function () {
+  beforeEach(function () {
+    process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
+    process.env.APPS_SCRIPT_SERVER_TOKEN = 'tok';
+    delete process.env.RECIPES_STORE;
+  });
+
+  afterEach(function () {
+    delete process.env.APPS_SCRIPT_URL;
+    delete process.env.APPS_SCRIPT_SERVER_TOKEN;
+    jest.dontMock('../lib/recipe-store');
+  });
+
+  describe('sheets mode (real facade)', function () {
+    it('PUT strips expected_updated_at and forwards update_recipe', function () {
+      var m = load({ staff: true });
+      m.cache.get.mockResolvedValue(null);
+      m.cache.del.mockResolvedValue(1);
+      m.axios.post.mockResolvedValue({ data: { ok: true } });
+      return callHandler('PUT', '/api/recipes/:id', {
+        params: { id: 'R1' },
+        body: { name: 'X', expected_updated_at: '2026-01-01T00:00:00.000Z' }
+      }).then(function (res) {
+        expect(res._body).toEqual({ ok: true });
+        var sent = JSON.parse(m.axios.post.mock.calls[0][1]);
+        expect(sent.action).toBe('update_recipe');
+        expect(sent.recipe_id).toBe('R1');
+        expect(sent).not.toHaveProperty('expected_updated_at');
+      });
+    });
+
+    it('DELETE forwards delete_recipe only', function () {
+      var m = load({ staff: true });
+      m.cache.del.mockResolvedValue(1);
+      m.axios.post.mockResolvedValue({ data: { ok: true } });
+      return callHandler('DELETE', '/api/recipes/:id', { params: { id: 'R1' } }).then(function (res) {
+        expect(res._body).toEqual({ ok: true });
+        expect(m.axios.post).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(m.axios.post.mock.calls[0][1])).toMatchObject({ action: 'delete_recipe', recipe_id: 'R1' });
+      });
+    });
+  });
+
+  ['dual', 'postgres'].forEach(function (mode) {
+    describe(mode + ' mode (mocked store)', function () {
+      it('POST -> 201 with recipe_id and busts cache', function () {
+        var store = mockStore(mode, { create: jest.fn().mockResolvedValue({ ok: true, recipe_id: 'R9' }) });
+        var m = load({ staff: true });
+        m.cache.get.mockResolvedValue(null);
+        m.cache.del.mockResolvedValue(1);
+        return callHandler('POST', '/api/recipes', { body: { name: 'N' } }).then(function (res) {
+          expect(store.create).toHaveBeenCalledWith({ name: 'N' });
+          expect(res._status).toBe(201);
+          expect(res._body).toEqual({ ok: true, recipe_id: 'R9' });
+          expect(m.cache.del).toHaveBeenCalled();
+        });
+      });
+
+      it('PUT passes the token to the store without it in the payload', function () {
+        var store = mockStore(mode, { update: jest.fn().mockResolvedValue({ ok: true }) });
+        var m = load({ staff: true });
+        m.cache.get.mockResolvedValue(null);
+        m.cache.del.mockResolvedValue(1);
+        return callHandler('PUT', '/api/recipes/:id', {
+          params: { id: 'R1' },
+          body: { name: 'X', expected_updated_at: 'T1' }
+        }).then(function (res) {
+          expect(store.update).toHaveBeenCalledWith({ name: 'X', recipe_id: 'R1' }, { expectedUpdatedAt: 'T1' });
+          expect(res._body).toEqual({ ok: true });
+        });
+      });
+
+      it('PUT stale or missing token -> 409 D-03 body', function () {
+        var store = mockStore(mode, {
+          update: jest.fn().mockResolvedValue({ ok: false, error: 'stale_recipe', message: 'stale' })
+        });
+        load({ staff: true }).cache.get.mockResolvedValue(null);
+        return callHandler('PUT', '/api/recipes/:id', { params: { id: 'R1' }, body: { name: 'X' } }).then(function (res) {
+          expect(store.update).toHaveBeenCalledWith(expect.any(Object), { expectedUpdatedAt: undefined });
+          expect(res._status).toBe(409);
+          expect(res._body).toEqual(STALE_BODY);
+        });
+      });
+
+      it('PUT other store failure -> 422 save_failed', function () {
+        mockStore(mode, { update: jest.fn().mockResolvedValue({ ok: false, error: 'invalid_data', message: 'bad' }) });
+        load({ staff: true }).cache.get.mockResolvedValue(null);
+        return callHandler('PUT', '/api/recipes/:id', { params: { id: 'R1' }, body: {} }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body).toEqual({ error: 'bad', code: 'save_failed' });
+        });
+      });
+
+      it('DELETE passes ?expected_updated_at; stale -> 409; not_found -> 422', function () {
+        var store = mockStore(mode, {
+          remove: jest.fn().mockResolvedValueOnce({ ok: true })
+            .mockResolvedValueOnce({ ok: false, error: 'stale_recipe' })
+            .mockResolvedValueOnce({ ok: false, error: 'not_found', message: 'Recipe not found' })
+        });
+        var m = load({ staff: true });
+        m.cache.del.mockResolvedValue(1);
+        var req = { params: { id: 'R1' }, query: { expected_updated_at: 'T1' } };
+        return callHandler('DELETE', '/api/recipes/:id', req).then(function (res) {
+          expect(store.remove).toHaveBeenCalledWith('R1', { expectedUpdatedAt: 'T1' });
+          expect(res._body).toEqual({ ok: true });
+          return callHandler('DELETE', '/api/recipes/:id', req);
+        }).then(function (res) {
+          expect(res._status).toBe(409);
+          expect(res._body).toEqual(STALE_BODY);
+          return callHandler('DELETE', '/api/recipes/:id', req);
+        }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body).toEqual({ error: 'Recipe not found' });
+        });
+      });
+
+      it('DELETE store rejection (batch_ref_unavailable) -> 502', function () {
+        var err = new Error('no ref');
+        err.code = 'batch_ref_unavailable';
+        mockStore(mode, { remove: jest.fn().mockRejectedValue(err) });
+        load({ staff: true });
+        return callHandler('DELETE', '/api/recipes/:id', { params: { id: 'R1' } }).then(function (res) {
+          expect(res._status).toBe(502);
+          expect(res._body).toEqual({ error: 'Unable to delete recipe' });
+        });
+      });
+
+      it('unit mismatch -> 422 and no store write (POST and PUT)', function () {
+        var store = mockStore(mode);
+        var m = load({ staff: true });
+        m.cache.get.mockImplementation(function (key) {
+          if (key === 'zoho:ingredients:all') return Promise.resolve([{ item_id: 'I1', rate: 5, unit: 'kg' }]);
+          return Promise.resolve(null);
+        });
+        var body = { name: 'X', ingredients: [{ item_id: 'I1', quantity: 1, unit: 'L' }] };
+        return callHandler('POST', '/api/recipes', { body: body }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body.code).toBe('unit_mismatch');
+          return callHandler('PUT', '/api/recipes/:id', { params: { id: 'R1' }, body: Object.assign({}, body) });
+        }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body.code).toBe('unit_mismatch');
+          expect(store.create).not.toHaveBeenCalled();
+          expect(store.update).not.toHaveBeenCalled();
+        });
+      });
+
+      it('activation without locked price -> 422 and no store call', function () {
+        var store = mockStore(mode);
+        load({ staff: true });
+        return callHandler('PUT', '/api/recipes/:id', {
+          params: { id: 'R1' },
+          body: { status: 'active', pricing_mode: 'locked', locked_price: 0, ingredient_count: 2 }
+        }).then(function (res) {
+          expect(res._status).toBe(422);
+          expect(res._body.code).toBe('activation_locked_price');
+          expect(store.update).not.toHaveBeenCalled();
+        });
+      });
+
+      it('bust-cache route still works', function () {
+        mockStore(mode);
+        var m = load({ staff: true });
+        m.cache.del.mockResolvedValue(1);
+        return callHandler('POST', '/api/recipes/bust-cache').then(function (res) {
+          expect(res._body).toEqual({ ok: true, message: 'Recipe cache cleared' });
+        });
+      });
+    });
+  });
+});
