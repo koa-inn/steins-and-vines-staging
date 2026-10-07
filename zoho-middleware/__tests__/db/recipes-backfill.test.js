@@ -246,11 +246,17 @@ describeDb('Recipes backfill CLI (real Postgres, ROADMAP SC1)', function () {
     var file = await buildFixtureXlsx(recipes, cleanIngredients());
     var spy = spyPool();
     var log = captureLog();
-    var before = fs.readdirSync(outDir).length;
+    var rejectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sv-recipes-rejects-'));
 
-    var dry = await recipesBackfill.runRecipesBackfill(args(file, ['--dry-run']), { pool: spy, log: log });
+    var dry = await recipesBackfill.runRecipesBackfill(
+      ['--file=' + file, '--out-dir=' + rejectsDir, '--dry-run'], { pool: spy, log: log }
+    );
     expect(dry).toBe(EXIT.REJECTS_BLOCK);
-    expect(fs.readdirSync(outDir).length).toBeGreaterThan(before);
+    var written = fs.readdirSync(rejectsDir).filter(function (f) { return f.indexOf('rejects-Recipes-') === 0; });
+    expect(written.length).toBe(1);
+    var report = JSON.parse(fs.readFileSync(path.join(rejectsDir, written[0]), 'utf8'));
+    expect(report.count).toBe(1);
+    expect(report.rejects[0].field).toBe('created_at');
 
     var promote = await recipesBackfill.runRecipesBackfill(args(file, ['--promote']), {
       pool: spy, log: log, promptTypeDatabaseName: okPrompt()
