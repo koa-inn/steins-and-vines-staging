@@ -51,6 +51,7 @@ var eventLog = require('./lib/eventLog');
 var redact = require('./lib/redact');
 var reconcile = require('./lib/reconcile');
 var recipeMirror = require('./lib/recipe-mirror');
+var opsMirror = require('./lib/ops-mirror');
 var sentryCapture = require('./lib/sentry-capture');
 var cookieParser = require('cookie-parser');
 var authTiers = require('./lib/authTiers');
@@ -792,6 +793,7 @@ app.use('/', require('./routes/promo'));
 app.use('/', require('./routes/recipes'));
 app.use('/', require('./routes/pos-recipe'));
 app.use('/', require('./routes/staff-access'));
+app.use('/', require('./routes/vessels'));
 app.use(require('./routes/webhooks'));
 
 // Sentry error handler (must be after routes, before other error handlers)
@@ -922,6 +924,14 @@ if (require.main === module) {
         });
       }, 5 * 60 * 1000);
       log.info('[recipes-mirror] Recipe mirror sweep registered: every 5 minutes');
+
+      // Phase 86 D-10: re-drive vessel/ferm-schedule/config sheet mirrors that did not land
+      setInterval(function () {
+        opsMirror.sweep().catch(function (err) {
+          log.error('[ops-mirror] sweep failed: ' + err.message);
+        });
+      }, 5 * 60 * 1000);
+      log.info('[ops-mirror] Ops mirror sweep registered: every 5 minutes');
     });
 
     process.on('SIGTERM', function () {
