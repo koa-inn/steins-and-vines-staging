@@ -1,0 +1,176 @@
+{
+  "list": {
+    "recipes": [
+      {
+        "recipe_id": "SV-R-000003",
+        "name": "Test Draft Cider",
+        "style": "Cider",
+        "description": "",
+        "status": "draft",
+        "locked_price": "",
+        "service_fee": 45,
+        "materials_fee": 5,
+        "batch_size_l": 20,
+        "abv": "",
+        "ibu": "",
+        "colour_srm": "",
+        "notes": "",
+        "created_at": "2026-04-01T08:15:00.500Z",
+        "created_by": "staff-a",
+        "updated_at": "2026-04-01T08:15:00.500Z",
+        "pricing_mode": "dynamic",
+        "schedule_id": "",
+        "ingredient_count": 0
+      },
+      {
+        "recipe_id": "SV-R-000001",
+        "name": "Test Pale Ale",
+        "style": "Pale Ale",
+        "description": "A synthetic pale ale",
+        "status": "active",
+        "locked_price": 189.5,
+        "service_fee": 45,
+        "materials_fee": 5,
+        "batch_size_l": 23,
+        "abv": 5.2,
+        "ibu": 35,
+        "colour_srm": 8,
+        "notes": "",
+        "created_at": "2026-03-01T10:00:00.000Z",
+        "created_by": "staff-a",
+        "updated_at": "2026-03-02T11:30:15.250Z",
+        "pricing_mode": "locked",
+        "schedule_id": "",
+        "ingredient_count": 1
+      },
+      {
+        "recipe_id": "SV-R-000002",
+        "name": "Test Stout",
+        "style": "Stout",
+        "description": "A synthetic stout",
+        "status": "active",
+        "locked_price": 210,
+        "service_fee": 45,
+        "materials_fee": 5,
+        "batch_size_l": 23,
+        "abv": 6.5,
+        "ibu": 40,
+        "colour_srm": 35,
+        "notes": "Roasty",
+        "created_at": "2026-02-01T09:00:00.000Z",
+        "created_by": "staff-b",
+        "updated_at": "2026-02-01T09:00:00.000Z",
+        "pricing_mode": "dynamic",
+        "schedule_id": "FS-000001",
+        "ingredient_count": 3
+      }
+    ],
+    "total": 3,
+    "filtered": 3
+  },
+  "details": {
+    "SV-R-000001": {
+      "recipe": {
+        "recipe_id": "SV-R-000001",
+        "name": "Test Pale Ale",
+        "style": "Pale Ale",
+        "description": "A synthetic pale ale",
+        "status": "active",
+        "locked_price": 189.5,
+        "service_fee": 45,
+        "materials_fee": 5,
+        "batch_size_l": 23,
+        "abv": 5.2,
+        "ibu": 35,
+        "colour_srm": 8,
+        "notes": "",
+        "created_at": "2026-03-01T10:00:00.000Z",
+        "created_by": "staff-a",
+        "updated_at": "2026-03-02T11:30:15.250Z",
+        "pricing_mode": "locked",
+        "schedule_id": ""
+      },
+      "ingredients": [
+        {
+          "ingredient_id": "RI-000001",
+          "recipe_id": "SV-R-000001",
+          "item_id": "ITEM-1",
+          "item_name": "Test Malt",
+          "quantity": 5,
+          "unit": "kg"
+        }
+      ]
+    },
+    "SV-R-000002": {
+      "recipe": {
+        "recipe_id": "SV-R-000002",
+        "name": "Test Stout",
+        "style": "Stout",
+        "description": "A synthetic stout",
+        "status": "active",
+        "locked_price": 210,
+        "service_fee": 45,
+        "materials_fee": 5,
+        "batch_size_l": 23,
+        "abv": 6.5,
+        "ibu": 40,
+        "colour_srm": 35,
+        "notes": "Roasty",
+        "created_at": "2026-02-01T09:00:00.000Z",
+        "created_by": "staff-b",
+        "updated_at": "2026-02-01T09:00:00.000Z",
+        "pricing_mode": "dynamic",
+        "schedule_id": "FS-000001"
+      },
+      "ingredients": [
+        {
+          "ingredient_id": "RI-000150",
+          "recipe_id": "SV-R-000002",
+          "item_id": "ITEM-7",
+          "item_name": "Test Hop",
+          "quantity": 0.0055,
+          "unit": "kg"
+        },
+        {
+          "ingredient_id": "RI-000033",
+          "recipe_id": "SV-R-000002",
+          "item_id": "ITEM-7",
+          "item_name": "Test Hop",
+          "quantity": 0.0055,
+          "unit": "kg"
+        },
+        {
+          "ingredient_id": "RI-000034",
+          "recipe_id": "SV-R-000002",
+          "item_id": "ITEM-7",
+          "item_name": "Test Hop",
+          "quantity": 0.0055,
+          "unit": "kg"
+        }
+      ]
+    },
+    "SV-R-000003": {
+      "recipe": {
+        "recipe_id": "SV-R-000003",
+        "name": "Test Draft Cider",
+        "style": "Cider",
+        "description": "",
+        "status": "draft",
+        "locked_price": "",
+        "service_fee": 45,
+        "materials_fee": 5,
+        "batch_size_l": 20,
+        "abv": "",
+        "ibu": "",
+        "colour_srm": "",
+        "notes": "",
+        "created_at": "2026-04-01T08:15:00.500Z",
+        "created_by": "staff-a",
+        "updated_at": "2026-04-01T08:15:00.500Z",
+        "pricing_mode": "dynamic",
+        "schedule_id": ""
+      },
+      "ingredients": []
+    }
+  }
+}
