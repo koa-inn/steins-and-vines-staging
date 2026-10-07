@@ -249,12 +249,18 @@ function handleReadAction(action, getParam, authEmail) {
  * Used for: updating data
  */
 function doPost(e) {
+  // Phase 86-03: vessel status delta log is request-scoped; reset before anything else
+  _vesselStatusLog = null;
+  _vesselStatusOptions = { collect: false, sheetWrite: true };
   try {
     var payload = JSON.parse(e.postData.contents);
     var action = (payload.action || '').toLowerCase();
 
     // Check if this is a batch-token-authenticated request (public batch URL)
     if (payload.batch_token && payload.batch_id) {
+      // Public batch page: honour collect_vessel_status only; vessel_sheet_write is never read
+      // here (anyone holding a batch token can call Apps Script directly).
+      if (payload.collect_vessel_status === true) _vesselStatusLog = [];
       var tokenResult = handleBatchTokenPost(payload, action);
       if (tokenResult.ok) _invalidateBatchCache(payload.batch_id);
       return _jsonResponse(tokenResult);
@@ -267,28 +273,34 @@ function doPost(e) {
       if (!storedToken || payload.server_token !== storedToken) {
         return _jsonResponse({ ok: false, error: 'unauthorized', message: 'Invalid server token' });
       }
+      // Phase 86-03: real staff attribution forwarded by the middleware (server_token path only)
+      var actor = _actingUser(payload);
+      // Phase 86-03: vessel status deltas for the middleware (Postgres follows sheet-side flows)
+      _vesselStatusOptions.collect = payload.collect_vessel_status === true;
+      _vesselStatusOptions.sheetWrite = payload.vessel_sheet_write !== false;
+      if (_vesselStatusOptions.collect) _vesselStatusLog = [];
       if (action === 'add_reservation') {
         return _jsonResponse(addReservation(payload));
       }
       if (action === 'create_batch') {
-        var batchResult = createBatch(payload, 'kiosk-middleware');
+        var batchResult = createBatch(payload, actor || 'kiosk-middleware');
         if (batchResult.ok && batchResult.batch_id) {
           _invalidateBatchCache(batchResult.batch_id);
         }
         return _jsonResponse(batchResult);
       }
       if (action === 'create_recipe') {
-        var recipeResult = createRecipe(payload, 'middleware');
+        var recipeResult = createRecipe(payload, actor || 'middleware');
         _invalidateRecipeCache(recipeResult.recipe_id);
         return _jsonResponse(recipeResult);
       }
       if (action === 'update_recipe') {
-        var updateResult = updateRecipe(payload, 'middleware');
+        var updateResult = updateRecipe(payload, actor || 'middleware');
         _invalidateRecipeCache(payload.recipe_id);
         return _jsonResponse(updateResult);
       }
       if (action === 'delete_recipe') {
-        var deleteResult = deleteRecipe(payload, 'middleware');
+        var deleteResult = deleteRecipe(payload, actor || 'middleware');
         _invalidateRecipeCache(payload.recipe_id);
         return _jsonResponse(deleteResult);
       }
@@ -357,32 +369,32 @@ function doPost(e) {
       }
       // BrewPad write actions (server_token-gated, Phase 76-01)
       if (action === 'update_batch') {
-        var sUpdateBatchResult = updateBatch(payload, 'middleware');
+        var sUpdateBatchResult = updateBatch(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sUpdateBatchResult);
       }
       if (action === 'update_batch_schedule') {
-        var sUpdateBatchScheduleResult = updateBatchSchedule(payload, 'middleware');
+        var sUpdateBatchScheduleResult = updateBatchSchedule(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sUpdateBatchScheduleResult);
       }
       if (action === 'delete_batch') {
-        var sDeleteBatchResult = deleteBatch(payload, 'middleware');
+        var sDeleteBatchResult = deleteBatch(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sDeleteBatchResult);
       }
       if (action === 'bulk_add_plato_readings') {
-        var sBulkAddPlatoReadingsResult = bulkAddPlatoReadings(payload, 'middleware');
+        var sBulkAddPlatoReadingsResult = bulkAddPlatoReadings(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sBulkAddPlatoReadingsResult);
       }
       if (action === 'bulk_update_batch_tasks') {
-        var sBulkUpdateBatchTasksResult = bulkUpdateBatchTasks(payload, 'middleware');
+        var sBulkUpdateBatchTasksResult = bulkUpdateBatchTasks(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sBulkUpdateBatchTasksResult);
       }
       if (action === 'update_plato_reading') {
-        var sUpdatePlatoReadingResult = updatePlatoReading(payload, 'middleware');
+        var sUpdatePlatoReadingResult = updatePlatoReading(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sUpdatePlatoReadingResult);
       }
@@ -392,10 +404,10 @@ function doPost(e) {
         return _jsonResponse(sDeletePlatoReadingResult);
       }
       if (action === 'create_ferm_schedule') {
-        return _jsonResponse(createFermSchedule(payload, 'middleware'));
+        return _jsonResponse(createFermSchedule(payload, actor || 'middleware'));
       }
       if (action === 'update_ferm_schedule') {
-        return _jsonResponse(updateFermSchedule(payload, 'middleware'));
+        return _jsonResponse(updateFermSchedule(payload, actor || 'middleware'));
       }
       if (action === 'delete_ferm_schedule') {
         return _jsonResponse(deleteFermSchedule(payload));
@@ -406,26 +418,26 @@ function doPost(e) {
       // cases are left in place, unmodified — the old browser path stays live until the D-19
       // cutover.
       if (action === 'update_reservation') {
-        return _jsonResponse(updateReservation(payload, 'middleware'));
+        return _jsonResponse(updateReservation(payload, actor || 'middleware'));
       }
       if (action === 'update_hold') {
-        return _jsonResponse(updateHold(payload, 'middleware'));
+        return _jsonResponse(updateHold(payload, actor || 'middleware'));
       }
       if (action === 'update_homepage') {
         return _jsonResponse(updateHomepage(payload));
       }
       if (action === 'add_batch_task') {
-        var sAddBatchTaskResult = addBatchTask(payload, 'middleware');
+        var sAddBatchTaskResult = addBatchTask(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sAddBatchTaskResult);
       }
       if (action === 'update_batch_task') {
-        var sUpdateBatchTaskResult = updateBatchTask(payload, 'middleware');
+        var sUpdateBatchTaskResult = updateBatchTask(payload, actor || 'middleware');
         _invalidateBatchCache(sUpdateBatchTaskResult.batch_id || payload.batch_id);
         return _jsonResponse(sUpdateBatchTaskResult);
       }
       if (action === 'propagate_ferm_schedule') {
-        return _jsonResponse(propagateFermSchedule(payload, 'middleware'));
+        return _jsonResponse(propagateFermSchedule(payload, actor || 'middleware'));
       }
       if (action === 'regenerate_batch_token') {
         var sRegenerateBatchTokenResult = regenerateBatchToken(payload);
@@ -474,6 +486,8 @@ function doPost(e) {
 
       // Batch tracking endpoints (all invalidate batch cache after write)
       case 'create_batch': {
+        // Phase 86-03: trusted schedule steps are server_token-only; never honour them from staff OAuth
+        delete payload.schedule_steps_json;
         var r = createBatch(payload, authResult.email);
         _invalidateBatchCache(r.batch_id || payload.batch_id);
         return _jsonResponse(r);
@@ -2468,6 +2482,10 @@ function getVessels() {
   return { vessels: vessels };
 }
 
+// Phase 86-03: request-scoped vessel status delta log (reset at the top of doPost)
+var _vesselStatusLog = null;
+var _vesselStatusOptions = { collect: false, sheetWrite: true };
+
 /**
  * Update the status column of a vessel in the Vessels sheet.
  * @param {string} vesselId - The vessel_id to update
@@ -2475,6 +2493,11 @@ function getVessels() {
  */
 function setVesselStatus(vesselId, newStatus) {
   if (!vesselId) return;
+  // Phase 86-03: record the delta for the middleware; optionally skip the cell write
+  if (_vesselStatusLog instanceof Array) {
+    _vesselStatusLog.push({ vessel_id: String(vesselId), status: String(newStatus) });
+  }
+  if (_vesselStatusOptions.sheetWrite === false) return;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('Vessels');
   if (!sheet || sheet.getLastRow() <= 1) return;
@@ -2577,10 +2600,22 @@ function createBatch(payload, userEmail) {
 
   // Validate schedule exists (skip for pending batches)
   var schedResult = null;
+  var trustedStepsJson = null;
   if (!isPending) {
-    schedResult = findRowById(FERM_SCHEDULES_SHEET_NAME, payload.schedule_id);
-    if (schedResult.row === -1) {
-      return { ok: false, error: 'not_found', message: 'Schedule not found: ' + payload.schedule_id };
+    // Phase 86-03: server_token callers may supply the schedule steps (Postgres-authoritative);
+    // doPost deletes this field on the staff-OAuth path before calling createBatch.
+    if (typeof payload.schedule_steps_json === 'string') {
+      var trustedSteps = null;
+      try { trustedSteps = JSON.parse(payload.schedule_steps_json); } catch (stepsErr) { trustedSteps = null; }
+      if (!(trustedSteps instanceof Array)) {
+        return { ok: false, error: 'invalid_steps', message: 'Schedule steps could not be read' };
+      }
+      trustedStepsJson = payload.schedule_steps_json;
+    } else {
+      schedResult = findRowById(FERM_SCHEDULES_SHEET_NAME, payload.schedule_id);
+      if (schedResult.row === -1) {
+        return { ok: false, error: 'not_found', message: 'Schedule not found: ' + payload.schedule_id };
+      }
     }
   }
 
@@ -2615,7 +2650,7 @@ function createBatch(payload, userEmail) {
     var batchId = generateNextId(BATCHES_SHEET_NAME, 'SV-B-', 6);
     var accessToken = Utilities.getUuid().replace(/-/g, '');
     var now = new Date().toISOString();
-    var scheduleSnapshot = isPending ? '' : (schedResult.data.steps || '[]');
+    var scheduleSnapshot = isPending ? '' : (trustedStepsJson !== null ? trustedStepsJson : (schedResult.data.steps || '[]'));
     var steps = [];
     if (!isPending) {
       try { steps = JSON.parse(scheduleSnapshot); } catch (e) { steps = []; }
@@ -3857,7 +3892,24 @@ function regenerateBatchToken(payload) {
 
 // ===== UTILITY =====
 
+/**
+ * Phase 86-03: validated acting_user for the server_token path. Returns '' unless the payload
+ * carries a trimmed email-shaped string of 3..254 chars (callers fall back to 'middleware').
+ */
+function _actingUser(payload) {
+  var v = payload && payload.acting_user;
+  if (typeof v !== 'string') return '';
+  v = v.trim();
+  if (v.length < 3 || v.length > 254) return '';
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return '';
+  return v;
+}
+
 function _jsonResponse(obj) {
+  if (_vesselStatusLog instanceof Array && _vesselStatusLog.length > 0 &&
+      obj && typeof obj === 'object' && !(obj instanceof Array)) {
+    obj.vessel_status_changes = _vesselStatusLog.slice();
+  }
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
