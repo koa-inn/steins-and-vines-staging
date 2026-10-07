@@ -81,6 +81,12 @@ observed, zero unexplained discrepancies) is met and the owner decides to flip t
 - 2026-10-07: owner fixed SV-R-000001 (`created_at` / `created_by` swap) in the live Recipes tab.
 - 2026-10-07 19:29Z: dry run on fresh snapshot: 10 recipe rows, 117 ingredient rows read;
   plan 10 recipes / 117 ingredients; sequence seeds recipe 13, ingredient 184; **0 rejects**.
+- 2026-10-07 19:34Z: staging promote (owner terminal, tunnel): 0 rejects, **promoted 10 recipes,
+  117 ingredients; sequences at 13 / 184**.
+- 2026-10-07: `recipes-verify.js` on the same snapshot: **verified 10 recipes, 0 mismatches**.
+- 2026-10-07 19:37Z: **staging `RECIPES_STORE=dual` started** (Railway CLI, staging `sv_middleware` only).
+  `/health` `database_required:true`; startup log `store modes: {GIFT_CARDS_STORE:dual, RECIPES_STORE:dual}`
+  and `Recipe mirror sweep registered: every 5 minutes`.
 
 ## Production prerequisites
 
