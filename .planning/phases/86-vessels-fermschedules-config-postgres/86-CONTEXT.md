@@ -75,7 +75,23 @@ rehearsal before production.
 - **D-16:** Vessels and ferm schedules get the same **"changed since you opened it" stale-save
   protection** as recipes (85 D-03) in Postgres modes; `sheets` mode behaviour is unchanged.
 
+### Post-research decisions (2026-10-07, answers to 86-RESEARCH.md open questions)
+- **D-17:** D-06's "shelf + bin location" means the existing single free-text vessel `location` field
+  (trimmed on save/backfill). No new shelf/bin columns on vessels.
+- **D-18:** At the production flip, the Config sheet `staff_emails` cell is **blanked** and a note left
+  beside it, so a person removed in Staff Access cannot keep direct Apps Script write access via the
+  `checkAuthorization` sheet limb. The code removal of that limb stays in Phase 88.
+- **D-19:** **Two store flags**: `OPS_DATA_STORE` (vessels + ferm schedules, mirrored in prod) and
+  `STAFF_ACCESS_STORE` (staff allowlist, never mirrored). They are still switched to dual and flipped
+  together per D-09, but can be rolled back independently.
+- **D-20:** If Postgres is unreachable, regular (non-owner) staff **fail closed**: only the
+  `STAFF_EMAILS` break-glass owners can sign in / keep working until the database is back. No grace cache.
+
 ### Claude's Discretion
+- Handling of test data found by research (`FS-0011` test template, `[gfs-probe]` text): backfill as-is
+  unless a cleaner approach is clearly safe; surface it in the rehearsal plan.
+- When to trim Railway `STAFF_EMAILS` to owners only (research recommends: after the flip, once every
+  regular staff member is confirmed present in the new table).
 - Table/column design, ID sequences, migration file naming (`0004_*`), store-facade module layout,
   mirror payload shape, and whether vessels/schedules share one store module or get one each.
 - Exact UI layout of the two new admin tabs, following existing admin tab patterns.
