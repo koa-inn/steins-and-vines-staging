@@ -4041,6 +4041,20 @@ function forwardToAppsScript(action, payload, isRead, logTag, res) {
 // before Apps Script is ever called. create_batch/update_batch_schedule are
 // live BrewPad write flows (js/brewpad.js) and MUST stay present.
 // ---------------------------------------------------------------------------
+// Phase 86-02 (folded todo: admin-write attribution; Pitfall 9). These fields are
+// SERVER-ONLY: set after the body merge, never read from req.body. Only the
+// middleware holds server_token, so Apps Script may trust acting_user on this path.
+// acting_user is set solely from req.staffEmail (session tier; legacy => absent).
+var SERVER_ONLY_PROXY_FIELDS = ['acting_user', 'collect_vessel_status', 'vessel_sheet_write', 'schedule_steps_json'];
+
+function hardenProxyPayload(payload, req) {
+  SERVER_ONLY_PROXY_FIELDS.forEach(function (k) { delete payload[k]; });
+  if (typeof req.staffEmail === 'string' && req.staffEmail) {
+    payload.acting_user = req.staffEmail;
+  }
+  return payload;
+}
+
 var ADMIN_PROXY_ACTIONS = {
   // reads
   get_batch: true,
@@ -4104,6 +4118,7 @@ router.post('/api/batch/admin-proxy', function (req, res) {
     server_token: process.env.APPS_SCRIPT_SERVER_TOKEN
   });
   delete payload.token;
+  hardenProxyPayload(payload, req);
 
   forwardToAppsScript(action, payload, !!ADMIN_PROXY_READS[action], 'batch/admin-proxy', res);
   });
@@ -4176,6 +4191,7 @@ router.post('/api/admin/proxy', function (req, res) {
       server_token: process.env.APPS_SCRIPT_SERVER_TOKEN
     });
     delete payload.token;
+    hardenProxyPayload(payload, req);
 
     forwardToAppsScript(action, payload, !!ADMIN_PANEL_PROXY_READS[action], 'admin/proxy', res);
   });
