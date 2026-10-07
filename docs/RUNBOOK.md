@@ -855,7 +855,7 @@ needed, recreate it from the most recent .xlsx snapshot or the Railway backup.
 
 ### 13. Release checklist
 
-- **Staging candidate commit SHA:** `___` (filled in by Plan 85-13).
+- **Staging candidate commit SHA:** `bd12df33` (85-12 Task 1 green gate; later commits are docs-only). Production SHA to be filled in by Plan 85-13.
 
 
 ---
