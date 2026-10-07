@@ -48,7 +48,7 @@
   }
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-10-07T22:14:08.780Z';
+  var BUILD_TIMESTAMP = '2026-10-07T22:15:07.823Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP); // eslint-disable-line no-console -- deploy build-verification log
 
   var accessToken = null;
@@ -10044,7 +10044,7 @@
         '<td>' + vid + '</td>' +
         '<td>' + escapeHTML(String(v.label || '')) + '</td>' +
         '<td>' + escapeHTML(String(v.type || '')) + '</td>' +
-        '<td>' + escapeHTML(String(v.capacity_liters == null ? '' : v.capacity_liters)) + '</td>' +
+        '<td>' + escapeHTML(v.capacity_liters) + '</td>' +
         '<td>' + escapeHTML(String(v.location || '')) + '</td>' +
         '<td>' + escapeHTML(String(v.status || '')) + '</td>' +
         '<td>' + (v.archived ? 'Archived' : '') + '</td>' +
@@ -10100,7 +10100,7 @@
 
   function vesselFieldHTML(id, label, value, attrs) {
     return '<div class="admin-form-group"><label for="' + id + '">' + escapeHTML(label) + '</label>' +
-      '<input type="text" id="' + id + '" class="admin-input" value="' + escapeHTML(String(value == null ? '' : value)) + '" ' + (attrs || '') + ' /></div>';
+      '<input type="text" id="' + id + '" class="admin-input" value="' + escapeHTML(value) + '" ' + (attrs || '') + ' /></div>';
   }
 
   function openVesselForm(v) {
