@@ -2053,7 +2053,7 @@ Plans:
   3. Parity tests prove the Phase 73 unit guard, the Phase 79 D-04 change comparison and D-09 id-honouring behave identically on Postgres; a kiosk recipe sale prices identically on both stores
   4. `dual` ≥1 week with mirror and discrepancy logging, then flip; a recipe rename completes in under 2 s on production
 
-**Plans:** 5/14 plans executed
+**Plans:** 7/14 plans executed
 
 Plans:
 **Wave 1**
@@ -2069,8 +2069,8 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 85-03-PLAN.md — recipe-pg update/delete: row lock, D-03 token, Phase 79 D-04/D-09, soft-deactivate delete, rename latency
-- [ ] 85-05-PLAN.md — lib/recipe-mirror.js: production-only, durable, coalescing state-copy mirror + 5-minute sweep (D-01/D-02)
+- [x] 85-03-PLAN.md — recipe-pg update/delete: row lock, D-03 token, Phase 79 D-04/D-09, soft-deactivate delete, rename latency
+- [x] 85-05-PLAN.md — lib/recipe-mirror.js: production-only, durable, coalescing state-copy mirror + 5-minute sweep (D-01/D-02)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
