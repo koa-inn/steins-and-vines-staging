@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: 84-11 done (opening smoke 2026-10-07; Adjust-on-active-card check deferred to first real card) — 84-12 dual window running from 2026-10-06
-last_updated: "2026-10-03T19:09:37.771Z"
-last_activity: 2026-10-07 -- 84-11 Task 3 opening smoke: lookup real + clean; dual window day 2
+stopped_at: Phase 85 context gathered (84-12 dual window running in parallel)
+last_updated: "2026-10-07T17:06:53.228Z"
+last_activity: 2026-10-03 -- Phase 84 execution started
 progress:
   total_phases: 74
   completed_phases: 30
   total_plans: 197
-  completed_plans: 186
+  completed_plans: 197
   percent: 41
 ---
 
@@ -232,6 +232,6 @@ Last activity: 2026-10-03 -- Phase 84 execution started
 
 ## Session Continuity
 
-Last session: 2026-10-06
-Stopped at: 84-11 complete; 84-12 dual window running (day 1 = 2026-10-06) — needs all six ops observed for real over ≥7 days, then owner flip decision
-Resume file: .planning/phases/84-giftcards-postgres/84-11-PLAN.md
+Last session: 2026-10-07T17:06:53.215Z
+Stopped at: Phase 85 context gathered (84-12 dual window running in parallel)
+Resume file: .planning/phases/85-recipes-recipeingredients-postgres/85-CONTEXT.md
