@@ -267,28 +267,30 @@ function doPost(e) {
       if (!storedToken || payload.server_token !== storedToken) {
         return _jsonResponse({ ok: false, error: 'unauthorized', message: 'Invalid server token' });
       }
+      // Phase 86-03: real staff attribution forwarded by the middleware (server_token path only)
+      var actor = _actingUser(payload);
       if (action === 'add_reservation') {
         return _jsonResponse(addReservation(payload));
       }
       if (action === 'create_batch') {
-        var batchResult = createBatch(payload, 'kiosk-middleware');
+        var batchResult = createBatch(payload, actor || 'kiosk-middleware');
         if (batchResult.ok && batchResult.batch_id) {
           _invalidateBatchCache(batchResult.batch_id);
         }
         return _jsonResponse(batchResult);
       }
       if (action === 'create_recipe') {
-        var recipeResult = createRecipe(payload, 'middleware');
+        var recipeResult = createRecipe(payload, actor || 'middleware');
         _invalidateRecipeCache(recipeResult.recipe_id);
         return _jsonResponse(recipeResult);
       }
       if (action === 'update_recipe') {
-        var updateResult = updateRecipe(payload, 'middleware');
+        var updateResult = updateRecipe(payload, actor || 'middleware');
         _invalidateRecipeCache(payload.recipe_id);
         return _jsonResponse(updateResult);
       }
       if (action === 'delete_recipe') {
-        var deleteResult = deleteRecipe(payload, 'middleware');
+        var deleteResult = deleteRecipe(payload, actor || 'middleware');
         _invalidateRecipeCache(payload.recipe_id);
         return _jsonResponse(deleteResult);
       }
@@ -357,32 +359,32 @@ function doPost(e) {
       }
       // BrewPad write actions (server_token-gated, Phase 76-01)
       if (action === 'update_batch') {
-        var sUpdateBatchResult = updateBatch(payload, 'middleware');
+        var sUpdateBatchResult = updateBatch(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sUpdateBatchResult);
       }
       if (action === 'update_batch_schedule') {
-        var sUpdateBatchScheduleResult = updateBatchSchedule(payload, 'middleware');
+        var sUpdateBatchScheduleResult = updateBatchSchedule(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sUpdateBatchScheduleResult);
       }
       if (action === 'delete_batch') {
-        var sDeleteBatchResult = deleteBatch(payload, 'middleware');
+        var sDeleteBatchResult = deleteBatch(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sDeleteBatchResult);
       }
       if (action === 'bulk_add_plato_readings') {
-        var sBulkAddPlatoReadingsResult = bulkAddPlatoReadings(payload, 'middleware');
+        var sBulkAddPlatoReadingsResult = bulkAddPlatoReadings(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sBulkAddPlatoReadingsResult);
       }
       if (action === 'bulk_update_batch_tasks') {
-        var sBulkUpdateBatchTasksResult = bulkUpdateBatchTasks(payload, 'middleware');
+        var sBulkUpdateBatchTasksResult = bulkUpdateBatchTasks(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sBulkUpdateBatchTasksResult);
       }
       if (action === 'update_plato_reading') {
-        var sUpdatePlatoReadingResult = updatePlatoReading(payload, 'middleware');
+        var sUpdatePlatoReadingResult = updatePlatoReading(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sUpdatePlatoReadingResult);
       }
@@ -392,10 +394,10 @@ function doPost(e) {
         return _jsonResponse(sDeletePlatoReadingResult);
       }
       if (action === 'create_ferm_schedule') {
-        return _jsonResponse(createFermSchedule(payload, 'middleware'));
+        return _jsonResponse(createFermSchedule(payload, actor || 'middleware'));
       }
       if (action === 'update_ferm_schedule') {
-        return _jsonResponse(updateFermSchedule(payload, 'middleware'));
+        return _jsonResponse(updateFermSchedule(payload, actor || 'middleware'));
       }
       if (action === 'delete_ferm_schedule') {
         return _jsonResponse(deleteFermSchedule(payload));
@@ -406,26 +408,26 @@ function doPost(e) {
       // cases are left in place, unmodified — the old browser path stays live until the D-19
       // cutover.
       if (action === 'update_reservation') {
-        return _jsonResponse(updateReservation(payload, 'middleware'));
+        return _jsonResponse(updateReservation(payload, actor || 'middleware'));
       }
       if (action === 'update_hold') {
-        return _jsonResponse(updateHold(payload, 'middleware'));
+        return _jsonResponse(updateHold(payload, actor || 'middleware'));
       }
       if (action === 'update_homepage') {
         return _jsonResponse(updateHomepage(payload));
       }
       if (action === 'add_batch_task') {
-        var sAddBatchTaskResult = addBatchTask(payload, 'middleware');
+        var sAddBatchTaskResult = addBatchTask(payload, actor || 'middleware');
         _invalidateBatchCache(payload.batch_id);
         return _jsonResponse(sAddBatchTaskResult);
       }
       if (action === 'update_batch_task') {
-        var sUpdateBatchTaskResult = updateBatchTask(payload, 'middleware');
+        var sUpdateBatchTaskResult = updateBatchTask(payload, actor || 'middleware');
         _invalidateBatchCache(sUpdateBatchTaskResult.batch_id || payload.batch_id);
         return _jsonResponse(sUpdateBatchTaskResult);
       }
       if (action === 'propagate_ferm_schedule') {
-        return _jsonResponse(propagateFermSchedule(payload, 'middleware'));
+        return _jsonResponse(propagateFermSchedule(payload, actor || 'middleware'));
       }
       if (action === 'regenerate_batch_token') {
         var sRegenerateBatchTokenResult = regenerateBatchToken(payload);
@@ -3856,6 +3858,19 @@ function regenerateBatchToken(payload) {
 }
 
 // ===== UTILITY =====
+
+/**
+ * Phase 86-03: validated acting_user for the server_token path. Returns '' unless the payload
+ * carries a trimmed email-shaped string of 3..254 chars (callers fall back to 'middleware').
+ */
+function _actingUser(payload) {
+  var v = payload && payload.acting_user;
+  if (typeof v !== 'string') return '';
+  v = v.trim();
+  if (v.length < 3 || v.length > 254) return '';
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return '';
+  return v;
+}
 
 function _jsonResponse(obj) {
   return ContentService
