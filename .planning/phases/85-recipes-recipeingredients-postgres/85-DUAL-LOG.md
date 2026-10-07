@@ -87,6 +87,10 @@ observed, zero unexplained discrepancies) is met and the owner decides to flip t
 - 2026-10-07 19:37Z: **staging `RECIPES_STORE=dual` started** (Railway CLI, staging `sv_middleware` only).
   `/health` `database_required:true`; startup log `store modes: {GIFT_CARDS_STORE:dual, RECIPES_STORE:dual}`
   and `Recipe mirror sweep registered: every 5 minutes`.
+- 2026-10-07: T-85-63 ordering: GitHub Actions "Deploy Staging (filtered)" for `57a44b84` (contains the
+  `stale_recipe` / `expected_updated_at` editor bundles) completed success 19:18Z, before dual at 19:37Z.
+- 2026-10-07: API parity, staging (dual, `source: postgres`) vs production (sheets, `source: apps-script`):
+  `GET /api/recipes` same 3 ids, 0 differing fields per recipe; `GET /api/recipes/SV-R-000011` 0 differing fields.
 
 ## Production prerequisites
 
