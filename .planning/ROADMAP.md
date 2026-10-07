@@ -2106,6 +2106,55 @@ Plans:
   3. A Staff Access screen manages the auth allowlist; `server_token` lives only in Railway env vars; a security review (ASVS L1) signs off the allowlist change path
   4. Ferm-schedule create/update/delete/propagate are transactional with sequence-backed IDs (the lock-free ID collision is gone); dual, then flip
 
+**Plans**: 20 plans
+Plans:
+**Wave 1**
+
+- [ ] 86-01-PLAN.md — Migration 0004_ops_data, OPS_DATA_STORE/STAFF_ACCESS_STORE flags, stale-token helper, ferm-schedule-rules parity
+- [ ] 86-02-PLAN.md — Admin proxy attribution fix (acting_user from session) + server-only field stripping, regression test first
+- [ ] 86-03-PLAN.md — Apps Script v61 part A: acting_user, vessel status delta log, trusted schedule steps for createBatch
+- [ ] 86-04-PLAN.md — Admin + BrewPad schedule editors: stale 409, archive-instead, propagate failures + Retry, vessel label
+
+**Wave 2**
+
+- [ ] 86-05-PLAN.md — vessel-pg.js: read/create/update/archive/status deltas (real PG)
+- [ ] 86-06-PLAN.md — ferm-schedule-pg.js: sequence ids, stale update, archive, reference-guarded delete (real PG)
+- [ ] 86-07-PLAN.md — staff-access.js resolve (break-glass, fail closed) + staff-access-pg.js audited owner-safe mutations
+- [ ] 86-08-PLAN.md — Apps Script v61 part B: vessel/schedule mirror actions, ferm_schedule_ref_count, per-batch propagate failures
+- [ ] 86-09-PLAN.md — ops-backfill CLI (vessels, ferm_schedules, config, staff_access) with rejects + sequence seeding
+- [ ] 86-10-PLAN.md — Admin Vessels tab + owner-only Staff Access tab
+
+**Wave 3**
+
+- [ ] 86-11-PLAN.md — ops-mirror.js entity-keyed production mirror + sweep
+- [ ] 86-12-PLAN.md — Auth wiring: per-request revalidation, /auth/google via resolve, owner-only /api/staff-access routes
+
+**Wave 4**
+
+- [ ] 86-13-PLAN.md — vessel-store.js + ferm-schedule-store.js facades
+- [ ] 86-14-PLAN.md — ops-verify + ops-replay-to-sheet, RUNBOOK Phase 86, APPS_SCRIPT.md server_token fix, 86-DUAL-LOG
+
+**Wave 5**
+
+- [ ] 86-15-PLAN.md — /api/vessels routes + server mount + ops mirror sweep
+- [ ] 86-16-PLAN.md — Proxy overlay (reads, schedule writes, status deltas, create_batch steps) + recipes schedule lookup
+
+**Wave 6**
+
+- [ ] 86-17-PLAN.md — ASVS L1 security review of the allowlist path + owner sign-off
+
+**Wave 7**
+
+- [ ] 86-18-PLAN.md — Staging rehearsal: gate, push, Apps Script v61, backfill, both flags dual, UAT
+
+**Wave 8**
+
+- [ ] 86-19-PLAN.md — Production cutover to dual (gated on D-12: prod RECIPES_STORE=postgres)
+
+**Wave 9**
+
+- [ ] 86-20-PLAN.md — Dual window (D-11), flip, D-18 Config cell blanking, STAFF_EMAILS trim
+
 ### Phase 87: Batches + BatchTasks + PlatoReadings + VesselHistory → Postgres
 
 **Goal**: The shop-floor core — batches, their tasks, readings and history — moves to indexed, relational, transactional storage in one rehearsed maintenance-window cutover, with BrewPad untouched.
