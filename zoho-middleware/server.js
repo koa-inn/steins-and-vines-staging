@@ -50,6 +50,7 @@ var mailerlite = require('./lib/mailerlite');
 var eventLog = require('./lib/eventLog');
 var redact = require('./lib/redact');
 var reconcile = require('./lib/reconcile');
+var recipeMirror = require('./lib/recipe-mirror');
 var sentryCapture = require('./lib/sentry-capture');
 var cookieParser = require('cookie-parser');
 var authTiers = require('./lib/authTiers');
@@ -916,6 +917,14 @@ if (require.main === module) {
         });
       }, 5 * 60 * 1000);
       log.info('[reconcile] Gift-card pending sweep registered: every 5 minutes');
+
+      // Phase 85 D-02: re-drive recipe sheet mirrors that did not land (survives redeploys)
+      setInterval(function () {
+        recipeMirror.sweep().catch(function (err) {
+          log.error('[recipes-mirror] sweep failed: ' + err.message);
+        });
+      }, 5 * 60 * 1000);
+      log.info('[recipes-mirror] Recipe mirror sweep registered: every 5 minutes');
     });
 
     process.on('SIGTERM', function () {

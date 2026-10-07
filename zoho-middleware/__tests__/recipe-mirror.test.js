@@ -289,3 +289,63 @@ describe('timers', function () {
     spy.mockRestore();
   });
 });
+
+describe('sweep', function () {
+  var sheetMirror = require('../lib/sheet-mirror');
+
+  it('re-drives every surviving marker', async function () {
+    mockStore['recipe:mirror-dirty:SV-R-000004'] = { token: 'a' };
+    mockStore['recipe:mirror-dirty:SV-R-000006'] = { token: 'b' };
+    var result = await recipeMirror.sweep();
+    expect(result).toEqual({ scanned: 2, retried: 2 });
+    expect(axios.post).toHaveBeenCalledTimes(2);
+    expect(Object.keys(mockStore)).toHaveLength(0);
+  });
+
+  it('is a no-op when the mirror is disabled', async function () {
+    mockMirror.enabled = false;
+    mockStore[KEY] = { token: 'a' };
+    expect(await recipeMirror.sweep()).toEqual({ scanned: 0, retried: 0 });
+    expect(cache.getClient).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when Redis is disconnected', async function () {
+    cache.isConnected.mockReturnValueOnce(false);
+    mockStore[KEY] = { token: 'a' };
+    expect(await recipeMirror.sweep()).toEqual({ scanned: 0, retried: 0 });
+    expect(cache.getClient).not.toHaveBeenCalled();
+    expect(sheetMirror.isMirrorEnabled).toHaveBeenCalled();
+  });
+
+  it('skips a recipe whose chain is already running', async function () {
+    var release;
+    axios.post.mockImplementationOnce(function () {
+      return new Promise(function (resolve) { release = function () { resolve({ data: { ok: true } }); }; });
+    });
+    recipeMirror.schedule(ID);
+    await flush();
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    var sweepPromise = recipeMirror.sweep();
+    await flush();
+    release();
+    var result = await sweepPromise;
+    expect(result).toEqual({ scanned: 1, retried: 0 });
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('alerts Sentry at most once per recipe per hour for sweep failures', async function () {
+    axios.post.mockRejectedValue(new Error('boom'));
+    mockStore[KEY] = { token: 'a' };
+    await recipeMirror.sweep();
+    await recipeMirror.sweep();
+    expect(sentryCapture.captureExceptionSafe).toHaveBeenCalledTimes(1);
+    expect(sentryCapture.captureExceptionSafe).toHaveBeenCalledWith(
+      expect.any(Error),
+      { level: 'error', tags: { component: 'recipes-mirror', recipe_id: ID } }
+    );
+    jest.setSystemTime(Date.now() + 61 * 60 * 1000);
+    await recipeMirror.sweep();
+    expect(sentryCapture.captureExceptionSafe).toHaveBeenCalledTimes(2);
+  });
+});
