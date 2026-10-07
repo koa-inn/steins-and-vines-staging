@@ -2053,14 +2053,14 @@ Plans:
   3. Parity tests prove the Phase 73 unit guard, the Phase 79 D-04 change comparison and D-09 id-honouring behave identically on Postgres; a kiosk recipe sale prices identically on both stores
   4. `dual` ≥1 week with mirror and discrepancy logging, then flip; a recipe rename completes in under 2 s on production
 
-**Plans:** 14 plans
+**Plans:** 3/14 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 85-01-PLAN.md — Migration 0003 (recipes, recipe_ingredients, sequences, no unique (recipe_id,item_id)) + lib/recipe-rules.js ports, parity-proven against the real adminApi.gs (incl. updateRecipe D-04/D-09 runtime parity)
-- [ ] 85-04-PLAN.md — Apps Script: mirror_recipe_state / mirror_recipe_delete (D-01 state copy) + read-only recipe_batch_ref_count
-- [ ] 85-09-PLAN.md — Admin editor, admin kiosk quick-edit + BrewPad: expected_updated_at token (quick-edit refreshes it after save), 409 stale_recipe message + Reload (D-03), rebuild min artifacts
+- [x] 85-01-PLAN.md — Migration 0003 (recipes, recipe_ingredients, sequences, no unique (recipe_id,item_id)) + lib/recipe-rules.js ports, parity-proven against the real adminApi.gs (incl. updateRecipe D-04/D-09 runtime parity)
+- [x] 85-04-PLAN.md — Apps Script: mirror_recipe_state / mirror_recipe_delete (D-01 state copy) + read-only recipe_batch_ref_count
+- [x] 85-09-PLAN.md — Admin editor, admin kiosk quick-edit + BrewPad: expected_updated_at token (quick-edit refreshes it after save), 409 stale_recipe message + Reload (D-03), rebuild min artifacts
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
