@@ -2035,7 +2035,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 84-11-PLAN.md — Production deploy approval + after-hours cutover to dual with to-the-cent verify (checkpoints)
+- [x] 84-11-PLAN.md — Production deploy approval + after-hours cutover to dual with to-the-cent verify (checkpoints)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 

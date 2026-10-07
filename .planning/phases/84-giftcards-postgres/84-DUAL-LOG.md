@@ -25,7 +25,7 @@ that op during the current window.
 | issue | | | |
 | redeem | | | |
 | reload | | | |
-| lookup | | | |
+| lookup | 2026-10-07 16:54:57Z (production kiosk, digits-only entry) | real | yes — no `[dual-write] giftcards.*` warning in prod logs 2026-10-06 23:00Z → 2026-10-07 |
 | void | | | |
 | adjust | | | |
 
@@ -117,3 +117,13 @@ Store closed, kiosk idle (owner-confirmed). Owner ran the tunnel + CLI steps in 
 | 8. Close-up | — | Tunnel closed, `BACKFILL_DATABASE_URL` unset (owner). |
 
 Window day 1 = 2026-10-06. Next: 84-11 Task 3 opening-day smoke (real active-card lookup on the production kiosk, Adjust visible, no `[dual-write] giftcards` discrepancy in Sentry). Note the live sheet holds a single void $0 card, so the first real `issue` will be the first meaningful dual write.
+
+## Opening-day smoke (84-11 Task 3) — 2026-10-07
+
+| Check | Result |
+|-------|--------|
+| Lookup on production kiosk | PASS — owner looked up by digits only ("works for searching"); `GET /api/kiosk/gift-card/lookup` 200 at 16:54:57Z, 304 at 16:55:16Z. |
+| No dual-write discrepancy | PASS — zero `[dual-write]` lines in production logs since dual went live (2,390 lines scanned, 2026-10-06 23:00Z → 2026-10-07 ~17:00Z). |
+| Adjust Balance visible on an ACTIVE card | DEFERRED — production's only card is GC-000001 (void, $0), which correctly shows no Adjust. Re-check on the first real active card (first `issue` of the window). |
+
+84-11 complete pending that one deferred visual check; 84-12 window running from day 1 = 2026-10-06.

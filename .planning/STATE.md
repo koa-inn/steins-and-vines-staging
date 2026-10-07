@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: 84-11 Task 2 done — production in dual since 2026-10-06 23:00Z (verify 0 mismatches); next Task 3 opening-day smoke
+stopped_at: 84-11 done (opening smoke 2026-10-07; Adjust-on-active-card check deferred to first real card) — 84-12 dual window running from 2026-10-06
 last_updated: "2026-10-03T19:09:37.771Z"
-last_activity: 2026-10-06 -- 84-11 Task 2: production backfill (1 card) + GIFT_CARDS_STORE=dual, verify 0 mismatches; dual window day 1
+last_activity: 2026-10-07 -- 84-11 Task 3 opening smoke: lookup real + clean; dual window day 2
 progress:
   total_phases: 74
   completed_phases: 30
@@ -233,5 +233,5 @@ Last activity: 2026-10-03 -- Phase 84 execution started
 ## Session Continuity
 
 Last session: 2026-10-06
-Stopped at: 84-11 Task 2 done — production gift cards in dual (day 1 = 2026-10-06); next Task 3 opening-day smoke, then 84-12 (≥7-day window, all six ops)
+Stopped at: 84-11 complete; 84-12 dual window running (day 1 = 2026-10-06) — needs all six ops observed for real over ≥7 days, then owner flip decision
 Resume file: .planning/phases/84-giftcards-postgres/84-11-PLAN.md
