@@ -92,6 +92,23 @@ observed, zero unexplained discrepancies) is met and the owner decides to flip t
 - 2026-10-07: API parity, staging (dual, `source: postgres`) vs production (sheets, `source: apps-script`):
   `GET /api/recipes` same 3 ids, 0 differing fields per recipe; `GET /api/recipes/SV-R-000011` 0 differing fields.
 
+### Staging UAT (85-12 Task 3), 2026-10-07, driven in Chrome by Claude with owner sign-ins
+
+| Step | Result | Evidence |
+|------|--------|----------|
+| 3. Runsheet create / activate / ingredient change / rename | PASS | SV-R-000014 created; activate PUT 200 310 ms; ingredient 4 to 5 kg PUT 200 301 ms (token sent); **rename PUT 200 332 ms** |
+| 1. Admin two-tab D-03 | PASS | Tab A save 200; tab B stale save showed "This recipe was changed since you opened it, reload to see the latest" + Reload; Reload showed tab A's value; API stored tab A's value only |
+| 2. BrewPad iPad D-03 | PENDING | Owner to run on the iPad |
+| 2b. Kiosk quick-edit | NOT RUNNABLE | Admin's kiosk recipe prompt is kiosk-core's (no Edit Recipe button); admin's quick-edit prompt is reachable only via a test hook. Pre-existing (not Phase 85); 85-09 quick-edit token logic covered by unit tests only |
+| 4. Public beer page | PASS | Test recipe card shown; ready times "about 3 weeks" / "about 5 weeks" on scheduled recipes; no separate detail page; `GET /api/recipes/:id` identical to production earlier |
+| 5. Kiosk quotes vs production | PASS | 8/8 identical totals and ingredient lines (SV-R-000003, SV-R-000002 x 23/46 L x in-store/take-out) |
+| 6. Delete test recipe | PASS (deleted, not deactivated) | DELETE 200 4.66 s (token sent); API 404 afterwards |
+| Logs | PASS | No ERROR/WARN recipe/mirror/dual lines in staging logs during UAT |
+
+Findings outside Phase 85 scope (pre-existing):
+- **Production kiosk recipe quotes 503** ("Ingredient catalog not available") observed ~20:05Z: `zoho:ingredients:all` cache empty and `routes/pos-recipe.js` has no file-cache fallback (unlike `routes/recipes.js`). Cleared when the owner opened production admin. Same gap would fail a kiosk recipe sale.
+- Admin Kiosk Sale, Recipes view sticks on "Loading recipes..." although the data loaded (render not re-run).
+
 ## Production prerequisites
 
 ## Production cutover
