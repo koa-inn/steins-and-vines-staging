@@ -3219,6 +3219,12 @@ function parseWaitlistRecipeIds(value) {
       ? url + '/api/recipes/' + encodeURIComponent(recipeId)
       : url + '/api/recipes';
 
+    // D-03: optimistic-concurrency token (existing recipe only). Set before
+    // submitRecipeSave so a transient-failure Retry reuses the same token.
+    if (recipeId && _recipesState.currentRecipe && _recipesState.currentRecipe.updated_at) {
+      formData.expected_updated_at = _recipesState.currentRecipe.updated_at;
+    }
+
     return submitRecipeSave(endpoint, method, formData, recipeId);
   }
 
@@ -3271,6 +3277,15 @@ function parseWaitlistRecipeIds(value) {
         var cause = err && err.cause;
         var msg = (err && err.message) ? err.message : 'Please check your connection and try again.';
 
+        // D-03: stale editor -- never auto-retried (409 is not transient); offer a reload.
+        if (code === 'stale_recipe') {
+          showToast(msg, 'error', {
+            actionLabel: 'Reload',
+            onAction: function () { openRecipeDetail(recipeId); }
+          });
+          return;
+        }
+
         // D-05c: consume the D-03 code/cause contract; fall back to the human
         // error string when absent (older/other responses may not carry them).
         if (code === 'unit_mismatch' && cause) {
@@ -3305,19 +3320,41 @@ function parseWaitlistRecipeIds(value) {
       'Delete',
       'bp-confirm-btn--danger',
       function () {
-        fetch(url + '/api/recipes/' + encodeURIComponent(recipeId), {
+        var delUrl = url + '/api/recipes/' + encodeURIComponent(recipeId);
+        var cur = _recipesState.currentRecipe;
+        if (cur && cur.recipe_id === recipeId && cur.updated_at) {
+          delUrl += '?expected_updated_at=' + encodeURIComponent(cur.updated_at);
+        }
+        fetch(delUrl, {
           method: 'DELETE',
           credentials: 'include',
           headers: getRecipesMwHeaders()
         })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
+          .then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (data) {
+              return { status: r.status, data: data };
+            });
+          })
+          .then(function (result) {
+            var data = result.data;
+            if (result.status === 409 && data && data.code === 'stale_recipe') {
+              var staleErr = new Error(data.error || 'This recipe was changed since you opened it \u2014 reload to see the latest');
+              staleErr.code = 'stale_recipe';
+              throw staleErr;
+            }
             if (!data.ok && data.error) throw new Error(data.error);
             showToast('Recipe deleted.', 'success');
             loadRecipeList('all');
             showRecipesListView();
           })
-          .catch(function () {
+          .catch(function (err) {
+            if (err && err.code === 'stale_recipe') {
+              showToast(err.message, 'error', {
+                actionLabel: 'Reload',
+                onAction: function () { openRecipeDetail(recipeId); }
+              });
+              return;
+            }
             showToast('Could not delete recipe. Please try again.', 'error');
           });
       }
@@ -10972,6 +11009,7 @@ function parseWaitlistRecipeIds(value) {
       },
       // Phase 73-05 (D-05): recipe editor save-resilience test seams.
       saveRecipe: saveRecipe,
+      deleteRecipe: deleteRecipe,
       restoreAllFormDrafts: restoreAllFormDrafts,
       renderIngredientRows: renderIngredientRows,
       _getRecipesStateForTest: function () { return _recipesState; },
