@@ -2110,10 +2110,10 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 86-01-PLAN.md — Migration 0004_ops_data, OPS_DATA_STORE/STAFF_ACCESS_STORE flags, stale-token helper, ferm-schedule-rules parity
-- [ ] 86-02-PLAN.md — Admin proxy attribution fix (acting_user from session) + server-only field stripping, regression test first
-- [ ] 86-03-PLAN.md — Apps Script v61 part A: acting_user, vessel status delta log, trusted schedule steps for createBatch
-- [ ] 86-04-PLAN.md — Admin + BrewPad schedule editors: stale 409, archive-instead, propagate failures + Retry, vessel label
+- [x] 86-01-PLAN.md — Migration 0004_ops_data, OPS_DATA_STORE/STAFF_ACCESS_STORE flags, stale-token helper, ferm-schedule-rules parity
+- [x] 86-02-PLAN.md — Admin proxy attribution fix (acting_user from session) + server-only field stripping, regression test first
+- [x] 86-03-PLAN.md — Apps Script v61 part A: acting_user, vessel status delta log, trusted schedule steps for createBatch
+- [x] 86-04-PLAN.md — Admin + BrewPad schedule editors: stale 409, archive-instead, propagate failures + Retry, vessel label
 
 **Wave 2**
 
