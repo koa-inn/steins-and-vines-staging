@@ -176,9 +176,9 @@ describe('ops-proxy overlay through the pos.js proxies (86-16)', function () {
   });
 
   test('postgres: get_batch_init schedules replaced', function () {
-    axios.get.mockResolvedValue({ data: { ok: true, data: { schedules: [{ schedule_id: 'OLD' }] } } });
+    axios.get.mockResolvedValue({ data: { ok: true, data: { schedules: { schedules: [{ schedule_id: 'OLD' }] } } } });
     return callHandler('POST', '/api/admin/proxy', sessionReq({ action: 'get_batch_init' })).then(function (res) {
-      expect(res._body.data.schedules).toEqual([{ schedule_id: 'FS-1' }]);
+      expect(res._body.data.schedules).toEqual({ schedules: [{ schedule_id: 'FS-1' }] });
     });
   });
 

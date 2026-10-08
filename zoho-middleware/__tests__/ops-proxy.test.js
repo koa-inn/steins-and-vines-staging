@@ -186,9 +186,11 @@ describe('ops-proxy postgres mode', function () {
   });
 
   test('get_batch_init schedules replaced by PG list', function () {
-    var d = { ok: true, data: { schedules: [{ schedule_id: 'OLD' }], other: 1 } };
+    // Apps Script get_batch_init returns schedules as getFermSchedules() -> {schedules: [...]};
+    // admin.js reads data.schedules.schedules, so the overlay must keep that wrapper.
+    var d = { ok: true, data: { schedules: { schedules: [{ schedule_id: 'OLD' }] }, other: 1 } };
     return op.afterUpstream(d, { action: 'get_batch_init' }).then(function (out) {
-      expect(out.data.schedules).toEqual([{ schedule_id: 'FS-0012' }]);
+      expect(out.data.schedules).toEqual({ schedules: [{ schedule_id: 'FS-0012' }] });
       expect(out.data.other).toBe(1);
     });
   });

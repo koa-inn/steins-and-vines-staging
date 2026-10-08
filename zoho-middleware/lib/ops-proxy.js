@@ -135,7 +135,8 @@ function afterUpstream(data, payload) {
   return applying.then(function () {
     if (payload && payload.action === 'get_batch_init' && data.data && typeof data.data === 'object') {
       return scheduleStore().list().then(function (r) {
-        data.data.schedules = (r && r.data && r.data.schedules) || [];
+        // Keep Apps Script's getFermSchedules() shape: admin.js reads data.schedules.schedules.
+        data.data.schedules = { schedules: (r && r.data && r.data.schedules) || [] };
         return data;
       });
     }
