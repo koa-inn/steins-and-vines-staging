@@ -30,14 +30,14 @@ classifications only.
 |-------|-------|
 | New version | 61 |
 | Rollback version | 60 |
-| Deployed on | |
+| Deployed on | 2026-10-08 (owner; editor-drift check skipped, owner judged no editor edits since v60) |
 | Probes (get_vessels, get_ferm_schedules, update_batch via proxy shows staff email in VesselHistory) | |
 
 ## Staging rehearsal
 
 | Date | Step | Result |
 |------|------|--------|
-| | staging candidate SHA | |
+| 2026-10-08 | staging candidate SHA | `b5aad084` pushed to origin/main; staging middleware restarted healthy (database:true) |
 | | backfill dry run (0 rejects) | |
 | | promote + `ops-verify.js` 0 mismatches | |
 | | dual on, pre-open mirror write verified | |
