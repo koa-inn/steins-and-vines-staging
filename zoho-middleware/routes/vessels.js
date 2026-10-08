@@ -7,12 +7,17 @@
  * because the global /api guard skips GET. There is deliberately NO DELETE route (D-07):
  * vessels are archived, never removed. In sheets mode every route answers 503 so the admin
  * tab can show an empty state.
+ *
+ * Session-tier mutations must present the session in the x-session-token header (a
+ * SameSite=None sv_session cookie alone is CSRF-able), matching any cookie, from an
+ * allowlisted Origin when one is sent - the same check routes/staff-access.js applies.
  */
 
 var express = require('express');
 var log = require('../lib/logger');
 var authTiers = require('../lib/authTiers');
 var vesselStore = require('../lib/vessel-store');
+var allowedOrigins = require('../lib/allowed-origins');
 
 var router = express.Router();
 
@@ -34,6 +39,22 @@ function sheetsBlocked(res) {
     return true;
   }
   return false;
+}
+
+/** Sends a 403 and returns true when a session-tier write is not proven by the header token. */
+function sessionWriteBlocked(req, res) {
+  if (req.authTier !== 'session') return false;
+  var headerToken = req.headers && req.headers['x-session-token'];
+  var cookieSid = req.cookies && req.cookies.sv_session;
+  var code = null;
+  if (typeof headerToken !== 'string' || !headerToken || (cookieSid && cookieSid !== headerToken)) {
+    code = 'header_token_required';
+  } else if (req.headers.origin && !allowedOrigins.isAllowedOrigin(req.headers.origin)) {
+    code = 'origin_not_allowed';
+  }
+  if (!code) return false;
+  res.status(403).json({ error: code, code: code });
+  return true;
 }
 
 function invalid(res, message) {
@@ -102,7 +123,7 @@ router.get('/api/vessels/next-id', function (req, res) {
 // POST /api/vessels
 router.post('/api/vessels', function (req, res) {
   authTiers.requireTiers(TIERS)(req, res, function () {
-    if (sheetsBlocked(res)) return;
+    if (sessionWriteBlocked(req, res) || sheetsBlocked(res)) return;
     var body = req.body || {};
     var id = body.vessel_id;
     if (typeof id !== 'string' || !VESSEL_ID_RE.test(id.trim())) {
@@ -119,7 +140,7 @@ router.post('/api/vessels', function (req, res) {
 // PUT /api/vessels/:id
 router.put('/api/vessels/:id', function (req, res) {
   authTiers.requireTiers(TIERS)(req, res, function () {
-    if (sheetsBlocked(res)) return;
+    if (sessionWriteBlocked(req, res) || sheetsBlocked(res)) return;
     var id = req.params.id;
     if (!VESSEL_ID_RE.test(id)) return invalid(res, 'Invalid vessel id');
     var payload = {};
@@ -141,7 +162,7 @@ router.put('/api/vessels/:id', function (req, res) {
 function archiveHandler(op) {
   return function (req, res) {
     authTiers.requireTiers(TIERS)(req, res, function () {
-      if (sheetsBlocked(res)) return;
+      if (sessionWriteBlocked(req, res) || sheetsBlocked(res)) return;
       var id = req.params.id;
       if (!VESSEL_ID_RE.test(id)) return invalid(res, 'Invalid vessel id');
       var body = req.body || {};
