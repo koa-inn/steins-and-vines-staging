@@ -2145,7 +2145,7 @@ Plans:
 
 **Wave 7**
 
-- [ ] 86-18-PLAN.md — Staging rehearsal: gate, push, Apps Script v61, backfill, both flags dual, UAT
+- [x] 86-18-PLAN.md — Staging rehearsal: gate, push, Apps Script v61, backfill, both flags dual, UAT
 
 **Wave 8**
 
