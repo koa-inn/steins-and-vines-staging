@@ -174,7 +174,7 @@ Severity is shown only for non-closed rows.
 2. `server_token` appears in query strings of Apps Script GET reads (pre-existing, Low).
 3. Formula injection in mirrored sheet text (T-86-08-04, pre-existing writer behaviour, Low).
 4. Delete-vs-new-reference check-then-act window on schedules (T-86-13-05, Low; batches keep a schedule snapshot).
-5. Non-owner vessel mutations (`/api/vessels` POST/PUT/archive) accept the cookie session without the `x-session-token` header requirement that Staff Access has. They are staff-level, non-privileged data, and are covered by the CORS whitelist (JSON content type forces a preflight) and the Referer check. Observation only, rated Low; hardening would be to reuse the Staff Access header-token check.
+5. ~~Non-owner vessel mutations (`/api/vessels` POST/PUT/archive) accept the cookie session without the `x-session-token` header requirement.~~ **FIXED before sign-off (owner request, 2026-10-08), commit `756abe31`:** `routes/vessels.js` `sessionWriteBlocked()` now requires the `x-session-token` header (matching any `sv_session` cookie) and an allowlisted Origin on session-tier POST/PUT/archive/unarchive; legacy `x-api-key` and GET reads unchanged. Evidence: `__tests__/vessels-routes-csrf.test.js` (21 tests: cookie-only, mismatch, bad Origin -> 403 on all four mutations; was 12 failing before the fix). No longer an accepted risk.
 
 ## 7. Required mitigation at the production flip (D-18) - HIGH until executed, scheduled: 86-20
 
@@ -196,5 +196,6 @@ No other OPEN High item was found.
 
 Required before anything from Phase 86 is pushed to staging.
 
-Name:
-Date:
+Name: koa-inn (owner), approved in session
+Date: 2026-10-08
+Notes: approved with accepted risks 1-4; risk 5 fixed first (`756abe31`). D-18 Config `staff_emails` mitigation remains scheduled for the 86-20 flip.

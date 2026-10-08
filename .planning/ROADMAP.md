@@ -2141,7 +2141,7 @@ Plans:
 
 **Wave 6**
 
-- [ ] 86-17-PLAN.md — ASVS L1 security review of the allowlist path + owner sign-off
+- [x] 86-17-PLAN.md — ASVS L1 security review of the allowlist path + owner sign-off
 
 **Wave 7**
 
