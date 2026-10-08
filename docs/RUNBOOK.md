@@ -995,6 +995,11 @@ or keep working. Kiosk device traffic is unaffected.
   case before production dual. `ops-verify.js` prints "Vessels label header: MISSING" and counts
   it as a mismatch (exit 4) until it exists; with it, the mirror, `ops-replay-to-sheet.js` and a
   §9 rollback keep labels in the sheet.
+- **Config header row REQUIRED (found in the 86-18 staging rehearsal, 2026-10-08):** the Config tab
+  had no header row (row 1 was `staff_emails`), so the backfill rejected it with
+  `missing_header`. A `key` | `value` header row was inserted above it in the shared workbook
+  on 2026-10-08. This is safe for Apps Script: `checkAuthorization` scans every row for
+  `staff_emails` in column A. Confirm the header still exists before the production backfill.
 - New vessels do not get Zoho inventory items (Pitfall 11).
 
 ### 12. Release checklist

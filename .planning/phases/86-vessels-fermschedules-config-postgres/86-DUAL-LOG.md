@@ -22,7 +22,7 @@ classifications only.
 | Production `RECIPES_STORE=postgres` recorded in 85-DUAL-LOG.md "Flip decision" | | |
 | Phase 85 post-flip verification complete | | |
 | Data-hygiene decisions (FS-0011 "ZZ Test Template", "[gfs-probe]" on FS-0001): delete/clean or accept | Owner: import both as-is (accept) | 2026-10-08 |
-| Vessels `label` header present (`ops-verify.js` prints "Vessels label header: present") | label header added by owner (verify pending) | 2026-10-08 |
+| Vessels `label` header present (`ops-verify.js` prints "Vessels label header: present") | label header added to Vessels L1; staging verify printed "present" | 2026-10-08 |
 
 ## Phase 86 Apps Script versions
 
@@ -38,8 +38,8 @@ classifications only.
 | Date | Step | Result |
 |------|------|--------|
 | 2026-10-08 | staging candidate SHA | `b5aad084` pushed to origin/main; staging middleware restarted healthy (database:true) |
-| | backfill dry run (0 rejects) | |
-| | promote + `ops-verify.js` 0 mismatches | |
+| 2026-10-08 | backfill dry run (0 rejects) | 232 vessels, 11 schedules, 2 config keys, 2 staff (1 owner); 0 rejects. Two earlier runs were blocked: Config tab had no header row (key/value header added), and owner/staff env input was missing |
+| 2026-10-08 | promote + `ops-verify.js` 0 mismatches | Promoted 232/11/2/2, sequences 11/232. Verify on a fresh snapshot: label header present, 0 mismatches, staff missing-from-PG 0, PG-only 1 (owner passed via --owners) |
 | | dual on, pre-open mirror write verified | |
 
 ## Production cutover
