@@ -42,6 +42,20 @@ classifications only.
 | 2026-10-08 | promote + `ops-verify.js` 0 mismatches | Promoted 232/11/2/2, sequences 11/232. Verify on a fresh snapshot: label header present, 0 mismatches, staff missing-from-PG 0, PG-only 1 (owner passed via --owners) |
 | 2026-10-08 | dual on, pre-open mirror write verified | OPS_DATA_STORE=dual + STAFF_ACCESS_STORE=dual set together on staging; /health ok, database_required:true; /api/vessels and /api/staff-access/me 401 anonymous. Mirror write N/A on staging (staging never mirrors) |
 
+### Staging UAT (86-18 Task 3, 2026-10-08, owner-approved; run in Chrome by Claude as hello@ owner/break-glass)
+
+| Step | Result |
+|------|--------|
+| 1 Vessels tab | PASS: TST-001 added via next-id prefill; edit; stale save showed the D-16 message + Reload; status override In-Use; archive refused while In-Use; Empty then archive hides it (status Disabled/Retired, BrewPad picker filters it); unarchive OK; no Delete button |
+| 2 Batch flow | PASS: test batch SV-B-000236 in TST-001 flipped it to In-Use; deleting the batch set it back to Empty. Staging never writes the Vessels sheet |
+| 3 Schedules | PASS: FS-0012 got the next sequence id; stale edit showed the message; a batch created with the PG-only schedule; propagate updated 1, failed []; delete blocked "0 recipe(s) and 1 batch(es)"; deleted after the batch was removed; archive (FS-0013) hides it from admin and BrewPad lists |
+| 3 bug found | **FIXED `e6da5880`:** in dual, the get_batch_init overlay returned `data.schedules` as a bare array, so the admin Schedule Templates list rendered empty. Fixed to `{schedules:[...]}`, re-verified on staging (11 cards) |
+| 4 Staff Access | PASS (owner side): tab visible; list 2 staff + 1 break-glass-only; self-remove -> 409 cannot_remove_self. Second-account add/role/remove-403 **skipped by owner, covered by tests** (staff-access-routes, auth-tiers-revocation) |
+| 5 Attribution | PASS: batch created_by and VesselHistory transferred_by = staff email, not kiosk-middleware |
+| 6 Recipes | PASS: public /api/recipes still shows ferment_days 21 for FS-0010 recipes |
+
+Leftover staging test data: TST-001 (Empty, label "UAT test carboy") and FS-0013 (archived). SV-B-000236 and FS-0012 were deleted.
+
 ## Production cutover
 
 | Date | Step | Result |
@@ -61,15 +75,15 @@ unexplained discrepancies were raised for that action during the current window.
 
 | Action | First seen at | Real or scripted | Sentry clean? |
 |--------|----------------|-------------------|----------------|
-| vessel add | | | |
-| vessel edit | | | |
-| vessel archive | | | |
-| vessel status override | | | |
-| batch-flow vessel status delta | | | |
-| schedule create | | | |
-| schedule edit | | | |
-| schedule delete-or-archive | | | |
-| schedule propagate | | | |
+| vessel add | staging 2026-10-08 (not window) | staging | yes |
+| vessel edit | staging 2026-10-08 (not window) | staging | yes |
+| vessel archive | staging 2026-10-08 (not window) | staging | yes |
+| vessel status override | staging 2026-10-08 (not window) | staging | yes |
+| batch-flow vessel status delta | staging 2026-10-08 (not window) | staging | yes |
+| schedule create | staging 2026-10-08 (not window) | staging | yes |
+| schedule edit | staging 2026-10-08 (not window) | staging | yes |
+| schedule delete-or-archive | staging 2026-10-08 (not window) | staging | yes |
+| schedule propagate | staging 2026-10-08 (not window) | staging | yes |
 | staff add | | | |
 | staff remove | | | |
 | staff role change | | | |
