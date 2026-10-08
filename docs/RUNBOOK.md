@@ -1000,7 +1000,7 @@ or keep working. Kiosk device traffic is unaffected.
 ### 12. Release checklist
 
 - 85-13 production deploy: PINNED to d2c66be9 (deploy with `git push production d2c66be9:main --force`, never `main`); production/main (ef3be1e3) contains no Phase 86 commit (checked 2026-10-08).
-- **Staging candidate commit SHA:** _to be filled in by the staging plan_.
+- **Staging candidate commit SHA:** bc353648 (all gates green 2026-10-08; a docs-only commit recording this line sits on top, so push `main` HEAD).
 - Production SHA: _to be filled in by the production cutover plan_.
 - Apps Script v61 recorded with rollback 60 (§3).
 
