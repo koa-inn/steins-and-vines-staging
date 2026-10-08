@@ -108,6 +108,9 @@ function rawId(raw) {
   return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
 }
 
+var SAFE_HEADER_RE = /^[A-Za-z][A-Za-z0-9_ ]{0,39}$/;
+var REDACTED_HEADER = '<redacted header>';
+
 function makeReject(sheet, row, id, field, reason) {
   return { sheet: sheet, row: row, id: id, field: field, reason: reason };
 }
@@ -149,8 +152,13 @@ function checkSheetHeaders(spec, headers, rejects) {
     rejects.push(makeReject(spec.sheet, null, null, h, 'missing_header'));
   });
   var unexpected = check.unmapped.filter(function (h) { return optional.indexOf(h) === -1; });
+  // A missing required header means row 1 is probably data (e.g. a headerless Config tab whose
+  // first row is staff_emails | <emails>), so none of its text is echoed. Otherwise only plain
+  // identifier-like header names are named; anything else could be data and is redacted.
+  var rowOneIsData = check.missing.length > 0;
   unexpected.forEach(function (h) {
-    rejects.push(makeReject(spec.sheet, null, null, h, 'unexpected_header'));
+    var safe = !rowOneIsData && SAFE_HEADER_RE.test(String(h));
+    rejects.push(makeReject(spec.sheet, null, null, safe ? h : REDACTED_HEADER, 'unexpected_header'));
   });
   return { ok: check.missing.length === 0 && unexpected.length === 0, hasOptional: hasOptional };
 }
