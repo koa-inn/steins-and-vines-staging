@@ -21,8 +21,8 @@ classifications only.
 |-------|----------|------|
 | Production `RECIPES_STORE=postgres` recorded in 85-DUAL-LOG.md "Flip decision" | | |
 | Phase 85 post-flip verification complete | | |
-| Data-hygiene decisions (FS-0011 "ZZ Test Template", "[gfs-probe]" on FS-0001): delete/clean or accept | | |
-| Vessels `label` header present (`ops-verify.js` prints "Vessels label header: present") | | |
+| Data-hygiene decisions (FS-0011 "ZZ Test Template", "[gfs-probe]" on FS-0001): delete/clean or accept | Owner: import both as-is (accept) | 2026-10-08 |
+| Vessels `label` header present (`ops-verify.js` prints "Vessels label header: present") | label header added by owner (verify pending) | 2026-10-08 |
 
 ## Phase 86 Apps Script versions
 
