@@ -127,7 +127,7 @@ Findings outside Phase 85 scope (pre-existing):
 
 ### Tonight's runsheet (deploy-only, sheets)
 
-1. After close, kiosk idle. `git push production main --force` (gated-deploy workflow).
+1. After close, kiosk idle. **PINNED (2026-10-08, Phase 86 code is on `main`):** `git push production d2c66be9:main --force` (gated-deploy workflow). NEVER `main` until Phase 86 is meant to ship; d2c66be9 is the last pre-86 commit and contains all 85 work incl. a509e397.
 2. Production `/health`: `database:true`; startup log `store modes` shows `RECIPES_STORE` absent/sheets
    and `GIFT_CARDS_STORE: dual` unchanged; pre-deploy guard chain passed with `0003_recipes` applied.
 3. `GET /api/recipes` 200 with `source: apps-script`; kiosk `recipe-quote` 200 for SV-R-000002 at 23 L.
