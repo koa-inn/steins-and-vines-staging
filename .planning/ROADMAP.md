@@ -2167,6 +2167,64 @@ Plans:
   3. The backfill is rehearsed on staging against a fresh workbook snapshot with a zero-row rejects file and row counts matching per table; the production cutover completes inside the window and every dashboard number matches the pre-cutover snapshot
   4. Creating a batch, marking tasks, adding readings and transferring vessels all work live on production the next business day; `create_batch` median latency at the middleware is under 2 s
 
+**Plans**: 20 plans
+Plans:
+**Wave 1**
+
+- [ ] 87-01-PLAN.md — 87-DESIGN.md (schema, index map, seams, freeze, idempotency, mirror, runbook outline, owner decisions) + migrate:guard probe; BLOCKING owner approval (D-01)
+
+**Wave 2**
+
+- [ ] 87-02-PLAN.md — Migration 0005_batches (FKs ON DELETE CASCADE, sequences, tombstones, create-dedup) + BATCHES_STORE/BATCHES_FREEZE flag helper and boot rules
+- [ ] 87-03-PLAN.md — Apps Script golden fixtures over a synthetic workbook + pure lib/batch-rules.js
+- [ ] 87-04-PLAN.md — Apps Script v62 (additive): mirror_batch_state/delete, export_batch_tabs, D-12 notice setup/removal
+
+**Wave 3**
+
+- [ ] 87-05-PLAN.md — batches-backfill CLI (four specs, rejects, unit_seq, one-tx promote, sequence seeding)
+- [ ] 87-06-PLAN.md — batch-pg-read: list/detail/public/dashboard/calendar/upcoming/conflict/bundle as indexed SQL vs goldens
+
+**Wave 4**
+
+- [ ] 87-07-PLAN.md — batch-pg-create: transactional create with vessel status, invoice + manual idempotency (D-15), latency
+- [ ] 87-08-PLAN.md — batch-pg-update: update/transfer, delete with tombstone + cascade, schedule reconcile, token regenerate
+- [ ] 87-10-PLAN.md — ops-mirror 'batch' entity (production-only per-batch bundle mirror)
+
+**Wave 5**
+
+- [ ] 87-09-PLAN.md — batch-pg-tasks: task completion/packaging/transfer, bulk, add task, readings CRUD, propagate
+- [ ] 87-14-PLAN.md — lib/batch-compare + batches-verify + batches-replay-to-sheet
+
+**Wave 6**
+
+- [ ] 87-11-PLAN.md — lib/batch-store.js facade (single issuer, freeze, mirror scheduling, public token ops)
+- [ ] 87-15-PLAN.md — batches-parity pre-flip gate + daily drift check
+
+**Wave 7**
+
+- [ ] 87-12-PLAN.md — batch-proxy intercept on both proxies + pos.js public routes, scan-invoices, reassign, stamp
+- [ ] 87-13-PLAN.md — brewpad-integration create/index + recipe/schedule ref counts + propagate to the facade
+
+**Wave 8**
+
+- [ ] 87-16-PLAN.md — RUNBOOK Phase 87 (window, no-go, rollback, SQL-fix recipe), DATA-MODEL fix, cutover log, Phase 88 Waitlist note
+
+**Wave 9**
+
+- [ ] 87-17-PLAN.md — Single-issuer static test, full gate, ASVS L1 review + owner sign-off
+
+**Wave 10**
+
+- [ ] 87-18-PLAN.md — Staging push, v62 deploy, timed window rehearsal, UAT, rollback rehearsal
+
+**Wave 11**
+
+- [ ] 87-19-PLAN.md — Production Sunday window (GATED on Phase 86 production flip, D-13) + next-day SC4 check
+
+**Wave 12**
+
+- [ ] 87-20-PLAN.md — Rollback week: daily drift record, day-7 retirement
+
 ### Phase 88: Retire the Legacy Sheets
 
 **Goal**: Apps Script is no longer a system of record for anything — legacy tabs are gone, public content is repo-committed, backups are Postgres-native, and the docs describe the system that actually exists.
