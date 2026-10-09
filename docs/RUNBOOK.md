@@ -262,6 +262,7 @@ Deploy. Prefer this to forward-fixing a live deployment.
 
 | Date | Version | Previous (rollback target) | Change |
 |------|---------|----------------------------|--------|
+| _pending_ | 62 | **61** | **Phase 87** (planned; rollback v61): additive `mirror_batch_state`, `mirror_batch_delete`, `export_batch_tabs` (server_token-gated, not reachable by staff OAuth), `setupBatchMirrorNotices` / `removeBatchMirrorNotices` (run from the editor). Fill in date and probe results at deploy time (Batches -> Postgres §0). Deploy production with the pinned-SHA discipline. |
 | _pending_ | 61 | **60** | **Phase 86** (planned): additive `mirror_vessel_state`, `mirror_ferm_schedule_state`, `mirror_ferm_schedule_delete` (server_token-gated); staff email recorded in VesselHistory. Fill in date and probe results at deploy time (Ops data → Postgres §3). |
 | 2026-10-07 | 60 | **59** | **Phase 85** (85-04): additive `mirror_recipe_state`, `mirror_recipe_delete`, `recipe_batch_ref_count` (server_token-gated). Editor-drift hash check passed before paste; post-paste hash matched repo. `GET /api/recipes` returned 3 active recipes from Apps Script on production and staging after deploy. |
 | 2026-09-24 | 58 | **57** | Pre-existing fixes found in the Phase 82 staging walk: public batch cache bound to the token that passed (`0d460a6e` — closes a 5 s any-token read of `get_batch_public`); `propagateFermSchedule` no longer duplicates completed steps / mislabels packaging, and evicts per-batch caches (`ff1436b7`). Live-verified on staging test batch SV-B-000221: bogus + malformed tokens rejected right after a valid view, valid token works right after a bogus one; propagate of an added step produced A(done), B, C, one Packaging, visible immediately. |
@@ -1009,6 +1010,280 @@ or keep working. Kiosk device traffic is unaffected.
 - Production SHA: _to be filled in by the production cutover plan_.
 - Apps Script v61 recorded with rollback 60 (§3).
 
+
+---
+
+## Batches -> Postgres (Phase 87)
+
+Owner-supervised cutover of the four batch tabs (Batches, BatchTasks, PlatoReadings, VesselHistory) to
+Postgres, the rollback week and the SQL hand-fix recipe (DB-06). Unlike Phases 84-86 there is **no dual
+window**: `BATCHES_STORE` takes `sheets` | `postgres` only (`dual` refuses to boot) and the flip happens
+inside one frozen maintenance window. Every script prints ids, field names and counts only, never a
+customer name, email, token or note. Evidence goes in
+`.planning/phases/87-batches-batchtasks-platoreadings-vesselhistory-postgres/87-CUTOVER-LOG.md`.
+
+Environment variables:
+
+| Variable | Meaning |
+|----------|---------|
+| `BATCHES_STORE` | `sheets` (default, unset) or `postgres`. `dual` is refused. `postgres` is refused at boot unless `OPS_DATA_STORE` is `dual` or `postgres` (vessels share the batch transaction, D-13). |
+| `BATCHES_FREEZE` | Non-empty text = every batch write returns `{ok:false,error:'maintenance'}` in BOTH modes ("Batches are read-only for maintenance until <text>. Please try again then."). Read per call, never cached, no auto-expiry. Reads and the public `batch.html` GET are never frozen. |
+| `BATCHES_TIMEZONE` | Optional; default `America/Vancouver`. Used by the drift timer. |
+
+### 0. Preconditions (D-13)
+
+Do not set a window date until every line is true and recorded in the cutover log:
+
+- Production `OPS_DATA_STORE=postgres` is recorded in `86-DUAL-LOG.md` ("Flip decision"). Production
+  cutover is gated on the Phase 86 prod flip (Q14/D-13).
+- Apps Script **v62** is deployed (rollback **v61**, table above) and its editor-drift hash check passed.
+- The staging rehearsal (87-18) is recorded, including measured timings; if it does not fit the 2-hour
+  budget comfortably, say so before the date is set (D-03).
+- Owner to-do Q1: delete the orphan BatchTasks rows BT-000567..570 in the sheet BEFORE the rehearsal and
+  again confirm none remain before the production dry run (orphan children are rejects and block promote).
+- Owner to-do Q3: confirm the Apps Script project timezone matches `America/Vancouver`.
+- Migration 0005 and the inert Phase 87 code are on production `main` (additive, unused until the flag
+  is set, Q10). Record the exact **pinned production SHA** for the window in the cutover log and deploy
+  with `git push production <sha>:main --force`, never `main` (same discipline as the Phase 85 and 86
+  pins).
+- Railway backups are live (Phase 83). Docker is NOT needed for the window.
+- The Railway tunnel works (`zoho-middleware/scripts/backfill/README.md` step 3).
+
+### 1. Roles (D-09)
+
+- **Claude** runs the scripted steps, reports each check, and writes the log.
+- **Owner** makes the go/no-go call (§7) and does the live smoke that needs Google sign-in (§10).
+- Staff are told not to edit BrewPad batches, tasks or readings, or the four sheet tabs, from the freeze
+  until the owner announces the window is closed.
+
+### 2. Window timeline (D-02, D-03)
+
+Window: **Sunday evening after close, finished before Monday open.** Budget 120 minutes, leaving room for
+one full rollback. Targets are placeholders; 87-18 replaces the right-hand column with measured staging
+timings.
+
+| Step | Who | Target (min) | Measured in rehearsal |
+|------|-----|--------------|-----------------------|
+| 3 Freeze + restart + check | Claude | 5 | |
+| 4 Snapshot, dry run, promote | Claude | 20 | |
+| 5 Second snapshot + verify | Claude | 10 | |
+| 6 Parity (after cache expiry) | Claude | 10 | |
+| 7 Go/no-go | Owner | 5 | |
+| 8 Flip + health + boot lines | Claude | 5 | |
+| 9 D-12 notices | Claude | 3 | |
+| 10 Smoke | Owner + Claude | 20 | |
+| 11 Scan invoices | Staff | 10 | |
+| Total | | 88 | |
+| Reserve for rollback (§12) | | 32 | |
+
+### 3. Freeze
+
+1. Tell staff the window has started.
+2. Railway variable `BATCHES_FREEZE="<HH:MM>"` (the time you expect to finish, shown to users as "until
+   <HH:MM>"); the service restarts (about 1 minute). Record the start time in the cutover log.
+3. Check that a BrewPad write (for example mark a task done) shows the maintenance message, and that
+   `batch.html` still loads for an existing printed token.
+4. **Start the invoice list now:** note every Zoho invoice dated from the freeze time. Kiosk and POS sales
+   still complete during the freeze; their batch creation is refused with
+   `[batch-store] create_batch refused: maintenance invoice=<no>` and goes to the retry queue
+   (`kiosk.batch_retry_queued` events). These invoices are re-processed in §11 (D-04).
+
+### 4. Snapshot + backfill
+
+1. In Google Sheets: File -> Download -> .xlsx to `~/sv-backfill/snapshot.xlsx` (outside the repo; the
+   scripts refuse an in-repo snapshot).
+2. **Eyeball the tails of all four tabs first.** The backfill silently skips rows with a blank primary key,
+   even when other cells hold data, so the dry run will not flag them.
+3. Open the tunnel and run from `zoho-middleware/`:
+
+```bash
+railway connect Postgres --tunnel-only --environment production   # separate terminal
+cd zoho-middleware
+read -s BACKFILL_DATABASE_URL && export BACKFILL_DATABASE_URL
+node scripts/backfill/batches-backfill.js --file="$HOME/sv-backfill/snapshot.xlsx" --out-dir="$HOME/sv-backfill/out" --dry-run
+```
+
+4. The dry run must show **0 rejects** (any reject blocks promote). Exit codes: 0 ok, 1 error, 2 rejects,
+   3 a promote invariant failed. Check the counts and the four sequence seeds in the summary file. Flags
+   are equals-form only; the database URL is accepted only from `BACKFILL_DATABASE_URL`.
+5. Promote: same command with `--promote` instead of `--dry-run`. It prompts for the database name, requires
+   all six batch tables empty, inserts in one transaction, seeds the four id sequences with `setval`, runs
+   ten invariants (counts, sequences, orphans, unit_seq) and commits only if all pass.
+6. Timezone: `--timezone` defaults to `America/Vancouver`.
+
+### 5. Verify
+
+Download a **second fresh** .xlsx (`~/sv-backfill/fresh.xlsx`) after the freeze (no write can have slipped
+in) and run:
+
+```bash
+node scripts/backfill/batches-verify.js --file="$HOME/sv-backfill/fresh.xlsx"
+```
+
+Required: equal counts per table and `0 mismatches` (exit 0; exit 4 = mismatches, 1 = error).
+
+### 6. Parity (dashboard numbers)
+
+Apps Script caches the dashboard and upcoming reads for **300 s**. After the last write (the freeze) let
+the cache expire before running, otherwise the sheet side can be up to 5 minutes stale and report a false
+difference. The script refuses to run within 15 minutes of local midnight. Export
+`APPS_SCRIPT_URL` and `APPS_SCRIPT_SERVER_TOKEN` (same values as Railway) with `read -s`, then:
+
+```bash
+node scripts/backfill/batches-parity.js --snapshot-out="$HOME/sv-backfill/pre-cutover-$(date +%F).json"
+```
+
+It compares `get_batch_dashboard_summary`, `get_batches` (all), `get_tasks_upcoming` (200) and
+`get_tasks_calendar` for this and next month between Apps Script and Postgres. Required: `parity: 0
+differences` (exit 0; exit 4 = differences, printed as `<read> <path>` only). The snapshot holds customer
+names: it must stay outside the repo and is deleted at day-7 retirement. A no-go here costs nothing.
+
+### 7. Go / no-go (D-06)
+
+The owner decides. **No-go on ANY of:**
+
+- a non-empty reject list from the dry run;
+- any row-count mismatch between sheet and Postgres, or any verify mismatch;
+- any dashboard parity difference;
+- any failed smoke write in §10: create batch, mark task, add reading, vessel transfer.
+
+No-go before §8 means: unset `BATCHES_FREEZE`, leave `BATCHES_STORE` unset, and truncate nothing (the
+sheet is still authoritative; Postgres rows are inert). To retry another day, empty the six batch tables
+first (a hand SQL step, §16 recipe, logged).
+
+### 8. Flip
+
+1. In ONE Railway variable change: set `BATCHES_STORE=postgres` and remove `BATCHES_FREEZE`. The
+   service restarts.
+2. `/health` shows `database_required: true`. The startup log contains the ops mirror sweep registration
+   lines (the `batch` entity is swept with the others).
+3. Production only: the 24-hour drift timer is registered (it is a no-op off production or while
+   `BATCHES_STORE` is not `postgres`).
+
+### 9. D-12 notices
+
+In the Apps Script editor run `setupBatchMirrorNotices()`. It writes a "mirror only" note in row 1 and a
+warning-only sheet protection (description "Phase 87 batch mirror") on each of the four tabs. It is
+idempotent. It inserts no row and changes no dispatch.
+
+### 10. Smoke
+
+Owner (Google sign-in): create a batch (confirm the mirrored sheet row appears), mark a task, add a
+reading, do a vessel transfer, open `batch.html` with an **existing printed token**, regenerate the token on
+a test batch and confirm the old token stops working and the new one works.
+
+Claude, in parallel:
+
+```bash
+read -s BATCH_PARITY_SESSION && export BATCH_PARITY_SESSION     # a staff session token, never argv
+export BATCH_PARITY_BASE_URL=https://<production host>
+node scripts/backfill/batches-parity.js --against-snapshot="$HOME/sv-backfill/pre-cutover-<date>.json" --via=proxy
+```
+
+This replays the saved reads through `/api/admin/proxy` (header `x-session-token`) and diffs against the
+Apps Script side of the snapshot. Smoke writes legitimately change the numbers, so run it BEFORE the
+write smoke, or expect and explain differences caused by the smoke batch. Also confirm: mirror success
+log lines for `batches.mirror`, no Sentry `ops-mirror` events, and `[batch-proxy] create_batch ms=<n>`
+log lines (the SC4 median comes from these).
+
+### 11. Scan invoices for the window's invoices (D-04)
+
+Staff run **Scan invoices** in the admin panel so batches are created for sales made during the freeze.
+Use the invoice list from §3 as the checklist and the logs as the cross-check:
+
+- `[brewpad] ... maintenance` / `[batch-store] create_batch refused: maintenance invoice=<no>` lines
+  list the invoices that were refused;
+- `kiosk.batch_retry_queued` events and "Apps Script returned error" warnings list the queued retries.
+
+Dedup on invoice + SKU makes Scan idempotent. Record the result (created / already existed) in the log.
+
+### 12. Rollback inside the window
+
+Triggers: any §7 no-go after the flip, or a failed smoke write.
+
+1. Keep `BATCHES_FREEZE` set (set it again if already removed).
+2. Set `BATCHES_STORE` back to `sheets` (or unset it). The sheet was authoritative until the flip, so no
+   replay is needed when only smoke writes happened. Delete the smoke batch first, or replay it:
+   `node scripts/backfill/batches-replay-to-sheet.js --since=<window start ISO>` then add `--apply`.
+3. Run `removeBatchMirrorNotices()` if §9 was done (it removes only the "Phase 87 batch mirror"
+   protections).
+4. Verify with `batches-verify.js` against a fresh snapshot, then remove the freeze and tell staff.
+
+### 13. Rollback during days 1-7 (D-07)
+
+Real traffic is now in Postgres, so **replay to the sheet first**:
+
+1. Keep or set `BATCHES_FREEZE`.
+2. Dry run, then apply, from the window's flip time (or an earlier ISO time):
+
+```bash
+node scripts/backfill/batches-replay-to-sheet.js --since=2026-10-12T00:00:00Z          # dry run, no HTTP
+node scripts/backfill/batches-replay-to-sheet.js --since=2026-10-12T00:00:00Z --apply  # needs APPS_SCRIPT_URL, APPS_SCRIPT_SERVER_TOKEN
+```
+
+It sends `mirror_batch_state` for every batch changed since then (ordered by last_updated), then
+`mirror_batch_delete` for tombstones, and stops at the first failure naming the batch id.
+3. Verify with a fresh snapshot and `batches-verify.js` (0 mismatches).
+4. Run `removeBatchMirrorNotices()` in the Apps Script editor.
+5. Set `BATCHES_STORE=sheets` (or unset), remove `BATCHES_FREEZE`.
+6. **On any later re-flip**, the Postgres id sequences must be re-seeded to at least max(sheet, Postgres)
+   for each prefix, because the sheet issued ids while Postgres was off. Use the §16 tunnel recipe with
+   `select setval('batch_id_seq', <n>)` (also `batch_task_id_seq`, `plato_reading_id_seq`,
+   `vessel_history_id_seq`), and empty the tables and re-run §4 to §6 rather than flipping on stale rows.
+7. Apps Script can be rolled back to v61 only if the mirror is no longer wanted (Deploy -> Manage
+   deployments -> pencil -> v61); rolling it back disables `mirror_batch_*`.
+
+### 14. Daily drift check (days 1-7)
+
+In production a timer runs every 24 hours: it calls the read-only `export_batch_tabs`, normalises the
+sheet rows and compares all four tabs with Postgres. Success logs `[batches-drift] 0 mismatches`.
+Differences log `table id field` lines only (never values) and raise a Sentry event **`batches drift
+detected`** (tags `component:batches-drift`, extra `mismatchCount`, `tables`, `headerOk`). A failure
+to run raises `batches drift check failed`.
+
+- **The first production run may show false date mismatches** (JSON turns true date cells into ISO strings
+  with a `Z`). Read its log lines; if only `start_date` / `due_date` fields differ and the sheet cells are
+  true dates, record it as explained and do not roll back.
+- Any other mismatch: find the batch id, compare with Postgres, and either fix by §16 then replay that
+  batch, or replay the sheet side (a mirror write) if Postgres is right. A stuck mirror shows as a
+  surviving `ops:mirror-dirty:batch:` Redis marker.
+- Log each day's result in the cutover log "Rollback week" table.
+
+### 15. Day-7 retirement (D-08)
+
+After 7 consecutive days with zero unexplained drift:
+
+1. Record the retirement date in the cutover log. **Rollback to the sheet is then no longer supported.**
+2. Delete `~/sv-backfill/` snapshots and the parity snapshot (customer names).
+3. Leave the D-12 notices and the mirror in place until Phase 88 decides the mirror's fate.
+
+### 16. Hand data fix (SQL) (D-11)
+
+There is no admin edit UI for batch data. A wrong row is fixed by reviewed SQL, never ad hoc:
+
+```bash
+railway connect Postgres --tunnel-only --environment production    # separate terminal
+read -s BACKFILL_DATABASE_URL && export BACKFILL_DATABASE_URL
+psql "$BACKFILL_DATABASE_URL"
+```
+
+1. **Dry-run SELECT** showing only the affected ids:
+   `select batch_id from batches where <condition>;` Write down the count N and get the owner to agree.
+2. **UPDATE inside a transaction** with a row-count check:
+
+```sql
+begin;
+update batches set <column> = <value>, last_updated = now()
+ where <same condition> returning batch_id;
+-- the returned row count MUST equal N from the dry run
+commit;   -- or: rollback;
+```
+
+3. If the count is not N, `rollback;` and stop.
+4. **Schedule the mirror:** replay just that batch to the sheet
+   (`batches-replay-to-sheet.js --since=<just before the fix>` then `--apply`; dry run first and check it lists
+   only the expected ids).
+5. **Log** the date, the ids, the reason and the statement shape in `87-CUTOVER-LOG.md` under "SQL fixes".
 
 ---
 
