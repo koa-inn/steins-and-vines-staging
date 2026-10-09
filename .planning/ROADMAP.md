@@ -2207,7 +2207,7 @@ Plans:
 
 **Wave 8**
 
-- [ ] 87-16-PLAN.md — RUNBOOK Phase 87 (window, no-go, rollback, SQL-fix recipe), DATA-MODEL fix, cutover log, Phase 88 Waitlist note
+- [x] 87-16-PLAN.md — RUNBOOK Phase 87 (window, no-go, rollback, SQL-fix recipe), DATA-MODEL fix, cutover log, Phase 88 Waitlist note
 
 **Wave 9**
 
