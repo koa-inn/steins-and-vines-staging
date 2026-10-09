@@ -2181,8 +2181,8 @@ Plans:
 
 **Wave 3**
 
-- [ ] 87-05-PLAN.md — batches-backfill CLI (four specs, rejects, unit_seq, one-tx promote, sequence seeding)
-- [ ] 87-06-PLAN.md — batch-pg-read: list/detail/public/dashboard/calendar/upcoming/conflict/bundle as indexed SQL vs goldens
+- [x] 87-05-PLAN.md — batches-backfill CLI (four specs, rejects, unit_seq, one-tx promote, sequence seeding)
+- [x] 87-06-PLAN.md — batch-pg-read: list/detail/public/dashboard/calendar/upcoming/conflict/bundle as indexed SQL vs goldens
 
 **Wave 4**
 
