@@ -30,6 +30,12 @@ var backfill = require('../../scripts/backfill/backfill');
 
 var TIMEZONE = 'America/Vancouver';
 
+// 0005 (Phase 87) migrates real batch tables, including public.plato_readings and an FK from
+// batches onto ferm_schedules. These Phase 83 tests treat both as test-created promote
+// targets, so drop the 0005 tables right after migrating to keep that premise true.
+var DROP_PHASE87_TABLES =
+  'drop table if exists public.vessel_history, public.plato_readings, public.batch_tasks, public.batches';
+
 // Writes a throwaway .xlsx into os.tmpdir() (no Sheets API, matching D-09) with a
 // PlatoReadings sheet built from raw (pre-normalisation) row objects keyed by header.
 function buildPlatoReadingsXlsx(rows) {
@@ -129,6 +135,7 @@ describeDb('backfill pipeline against real Postgres', function () {
     db = require('../../lib/db');
     pool = db.createPool(connectionString);
     client = await pool.connect();
+    await client.query(DROP_PHASE87_TABLES);
   }, 120000);
 
   afterAll(async function () {
@@ -385,6 +392,7 @@ describeDb('backfill CLI end-to-end (runBackfill)', function () {
     db = require('../../lib/db');
     pool = db.createPool(connectionString);
     process.env.BACKFILL_DATABASE_URL = connectionString;
+    await pool.query(DROP_PHASE87_TABLES);
   }, 120000);
 
   afterAll(async function () {
