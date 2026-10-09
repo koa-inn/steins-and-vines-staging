@@ -2186,9 +2186,9 @@ Plans:
 
 **Wave 4**
 
-- [ ] 87-07-PLAN.md — batch-pg-create: transactional create with vessel status, invoice + manual idempotency (D-15), latency
-- [ ] 87-08-PLAN.md — batch-pg-update: update/transfer, delete with tombstone + cascade, schedule reconcile, token regenerate
-- [ ] 87-10-PLAN.md — ops-mirror 'batch' entity (production-only per-batch bundle mirror)
+- [x] 87-07-PLAN.md — batch-pg-create: transactional create with vessel status, invoice + manual idempotency (D-15), latency
+- [x] 87-08-PLAN.md — batch-pg-update: update/transfer, delete with tombstone + cascade, schedule reconcile, token regenerate
+- [x] 87-10-PLAN.md — ops-mirror 'batch' entity (production-only per-batch bundle mirror)
 
 **Wave 5**
 
