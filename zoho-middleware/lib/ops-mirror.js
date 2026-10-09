@@ -32,7 +32,8 @@ var sentryCapture = require('./sentry-capture');
 var KEY_ROOT = 'ops:mirror-dirty:';
 var ENTITIES = {
   vessel: { prefix: KEY_ROOT + 'vessel:', label: 'vessels.mirror' },
-  fermsched: { prefix: KEY_ROOT + 'fermsched:', label: 'fermsched.mirror' }
+  fermsched: { prefix: KEY_ROOT + 'fermsched:', label: 'fermsched.mirror' },
+  batch: { prefix: KEY_ROOT + 'batch:', label: 'batches.mirror' }
 };
 var RETRY_DELAYS_MS = [2000, 10000, 60000, 300000];
 var MARKER_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -76,6 +77,16 @@ function buildMirrorRequest(entity, row, id) {
   if (entity === 'vessel') {
     if (!row) throw new Error('vessel not found for mirror');
     return { action: 'mirror_vessel_state', vessel: pick(row, VESSEL_FIELDS) };
+  }
+  if (entity === 'batch') {
+    if (!row) return { action: 'mirror_batch_delete', batch_id: id };
+    return {
+      action: 'mirror_batch_state',
+      batch: row.batch,
+      tasks: row.tasks,
+      readings: row.readings,
+      history: row.history
+    };
   }
   if (!row) return { action: 'mirror_ferm_schedule_delete', schedule_id: id };
   return { action: 'mirror_ferm_schedule_state', schedule: pick(row, SCHEDULE_FIELDS) };
@@ -131,6 +142,7 @@ function clearMarkerIfUnchanged(entity, id, token) {
 
 function readLatest(entity, id) {
   return db.withTransaction(function (client) {
+    if (entity === 'batch') return require('./batch-pg-read').getBatchBundle(client, id);
     return entity === 'vessel'
       ? vesselPg.getVessel(client, id)
       : fermSchedulePg.getSchedule(client, id);
