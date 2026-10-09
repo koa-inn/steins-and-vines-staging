@@ -6,7 +6,15 @@ tokens or notes: ids, field names, counts and classifications only.
 
 ## Staging rehearsal
 
-Staging candidate SHA: _to fill_. Apps Script v62 deployed on: _to fill_ (rollback v61).
+Staging candidate SHA: `5aa2d2e7` (pushed 2026-10-09; guard chain applied `0005_batches`; `/health` ok;
+`BATCHES_STORE` and `BATCHES_FREEZE` unset, so sheets mode). Production pin at push time: production
+`main` = `ef3be1e3`, which contains no Phase 87 commits (Q10). Apps Script v62 deployed on: 2026-10-09
+(rollback v61).
+
+Apps Script v62 probes (production credentials, read-only, 2026-10-09): `get_batches` ok:true;
+`export_batch_tabs` ok:true with Batches 204, BatchTasks 1068, PlatoReadings 70, VesselHistory 427. Orphan
+child rows at that time: BatchTasks BT-000567, BT-000568, BT-000569, BT-000570 (all -> SV-B-000108);
+PlatoReadings none; VesselHistory none.
 
 | Step | Target (min) | Measured (min) | Result |
 |------|--------------|----------------|--------|
@@ -34,7 +42,7 @@ Staging candidate SHA: _to fill_. Apps Script v62 deployed on: _to fill_ (rollba
 | Check | Evidence | Date |
 |-------|----------|------|
 | Phase 86 production flip recorded (`OPS_DATA_STORE=postgres`, Q14/D-13) | | |
-| Apps Script v62 deployed, rollback v61, editor-drift check | | |
+| Apps Script v62 deployed, rollback v61, editor-drift check | v62 live; pre-paste drift check skipped, post-paste hash matched repo; probes ok | 2026-10-09 |
 | Staging rehearsal complete and within budget | | |
 | Q1 orphan task rows BT-000567..570 deleted | | |
 | Q3 Apps Script timezone confirmed | | |
