@@ -2192,8 +2192,8 @@ Plans:
 
 **Wave 5**
 
-- [ ] 87-09-PLAN.md — batch-pg-tasks: task completion/packaging/transfer, bulk, add task, readings CRUD, propagate
-- [ ] 87-14-PLAN.md — lib/batch-compare + batches-verify + batches-replay-to-sheet
+- [x] 87-09-PLAN.md — batch-pg-tasks: task completion/packaging/transfer, bulk, add task, readings CRUD, propagate
+- [x] 87-14-PLAN.md — lib/batch-compare + batches-verify + batches-replay-to-sheet
 
 **Wave 6**
 
