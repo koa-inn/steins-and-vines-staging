@@ -154,17 +154,37 @@ function refUnavailable(code, label, reason) {
   return err;
 }
 
+// Lazy so sheets-mode load never pulls in the Postgres batch stack.
+function batchStore() { return require('./batch-store'); }
+
 /**
- * Batch reference count from Apps Script (read-only). Seam: Phase 87 replaces the body with SQL.
+ * Batch reference count (SQL in postgres batch mode, else Apps Script; read-only).
  * Rejects code 'batch_ref_unavailable' on any transport or shape failure so delete fails closed.
  */
 function hasBatchReferences(id) {
-  return sheetsGuard() || callAppsScript('ferm_schedule_ref_count', { schedule_id: id }).then(function (data) {
-    if (!data || data.ok !== true || !Number.isInteger(data.count) || data.count < 0) {
-      throw refUnavailable('batch_ref_unavailable', 'Batch', 'unexpected response');
-    }
-    return data.count;
-  }, function (err) {
+  var blocked = sheetsGuard();
+  if (blocked) return blocked;
+  function viaAppsScript() {
+    return callAppsScript('ferm_schedule_ref_count', { schedule_id: id }).then(function (data) {
+      if (!data || data.ok !== true || !Number.isInteger(data.count) || data.count < 0) {
+        throw refUnavailable('batch_ref_unavailable', 'Batch', 'unexpected response');
+      }
+      return data.count;
+    });
+  }
+  // Postgres batches (BATCHES_STORE=postgres): SQL count; null = sheets mode -> Apps Script.
+  var counted;
+  try {
+    counted = Promise.resolve(batchStore().countBySchedule(id));
+  } catch (e) {
+    counted = Promise.reject(e);
+  }
+  return counted.then(function (n) {
+    if (n === null || n === undefined) return viaAppsScript();
+    if (!Number.isInteger(n) || n < 0) throw refUnavailable('batch_ref_unavailable', 'Batch', 'unexpected response');
+    return n;
+  }).catch(function (err) {
+    if (err && err.code === 'batch_ref_unavailable') throw err;
     throw refUnavailable('batch_ref_unavailable', 'Batch', (err && err.message) || String(err));
   });
 }
@@ -232,16 +252,26 @@ function propagate(payload, opts) {
     return fermSchedulePg.getSchedule(client, id);
   }).then(function (row) {
     if (!row) return { ok: false, error: 'not_found', message: 'Schedule not found: ' + id };
-    return callAppsScript('propagate_ferm_schedule', {
-      schedule_id: id,
-      steps: JSON.stringify(row.steps_parsed),
-      acting_user: opts.actor || 'middleware'
-    }).then(function (data) {
+    var steps = row.steps_parsed;
+    function normalise(data) {
       if (data && typeof data === 'object' && !Array.isArray(data.batches_failed)) {
         data = Object.assign({}, data, { batches_failed: [] });
       }
       return data;
-    });
+    }
+    function viaAppsScript() {
+      return callAppsScript('propagate_ferm_schedule', {
+        schedule_id: id,
+        steps: JSON.stringify(steps),
+        acting_user: opts.actor || 'middleware'
+      }).then(normalise);
+    }
+    // Postgres batches (BATCHES_STORE=postgres) or the freeze answer here; null = sheets mode.
+    return Promise.resolve(batchStore().propagate(id, steps, { actor: opts.actor || 'middleware' }))
+      .then(function (data) {
+        if (data === null || data === undefined) return viaAppsScript();
+        return normalise(data);
+      });
   });
 }
 
