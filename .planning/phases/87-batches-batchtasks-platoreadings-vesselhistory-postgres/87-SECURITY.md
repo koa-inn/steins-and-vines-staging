@@ -1,6 +1,6 @@
 # Phase 87 Security Review (ASVS L1)
 
-Plan: 87-17 | Date: 2026-10-09 | Reviewer: Claude (executor) | Status: AWAITING OWNER SIGN-OFF
+Plan: 87-17 | Date: 2026-10-09 | Reviewer: Claude (executor) | Status: APPROVED BY OWNER 2026-10-09
 
 ## Scope
 
@@ -121,7 +121,7 @@ Evidence for rows citing earlier plans comes from those plans' SUMMARY files and
 | T-87-16-03 | rollback impossible after a week of PG writes | mitigate | Verified | replay-first rule documented; rehearsal in 87-18 |
 | T-87-17-01 | a second batch issuer added later | mitigate | Verified | batch-single-issuer.test.js; stray create_batch literal in lib/vessel-store.js made it fail, reverted |
 | T-87-17-02 | client file drift breaks SC2 | mitigate | Verified | git diff --exit-code 3010e237 on four client files: identical |
-| T-87-17-03 | unreviewed High risk shipped | mitigate | Pending | Owner sign-off block below |
+| T-87-17-03 | unreviewed High risk shipped | mitigate | Verified | Owner approved 2026-10-09 with no changes (sign-off block below) |
 | T-87-18-01 | staging writes reach the live sheet | mitigate | Procedural - verified when plan executes | Executed in plans 18-20 (staging push, production cutover, rollback week) |
 | T-87-18-02 | Phase 87 code reaches production early | mitigate | Procedural - verified when plan executes | Executed in plans 18-20 (staging push, production cutover, rollback week) |
 | T-87-18-03 | snapshot files | mitigate | Procedural - verified when plan executes | Executed in plans 18-20 (staging push, production cutover, rollback week) |
@@ -163,4 +163,6 @@ None High. None Medium. No second batch issuer found by the new static test.
 
 ## Owner sign-off
 
-Owner: ______________________  Date: ______________  (pending; set to "approved" by owner reply)
+Owner: Owner (koa-inn)  Date: 2026-10-09
+
+Approved with no changes. The owner accepts risks A1-A7 and info notes A8-A9 as written, plus the public-path hardening (beyond-Q8 reading ownership checks, the 6+ digit batch-id regex and the new validation).
