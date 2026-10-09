@@ -100,6 +100,16 @@ function binOut(v) {
   return /^[0-9]+$/.test(s) ? Number(s) : s;
 }
 
+/**
+ * product_sku: Sheets stores an all-digit SKU as a number cell, so Apps Script emits a JSON number.
+ * Leading-zero text stays text, since Number() would change its value.
+ */
+function skuOut(v) {
+  if (isBlank(v)) return '';
+  var s = String(v);
+  return /^[0-9]+$/.test(s) && String(Number(s)) === s ? Number(s) : s;
+}
+
 /** First 10 chars of a stringified value, '' when blank (detail/public truncations). */
 function day10(v) {
   return isBlank(v) ? '' : String(v).substring(0, 10);
@@ -156,6 +166,7 @@ function serializeBatch(row) {
     else if (BATCH_TS[key]) out[key] = isoStamp(v);
     else if (key === 'target_volume_L' || key === 'scale_factor') out[key] = num(v);
     else if (key === 'bin_id') out[key] = binOut(v);
+    else if (key === 'product_sku') out[key] = skuOut(v);
     else out[key] = text(v);
   }
   return out;
