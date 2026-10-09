@@ -148,8 +148,11 @@ function update(payload, opts) {
   }).then(finish);
 }
 
+// Lazy so sheets-mode load never pulls in the Postgres batch stack.
+function batchStore() { return require('./batch-store'); }
+
 /**
- * Batch reference count from Apps Script (also on staging; read-only). Seam: Phase 87
+ * Batch reference count (SQL in postgres batch mode, else Apps Script; also on staging; read-only). Seam: Phase 87
  * replaces the body with SQL. Rejects with err.code 'batch_ref_unavailable' on any
  * transport or shape failure so delete fails closed.
  */
@@ -159,16 +162,30 @@ function hasBatchReferences(recipeId) {
     err.code = 'batch_ref_unavailable';
     return err;
   }
-  return callAppsScript('recipe_batch_ref_count', { recipe_id: recipeId }).then(function (body) {
-    if (!body || body.ok !== true || typeof body.count !== 'number' || !isFinite(body.count)) {
-      throw unavailable('unexpected response');
-    }
-    return body.count;
-  }, function (err) {
+  function viaAppsScript() {
+    return callAppsScript('recipe_batch_ref_count', { recipe_id: recipeId }).then(function (body) {
+      if (!body || body.ok !== true || typeof body.count !== 'number' || !isFinite(body.count)) {
+        throw unavailable('unexpected response');
+      }
+      return body.count;
+    });
+  }
+  // Postgres batches (BATCHES_STORE=postgres): SQL count; null = sheets mode -> Apps Script.
+  var counted;
+  try {
+    counted = Promise.resolve(batchStore().countByRecipe(recipeId));
+  } catch (e) {
+    counted = Promise.reject(e);
+  }
+  return counted.then(function (n) {
+    if (n === null || n === undefined) return viaAppsScript();
+    if (typeof n !== 'number' || !isFinite(n) || n < 0) throw unavailable('unexpected response');
+    return n;
+  }).catch(function (err) {
+    if (err && err.code === 'batch_ref_unavailable') throw err;
     throw unavailable((err && err.message) || String(err));
   });
 }
-
 function remove(recipeId, opts) {
   if (getMode() === 'sheets') return callAppsScript('delete_recipe', { recipe_id: recipeId });
   opts = opts || {};
