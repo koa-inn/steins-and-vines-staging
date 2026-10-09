@@ -17,6 +17,10 @@ var moneyPath = require('../lib/money-path');
 var captureExceptionSafe = require('../lib/sentry-capture').captureExceptionSafe;
 var giftCardStore = require('../lib/gift-card-store');
 var opsProxy = require('../lib/ops-proxy');
+// Phase 87-12: lazy so route tests that mock constants/cache/logger are unaffected.
+function batchProxy() { return require('../lib/batch-proxy'); }
+function batchStore() { return require('../lib/batch-store'); }
+function batchFlag() { return require('../lib/batch-flag'); }
 // 57-04: reuse routes/catalog.js's rebuildKioskCatalog() for the sale-time
 // auto-reconcile (bounded one-shot rebuild on a catalog-miss). No require
 // cycle — catalog.js never requires pos.js.
@@ -3332,7 +3336,16 @@ router.get('/api/batch/scan-invoices', function (req, res) {
   var serverToken = process.env.APPS_SCRIPT_SERVER_TOKEN;
 
   var dedupPromise;
-  if (appsScriptUrl && serverToken) {
+  if (batchFlag().getMode() === 'postgres') {
+    // Phase 87-12: dedup index straight from the batch store (same existingSoNumbers shape).
+    dedupPromise = batchStore().listAll().then(function (rows) {
+      (rows || []).forEach(function (b) {
+        if (b.zoho_so_number) existingSoNumbers[b.zoho_so_number] = true;
+      });
+    }).catch(function (err) {
+      log.warn('[batch/scan-invoices] get_batches dedup failed (non-fatal): ' + err.message + ' — treating dedup set as empty (D-10.2 is backstop)');
+    });
+  } else if (appsScriptUrl && serverToken) {
     dedupPromise = axios.get(appsScriptUrl, {
       params: { action: 'get_batches', server_token: serverToken, status: 'all' },
       timeout: 12000
@@ -3651,6 +3664,11 @@ router.post('/api/batch/reassign-customer', function (req, res) {
     return res.status(400).json({ error: 'Missing customer: provide name or contact_id' });
   }
 
+  // Phase 87-12 (D-05): refuse before any Zoho contact is created while batches are frozen.
+  if (batchFlag().isFrozen()) {
+    return res.status(503).json(batchFlag().maintenanceEnvelope());
+  }
+
   // Step 1: Resolve or create the Zoho contact
   // If contact_id provided, use directly; otherwise lookup-or-create (D-02)
   var resolveContact;
@@ -3769,12 +3787,34 @@ router.post('/api/batch/reassign-customer', function (req, res) {
         }
       };
 
-      return axios.post(appsScriptUrl, JSON.stringify(updatePayload), {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 12000,
-        maxRedirects: 5
+      var updateCall;
+      if (batchFlag().getMode() === 'postgres' || batchFlag().isFrozen()) {
+        // Phase 87-12: same result shape feeds the response construction below (Q18: the
+        // pre-existing new_version behaviour is deliberately not changed here).
+        updateCall = batchStore().update({
+          batch_id: batchId,
+          expectedVersion: expectedVersion,
+          updates: updatePayload.updates
+        }, { actor: req.staffEmail || 'middleware' }).then(function (r) {
+          return r === null ? null : { data: r };
+        });
+      } else {
+        updateCall = Promise.resolve(null);
+      }
+
+      return updateCall.then(function (viaStore) {
+        if (viaStore) return viaStore;
+        return axios.post(appsScriptUrl, JSON.stringify(updatePayload), {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 12000,
+          maxRedirects: 5
+        });
       }).then(function (resp) {
         var result = resp.data || {};
+
+        if (!result.ok && result.error === 'maintenance') {
+          return res.status(503).json(result);
+        }
 
         // Version conflict — stop before any Zoho push (T-29.1-02)
         if (!result.ok && result.error === 'version_conflict') {
@@ -3919,6 +3959,25 @@ router.post('/api/batch/reassign-customer', function (req, res) {
 // never surfaced to the caller. Returns a promise that always resolves.
 function stampBottlingInviteSent(batchId, email, sentAt) {
   var appsScriptUrl = process.env.APPS_SCRIPT_URL;
+  if (batchFlag().getMode() === 'postgres' || batchFlag().isFrozen()) {
+    // Phase 87-12: advisory stamp via the batch store; maintenance is logged and swallowed (D-05).
+    return Promise.resolve()
+      .then(function () {
+        return batchStore().update({
+          batch_id: batchId,
+          updates: { bottling_invite_sent_at: sentAt, bottling_invite_email: email }
+        }, { actor: 'middleware' });
+      })
+      .then(function (result) {
+        if (result && result.ok === false) {
+          log.warn('[batch/bottling-invite] stamp update_batch failed for ' + batchId + ': ' + (result.error || 'unknown'));
+        }
+      })
+      .catch(function (err) {
+        log.warn('[batch/bottling-invite] stamp update_batch threw for ' + batchId + ': ' + (err && err.message));
+      });
+  }
+
   if (!appsScriptUrl) return Promise.resolve();
 
   var payload = {
@@ -4128,6 +4187,7 @@ router.post('/api/batch/admin-proxy', function (req, res) {
   action = opsProxy.mapSheetsAction(action);
   payload.action = action;
   var isReadFlag = !!ADMIN_PROXY_READS[action];
+  if (batchProxy().intercept(action, payload, req, res, 'batch/admin-proxy')) return;
   if (opsProxy.intercept(action, payload, req, res, 'batch/admin-proxy', function () {
     forwardToAppsScript(action, payload, isReadFlag, 'batch/admin-proxy', res);
   })) return;
@@ -4209,6 +4269,7 @@ router.post('/api/admin/proxy', function (req, res) {
     action = opsProxy.mapSheetsAction(action);
     payload.action = action;
     var isReadFlag = !!ADMIN_PANEL_PROXY_READS[action];
+    if (batchProxy().intercept(action, payload, req, res, 'admin/proxy')) return;
     if (opsProxy.intercept(action, payload, req, res, 'admin/proxy', function () {
       forwardToAppsScript(action, payload, isReadFlag, 'admin/proxy', res);
     })) return;
@@ -4240,12 +4301,33 @@ router.post('/api/admin/proxy', function (req, res) {
 // from caching, matching today's behaviour where batch.html talks to Apps
 // Script directly with no staff credential.
 // ---------------------------------------------------------------------------
+// Phase 87-12 (D-05, D-14): runs a batchStore public op in postgres mode. Freeze answers 503 in
+// either mode. Returns true when it owns the response; false falls through to Apps Script.
+function servePublicFromStore(res, isWrite, op) {
+  if (isWrite && batchFlag().isFrozen()) {
+    res.status(503).json(batchFlag().maintenanceEnvelope());
+    return true;
+  }
+  if (batchFlag().getMode() !== 'postgres') return false;
+  Promise.resolve().then(op).then(function (result) {
+    if (result === null || result === undefined) throw new Error('batch store returned no result');
+    res.json(result);
+  }).catch(function (err) {
+    log.error('[batch/public] (store) failed: ' + (err && err.message));
+    res.status(502).json({ ok: false, error: 'server_error' });
+  });
+  return true;
+}
+
 router.get('/api/batch/public/:id', function (req, res) {
   var payload = {
     action: 'get_batch_public',
     batch_id: String(req.params.id || ''),
     token: String((req.query && req.query.token) || '')
   };
+  if (servePublicFromStore(res, false, function () {
+    return batchStore().getPublic(payload.batch_id, payload.token);
+  })) return;
   forwardToAppsScript(payload.action, payload, true, 'batch/public', res);
 });
 
@@ -4258,6 +4340,10 @@ router.post('/api/batch/public/:id/tasks', function (req, res) {
     task_id: body.task_id,
     updates: body.updates
   };
+  if (servePublicFromStore(res, true, function () {
+    return batchStore().publicUpdateTask(payload.batch_id, payload.batch_token,
+      { task_id: payload.task_id, updates: payload.updates });
+  })) return;
   forwardToAppsScript(payload.action, payload, false, 'batch/public', res);
 });
 
@@ -4269,6 +4355,9 @@ router.post('/api/batch/public/:id/readings', function (req, res) {
     batch_token: body.batch_token,
     readings: body.readings
   };
+  if (servePublicFromStore(res, true, function () {
+    return batchStore().publicAddReadings(payload.batch_id, payload.batch_token, payload.readings);
+  })) return;
   forwardToAppsScript(payload.action, payload, false, 'batch/public', res);
 });
 
