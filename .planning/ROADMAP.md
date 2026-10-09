@@ -2211,7 +2211,7 @@ Plans:
 
 **Wave 9**
 
-- [ ] 87-17-PLAN.md — Single-issuer static test, full gate, ASVS L1 review + owner sign-off
+- [x] 87-17-PLAN.md — Single-issuer static test, full gate, ASVS L1 review + owner sign-off
 
 **Wave 10**
 
