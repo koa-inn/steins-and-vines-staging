@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: "Phase 86 context gathered (85: staging dual, prod deploy-only tonight)"
-last_updated: "2026-10-08T23:14:35.456Z"
+stopped_at: Phase 87 context gathered
+last_updated: "2026-10-09T17:58:58.503Z"
 last_activity: 2026-10-08
 progress:
   total_phases: 74
@@ -232,6 +232,6 @@ Last activity: 2026-10-08
 
 ## Session Continuity
 
-Last session: 2026-10-07T20:51:32.760Z
-Stopped at: Phase 86 context gathered (85: staging dual, prod deploy-only tonight)
-Resume file: .planning/phases/86-vessels-fermschedules-config-postgres/86-CONTEXT.md
+Last session: 2026-10-09T17:58:58.491Z
+Stopped at: Phase 87 context gathered
+Resume file: .planning/phases/87-batches-batchtasks-platoreadings-vesselhistory-postgres/87-CONTEXT.md
