@@ -45,7 +45,7 @@ PlatoReadings none; VesselHistory none.
 | Apps Script v62 deployed, rollback v61, editor-drift check | v62 live; pre-paste drift check skipped, post-paste hash matched repo; probes ok | 2026-10-09 |
 | Staging rehearsal complete and within budget | | |
 | Q1 orphan task rows BT-000567..570 deleted | Owner deleted the 4 rows; `export_batch_tabs` re-check shows 0 orphans in BatchTasks, PlatoReadings, VesselHistory (re-confirm before the production dry run) | 2026-10-09 |
-| Q3 Apps Script timezone confirmed | | |
+| Q3 Apps Script timezone confirmed | Owner confirmed America/Vancouver. Caveat: Node 20.20.2 ships tzdata 2025c and will treat Vancouver as UTC-8 from 2026-11-01 (BC is permanently UTC-7). Must be fixed before the production window; see todo node-tzdata-bc-permanent-time | 2026-10-09 |
 | Pinned production SHA | | |
 | Migration 0005 and inert Phase 87 code on production | | |
 | Window date and time agreed with owner | | |
