@@ -365,6 +365,16 @@ function doPost(e) {
       if (action === 'mirror_vessel_state') {
         return _jsonResponse(mirrorVesselState(payload));
       }
+      // Phase 87 D-10/D-08 (v62): batch bundle mirror, delete, and read-only drift export.
+      if (action === 'mirror_batch_state') {
+        return _jsonResponse(mirrorBatchState(payload));
+      }
+      if (action === 'mirror_batch_delete') {
+        return _jsonResponse(mirrorBatchDelete(payload));
+      }
+      if (action === 'export_batch_tabs') {
+        return _jsonResponse(exportBatchTabs());
+      }
       if (action === 'mirror_ferm_schedule_state') {
         return _jsonResponse(mirrorFermScheduleState(payload));
       }
@@ -4954,6 +4964,214 @@ function fermScheduleRefCount(payload) {
     }
   }
   return { ok: true, count: count };
+}
+
+// --- Phase 87 (Apps Script v62): batch state-copy mirror, drift-check export, D-12 notices ---
+
+var BATCH_MIRROR_NOTICE_DESC = 'Phase 87 batch mirror';
+var BATCH_MIRROR_NOTICE_TEXT = 'mirror only - edits are ignored/overwritten (Postgres is authoritative)';
+
+function _batchMirrorTabs() {
+  return [BATCHES_SHEET_NAME, BATCH_TASKS_SHEET_NAME, PLATO_READINGS_SHEET_NAME, VESSEL_HISTORY_SHEET_NAME];
+}
+
+function _evictBatchMirrorCaches(batchId) {
+  _invalidateBatchCache(batchId);
+  _batchMirrorTabs().forEach(function (n) { invalidateSheetCache(n); });
+}
+
+/** Re-key obj onto the sheet's actual header spelling (case-insensitive; exact match wins). */
+function _mirrorKeyToHeaders(sheet, obj) {
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function (h) { return String(h).trim(); });
+  var out = {};
+  headers.forEach(function (h) {
+    if (!h) return;
+    if (Object.prototype.hasOwnProperty.call(obj, h)) { out[h] = obj[h]; return; }
+    var lower = h.toLowerCase();
+    var keys = Object.keys(obj);
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i].toLowerCase() === lower) { out[h] = obj[keys[i]]; return; }
+    }
+  });
+  return out;
+}
+
+function _mirrorUpsertCI(sheetName, idHeader, idValue, obj) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) return { ok: false, error: 'sheet_not_found' };
+  if (sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) return { ok: false, error: 'sheet_not_found' };
+  return _mirrorUpsertRow(sheetName, idHeader, idValue, _mirrorKeyToHeaders(sheet, obj), []);
+}
+
+/**
+ * Delete rows (bottom-up) whose batch_id equals batchId and whose id is not in keepIds
+ * (keepIds null = delete all of the batch's rows). Never touches other batches' rows.
+ */
+function _mirrorDeleteBatchRows(sheetName, idHeader, batchId, keepIds) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0].map(function (h) { return String(h).trim(); });
+  var bCol = headers.indexOf('batch_id');
+  var iCol = headers.indexOf(idHeader);
+  if (bCol === -1 || iCol === -1) return 0;
+  var deleted = 0;
+  for (var r = data.length - 1; r >= 1; r--) {
+    if (String(data[r][bCol]).trim() !== String(batchId)) continue;
+    if (keepIds && keepIds[String(data[r][iCol]).trim()]) continue;
+    sheet.deleteRow(r + 1);
+    deleted++;
+  }
+  return deleted;
+}
+
+/**
+ * Phase 87 D-10: copy one batch bundle (Postgres authoritative). State copy only: never runs
+ * createBatch/updateBatch logic. Child arrays omitted = that tab is not reconciled.
+ * payload: { batch:{batch_id,...}, tasks?:[{task_id,...}], readings?:[{reading_id,...}],
+ *   history?:[{history_id,...}] }
+ */
+function mirrorBatchState(payload) {
+  var batch = payload && payload.batch;
+  if (!batch || typeof batch !== 'object') return { ok: false, error: 'missing_fields' };
+  var batchId = String(batch.batch_id || '');
+  if (!/^SV-B-[0-9]{6,}$/.test(batchId)) return { ok: false, error: 'invalid_id' };
+
+  var specs = [
+    { key: 'tasks', sheet: BATCH_TASKS_SHEET_NAME, idHeader: 'task_id', re: /^BT-[0-9]{6,}$/ },
+    { key: 'readings', sheet: PLATO_READINGS_SHEET_NAME, idHeader: 'reading_id', re: /^PR-[0-9]{6,}$/ },
+    { key: 'history', sheet: VESSEL_HISTORY_SHEET_NAME, idHeader: 'history_id', re: /^VH-[0-9]{6,}$/ }
+  ];
+  for (var s = 0; s < specs.length; s++) {
+    var rows = payload[specs[s].key];
+    if (rows === undefined || rows === null) continue;
+    if (!Array.isArray(rows)) return { ok: false, error: 'missing_fields' };
+    for (var i = 0; i < rows.length; i++) {
+      if (!rows[i] || typeof rows[i] !== 'object' || !specs[s].re.test(String(rows[i][specs[s].idHeader] || ''))) {
+        return { ok: false, error: 'invalid_id' };
+      }
+    }
+  }
+
+  var lock = acquireScriptLock(15000);
+  try {
+    var counts = { tasks: 0, readings: 0, history: 0 };
+    var bObj = {};
+    Object.keys(batch).forEach(function (k) { bObj[k] = batch[k]; });
+    var res = _mirrorUpsertCI(BATCHES_SHEET_NAME, 'batch_id', batchId, bObj);
+    if (!res.ok) return res;
+    specs.forEach(function (spec) {
+      var rows = payload[spec.key];
+      if (rows === undefined || rows === null) return;
+      var keep = {};
+      rows.forEach(function (row) {
+        var obj = {};
+        Object.keys(row).forEach(function (k) { obj[k] = row[k]; });
+        obj.batch_id = batchId; // a child can never be written under another batch
+        var cr = _mirrorUpsertCI(spec.sheet, spec.idHeader, row[spec.idHeader], obj);
+        if (cr.ok) { keep[String(row[spec.idHeader]).trim()] = true; counts[spec.key]++; }
+      });
+      _mirrorDeleteBatchRows(spec.sheet, spec.idHeader, batchId, keep);
+    });
+    return { ok: true, batch_id: batchId, created: res.created, tasks: counts.tasks,
+      readings: counts.readings, history: counts.history };
+  } finally {
+    _evictBatchMirrorCaches(batchId);
+    lock.releaseLock();
+  }
+}
+
+/** Phase 87 D-10: remove a batch and its child rows. Unknown id = {ok:true, deleted:0}. */
+function mirrorBatchDelete(payload) {
+  var batchId = String(payload && payload.batch_id || '');
+  if (!/^SV-B-[0-9]{6,}$/.test(batchId)) return { ok: false, error: 'invalid_id' };
+  var lock = acquireScriptLock(15000);
+  try {
+    _mirrorDeleteBatchRows(BATCH_TASKS_SHEET_NAME, 'task_id', batchId, null);
+    _mirrorDeleteBatchRows(PLATO_READINGS_SHEET_NAME, 'reading_id', batchId, null);
+    _mirrorDeleteBatchRows(VESSEL_HISTORY_SHEET_NAME, 'history_id', batchId, null);
+    var deleted = 0;
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BATCHES_SHEET_NAME);
+    if (sheet && sheet.getLastRow() > 1) {
+      var data = sheet.getDataRange().getValues();
+      var idCol = data[0].map(function (h) { return String(h).trim(); }).indexOf('batch_id');
+      if (idCol !== -1) {
+        for (var r = data.length - 1; r >= 1; r--) {
+          if (String(data[r][idCol]).trim() === batchId) { sheet.deleteRow(r + 1); deleted++; }
+        }
+      }
+    }
+    return { ok: true, batch_id: batchId, deleted: deleted };
+  } finally {
+    _evictBatchMirrorCaches(batchId);
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Phase 87 D-08: read-only export of the four tabs as header-keyed arrays for the daily drift
+ * check. server_token branch only. Rows with a blank id cell are skipped.
+ */
+function exportBatchTabs() {
+  var ids = {};
+  ids[BATCHES_SHEET_NAME] = 'batch_id';
+  ids[BATCH_TASKS_SHEET_NAME] = 'task_id';
+  ids[PLATO_READINGS_SHEET_NAME] = 'reading_id';
+  ids[VESSEL_HISTORY_SHEET_NAME] = 'history_id';
+  var out = { headers: {} };
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  _batchMirrorTabs().forEach(function (name) {
+    out[name] = [];
+    var sheet = ss.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() < 1) { out.headers[name] = []; return; }
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0].map(function (h) { return String(h).trim(); });
+    out.headers[name] = headers;
+    var idCol = headers.indexOf(ids[name]);
+    if (idCol === -1) return;
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][idCol]).trim() === '') continue;
+      var obj = {};
+      headers.forEach(function (h, c) { if (h) obj[h] = data[r][c]; });
+      out[name].push(obj);
+    }
+  });
+  return { ok: true, data: out };
+}
+
+/**
+ * Phase 87 D-12: run from the Apps Script editor right after the flip. Adds a "mirror only" note to
+ * the row-1 header cells and one warning-only protection per tab. Never inserts a row.
+ */
+function setupBatchMirrorNotices() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  _batchMirrorTabs().forEach(function (name) {
+    var sheet = ss.getSheetByName(name);
+    if (!sheet || sheet.getLastColumn() < 1) return;
+    sheet.getRange(1, 1, 1, sheet.getLastColumn()).setNote(BATCH_MIRROR_NOTICE_TEXT);
+    var existing = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET).filter(function (p) {
+      return p.getDescription() === BATCH_MIRROR_NOTICE_DESC;
+    });
+    if (existing.length === 0) {
+      var prot = sheet.protect();
+      prot.setDescription(BATCH_MIRROR_NOTICE_DESC);
+      prot.setWarningOnly(true);
+    }
+  });
+}
+
+/** Phase 87 rollback: clears the notes and removes only the protections this phase added. */
+function removeBatchMirrorNotices() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  _batchMirrorTabs().forEach(function (name) {
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+    if (sheet.getLastColumn() >= 1) sheet.getRange(1, 1, 1, sheet.getLastColumn()).setNote('');
+    sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET).forEach(function (p) {
+      if (p.getDescription() === BATCH_MIRROR_NOTICE_DESC) p.remove();
+    });
+  });
 }
 
 /**
