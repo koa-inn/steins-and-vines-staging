@@ -249,6 +249,9 @@ function planKitBatches(lineItems) {
   return units;
 }
 
+// Lazy so sheets-mode module load never pulls in the Postgres stack.
+function batchStore() { return require('./batch-store'); }
+
 /**
  * Call Apps Script to create a single batch.
  * Resolves to { ok: true/false } so callers can distinguish success from app-level error.
@@ -258,24 +261,8 @@ function planKitBatches(lineItems) {
  * @returns {Promise<{ok: boolean}>}
  */
 function callAppsScriptCreateBatch(batchPayload, skipRetryQueue) {
-  var url = process.env.APPS_SCRIPT_URL;
-  var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
-  if (!url || !token) {
-    log.warn('[brewpad] APPS_SCRIPT_URL or APPS_SCRIPT_SERVER_TOKEN not configured -- skipping batch creation');
-    return Promise.resolve({ ok: false });
-  }
-
-  var payload = Object.assign({}, batchPayload, {
-    action: 'create_batch',
-    server_token: token
-  });
-
-  return axios.post(url, JSON.stringify(payload), {
-    headers: { 'Content-Type': 'application/json' },
-    timeout: 12000,
-    maxRedirects: 5
-  }).then(function (resp) {
-    var data = resp.data || {};
+  function handleData(data) {
+    data = data || {};
     if (data.ok) {
       log.info('[brewpad] Batch created: batch_id=' + (data.batch_id || '?') + ' invoice=' + (batchPayload.zoho_so_number || '?'));
       eventLog.logEvent('kiosk.batch_created', {
@@ -283,16 +270,44 @@ function callAppsScriptCreateBatch(batchPayload, skipRetryQueue) {
         batchId: data.batch_id || ''
       });
       return { ok: true, batch_id: data.batch_id };
+    }
+    if (data.error === 'maintenance') {
+      // D-04: invoice number only (no customer data); the retry queue below recovers it.
+      log.warn('[brewpad] Batch create refused: maintenance invoice=' + (batchPayload.zoho_so_number || '?'));
     } else {
       log.warn('[brewpad] Apps Script returned error: ' + (data.message || data.error || JSON.stringify(data)));
-      if (!skipRetryQueue) {
-        return queueForRetry(batchPayload, 'apps_script_error: ' + (data.error || 'unknown')).then(function () {
-          return { ok: false };
-        });
-      }
-      return { ok: false };
     }
-  }).catch(function (err) {
+    if (!skipRetryQueue) {
+      return queueForRetry(batchPayload, 'apps_script_error: ' + (data.error || 'unknown')).then(function () {
+        return { ok: false };
+      });
+    }
+    return { ok: false };
+  }
+
+  function viaAppsScript() {
+    var url = process.env.APPS_SCRIPT_URL;
+    var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
+    if (!url || !token) {
+      log.warn('[brewpad] APPS_SCRIPT_URL or APPS_SCRIPT_SERVER_TOKEN not configured -- skipping batch creation');
+      return Promise.resolve({ ok: false });
+    }
+
+    var payload = Object.assign({}, batchPayload, {
+      action: 'create_batch',
+      server_token: token
+    });
+
+    return axios.post(url, JSON.stringify(payload), {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 12000,
+      maxRedirects: 5
+    }).then(function (resp) {
+      return handleData(resp.data);
+    });
+  }
+
+  function onError(err) {
     log.warn('[brewpad] Apps Script call failed (non-fatal): ' + err.message);
     if (!skipRetryQueue) {
       return queueForRetry(batchPayload, 'http_error: ' + err.message).then(function () {
@@ -300,7 +315,19 @@ function callAppsScriptCreateBatch(batchPayload, skipRetryQueue) {
       });
     }
     return { ok: false };
-  });
+  }
+
+  // Sheets mode: issue the Apps Script call synchronously, exactly as before this seam existed.
+  var store = batchStore();
+  if (!store.isPostgres() && !store.isFrozen()) return viaAppsScript().catch(onError);
+
+  // Postgres mode (or the freeze) answers here; null defensively falls back to Apps Script.
+  return Promise.resolve().then(function () {
+    return store.create(batchPayload, { actor: 'kiosk-middleware' });
+  }).then(function (r) {
+    if (r === null || r === undefined) return viaAppsScript();
+    return handleData(r);
+  }).catch(onError);
 }
 
 /**
@@ -694,23 +721,7 @@ function resolveInvoiceByNumber(soNumber) {
  * @returns {Promise<Object|null>} { byInvoiceNumber: {invoice_number: [batch,...]}, liveBatchIds: Set<string> }, or null when unavailable
  */
 function fetchLiveBatchIndex() {
-  var url = process.env.APPS_SCRIPT_URL;
-  var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
-  if (!url || !token) {
-    log.warn('[brewpad] APPS_SCRIPT_URL or APPS_SCRIPT_SERVER_TOKEN not configured -- reconcile cannot read the live batch set');
-    return Promise.resolve(null);
-  }
-
-  return axios.get(url, {
-    params: { action: 'get_batches', server_token: token, status: 'all' },
-    timeout: 12000
-  }).then(function (resp) {
-    var data = resp.data || {};
-    if (!data.ok) {
-      log.warn('[brewpad] get_batches (reconcile) returned ok:false -- treating live batch set as unavailable');
-      return null;
-    }
-    var batches = (data.data && data.data.batches) || [];
+  function indexOf(batches) {
     var byInvoiceNumber = {};
     var liveBatchIds = new Set();
     batches.forEach(function (b) {
@@ -721,10 +732,47 @@ function fetchLiveBatchIndex() {
       byInvoiceNumber[num].push(b);
     });
     return { byInvoiceNumber: byInvoiceNumber, liveBatchIds: liveBatchIds };
-  }).catch(function (err) {
+  }
+
+  function viaAppsScript() {
+    var url = process.env.APPS_SCRIPT_URL;
+    var token = process.env.APPS_SCRIPT_SERVER_TOKEN;
+    if (!url || !token) {
+      log.warn('[brewpad] APPS_SCRIPT_URL or APPS_SCRIPT_SERVER_TOKEN not configured -- reconcile cannot read the live batch set');
+      return Promise.resolve(null);
+    }
+
+    return axios.get(url, {
+      params: { action: 'get_batches', server_token: token, status: 'all' },
+      timeout: 12000
+    }).then(function (resp) {
+      var data = resp.data || {};
+      if (!data.ok) {
+        log.warn('[brewpad] get_batches (reconcile) returned ok:false -- treating live batch set as unavailable');
+        return null;
+      }
+      return indexOf((data.data && data.data.batches) || []);
+    });
+  }
+
+  function onError(err) {
     log.warn('[brewpad] get_batches (reconcile) call failed: ' + err.message);
     return null;
-  });
+  }
+
+  var store = batchStore();
+  if (!store.isPostgres()) return viaAppsScript().catch(onError);
+
+  return Promise.resolve().then(function () {
+    return store.listAll();
+  }).then(function (rows) {
+    if (rows === null || rows === undefined) return viaAppsScript();
+    if (!Array.isArray(rows)) {
+      log.warn('[brewpad] batch store listAll (reconcile) returned an unexpected shape -- treating live batch set as unavailable');
+      return null;
+    }
+    return indexOf(rows);
+  }).catch(onError);
 }
 
 /**
