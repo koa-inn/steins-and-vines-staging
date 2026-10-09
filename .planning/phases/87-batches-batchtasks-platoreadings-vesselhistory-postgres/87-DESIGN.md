@@ -1,6 +1,6 @@
 # Phase 87 Design: Batches, BatchTasks, PlatoReadings, VesselHistory to Postgres
 
-Status: DRAFT (awaiting owner approval)
+Status: APPROVED 2026-10-09
 
 Requirement: DB-06. Gate: D-01 (no implementation plan 87-02 onward runs until this is approved).
 Sources: 87-CONTEXT.md (D-01..D-15), 87-RESEARCH.md (Patterns 1-10, Pitfalls 1-14), 87-PATTERNS.md.
@@ -358,30 +358,30 @@ Release train (Q10): production is pinned for Phase 86 work (`d2c66be9:main`); `
 
 ## Owner Decisions
 
-Owner choice column is blank until the owner answers. Every recommendation is what plans 87-02 onward implement.
+Owner approved all of Q1-Q20 as recommended on 2026-10-09. Every recommendation is what plans 87-02 onward implement.
 
 | ID | Question | Recommendation | Owner choice |
 |----|----------|----------------|--------------|
-| Q1 | Orphan tasks BT-000567..570 (reference deleted batch SV-B-000108) will be rejected by the cascade FK | Owner deletes the four rows from the sheet before the rehearsal; keep rejecting orphans in code so the zero-rejects bar holds | |
-| Q2 | 68 duplicate (batch_id, step_number) task pairs across old completed batches SV-B-000002..027 | Import as-is; add no unique constraint; `get_batch` output for those batches must match | |
-| Q3 | Apps Script project timezone drives "today", due-this-week and month buckets | Owner confirms in Apps Script project settings; assumed America/Vancouver; run parity away from midnight | |
-| Q4 | `bin_id` JSON type | Emit a JSON number when the value is numeric (identical to the sheet), store as text | |
-| Q5 | Extra FKs | `schedule_id` references ferm_schedules, RESTRICT, nullable; no FK on `vessel_id` | |
-| Q6 | `target_volume_l` / `scale_factor` were never persisted (sheet header is `target_volume_L`, code wrote `target_volume_l`) | Persist going forward; mirror writes the existing `target_volume_L` header case-insensitively | |
-| Q7 | Location conflict strictness | Parity: pre-check under advisory lock with a non-unique partial index; no unique index (a unique index would newly block reactivating a completed batch into an occupied slot) | |
-| Q8 | Public task update never checks the task belongs to the token's batch | Add the check (only deliberate behaviour change on the public path; cannot affect the real page); regression test first | |
-| Q9 | Transfer-task completion whose location move hits a conflict silently drops the move today | Keep completing the task and return an additive `warnings` array so staff see the failure | |
-| Q10 | May 0005 and inert Phase 87 code reach production `main` before the window (Phase 86 prod steps are pinned to d2c66be9) | Yes: additive, unused until the flag; record the exact production SHA for the window in the runbook | |
-| Q11 | Manual-create replay window length (D-15 requires manual protection, so "invoice-only" is not offered) | Default 2 minutes on the fingerprint; same payload inside 2 minutes returns the existing batch with `idempotent_replay:true` | |
-| Q12 | Drift check mechanism | Production-only 24 h timer using `export_batch_tabs` plus Sentry; alternative is a manual daily CLI run for 7 days | |
-| Q13 | Probe-like rows: SV-B-000062 (test-looking, complete), blank-SKU SV-B-000167 and SV-B-000229 | Import as-is; `product_sku` allows empty; no rule requires non-empty | |
-| Q14 | Production window date | Set only after the Phase 86 production flip is recorded (D-13); staging rehearsal and docs proceed now | |
-| Q15 | Where `BATCHES_STORE` lives | Outside `STORE_ENV_NAMES` via `batch-flag.js` so the existing store-flag test stays untouched; alternative is an owner-approved two-line edit of `store-flag.test.js` | |
-| Q16 | Public GET for a missing batch | Keep `not_found` (parity) rather than unifying to `invalid_token` | |
-| Q17 | Public response still includes `customer_phone`, `notes`, `recipe_snapshot` | Keep (parity per D-14, no batch.html change); strip only if the owner decides separately | |
-| Q18 | Pre-existing reassign-customer bug: `new_version` is always null (reads `last_updated`, script returns `newVersion`) | Do not fix here; raise as a separate todo | |
-| Q19 | Pending batches with a vessel do not mark it In-Use and write no history | Keep that behaviour (parity) | |
-| Q20 | When to apply D-12 sheet notices | Apply `setupBatchMirrorNotices()` in the window right after the flip; `removeBatchMirrorNotices()` is the rollback step | |
+| Q1 | Orphan tasks BT-000567..570 (reference deleted batch SV-B-000108) will be rejected by the cascade FK | Owner deletes the four rows from the sheet before the rehearsal; keep rejecting orphans in code so the zero-rejects bar holds | Approved as recommended |
+| Q2 | 68 duplicate (batch_id, step_number) task pairs across old completed batches SV-B-000002..027 | Import as-is; add no unique constraint; `get_batch` output for those batches must match | Approved as recommended |
+| Q3 | Apps Script project timezone drives "today", due-this-week and month buckets | Owner confirms in Apps Script project settings; assumed America/Vancouver; run parity away from midnight | Approved as recommended |
+| Q4 | `bin_id` JSON type | Emit a JSON number when the value is numeric (identical to the sheet), store as text | Approved as recommended |
+| Q5 | Extra FKs | `schedule_id` references ferm_schedules, RESTRICT, nullable; no FK on `vessel_id` | Approved as recommended |
+| Q6 | `target_volume_l` / `scale_factor` were never persisted (sheet header is `target_volume_L`, code wrote `target_volume_l`) | Persist going forward; mirror writes the existing `target_volume_L` header case-insensitively | Approved as recommended |
+| Q7 | Location conflict strictness | Parity: pre-check under advisory lock with a non-unique partial index; no unique index (a unique index would newly block reactivating a completed batch into an occupied slot) | Approved as recommended |
+| Q8 | Public task update never checks the task belongs to the token's batch | Add the check (only deliberate behaviour change on the public path; cannot affect the real page); regression test first | Approved as recommended |
+| Q9 | Transfer-task completion whose location move hits a conflict silently drops the move today | Keep completing the task and return an additive `warnings` array so staff see the failure | Approved as recommended |
+| Q10 | May 0005 and inert Phase 87 code reach production `main` before the window (Phase 86 prod steps are pinned to d2c66be9) | Yes: additive, unused until the flag; record the exact production SHA for the window in the runbook | Approved as recommended |
+| Q11 | Manual-create replay window length (D-15 requires manual protection, so "invoice-only" is not offered) | Default 2 minutes on the fingerprint; same payload inside 2 minutes returns the existing batch with `idempotent_replay:true` | Approved as recommended |
+| Q12 | Drift check mechanism | Production-only 24 h timer using `export_batch_tabs` plus Sentry; alternative is a manual daily CLI run for 7 days | Approved as recommended |
+| Q13 | Probe-like rows: SV-B-000062 (test-looking, complete), blank-SKU SV-B-000167 and SV-B-000229 | Import as-is; `product_sku` allows empty; no rule requires non-empty | Approved as recommended |
+| Q14 | Production window date | Set only after the Phase 86 production flip is recorded (D-13); staging rehearsal and docs proceed now | Approved as recommended |
+| Q15 | Where `BATCHES_STORE` lives | Outside `STORE_ENV_NAMES` via `batch-flag.js` so the existing store-flag test stays untouched; alternative is an owner-approved two-line edit of `store-flag.test.js` | Approved as recommended |
+| Q16 | Public GET for a missing batch | Keep `not_found` (parity) rather than unifying to `invalid_token` | Approved as recommended |
+| Q17 | Public response still includes `customer_phone`, `notes`, `recipe_snapshot` | Keep (parity per D-14, no batch.html change); strip only if the owner decides separately | Approved as recommended |
+| Q18 | Pre-existing reassign-customer bug: `new_version` is always null (reads `last_updated`, script returns `newVersion`) | Do not fix here; raise as a separate todo | Approved as recommended |
+| Q19 | Pending batches with a vessel do not mark it In-Use and write no history | Keep that behaviour (parity) | Approved as recommended |
+| Q20 | When to apply D-12 sheet notices | Apply `setupBatchMirrorNotices()` in the window right after the flip; `removeBatchMirrorNotices()` is the rollback step | Approved as recommended |
 
 ### Locked decisions coverage
 
@@ -407,4 +407,11 @@ Exact plan numbers for each row are confirmed against the 87-02..87-20 plan file
 
 ## Approval notes
 
-(Filled in at the Task 3 checkpoint: list any owner choice that differs from the recommendation, and the affected plans.)
+Owner approved all recommendations (Q1-Q20) on 2026-10-09 with no changes. No downstream plan (87-02 onward) needs revision.
+
+Open owner action items:
+
+- Q1: owner deletes orphan task rows BT-000567..570 from the sheet before the staging rehearsal.
+- Q3: owner confirms the Apps Script project timezone (assumed America/Vancouver).
+- Q14: the production window date is set only after the Phase 86 production flip is recorded.
+- Q18: reassign-customer `new_version` null bug is tracked as a separate todo (`.planning/todos/pending/reassign-customer-new-version-null.md`).
