@@ -104,23 +104,43 @@ Created by `POST /api/kiosk/sale` → `POST /invoices` to Zoho Books (not Sales 
 
 ## Section 3: Google Sheets Schema
 
-Batch tracking lives in a Google Sheets workbook accessed via an Apps Script Web App (`APPS_SCRIPT_URL`). The schema is inferred from `js/admin.js` and `js/batch.js`.
+Batch tracking lives in four tabs of the Google Sheets workbook (Apps Script Web App, `APPS_SCRIPT_URL`).
+**After the Phase 87 cutover Postgres is authoritative** (`BATCHES_STORE=postgres`) and the tabs are a
+production-only mirror kept current by `mirror_batch_state` / `mirror_batch_delete`; until the cutover the
+sheet is authoritative. Tables are created by `zoho-middleware/migrations/0005_batches.sql`; the pinned
+header lists live in `zoho-middleware/scripts/backfill/specs/`. Child tables reference `batches` with
+`on delete cascade`; `batches.schedule_id` references `ferm_schedules`. Two helper tables exist only in
+Postgres: `batch_tombstones` (deleted batch ids, so a mirror can delete the sheet bundle) and
+`batch_create_dedup` (manual-create fingerprints).
 
-### Batches tab
+### Batches tab (33 columns) - Postgres table `batches`
+
+Headers in sheet order. The Postgres column name equals the header except `target_volume_L` (sheet
+header, capital L) which is the column `target_volume_l`.
 
 | Column | Type | Notes |
 |---|---|---|
-| `batch_id` | string | Format: `SV-B-NNNNNN` |
-| `product_name` | string | Kit name (may also have `product_sku`) |
-| `customer_name` | string | Customer name |
-| `start_date` | date | Fermentation start date (YYYY-MM-DD) |
-| `status` | string | `primary` / `secondary` / `complete` / `disabled` |
-| `vessel_id` | string | Current vessel identifier |
-| `shelf_id` | string | Physical shelf location |
-| `bin_id` | string | Physical bin/slot within shelf |
-| `notes` | string | Free-text notes |
-| `public_token` | string | 32-char hex token for QR URL auth |
-| `schedule_id` | string | FK to FermSchedules |
+| `batch_id` | string | Primary key, `SV-B-NNNNNN` |
+| `status` | string | `primary` / `secondary` / `complete` / `disabled` / `pending` |
+| `product_sku`, `product_name` | string | Kit |
+| `customer_id`, `customer_name`, `customer_email` | string | Customer |
+| `start_date` | date | Fermentation start |
+| `schedule_id` | string | Nullable FK to FermSchedules |
+| `schedule_snapshot` | string | JSON text of the steps at creation |
+| `vessel_id`, `shelf_id`, `bin_id` | string | Location (`bin_id` compared as text) |
+| `notes` | string | Free text |
+| `access_token` | string | 32-char hex token for the printed QR URL |
+| `reservation_id` | string | Zoho sales order id |
+| `created_at`, `created_by`, `last_updated`, `last_regenerated_at` | timestamp / string | Audit |
+| `source` | string | How the batch was created |
+| `zoho_so_number` | string | Sale order or invoice number (dedup key with sku) |
+| `fermentation_started_at`, `completed_at` | timestamp | Lifecycle |
+| `customer_firstname`, `customer_lastname`, `customer_phone` | string | Customer detail |
+| `recipe_id` | string | Recipe reference |
+| `target_volume_L` | number | Recipe batches |
+| `scale_factor` | number | Recipe batches |
+| `recipe_snapshot` | string | JSON text of the recipe at creation |
+| `bottling_invite_sent_at`, `bottling_invite_email` | timestamp / string | Bottling invite stamp |
 
 ### FermSchedules tab
 
@@ -139,51 +159,59 @@ Templates that define the sequence of tasks for a fermentation batch.
 | — `is_packaging` | boolean | Whether this is a packaging/bottling step |
 | — `is_transfer` | boolean | Whether this step involves a vessel transfer |
 
-### BatchTasks tab
+### BatchTasks tab (14 columns) - Postgres table `batch_tasks`
 
-Per-batch task instances (generated from a FermSchedule when a batch is created).
-
-| Column | Type | Notes |
-|---|---|---|
-| `task_id` | string | Format: `BT-NNNNNN` |
-| `batch_id` | string | FK to Batches |
-| `step_number` | integer | Step sequence |
-| `title` | string | Task title |
-| `description` | string | Instructions |
-| `due_date` | date | Calculated from `start_date + day_offset` |
-| `completed` | boolean | `TRUE`/`FALSE` (stored as string in Sheets) |
-| `completed_at` | date | When the task was completed |
-| `is_packaging` | boolean | Packaging flag |
-| `is_transfer` | boolean | Transfer flag |
-
-### PlatoReadings tab
-
-Gravity/density measurements over the course of fermentation.
+Per-batch task instances generated from a FermSchedule when a batch is created. FK `batch_id` to
+`batches` (cascade).
 
 | Column | Type | Notes |
 |---|---|---|
-| `reading_id` | string | Unique ID |
+| `task_id` | string | Primary key, `BT-NNNNNN` |
 | `batch_id` | string | FK to Batches |
-| `timestamp` | date | Date of reading (YYYY-MM-DD) |
-| `degrees_plato` | number | Plato gravity value |
-| `temperature` | number | Temperature in °C (optional) |
-| `ph` | number | pH value (optional) |
-| `notes` | string | Free-text (optional) |
+| `step_number` | integer | Step sequence (duplicate `(batch_id, step_number)` pairs exist in real data and are kept) |
+| `title`, `description` | string | Task text |
+| `day_offset` | integer | Days after start date (`-1` = packaging, date TBD) |
+| `due_date` | date | `start_date + day_offset` |
+| `is_packaging`, `is_transfer` | boolean | Step flags |
+| `completed` | boolean | `TRUE`/`FALSE` in the sheet |
+| `completed_at` | timestamp | When completed |
+| `completed_by` | string | Staff email or `batch-url` |
+| `notes` | string | Optional |
+| `last_updated` | timestamp | Audit |
 
-### VesselHistory tab
+### PlatoReadings tab (9 columns) - Postgres table `plato_readings`
 
-Audit trail of vessel assignments for a batch.
+Gravity, temperature and pH over the fermentation. FK `batch_id` to `batches` (cascade). The sheet header
+`timestamp` is the Postgres column `reading_at`.
 
 | Column | Type | Notes |
 |---|---|---|
+| `reading_id` | string | Primary key, `PR-...` |
 | `batch_id` | string | FK to Batches |
-| `vessel_id` | string | Vessel identifier at this point in time |
-| `shelf_id` | string | Shelf at time of record |
-| `bin_id` | string | Bin at time of record |
-| `transfer_date` | date | When the move occurred (inferred from `completed_at` of transfer task) |
-| `notes` | string | Optional notes |
+| `timestamp` | timestamp | Sheet header; Postgres column `reading_at` |
+| `degrees_plato` | number | Gravity |
+| `notes` | string | Optional |
+| `recorded_by` | string | Staff email or `batch-url` |
+| `created_at` | timestamp | Audit |
+| `temperature` | number | Degrees C, optional |
+| `ph` | number | Optional |
 
-> **Schema uncertainty:** The exact column names in the Sheets tabs are inferred from the JS field access patterns (`b.batch_id`, `t.task_id`, etc.) and the Apps Script actions called from the admin. The Apps Script source (`adminApi.gs`) was not read directly. Column names may differ from field names if the Apps Script remaps them.
+### VesselHistory tab (8 columns) - Postgres table `vessel_history`
+
+Audit trail of vessel assignments. FK `batch_id` to `batches` (cascade).
+
+| Column | Type | Notes |
+|---|---|---|
+| `history_id` | string | Primary key, `VH-...` |
+| `batch_id` | string | FK to Batches |
+| `vessel_id`, `shelf_id`, `bin_id` | string | Location at the time |
+| `transferred_at` | timestamp | When the move occurred |
+| `transferred_by` | string | Staff email |
+| `notes` | string | Optional |
+
+> **Source of truth:** headers above are the pinned lists in `zoho-middleware/scripts/backfill/specs/batches.js`,
+> `batch-tasks.js`, `plato-readings-final.js` and `vessel-history-final.js`; a header test fails if a tab
+> drifts from them.
 
 ---
 

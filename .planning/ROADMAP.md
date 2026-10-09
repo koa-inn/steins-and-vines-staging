@@ -2228,6 +2228,9 @@ Plans:
 ### Phase 88: Retire the Legacy Sheets
 
 **Goal**: Apps Script is no longer a system of record for anything — legacy tabs are gone, public content is repo-committed, backups are Postgres-native, and the docs describe the system that actually exists.
+
+**Scope addition (owner decision 2026-10-09, Phase 87 CONTEXT)**: Waitlist sheet -> Postgres rides the same admin proxy.
+
 **Depends on**: Phase 87
 **Requirements**: DB-07
 **Success Criteria** (what must be TRUE):
