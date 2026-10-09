@@ -2171,7 +2171,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 87-01-PLAN.md — 87-DESIGN.md (schema, index map, seams, freeze, idempotency, mirror, runbook outline, owner decisions) + migrate:guard probe; BLOCKING owner approval (D-01)
+- [x] 87-01-PLAN.md — 87-DESIGN.md (schema, index map, seams, freeze, idempotency, mirror, runbook outline, owner decisions) + migrate:guard probe; BLOCKING owner approval (D-01)
 
 **Wave 2**
 
