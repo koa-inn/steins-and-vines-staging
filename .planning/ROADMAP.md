@@ -2175,9 +2175,9 @@ Plans:
 
 **Wave 2**
 
-- [ ] 87-02-PLAN.md — Migration 0005_batches (FKs ON DELETE CASCADE, sequences, tombstones, create-dedup) + BATCHES_STORE/BATCHES_FREEZE flag helper and boot rules
-- [ ] 87-03-PLAN.md — Apps Script golden fixtures over a synthetic workbook + pure lib/batch-rules.js
-- [ ] 87-04-PLAN.md — Apps Script v62 (additive): mirror_batch_state/delete, export_batch_tabs, D-12 notice setup/removal
+- [x] 87-02-PLAN.md — Migration 0005_batches (FKs ON DELETE CASCADE, sequences, tombstones, create-dedup) + BATCHES_STORE/BATCHES_FREEZE flag helper and boot rules
+- [x] 87-03-PLAN.md — Apps Script golden fixtures over a synthetic workbook + pure lib/batch-rules.js
+- [x] 87-04-PLAN.md — Apps Script v62 (additive): mirror_batch_state/delete, export_batch_tabs, D-12 notice setup/removal
 
 **Wave 3**
 
