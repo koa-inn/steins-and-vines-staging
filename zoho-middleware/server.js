@@ -936,6 +936,9 @@ if (require.main === module) {
         });
       }, 5 * 60 * 1000);
       log.info('[ops-mirror] Ops mirror sweep registered: every 5 minutes');
+
+      // Phase 87 D-08 (Q12): production-only daily batches Postgres-vs-sheet drift check
+      require('./lib/batch-drift').registerDriftTimer();
     });
 
     process.on('SIGTERM', function () {
