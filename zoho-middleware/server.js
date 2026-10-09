@@ -12,6 +12,9 @@ validateEnv();
 // in the boot sequence, so require it locally here.
 var storeFlag = require('./lib/store-flag');
 var storeModes = storeFlag.validateStoreFlags();
+// Phase 87 (DB-06): BATCHES_STORE lives outside STORE_ENV_NAMES; dual is refused and
+// postgres requires OPS_DATA_STORE != sheets (D-13).
+storeModes.BATCHES_STORE = require('./lib/batch-flag').validateBatchesFlag();
 require('./lib/sheet-mirror').logMirrorStatus();
 require('./lib/logger').info('[startup] store modes: ' + JSON.stringify(storeModes));
 
@@ -173,6 +176,7 @@ function checkDatabase() {
 // Postgres is authoritative for at least one store and a DB outage is no
 // longer a no-op.
 function isDatabaseRequired() {
+  if (require('./lib/batch-flag').getMode() === 'postgres') return true;
   return storeFlag.STORE_ENV_NAMES.some(function (name) {
     var mode = storeFlag.resolveStoreMode(name);
     return mode === 'dual' || mode === 'postgres';
