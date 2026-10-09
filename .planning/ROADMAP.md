@@ -2202,8 +2202,8 @@ Plans:
 
 **Wave 7**
 
-- [ ] 87-12-PLAN.md — batch-proxy intercept on both proxies + pos.js public routes, scan-invoices, reassign, stamp
-- [ ] 87-13-PLAN.md — brewpad-integration create/index + recipe/schedule ref counts + propagate to the facade
+- [x] 87-12-PLAN.md — batch-proxy intercept on both proxies + pos.js public routes, scan-invoices, reassign, stamp
+- [x] 87-13-PLAN.md — brewpad-integration create/index + recipe/schedule ref counts + propagate to the facade
 
 **Wave 8**
 
