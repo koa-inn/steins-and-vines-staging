@@ -2197,8 +2197,8 @@ Plans:
 
 **Wave 6**
 
-- [ ] 87-11-PLAN.md — lib/batch-store.js facade (single issuer, freeze, mirror scheduling, public token ops)
-- [ ] 87-15-PLAN.md — batches-parity pre-flip gate + daily drift check
+- [x] 87-11-PLAN.md — lib/batch-store.js facade (single issuer, freeze, mirror scheduling, public token ops)
+- [x] 87-15-PLAN.md — batches-parity pre-flip gate + daily drift check
 
 **Wave 7**
 

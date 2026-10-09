@@ -4,13 +4,13 @@ milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
 stopped_at: Phase 87 context gathered
-last_updated: "2026-10-09T19:32:26.153Z"
+last_updated: "2026-10-09T19:39:08.790Z"
 last_activity: 2026-10-09
 progress:
   total_phases: 74
   completed_phases: 30
   total_plans: 251
-  completed_plans: 238
+  completed_plans: 240
   percent: 41
 ---
 
@@ -44,7 +44,7 @@ All 5 plans executed 2026-08-31 in 3 waves via parallel worktree executors. Gate
 **Phase 51 (gift-card-ledger-integrity) — ✅ COMPLETE 2026-09-02, live-verified, all 3 plans done (`51-01` `28c3d37e`, `51-02` `ba88bd9d`, `51-03` `36177ea9`+deploy).** Owner-narrowed scope (2026-09-02): criteria 1/2/6/7 only (the atomicity core) — criteria 3 (M9 sanitizer) and 4 (M18 bounds-checking) deferred to a follow-up phase, criterion 5 (M15 tax parity) moved out entirely. Apps Script Version 51 is the ACTIVE deployment (rollback target: Version 50). Live probes on a disposable test cert all PASS: same-`tx_ref` replay refused (criterion 6), crash-then-retry with a fresh `tx_ref` refused (criterion 7/D-12 — the defect this phase existed to close), `needs_manual_review` durable in a sheet cell (criterion 2), stuck claim cleared by a documented single-cell edit with no redeploy, reload duplicate-credit refused (criterion 1/H7). **Not done:** the Step 8 regression sweep (real kiosk sale + gift card, lookup, void, invoice-number path) — the `GiftCards` tab held no live customer certificates at deploy time so there was no real subject for the sale leg; `TEST-LEDGER-01` and its 4 probe ledger rows are still in the sheet, not yet cleaned up. **MONEY-03 itself is NOT closeable yet** — REQUIREMENTS.md still lists M9/M15/M18 as open. See `.planning/phases/51-gift-card-ledger-integrity/51-03-SUMMARY.md` for full probe data.
 
 Phase: 76
-Plan: 12 of 20
+Plan: 14 of 20
 Next: **staging deploy + BrewPad UAT, then prod cutover.** Apps-Script leg already owner-redeployed + live-probed (get_batches ok:true; update_batch + update_batch_schedule recognized on SV-B-000203). Remaining: (1) `git push origin main` → staging middleware auto-deploys + staging frontend; (2) live BrewPad UAT — confirm a GIS silent-refresh / Apps-Script "unauthorized" no longer forces a full re-login, and batch/dashboard/reading/schedule reads+writes flow via `/api/batch/admin-proxy` on `x-session-token`; **specifically re-test the iPad Safari third-party-cookie path** (the diagnosed root cause); (3) prod cutover — deploy middleware then `git push production main`. Verdict `human_needed` (all 11 must-haves + all automated gates green; only live checks remain). See `.planning/phases/76-.../76-VERIFICATION.md`.
 
 **Phase 76 / STAFF-AUTH (BrewPad session-expiry hardening) — ✅ CODE COMPLETE + verified 2026-08-27.** Full single-credential migration (decisions D-01..D-05): BrewPad now authenticates every batch/dashboard/reading/schedule call via middleware `POST /api/batch/admin-proxy` on `x-session-token` only; Google token used solely at login. Dual-token machinery DELETED (not hardened) — `_tokenRefreshTimer`, `_silentRefreshTimer`, `handleUnauthorized`-on-Apps-Script-401, `isUnauthorizedError` all gone (grep 0). Full re-login fires ONLY on a real middleware `res.status===401` (single global `_handleMiddlewareResponse` interceptor), never a body substring. `sv_session` TTL now slides on use (`touchSession` fire-and-forget in `resolveTier`) — no hard 7-day cliff. Apps-Script `doPost` server_token allowlist extended with BrewPad's 10 write actions (owner-redeployed + live-probed). Verifier caught + closed a D-03 gap missed by SUMMARY/tests/lint: a residual `clearSession()` in `onTokenResponse`'s GIS-error else branch (reachable from `doSilentRefreshOnLoad` on iPad-Safari 3p-cookie GIS errors) — reproduced RED then fixed (`fix(76) d79084b3`), min artifact rebuilt via terser. Commits: 76-01 `9a6dc31b`/`a26a9d72`, 76-02 `d202f4a1`/`85ce6a93`/`2f3f6404`/`16c5ffd3`, 76-03 `c739f92d`/`a572275b`/`2e899904`/`d9bb07aa`, gap `fd5048c9`/`d79084b3`. Frontend 1151/1151, middleware 1459/1459, lint clean. Non-code owner sibling still open: review Cloudflare Access session-duration policy for `staging.steinsandvines.ca`.
