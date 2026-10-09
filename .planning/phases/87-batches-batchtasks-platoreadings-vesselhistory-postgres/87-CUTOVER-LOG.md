@@ -44,7 +44,7 @@ PlatoReadings none; VesselHistory none.
 | Phase 86 production flip recorded (`OPS_DATA_STORE=postgres`, Q14/D-13) | | |
 | Apps Script v62 deployed, rollback v61, editor-drift check | v62 live; pre-paste drift check skipped, post-paste hash matched repo; probes ok | 2026-10-09 |
 | Staging rehearsal complete and within budget | | |
-| Q1 orphan task rows BT-000567..570 deleted | | |
+| Q1 orphan task rows BT-000567..570 deleted | Owner deleted the 4 rows; `export_batch_tabs` re-check shows 0 orphans in BatchTasks, PlatoReadings, VesselHistory (re-confirm before the production dry run) | 2026-10-09 |
 | Q3 Apps Script timezone confirmed | | |
 | Pinned production SHA | | |
 | Migration 0005 and inert Phase 87 code on production | | |
