@@ -748,10 +748,32 @@ function checkBeerCategory(payload) {
   return null;
 }
 
+// Phase 97 D-06: optional target_og / target_fg (degrees Plato 2..40, fg below og).
+// Normalises in place ('' or a number); returns null or an error body (400).
+function checkTargetGravity(payload) {
+  var keys = ['target_og', 'target_fg'];
+  var bad = { error: recipeRules.TARGET_GRAVITY_MESSAGE, code: 'invalid_target_gravity' };
+  var next = {};
+  for (var i = 0; i < keys.length; i++) {
+    if (payload[keys[i]] === undefined) continue;
+    var v = recipeRules.normalizeTargetGravity(payload[keys[i]]);
+    if (v === null) return bad;
+    next[keys[i]] = v;
+  }
+  if (next.target_og !== undefined && next.target_fg !== undefined &&
+      !recipeRules.checkTargetGravityPair(next.target_og, next.target_fg)) {
+    return bad;
+  }
+  Object.keys(next).forEach(function (k) { payload[k] = next[k]; });
+  return null;
+}
+
 router.post('/api/recipes', function (req, res) {
   var payload = req.body || {};
   var badCategory = checkBeerCategory(payload);
   if (badCategory) return res.status(400).json(badCategory);
+  var badGravity = checkTargetGravity(payload);
+  if (badGravity) return res.status(400).json(badGravity);
 
   return validateIngredientUnits(payload.ingredients).then(function (rejection) {
     if (rejection) {
@@ -785,6 +807,8 @@ router.put('/api/recipes/:id', function (req, res) {
 
   var badCategory = checkBeerCategory(payload);
   if (badCategory) return res.status(400).json(badCategory);
+  var badGravity = checkTargetGravity(payload);
+  if (badGravity) return res.status(400).json(badGravity);
 
   // D-02 activation guardrail — enforce server-side (Pitfall 7, T-13-04)
   // NOTE: this fires whenever status is 'active', including on a plain edit of
