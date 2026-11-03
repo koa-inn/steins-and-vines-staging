@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-19)
 
 Phase: 100 (limited-releases-page-and-online-deposits) — EXECUTING
 Plan: 1 of 14
-Also open: Phase 87 — 87-19 Task 3 (first real sale) + 87-20 rollback week 10-28 → 11-03
+Also open: Phase 87 — 87-19 Task 3 (first real sale). 87-20 rollback RETIRED 2026-11-03 (verify 0 mismatches); drift-check false-positive fix pending (quick task)
 **Phase 94 COMPLETE 2026-10-27:** live on production `141901a7` (`prod-20261027-1`, Railway `896f6942`; rollback target `90dfb9c1`). B3 (215 typed) + B2 (40 completion dates) applied on staging + prod with owner OK; replay + verify 0 mismatches; D-13 PASS (57d/59d/175); verification passed 5/5; owner signed off. Staging batches now on Postgres (refreshed + flipped 2026-10-27). Open from Phase 94: code review CR-01 + WR-01..04 FIXED 2026-10-28 (6c296bcc..73970cfb), LIVE on prod 2026-10-28 (`3f64da2d`, `prod-20261028-1`, Railway `d8ffd7bd`; rollback `896f6942`); IN-01..05 open; replay CLI needs retry/longer timeout/resume (Apps Script ~14 s per batch); prod recipes lack `beer_category` (Phase 89 gap); batch list/detail age still now − start_date. body-parser patch `13805fe9` LIVE on prod in the same release (CI audit green).
 Status: Executing Phase 100
 Last activity: 2026-10-29 -- Phase 100 execution started
@@ -49,7 +49,7 @@ Last activity: 2026-10-29 -- Phase 100 execution started
 - **Open:**
   1. The owner runs `setupBatchMirrorNotices()` (AS1, unconfirmed).
   2. 87-19 Task 3: the first real sale creates its batch; record the `create_batch` median.
-  3. 87-20 rollback week, 10-28 → 11-03, with a daily `[batches-drift]` line. Retire afterwards and delete `~/sv-backfill/pre-cutover-2026-10-27.json`.
+  3. ~~87-20 rollback week~~ RETIRED 2026-11-03: day-7 `batches-verify` 0 mismatches; snapshots deleted. The daily drift check gives false `missing_in_sheet` alerts (ISO date bug), fix pending.
   4. Rollback order: Phase 87 first. OPS can only go back to `dual` while `BATCHES_STORE=postgres`.
 - **Next:** Phase 94 (BrewPad Dashboard v2 foundations), now unblocked.
 - **Deadline:** Railway config-as-code (`railway.toml`) stops applying on 2026-12-01. Move those settings to the dashboard first.

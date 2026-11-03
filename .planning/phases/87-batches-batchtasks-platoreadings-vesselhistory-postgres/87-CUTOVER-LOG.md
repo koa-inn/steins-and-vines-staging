@@ -163,13 +163,25 @@ Scan invoices result: not run; nothing to recover.
 
 | Day | Date | Drift check (`[batches-drift]` line or Sentry) | Explained? | Action |
 |-----|------|-----------------------------------------------|------------|--------|
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
-| 4 | | | | |
-| 5 | | | | |
-| 6 | | | | |
-| 7 | | | | |
+| 1 | 2026-10-28 | No run. The 24 h timer restarts on every deploy, and production redeployed 10-27 19:52 PT and 10-28 13:07 PT. | n/a | Recorded on 11-03 from Railway deployment history |
+| 2 | 2026-10-29 | No run (deploy 10-29 12:23 PT before the timer reached 24 h). | n/a | as above |
+| 3 | 2026-10-30 | No run (deploys 10:54, 11:13, 11:20 PT). Timer registered 18:22:32Z on deploy `6aae93bd`. | n/a | as above |
+| 4 | 2026-10-31 | 18:22Z `Headers: match` + 49 `batches SV-B-0000NN missing_in_sheet` lines (log capped at 50); Sentry `batches drift detected` | Yes: false positive (check bug) | See "Drift check false positive" below |
+| 5 | 2026-11-01 | 18:22Z identical to day 4 (same 49 ids) | Yes: same false positive | as above |
+| 6 | 2026-11-02 | 18:22Z identical to day 4 (same 49 ids) | Yes: same false positive | as above |
+| 7 | 2026-11-03 | Manual `batches-verify` at 18:12:12Z in-container against an owner snapshot (sha256 `7e39b1dcbcaab688`, checked on both ends): headers match; counts 218 / 1125 / 72 / 446 equal; 0 orphans; **0 mismatches** (exit 0) | Yes: clean | Owner chose verify-then-retire |
+
+### Drift check false positive (found 2026-11-03)
+
+- `export_batch_tabs` returns true date cells over JSON as ISO timestamps (`2026-01-15T08:00:00.000Z`).
+  `normalizeDateOnly` only accepts `YYYY-MM-DD` strings or `Date` objects, so rows were rejected and
+  then reported as `missing_in_sheet`. The drift check ignores `rejects`, so it never said why.
+- A read-only export pull on 11-03 (reject counts only, no values) showed: Batches `start_date`
+  invalid_date 216 of 218; BatchTasks `due_date` invalid_date 910; every child row then `orphan_parent`.
+  The sheet itself had all 218 / 1125 / 72 / 446 rows.
+- So days 4–6 proved nothing either way. Day 7's snapshot verify is the real evidence. The fix
+  (parse ISO timestamps to an America/Vancouver date, and report rejects) is a follow-up quick task
+  with a regression test first. Until it ships the check raises a false Sentry alert every day.
 
 The first production drift run may show false date mismatches; read its log lines and record them here.
 
@@ -177,8 +189,8 @@ The first production drift run may show false date mismatches; read its log line
 
 | Field | Value |
 |-------|-------|
-| Retirement date (rollback no longer supported) | |
-| Snapshots deleted | |
+| Retirement date (rollback no longer supported) | **2026-11-03** (owner decision in-session, after the day-7 verify). Postgres is the sole batch record; the sheet stays a production mirror with notices. |
+| Snapshots deleted | `~/sv-backfill/pre-cutover-2026-10-27.json` deleted 2026-11-03; the in-container verify copy removed. All `~/sv-backfill/` workbook snapshots (.xlsx), `staging-94-parity.json` and the `out-*` folders deleted 2026-11-03 (owner OK); small dry-run/reject logs kept. |
 
 ## SQL fixes
 

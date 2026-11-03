@@ -1434,6 +1434,8 @@ Dedup on invoice + SKU makes Scan idempotent. Record the result (created / alrea
 
 ### 12. Rollback inside the window
 
+> **Retired 2026-11-03.** Postgres is the sole batch record; the sheet is a production mirror. Returning to the sheet now needs a new plan.
+
 Triggers: any §7 no-go after the flip, or a failed smoke write.
 
 1. Keep `BATCHES_FREEZE` set (set it again if already removed).
@@ -1445,6 +1447,8 @@ Triggers: any §7 no-go after the flip, or a failed smoke write.
 4. Verify with `batches-verify.js` against a fresh snapshot, then remove the freeze and tell staff.
 
 ### 13. Rollback during days 1-7 (D-07)
+
+> **Retired 2026-11-03.** Postgres is the sole batch record; the sheet is a production mirror. Kept for reference only.
 
 Real traffic is now in Postgres, so **replay to the sheet first**:
 
@@ -1469,6 +1473,8 @@ It sends `mirror_batch_state` for every batch changed since then (ordered by las
    deployments -> pencil -> v61); rolling it back disables `mirror_batch_*`.
 
 ### 14. Daily drift check (days 1-7)
+
+> **Still active after retirement.** Known bug (2026-11-03): the check rejects every sheet row because `export_batch_tabs` sends dates as ISO timestamps, then reports them all as `missing_in_sheet` and raises Sentry daily. Treat those alerts as false until the fix ships; use `batches-verify.js` with a fresh snapshot for a real check. See `87-CUTOVER-LOG.md`.
 
 In production a timer runs every 24 hours: it calls the read-only `export_batch_tabs`, normalises the
 sheet rows and compares all four tabs with Postgres. Success logs `[batches-drift] 0 mismatches`.
