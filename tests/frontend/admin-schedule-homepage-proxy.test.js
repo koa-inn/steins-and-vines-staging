@@ -208,6 +208,13 @@ describe('admin.js Scheduling + Homepage flows route through /api/admin/proxy (8
   });
 
   test('generateSlotsForMonth issues ONE append_schedule_slots call then reloads', function () {
+    // generateSlotsForMonth skips days before today, so pin "today" before the October fixture
+    // month (it expired on 2026-11-01). Only Date is faked; flushPromises needs the real setTimeout.
+    jest.useFakeTimers({
+      now: new Date('2026-10-01T12:00:00'),
+      doNotFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate',
+        'clearImmediate', 'nextTick', 'queueMicrotask']
+    });
     admin._setSheetStateForTest({ scheduleData: [], scheduleHeaders: ['date', 'time', 'status'] });
 
     admin._scheduleForTest.generateSlotsForMonth();
@@ -223,6 +230,8 @@ describe('admin.js Scheduling + Homepage flows route through /api/admin/proxy (8
         expect(row[2]).toBe('available');
       });
       noSheetsUrl();
+    }).finally(function () {
+      jest.useRealTimers();
     });
   });
 
