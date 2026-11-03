@@ -15,6 +15,9 @@
  */
 
 var DRIFT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// The interval restarts on every deploy, so one extra run shortly after boot means a day with a
+// deploy still gets a check (none fired 2026-10-28..30). Late enough to miss deploy warm-up.
+var BOOT_RUN_DELAY_MS = 10 * 60 * 1000;
 var EXPORT_TIMEOUT_MS = 30000;
 var DEFAULT_TIMEZONE = 'America/Vancouver';
 var SENTRY_TAGS = { component: 'batches-drift' };
@@ -194,11 +197,17 @@ function registerDriftTimer(deps) {
   if (!sheetMirror.isMirrorEnabled()) return null;
   if (batchFlag.getMode() !== 'postgres') return null;
 
+  var later = deps.setTimeout || setTimeout;
+  var bootRun = later(function () {
+    runDriftCheck(deps);
+  }, BOOT_RUN_DELAY_MS);
+  if (bootRun && typeof bootRun.unref === 'function') bootRun.unref();
+
   var handle = setInterval(function () {
     runDriftCheck(deps);
   }, DRIFT_INTERVAL_MS);
   if (handle && typeof handle.unref === 'function') handle.unref();
-  log.info('[batches-drift] Daily drift check registered: every 24 hours');
+  log.info('[batches-drift] Daily drift check registered: 10 min after boot, then every 24 hours');
   return handle;
 }
 
@@ -206,5 +215,6 @@ module.exports = {
   runDriftCheck: runDriftCheck,
   registerDriftTimer: registerDriftTimer,
   toSheetDate: toSheetDate,
-  DRIFT_INTERVAL_MS: DRIFT_INTERVAL_MS
+  DRIFT_INTERVAL_MS: DRIFT_INTERVAL_MS,
+  BOOT_RUN_DELAY_MS: BOOT_RUN_DELAY_MS
 };
