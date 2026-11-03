@@ -2639,9 +2639,9 @@ Plans:
 - [ ] 97-07-PLAN.md — Six-section v2 layout, Today section with restored Today's tasks and Ready to bottle (wave 2, owner checkpoint)
 - [ ] 97-08-PLAN.md — 2-week packaging calendar widget (wave 3)
 - [ ] 97-09-PLAN.md — Beer & cider cards with readings curve (wave 4)
-- [ ] 97-10-PLAN.md — Ready to Bottle (N) filter on the Batches tab (wave 5)
-- [ ] 97-11-PLAN.md — Code gate, close todos, staging push + migration/leak checks (wave 6, owner checkpoint)
-- [ ] 97-12-PLAN.md — Owner steps (Railway env vars, Apps Script) + live Cal.com check + staging UAT (wave 7, owner checkpoints)
+- [ ] 97-10-PLAN.md — Ready to Bottle (N) filter on the Batches tab + kiosk recipe batches keep customer email (wave 5)
+- [ ] 97-11-PLAN.md — Code gate, close two todos, staging push + migration/leak checks (wave 6, owner checkpoint)
+- [ ] 97-12-PLAN.md — Owner steps (Railway env vars + prod /health check, Apps Script) + live Cal.com check + staging UAT + close Cal.com todo (wave 7, owner checkpoints)
 
 ### Phase 98: Dashboard alerts and quick wins
 

@@ -223,14 +223,20 @@ Source: repo precedent [VERIFIED: migrations/0006].
 | A6 | `.bp-task-row--overdue`/`--today` CSS classes exist | Layout | Add them in `css/brewpad.css` |
 | A7 | Booking attendee email is usually `customer_email` or `bottling_invite_email` | Matching | More "no batch matched" labels (safe failure) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Cider ingredient types in Zoho.** What `cf_type`/`cf_subcategory` do juice and cider yeast carry? Check the ~6 cider recipe snapshots on staging (read-only) or `INGREDIENTS_ALL` cache. Recommendation: implement tolerant matching (`yeast` substring; juice via `juice` or `apple`/`fruit` type) and fallback to names.
+   RESOLVED: tolerant type match (`yeast` substring; juice/apple/fruit type) with name fallback for display only, implemented in 97-04 (server card facts); kiosk snapshots gain ingredient `cf_type`/`cf_subcategory` in 97-02.
 2. **Recipe mirror verify.** Does any Phase 85 verify/compare tool assert recipe column parity with the sheet? If yes, add the Apps Script `ensure...` and redeploy as an owner step; otherwise ship PG-only and let the mirror catch up.
+   RESOLVED: lazy Apps Script column ensure (`ensureRecipesTargetGravityColumns`, only when a target value is set) in 97-01; owner redeploys Apps Script in 97-12.
 3. **Temp-step flag.** Accept title-based `temp` kind for now?
+   RESOLVED: owner decision 2026-11-03: reuse title-based `dashTaskKind` 'temp' detection (OWNER-TEMP-STEP), no new flag; used by 97-09.
 4. **Cal.com env vars on Railway.** Owner must set `CALCOM_EVENT_TYPE_BEER_PACKAGING=6028745` and `CALCOM_EVENT_TYPE_BEER_WAITLIST=6955754` on staging and prod in-session. Calendar shows bottling only (and the soft-fail note, if the key is missing) until then.
+   RESOLVED: owner in-session step in 97-12 Task 1 (staging + production, with a post-restart production /health check).
 5. **Backfill of the two existing beer batches' OG/FG** (D-06): dry run plus owner OK; out of plan scope unless asked.
+   RESOLVED: out of scope for Phase 97; no backfill (D-06). Any backfill needs a dry run and the owner's in-session OK.
 6. **Cards and Source filter.** UI-SPEC says cards follow Source; D-16 says only Type. UI-SPEC resolves to follow Source (staff stays included). Planner should keep the UI-SPEC rule.
+   RESOLVED: follows the approved UI-SPEC (2026-11-03): cards follow Type and Source, staff included; recorded in 97-09 as an approved amendment of D-16.
 
 ## Environment Availability
 
