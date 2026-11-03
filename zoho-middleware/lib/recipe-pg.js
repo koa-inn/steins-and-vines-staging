@@ -13,7 +13,7 @@
  * Underscore-prefixed result keys (e.g. `_recipeId`) are for the facade and are stripped there.
  *
  * Response shapes are byte-identical (JSON.stringify) to Apps Script get_recipes / get_recipe:
- * 19 recipe keys in sheet column order (beer_category added in Phase 89), '' for empty cells, JS numbers (pg returns numeric as
+ * 21 recipe keys in sheet column order (beer_category added in Phase 89, target_og/target_fg in Phase 97), '' for empty cells, JS numbers (pg returns numeric as
  * strings — Pitfall 1), ISO-ms timestamp strings (pg returns Date objects), ingredients in
  * position (sheet-row) order with no position key.
  */
@@ -24,13 +24,14 @@ var recipeRules = require('./recipe-rules');
 var RECIPE_COLUMNS = [
   'recipe_id', 'name', 'style', 'description', 'status', 'locked_price', 'service_fee',
   'materials_fee', 'batch_size_l', 'abv', 'ibu', 'colour_srm', 'notes', 'created_at', 'created_by',
-  'updated_at', 'pricing_mode', 'schedule_id', 'beer_category'
+  'updated_at', 'pricing_mode', 'schedule_id', 'beer_category',
+  'target_og', 'target_fg'
 ];
 var INGREDIENT_COLUMNS = ['ingredient_id', 'recipe_id', 'item_id', 'item_name', 'quantity', 'unit'];
 
 var NUMERIC_RECIPE_COLUMNS = {
   locked_price: true, service_fee: true, materials_fee: true, batch_size_l: true,
-  abv: true, ibu: true, colour_srm: true
+  abv: true, ibu: true, colour_srm: true, target_og: true, target_fg: true
 };
 var TIMESTAMP_RECIPE_COLUMNS = { created_at: true, updated_at: true };
 
@@ -63,8 +64,8 @@ var LIST_IDS_SQL = 'select recipe_id from recipes order by recipe_id';
 
 var INSERT_RECIPE_SQL =
   'insert into recipes (name, style, description, status, locked_price, service_fee, materials_fee, ' +
-  'batch_size_l, abv, ibu, colour_srm, notes, created_at, created_by, updated_at, pricing_mode, schedule_id, beer_category) ' +
-  'values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $13, $15, $16, $17) returning recipe_id';
+  'batch_size_l, abv, ibu, colour_srm, notes, created_at, created_by, updated_at, pricing_mode, schedule_id, beer_category, target_og, target_fg) ' +
+  'values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $13, $15, $16, $17, $18, $19) returning recipe_id';
 
 var INSERT_INGREDIENT_SQL =
   'insert into recipe_ingredients (recipe_id, position, item_id, item_name, quantity, unit) ' +
@@ -236,6 +237,12 @@ async function createRecipe(client, payload, opts) {
   var beerCategory = recipeRules.normalizeBeerCategory(payload.beer_category);
   if (beerCategory === null) return invalid(BEER_CATEGORY_MESSAGE);
 
+  var targetOg = recipeRules.normalizeTargetGravity(payload.target_og);
+  var targetFg = recipeRules.normalizeTargetGravity(payload.target_fg);
+  if (targetOg === null || targetFg === null || !recipeRules.checkTargetGravityPair(targetOg, targetFg)) {
+    return invalid(recipeRules.TARGET_GRAVITY_MESSAGE);
+  }
+
   var ins = await client.query(INSERT_RECIPE_SQL, [
     recipeRules.sanitizeInput(payload.name),
     emptyToNull(recipeRules.sanitizeInput(payload.style || '')),
@@ -253,7 +260,9 @@ async function createRecipe(client, payload, opts) {
     actor,
     recipeRules.normalizePricingMode(payload.pricing_mode),
     emptyToNull(recipeRules.sanitizeInput(payload.schedule_id || '')),
-    emptyToNull(beerCategory)
+    emptyToNull(beerCategory),
+    emptyToNull(targetOg),
+    emptyToNull(targetFg)
   ]);
   var recipeId = ins.rows[0].recipe_id;
 
@@ -331,6 +340,20 @@ async function updateRecipe(client, payload, opts) {
     var nextBeerCategory = recipeRules.normalizeBeerCategory(payload.beer_category);
     if (nextBeerCategory === null) return invalid(BEER_CATEGORY_MESSAGE);
     addSet('beer_category', emptyToNull(nextBeerCategory));
+  }
+  var gravityKeys = ['target_og', 'target_fg'];
+  var gravityNext = {};
+  for (i = 0; i < gravityKeys.length; i++) {
+    var gk = gravityKeys[i];
+    if (payload[gk] === undefined) continue;
+    var gv = recipeRules.normalizeTargetGravity(payload[gk]);
+    if (gv === null) return invalid(recipeRules.TARGET_GRAVITY_MESSAGE);
+    gravityNext[gk] = gv;
+    addSet(gk, emptyToNull(gv));
+  }
+  if (gravityNext.target_og !== undefined && gravityNext.target_fg !== undefined &&
+      !recipeRules.checkTargetGravityPair(gravityNext.target_og, gravityNext.target_fg)) {
+    return invalid(recipeRules.TARGET_GRAVITY_MESSAGE);
   }
 
   var incoming;
