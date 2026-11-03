@@ -2626,11 +2626,22 @@ Plans:
   3. The cider section shows juice or recipe, yeast and the readings curve.
   4. A 2-week packaging calendar lists bottling for wine and cider and canning for beer.
 
-**Plans:** 0 plans
+**Plans:** 12 plans in 7 waves
 
 Plans:
 
-- [ ] TBD
+- [ ] 97-01-PLAN.md — Recipe Target OG/FG: migration 0009, validation, store, Apps Script mirror (wave 1)
+- [ ] 97-02-PLAN.md — Kiosk recipe snapshot carries target gravity, IBU, batch size and ingredient types (wave 1)
+- [ ] 97-03-PLAN.md — Cal.com listBookings + Beer Packaging event type wiring (wave 1)
+- [ ] 97-04-PLAN.md — Staff route for beer/cider card facts and shared canning constants (wave 1)
+- [ ] 97-05-PLAN.md — Recipe editor Target OG/FG inputs + attach snapshot copy (wave 1)
+- [ ] 97-06-PLAN.md — Packaging-bookings route with server-side email matching, cache, webhook invalidation (wave 2)
+- [ ] 97-07-PLAN.md — Six-section v2 layout, Today section with restored Today's tasks and Ready to bottle (wave 2, owner checkpoint)
+- [ ] 97-08-PLAN.md — 2-week packaging calendar widget (wave 3)
+- [ ] 97-09-PLAN.md — Beer & cider cards with readings curve (wave 4)
+- [ ] 97-10-PLAN.md — Ready to Bottle (N) filter on the Batches tab (wave 5)
+- [ ] 97-11-PLAN.md — Code gate, close todos, staging push + migration/leak checks (wave 6, owner checkpoint)
+- [ ] 97-12-PLAN.md — Owner steps (Railway env vars, Apps Script) + live Cal.com check + staging UAT (wave 7, owner checkpoints)
 
 ### Phase 98: Dashboard alerts and quick wins
 
