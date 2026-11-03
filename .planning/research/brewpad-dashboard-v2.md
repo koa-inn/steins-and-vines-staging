@@ -242,7 +242,7 @@ GSD's command prefix depends on the installed version: `/gsd:…` or `/gsd-…`.
 - [x] **G8** Fermentation curves + readings due
 - [x] **G9** Sales source mix
 - [x] **G10** Data health card
-- [ ] **Phase D** Beer and cider sections + packaging calendar
+- [x] **Phase D** Beer and cider sections + packaging calendar
 - [ ] **A1–A5** Alerts and quick wins (strike any not wanted)
 - [ ] **Phase F** Responsive and performance pass
 
@@ -251,3 +251,4 @@ GSD's command prefix depends on the installed version: `/gsd:…` or `/gsd-…`.
 - 2026-10-23: Phase 94 items B1, B2, B3, D1 and S1 approved. Plan now; build after the Phase 87 batches→Postgres production cutover, so B3 and S1 target the Postgres batch store only. B2/B3 production writes still need an in-session OK after a `--dry-run`. Other items are decided at their own phase's discuss step.
 - 2026-10-28: Phase 95 items D2, D3 (Chart.js 4, self-hosted in js/vendor), D4 and D5 approved. The redesign ships behind `?dash=v2`, remembered per device, and v1 is frozen. It adds an explicit staff/family/R&D batch flag with a reviewed candidate backfill (internal/research + McLachlan, Inn). See `95-CONTEXT.md`.
 - 2026-10-28: Phase 96 items G1–G10 approved. Amendments: G7 shows no on-time rate and no completions by staff (D-02, D-03); G6 shows "Shared vessels" as allowed, not as conflicts (D-04); G8 has no "readings due" list, only a neutral "No readings yet" list (D-08, D-09); G10 does not list shared vessels and calls a missing SO "no invoice link", never unbilled (D-14). See `96-CONTEXT.md`.
+- 2026-11-03: Phase 97 Phase D approved in full (beer card/section, cider section, 2-week packaging calendar). Folded: restore Today's tasks + Ready to bottle on v2, wire the Beer Packaging Cal.com type, Ready to Bottle filter on Batches. See `97-CONTEXT.md`.
