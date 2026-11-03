@@ -870,6 +870,7 @@ app.use('/', require('./routes/gift-cards'));
 app.use('/', require('./routes/collect'));
 app.use('/', require('./routes/purchaseorders'));
 app.use('/', require('./routes/consignment'));
+app.use('/', require('./routes/brewpad-dashboard'));
 app.use('/', require('./routes/discounts'));
 app.use('/', require('./routes/promo'));
 app.use('/', require('./routes/recipes'));

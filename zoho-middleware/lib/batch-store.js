@@ -177,6 +177,13 @@ function dashStats() {
   });
 }
 
+/** Phase 97: per-active-batch card facts (abv/ibu/size/juice/yeast); read-only, not memoised. */
+function dashCards() {
+  return dispatch('dashCards', function (client) {
+    return pgRead().getDashboardCardFacts(client);
+  });
+}
+
 function calendar(payload) {
   var p = payload || {};
   return dispatch('calendar', function (client) {
@@ -365,6 +372,7 @@ module.exports = {
   detail: detail,
   dashboard: dashboard,
   dashStats: dashStats,
+  dashCards: dashCards,
   _setDashClockForTest: function (fn) { _clock = fn; },
   _clearDashMemoForTest: function () { _dashMemo = null; },
   calendar: calendar,

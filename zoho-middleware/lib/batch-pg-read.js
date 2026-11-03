@@ -33,6 +33,12 @@ var TOKEN_RE = /^[0-9a-f]{32}$/;
 // Id order = sheet row order (numeric suffix); length first so 7+ digit ids still sort right.
 var ID_ORDER_BATCH = 'order by length(batch_id), batch_id';
 
+// Phase 97 (D-07, D-12): recipe snapshots of active batches, parsed server-side into a whitelist.
+var DASH_CARD_FACTS_SQL = "select batch_id, recipe_snapshot from batches where status in ('primary', 'secondary') " +
+  ID_ORDER_BATCH;
+var CARD_JUICE_RE = /juice|apple|pear|fruit|concentrate/i;
+var CARD_YEAST_RE = /yeast/i;
+
 var BATCH_BY_ID_SQL = 'select * from batches where batch_id = $1';
 var BATCH_LOCK_SQL = 'select * from batches where batch_id = $1 for update';
 
@@ -310,6 +316,46 @@ function parseDashSnapshot(text) {
   return out;
 }
 
+function positiveOrNull(v) {
+  if (v === null || v === undefined || v === '' || typeof v === 'object') return null;
+  var n = Number(v);
+  return isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Phase 97: pure, tolerant parse of recipe_snapshot into card facts. Juice / yeast are chosen by
+ * cf_subcategory + cf_type only (never by name); the value returned is the item_name capped at 80.
+ * Never throws; no ingredient array leaves this function.
+ */
+function parseCardFacts(text) {
+  var out = { abv: null, batch_size_l: null, ibu: null, juice: '', yeast: '' };
+  var snap;
+  try { snap = JSON.parse(text); } catch { return out; }
+  if (!snap || typeof snap !== 'object' || Array.isArray(snap)) return out;
+  out.abv = positiveOrNull(snap.abv);
+  out.ibu = positiveOrNull(snap.ibu);
+  out.batch_size_l = positiveOrNull(snap.batch_size_l);
+  if (Array.isArray(snap.ingredients)) {
+    snap.ingredients.forEach(function (ing) {
+      if (!ing || typeof ing !== 'object') return;
+      var types = String(ing.cf_subcategory || '') + ' ' + String(ing.cf_type || '');
+      var name = ing.item_name === null || ing.item_name === undefined || typeof ing.item_name === 'object'
+        ? '' : String(ing.item_name).trim().slice(0, 80);
+      if (!out.yeast && CARD_YEAST_RE.test(types)) out.yeast = name;
+      else if (!out.juice && CARD_JUICE_RE.test(types)) out.juice = name;
+    });
+  }
+  return out;
+}
+
+function getDashboardCardFacts(client) {
+  return client.query(DASH_CARD_FACTS_SQL).then(function (res) {
+    return res.rows.map(function (r) {
+      return Object.assign({ batch_id: r.batch_id }, parseCardFacts(r.recipe_snapshot));
+    });
+  });
+}
+
 /**
  * Phase 94 S1: one lean read for every dashboard widget. Sequential on one client. Subcategory,
  * brand and manufacturer are '' here; lib/batch-store enriches them from the kiosk product cache.
@@ -465,6 +511,8 @@ module.exports = {
   getDashboardSummary: getDashboardSummary,
   getDashboardStats: getDashboardStats,
   parseDashSnapshot: parseDashSnapshot,
+  parseCardFacts: parseCardFacts,
+  getDashboardCardFacts: getDashboardCardFacts,
   getTasksCalendar: getTasksCalendar,
   getTasksUpcoming: getTasksUpcoming,
   findLocationConflict: findLocationConflict,
