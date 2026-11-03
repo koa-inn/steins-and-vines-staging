@@ -1,7 +1,8 @@
 ---
 phase: 97
 slug: beer-and-cider-dashboard-sections
-status: draft
+status: approved
+reviewed_at: 2026-11-03
 shadcn_initialized: false
 preset: none
 created: 2026-11-03
@@ -41,6 +42,12 @@ Inherited, multiples of 4 only.
 | xl-3xl | 32/48/64px | Not used |
 
 Exceptions: touch targets `min-height: 44px` (task checkbox label, batch chip row, calendar entries that open a batch, `Show all`, card header button). Calendar day group headers are not interactive and are 12px type with 8px padding.
+
+Also: 12px horizontal padding on `li.bp-cal-entry` matches `.bp-select` and table cells (the 96 approved exception).
+
+Focal point: the Today section at the top. Overdue rows in Today's tasks are the first thing staff should see, followed by the Ready to bottle count.
+
+Source filter: Beer & cider cards follow the Source filter like every other filtered section (the hint says so). D-16 only fixed the Type behaviour; Source is the default from 95. The hint text does not change when a filter is active.
 
 ---
 
