@@ -2630,17 +2630,37 @@ Plans:
 
 Plans:
 
+**Wave 1**
+
 - [ ] 97-01-PLAN.md — Recipe Target OG/FG: migration 0009, validation, store, Apps Script mirror (wave 1)
 - [ ] 97-02-PLAN.md — Kiosk recipe snapshot carries target gravity, IBU, batch size and ingredient types (wave 1)
 - [ ] 97-03-PLAN.md — Cal.com listBookings + Beer Packaging event type wiring (wave 1)
 - [ ] 97-04-PLAN.md — Staff route for beer/cider card facts and shared canning constants (wave 1)
 - [ ] 97-05-PLAN.md — Recipe editor Target OG/FG inputs + attach snapshot copy (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 97-06-PLAN.md — Packaging-bookings route with server-side email matching, cache, webhook invalidation (wave 2)
 - [ ] 97-07-PLAN.md — Six-section v2 layout, Today section with restored Today's tasks and Ready to bottle (wave 2, owner checkpoint)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 97-08-PLAN.md — 2-week packaging calendar widget (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 97-09-PLAN.md — Beer & cider cards with readings curve (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 97-10-PLAN.md — Ready to Bottle (N) filter on the Batches tab + kiosk recipe batches keep customer email (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 97-11-PLAN.md — Code gate, close two todos, staging push + migration/leak checks (wave 6, owner checkpoint)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 97-12-PLAN.md — Owner steps (Railway env vars + prod /health check, Apps Script) + live Cal.com check + staging UAT + close Cal.com todo (wave 7, owner checkpoints)
 
 ### Phase 98: Dashboard alerts and quick wins
