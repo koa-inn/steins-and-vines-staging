@@ -21,6 +21,8 @@
         "pricing_mode": "dynamic",
         "schedule_id": "",
         "beer_category": "",
+        "target_og": "",
+        "target_fg": "",
         "ingredient_count": 0
       },
       {
@@ -43,6 +45,8 @@
         "pricing_mode": "locked",
         "schedule_id": "",
         "beer_category": "",
+        "target_og": "",
+        "target_fg": "",
         "ingredient_count": 1
       },
       {
@@ -65,6 +69,8 @@
         "pricing_mode": "dynamic",
         "schedule_id": "FS-000001",
         "beer_category": "",
+        "target_og": "",
+        "target_fg": "",
         "ingredient_count": 3
       }
     ],
@@ -92,7 +98,9 @@
         "updated_at": "2026-03-02T11:30:15.250Z",
         "pricing_mode": "locked",
         "schedule_id": "",
-        "beer_category": ""
+        "beer_category": "",
+        "target_og": "",
+        "target_fg": ""
       },
       "ingredients": [
         {
@@ -125,7 +133,9 @@
         "updated_at": "2026-02-01T09:00:00.000Z",
         "pricing_mode": "dynamic",
         "schedule_id": "FS-000001",
-        "beer_category": ""
+        "beer_category": "",
+        "target_og": "",
+        "target_fg": ""
       },
       "ingredients": [
         {
@@ -174,7 +184,9 @@
         "updated_at": "2026-04-01T08:15:00.500Z",
         "pricing_mode": "dynamic",
         "schedule_id": "",
-        "beer_category": ""
+        "beer_category": "",
+        "target_og": "",
+        "target_fg": ""
       },
       "ingredients": []
     }

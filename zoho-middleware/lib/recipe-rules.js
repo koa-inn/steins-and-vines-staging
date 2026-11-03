@@ -73,6 +73,30 @@ function normalizeBeerCategory(value) {
   return BEER_CATEGORY_KEYS.indexOf(key) === -1 ? null : key;
 }
 
+var TARGET_GRAVITY_MESSAGE = 'Target OG and Target FG must be between 2 and 40 °P, and Target FG must be below Target OG';
+
+/**
+ * Normalise a target gravity in degrees Plato (Phase 97 D-06).
+ * Returns '' (valid blank), a finite number within 2..40, or null (invalid, caller rejects).
+ */
+function normalizeTargetGravity(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') {
+    if (value.trim() === '') return '';
+  } else if (typeof value !== 'number') {
+    return null;
+  }
+  var n = Number(value);
+  if (!isFinite(n) || n < 2 || n > 40) return null;
+  return n;
+}
+
+/** True unless both values are numbers and fg >= og. */
+function checkTargetGravityPair(og, fg) {
+  if (typeof og === 'number' && typeof fg === 'number') return fg < og;
+  return true;
+}
+
 /** Port of normalizeRecipeIngredientTuple (adminApi.gs) — Phase 79 D-04 comparison key. */
 function normalizeRecipeIngredientTuple(itemId, quantity, unit) {
   var itemKey = String(itemId === null || itemId === undefined ? '' : itemId).trim();
@@ -155,6 +179,9 @@ module.exports = {
   normalizePricingMode: normalizePricingMode,
   BEER_CATEGORY_KEYS: BEER_CATEGORY_KEYS,
   normalizeBeerCategory: normalizeBeerCategory,
+  TARGET_GRAVITY_MESSAGE: TARGET_GRAVITY_MESSAGE,
+  normalizeTargetGravity: normalizeTargetGravity,
+  checkTargetGravityPair: checkTargetGravityPair,
   normalizeRecipeIngredientTuple: normalizeRecipeIngredientTuple,
   recipeIngredientsUnchanged: recipeIngredientsUnchanged,
   planIngredientIds: planIngredientIds
