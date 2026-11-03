@@ -4280,6 +4280,25 @@ function ensureRecipesBeerCategoryColumn(sheet) {
   return idx;
 }
 
+// Phase 97 D-06: optional target gravity columns (degrees Plato). Returns zero-based indexes.
+function ensureRecipesTargetGravityColumns(sheet) {
+  var lastCol = sheet.getLastColumn();
+  var headers = recipesHeaderRow(sheet, lastCol);
+  var names = ['target_og', 'target_fg'];
+  var out = {};
+  for (var i = 0; i < names.length; i++) {
+    var idx = headers.indexOf(names[i]);
+    if (idx === -1) {
+      sheet.getRange(1, lastCol + 1).setValue(names[i]).setFontWeight('bold');
+      idx = lastCol;
+      headers.push(names[i]);
+      lastCol++;
+    }
+    out[names[i] === 'target_og' ? 'og' : 'fg'] = idx;
+  }
+  return out;
+}
+
 function createRecipe(payload, userEmail) {
   if (!payload.name) {
     return { ok: false, error: 'missing_fields', message: 'name is required' };
@@ -4833,6 +4852,12 @@ function mirrorRecipeState(payload) {
     ensureRecipesPricingModeColumn(recipesSheet);
     ensureRecipesScheduleIdColumn(recipesSheet);
     ensureRecipesBeerCategoryColumn(recipesSheet);
+    // Phase 97 D-06: lazy, so legacy sheets stay identical until the first mirrored recipe
+    // carries a target gravity value.
+    var hasTargetGravity = [recipe.target_og, recipe.target_fg].some(function (v) {
+      return v !== undefined && v !== null && v !== '';
+    });
+    if (hasTargetGravity) ensureRecipesTargetGravityColumns(recipesSheet);
 
     var headers = recipesSheet.getRange(1, 1, 1, recipesSheet.getLastColumn()).getValues()[0];
     var ridCol = headers.indexOf('recipe_id');
