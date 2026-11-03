@@ -36,6 +36,35 @@ var KIOSK_PENDING_CHARGE_TTL = 604800;
 // quote, sale and the post-charge confirm 503 for most of the day.
 var INGREDIENTS_ALL_FILE_CACHE = path.join(__dirname, '..', 'ingredients-all-cache.json');
 
+/** Read a Zoho custom field off a catalog entry (same rule as routes/recipes.js readCF). */
+function snapshotIngredientType(entry, apiName) {
+  var cfs = entry && entry.custom_fields;
+  if (!Array.isArray(cfs)) return '';
+  for (var i = 0; i < cfs.length; i++) {
+    if (cfs[i] && cfs[i].api_name === apiName) return cfs[i].value_formatted || cfs[i].value || '';
+  }
+  return '';
+}
+
+/** Copies of the scaled ingredients with cf_type / cf_subcategory from the catalog (originals untouched). */
+function typedSnapshotIngredients(list, catalogMap) {
+  return (list || []).map(function (ing) {
+    var entry = catalogMap[ing.item_id];
+    var copy = {};
+    Object.keys(ing).forEach(function (k) { copy[k] = ing[k]; });
+    copy.cf_type = (entry && (entry.cf_type || snapshotIngredientType(entry, 'cf_type'))) || '';
+    copy.cf_subcategory = snapshotIngredientType(entry, 'cf_subcategory');
+    return copy;
+  });
+}
+
+/** Target gravity for the snapshot: finite number, else null. */
+function snapshotGravity(v) {
+  if (v === undefined || v === null || v === '') return null;
+  var n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
 /** Full ingredient catalog: Redis first, then the file cache; null when neither has an array. */
 function getIngredientCatalog() {
   return cache.get(C.CACHE_KEYS.INGREDIENTS_ALL).then(function (catalog) {
@@ -1490,12 +1519,16 @@ function _bookRecipeConfirm(body, confirmIdemKey, req, res) {
                 name: recipe.name,
                 style: recipe.style,
                 abv: recipe.abv,
+                ibu: recipe.ibu,
+                batch_size_l: recipe.batch_size_l,
+                og: snapshotGravity(recipe.target_og),
+                target_fg: snapshotGravity(recipe.target_fg),
                 locked_price: recipe.locked_price,
                 service_fee: recipe.service_fee,
                 materials_fee: recipe.materials_fee,
                 target_volume_l: targetVolumeLConfirm,
                 scale_factor: scaleFactorConfirm,
-                ingredients: scaledIngredients,
+                ingredients: typedSnapshotIngredients(scaledIngredients, catalogMap),
                 // MOD-02 (36-03): freeze modified list + flag into snapshot
                 modified_base_ingredients: modifiedConfirm,
                 is_modified: !!(modifiedConfirm && modifiedConfirm.length)
