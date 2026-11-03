@@ -223,10 +223,19 @@
                 <input type="number" id="bp-recipe-ibu" class="bp-input" step="1" min="0" inputmode="numeric" />
               </div>
               <div class="bp-recipes-form-field">
+                <label for="bp-recipe-target-og">Target OG (&deg;P)</label>
+                <input type="number" id="bp-recipe-target-og" class="bp-input" step="0.1" min="2" max="40" inputmode="decimal" aria-describedby="bp-recipe-gravity-help" />
+              </div>
+              <div class="bp-recipes-form-field">
+                <label for="bp-recipe-target-fg">Target FG (&deg;P)</label>
+                <input type="number" id="bp-recipe-target-fg" class="bp-input" step="0.1" min="2" max="40" inputmode="decimal" aria-describedby="bp-recipe-gravity-help" />
+              </div>
+              <div class="bp-recipes-form-field">
                 <label for="bp-recipe-colour-srm">Colour (SRM)</label>
                 <input type="number" id="bp-recipe-colour-srm" class="bp-input" step="1" min="0" inputmode="numeric" />
               </div>
             </div>
+            <p id="bp-recipe-gravity-help" class="bp-field-help bp-dash-section-hint">Optional. Used for the expected curve on the dashboard.</p>
 
             <!-- Pricing -->
             <h3 class="bp-recipes-section-heading">Pricing</h3>

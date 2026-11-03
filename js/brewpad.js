@@ -3506,6 +3506,8 @@ function buildRecipePayload(formData, ingredients) {
     batch_size_l: formData.batch_size_l || 0,
     abv: formData.abv || 0,
     ibu: formData.ibu || 0,
+    target_og: formData.target_og != null ? formData.target_og : '', // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
+    target_fg: formData.target_fg != null ? formData.target_fg : '', // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
     colour_srm: formData.colour_srm || 0,
     pricing_mode: formData.pricing_mode || 'locked',
     locked_price: formData.locked_price || 0,
@@ -4546,6 +4548,7 @@ function parseWaitlistRecipeIds(value) {
   //
   // Snapshot includes:
   //   name, style, abv, ibu, batch_size_l, notes  — from resolved recipe
+  //   og, target_fg                                — recipe target_og / target_fg (null when blank)
   //   target_volume_l                              — from _bpTargetVolumeL
   //   scale_factor                                 — from _bpScaleFactor
   //   ingredients                                  — base ingredient list (for compatibility)
@@ -4553,6 +4556,11 @@ function parseWaitlistRecipeIds(value) {
   //   modified_base_ingredients                    — _bpModifiedIngredients | null
   //   is_modified                                  — !!_bpModifiedIngredients
   // ---------------------------------------------------------------------------
+  function bpGravityOrNull(v) {
+    var n = bpFiniteGravity(v);
+    return n === '' ? null : n;
+  }
+
   function buildBpAttachSnapshot() {
     if (!_bpResolvedRecipe) return null;
     var snap = _bpResolvedRecipe.recipe || {};
@@ -4573,6 +4581,8 @@ function parseWaitlistRecipeIds(value) {
       style:                   snap.style || '',
       abv:                     snap.abv   || 0,
       ibu:                     snap.ibu   || 0,
+      og:                      bpGravityOrNull(snap.target_og),
+      target_fg:               bpGravityOrNull(snap.target_fg),
       batch_size_l:            snap.batch_size_l || null,
       notes:                   snap.notes || '',
       target_volume_l:         targetVol,
@@ -5870,6 +5880,21 @@ function parseWaitlistRecipeIds(value) {
     });
   }
 
+  // Target gravity helpers (D-06): '' when blank / non-numeric, else the number.
+  function bpFiniteGravity(v) {
+    if (v === undefined || v === null || v === '') return '';
+    var n = Number(v);
+    return isFinite(n) ? n : '';
+  }
+
+  function bpReadGravityInput(id) {
+    var el = document.getElementById(id);
+    var raw = el ? String(el.value).trim() : '';
+    if (raw === '') return '';
+    var n = parseFloat(raw);
+    return isNaN(n) ? '' : n;
+  }
+
   function populateRecipeForm(recipe) {
     var r = recipe || {};
     var get = function (id) { return document.getElementById(id); };
@@ -5880,6 +5905,8 @@ function parseWaitlistRecipeIds(value) {
     if (get('bp-recipe-batch-size')) get('bp-recipe-batch-size').value = r.batch_size_l || '';
     if (get('bp-recipe-abv')) get('bp-recipe-abv').value = r.abv || '';
     if (get('bp-recipe-ibu')) get('bp-recipe-ibu').value = r.ibu || '';
+    if (get('bp-recipe-target-og')) get('bp-recipe-target-og').value = bpFiniteGravity(r.target_og);
+    if (get('bp-recipe-target-fg')) get('bp-recipe-target-fg').value = bpFiniteGravity(r.target_fg);
     if (get('bp-recipe-colour-srm')) get('bp-recipe-colour-srm').value = r.colour_srm || '';
     if (get('bp-recipe-locked-price')) get('bp-recipe-locked-price').value = r.locked_price || '';
     if (get('bp-recipe-service-fee')) get('bp-recipe-service-fee').value = r.service_fee != null ? r.service_fee : 45; // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
@@ -6315,6 +6342,8 @@ function parseWaitlistRecipeIds(value) {
       batch_size_l: r.batch_size_l || 0,
       abv: r.abv || 0,
       ibu: r.ibu || 0,
+      target_og: bpFiniteGravity(r.target_og),
+      target_fg: bpFiniteGravity(r.target_fg),
       colour_srm: r.colour_srm || 0,
       pricing_mode: r.pricing_mode || 'locked',
       locked_price: r.locked_price || 0,
@@ -6628,6 +6657,8 @@ function parseWaitlistRecipeIds(value) {
       batch_size_l: parseFloat(get('bp-recipe-batch-size') ? get('bp-recipe-batch-size').value : 0) || 0,
       abv: parseFloat(get('bp-recipe-abv') ? get('bp-recipe-abv').value : 0) || 0,
       ibu: parseInt(get('bp-recipe-ibu') ? get('bp-recipe-ibu').value : 0, 10) || 0,
+      target_og: bpReadGravityInput('bp-recipe-target-og'),
+      target_fg: bpReadGravityInput('bp-recipe-target-fg'),
       colour_srm: parseInt(get('bp-recipe-colour-srm') ? get('bp-recipe-colour-srm').value : 0, 10) || 0,
       pricing_mode: get('bp-recipe-pricing-mode') ? get('bp-recipe-pricing-mode').value : 'locked',
       locked_price: parseFloat(get('bp-recipe-locked-price') ? get('bp-recipe-locked-price').value : 0) || 0,
