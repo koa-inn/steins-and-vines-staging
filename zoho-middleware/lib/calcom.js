@@ -20,7 +20,8 @@ var BASE = 'https://api.cal.com/v2';
 var CAL_VERSIONS = {
   eventTypes: '2024-06-14',
   slots: '2024-09-04',
-  bookings: '2026-02-25'
+  bookings: '2026-02-25',
+  bookingsList: '2026-05-01' // GET /v2/bookings list — docs 2026-11-03; verify live in 97-12
 };
 
 /**
@@ -114,6 +115,57 @@ function createBooking(body) {
 }
 
 // ---------------------------------------------------------------------------
+// listBookings(opts)
+// GET /v2/bookings (read-only, server-side). Backs the Phase 97 packaging
+// calendar. Cursor-paginated, hard-capped at LIST_BOOKINGS_MAX_PAGES x 100.
+// Responses hold attendee PII: nothing from them is logged here.
+// ---------------------------------------------------------------------------
+
+var LIST_BOOKINGS_MAX_PAGES = 5;
+
+/**
+ * List upcoming bookings for the given event types in a window.
+ * @param {Object} opts - { eventTypeIds:number[], afterStart, beforeEnd } (ISO strings)
+ * @returns {Promise<{bookings:Array, truncated:boolean}>}
+ */
+function listBookings(opts) {
+  opts = opts || {};
+  var ids = (opts.eventTypeIds || []).map(Number).filter(function (n) { return isFinite(n); });
+  if (!ids.length) return Promise.resolve({ bookings: [], truncated: false });
+
+  var bookings = [];
+
+  function fetchPage(cursor, pageNo) {
+    var params = {
+      status: 'upcoming',
+      eventTypeIds: ids.join(','),
+      afterStart: opts.afterStart,
+      beforeEnd: opts.beforeEnd,
+      sortStart: 'asc',
+      limit: 100
+    };
+    if (cursor) params.cursor = cursor;
+    return zohoApi.withRetry(function () {
+      return axios.get(BASE + '/bookings', {
+        headers: makeHeaders(CAL_VERSIONS.bookingsList),
+        timeout: 15000,
+        params: params
+      });
+    }).then(function (response) {
+      var body = (response && response.data) || {};
+      if (Array.isArray(body.data)) bookings = bookings.concat(body.data);
+      var pg = body.pagination || {};
+      var more = pg.hasMore === true && typeof pg.nextCursor === 'string' && pg.nextCursor !== '';
+      if (!more) return { bookings: bookings, truncated: false };
+      if (pageNo >= LIST_BOOKINGS_MAX_PAGES) return { bookings: bookings, truncated: true };
+      return fetchPage(pg.nextCursor, pageNo + 1);
+    });
+  }
+
+  return fetchPage(null, 1);
+}
+
+// ---------------------------------------------------------------------------
 // verifyWebhook(rawBody, signature)
 // Cal.com webhook HMAC-SHA256 verification.
 // Scheme: single header x-cal-signature-256, HEX digest, signed over raw body.
@@ -162,5 +214,6 @@ module.exports = {
   listEventType: listEventType,
   getSlots: getSlots,
   createBooking: createBooking,
+  listBookings: listBookings,
   verifyWebhook: verifyWebhook
 };
