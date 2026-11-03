@@ -40,17 +40,59 @@ function report(sentry, message, extra) {
   }
 }
 
+var ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * toSheetDate(raw, timezone) -> 'YYYY-MM-DD' for a JSON date cell, else raw unchanged.
+ * Apps Script turns a true date cell into an ISO instant (midnight in the sheet's time zone, as
+ * UTC), e.g. 2026-01-15 -> "2026-01-15T08:00:00.000Z". The backfill parser only takes plain dates,
+ * so without this every row was rejected and reported missing_in_sheet (2026-11-03).
+ */
+function toSheetDate(raw, timezone) {
+  if (typeof raw !== 'string' || !ISO_INSTANT_RE.test(raw.trim())) return raw;
+  var d = new Date(raw.trim());
+  if (isNaN(d.getTime())) return raw;
+  // en-CA formats as YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(d);
+}
+
 // export_batch_tabs returns header-keyed objects per tab; the plan builder wants read-xlsx rows.
-function toWorkbookRows(data, tables) {
+// Date-only columns are converted from JSON instants back to sheet calendar dates.
+function toWorkbookRows(data, tables, timezone) {
   var wb = {};
   tables.forEach(function (t) {
     var rows = (data && data[t.sheet]) || [];
+    var dateHeaders = t.spec.columns
+      .filter(function (c) { return c.type === 'date'; })
+      .map(function (c) { return c.header; });
     wb[t.sheet] = {
       headers: (data && data.headers && data.headers[t.sheet]) || [],
-      rows: rows.map(function (values, i) { return { rowNumber: i + 2, values: values }; })
+      rows: rows.map(function (values, i) {
+        var copy = Object.assign({}, values);
+        dateHeaders.forEach(function (h) {
+          if (Object.prototype.hasOwnProperty.call(copy, h)) copy[h] = toSheetDate(copy[h], timezone);
+        });
+        return { rowNumber: i + 2, values: copy };
+      })
     };
   });
   return wb;
+}
+
+// "sheet rows rejected: N (Batches start_date invalid_date 2, ...)" - sheet, column, reason and
+// counts only, never a value. A rejected row is also reported missing_in_sheet by the compare.
+function rejectSummary(rejects) {
+  var counts = {};
+  var order = [];
+  rejects.forEach(function (r) {
+    var key = [r.sheet || '?', r.field || '?', r.reason || '?'].join(' ');
+    if (!counts[key]) { counts[key] = 0; order.push(key); }
+    counts[key] += 1;
+  });
+  return 'sheet rows rejected: ' + rejects.length + ' (' +
+    order.map(function (k) { return k + ' ' + counts[k]; }).join(', ') + ')';
 }
 
 async function fetchSheetExport(axios, env) {
@@ -99,12 +141,17 @@ async function runDriftCheck(deps) {
     var exported = await fetchSheetExport(axios, env);
     var pgTables = await fetchPgTables(withTransaction);
 
+    var timezone = env.BATCHES_TIMEZONE || DEFAULT_TIMEZONE;
     var sheetTables = batchCompare.normalizeSheetTables(
-      toWorkbookRows(exported, batchCompare.TABLES),
-      { timezone: env.BATCHES_TIMEZONE || DEFAULT_TIMEZONE }
+      toWorkbookRows(exported, batchCompare.TABLES, timezone),
+      { timezone: timezone }
     );
     var result = batchCompare.compareBatchTables(pgTables, sheetTables);
     var summary = batchCompare.summarize(result);
+
+    if (sheetTables.rejects && sheetTables.rejects.length) {
+      log.warn('[batches-drift] ' + rejectSummary(sheetTables.rejects));
+    }
 
     if (summary.ok) {
       log.info('[batches-drift] 0 mismatches');
@@ -158,5 +205,6 @@ function registerDriftTimer(deps) {
 module.exports = {
   runDriftCheck: runDriftCheck,
   registerDriftTimer: registerDriftTimer,
+  toSheetDate: toSheetDate,
   DRIFT_INTERVAL_MS: DRIFT_INTERVAL_MS
 };
