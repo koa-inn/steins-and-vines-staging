@@ -50,6 +50,15 @@ echo "=== 2. GET /api/bookings/availability?year=$YEAR&month=$MON  (expect dates
 curl -s "$BASE/api/bookings/availability?year=$YEAR&month=$MON" | python3 -m json.tool 2>/dev/null || curl -s "$BASE/api/bookings/availability?year=$YEAR&month=$MON"
 echo
 
+CAL_KEY="$(grep -E '^CALCOM_API_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"'"'"'')"
+if [ -n "${CAL_KEY:-}" ]; then
+  echo "=== 2b. Cal.com list bookings (read-only; HTTP code only, body holds customer emails) ==="
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' "https://api.cal.com/v2/bookings?status=upcoming&limit=1" \
+    -H "Authorization: Bearer $CAL_KEY" -H "cal-api-version: 2026-05-01" || true)"
+  echo "list bookings (2026-05-01): HTTP $CODE"
+  echo
+fi
+
 echo ">>> Pick an available YYYY-MM-DD from the dates above, then check its slots:"
 echo "    curl -s \"$BASE/api/bookings/slots?date=YYYY-MM-DD\" | python3 -m json.tool"
 echo

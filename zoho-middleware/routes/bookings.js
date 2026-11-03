@@ -148,7 +148,10 @@ router.get('/api/bookings/services', async function (req, res) {
     var ids = [
       process.env.CALCOM_EVENT_TYPE_FERMENT_KIT,
       process.env.CALCOM_EVENT_TYPE_BOTTLING,
-      process.env.CALCOM_EVENT_TYPE_BEER_WAITLIST
+      process.env.CALCOM_EVENT_TYPE_BEER_WAITLIST,
+      // BEER_PACKAGING (slug canning-appointment) backs the Phase 97 packaging
+      // calendar and beer packaging bookings.
+      process.env.CALCOM_EVENT_TYPE_BEER_PACKAGING
     ].filter(function (id) { return id && String(id).trim() !== ''; });
 
     var serviceData;
@@ -337,7 +340,15 @@ router.post('/api/bookings', async function (req, res) {
   // Defaults to ferment-kit (backward compatible — current frontend sends no selector).
   // Falls back to ferment-kit if bottling id is unset in env.
   var resolvedEventTypeId;
-  if (body.service === 'bottling' && process.env.CALCOM_EVENT_TYPE_BOTTLING && String(process.env.CALCOM_EVENT_TYPE_BOTTLING).trim() !== '') {
+  if (body.service === 'beer-packaging') {
+    // Fail closed: never silently book the ferment-kit station for a beer packaging request.
+    var beerPackagingId = process.env.CALCOM_EVENT_TYPE_BEER_PACKAGING;
+    if (!beerPackagingId || String(beerPackagingId).trim() === '') {
+      log.warn('[bookings] beer-packaging requested but CALCOM_EVENT_TYPE_BEER_PACKAGING unset');
+      return res.status(503).json({ error: 'Beer packaging booking is not configured' });
+    }
+    resolvedEventTypeId = Number(beerPackagingId);
+  } else if (body.service === 'bottling' && process.env.CALCOM_EVENT_TYPE_BOTTLING && String(process.env.CALCOM_EVENT_TYPE_BOTTLING).trim() !== '') {
     resolvedEventTypeId = Number(process.env.CALCOM_EVENT_TYPE_BOTTLING);
   } else {
     resolvedEventTypeId = Number(process.env.CALCOM_EVENT_TYPE_FERMENT_KIT);
