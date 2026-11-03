@@ -182,6 +182,8 @@ Scan invoices result: not run; nothing to recover.
 - So days 4–6 proved nothing either way. Day 7's snapshot verify is the real evidence. The fix
   (parse ISO timestamps to an America/Vancouver date, and report rejects) is a follow-up quick task
   with a regression test first. Until it ships the check raises a false Sentry alert every day.
+- **Fixed 2026-11-03** (`prod-20261103-1`, commits 3b5869a1 + 53484bdf). First production run of the
+  fixed check, 10 min after boot: 21:07Z `[batches-drift] 0 mismatches`, no reject lines.
 
 The first production drift run may show false date mismatches; read its log lines and record them here.
 

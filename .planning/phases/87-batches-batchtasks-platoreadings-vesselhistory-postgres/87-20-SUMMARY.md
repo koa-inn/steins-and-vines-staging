@@ -44,9 +44,9 @@ drift check did not provide the week's evidence.
 
 ## Follow-ups
 
-1. Quick task: fix the drift check (regression test first). Parse ISO timestamps to an
-   America/Vancouver date, log reject counts by reason, and consider a fixed daily clock time rather
-   than 24 h from boot.
+1. Done 2026-11-03 (`prod-20261103-1`): drift check parses ISO timestamps to an America/Vancouver
+   date, logs reject counts by reason, and also runs 10 min after each boot. First prod run 21:07Z:
+   0 mismatches.
 2. Done 2026-11-03 (owner OK): every `~/sv-backfill/` workbook snapshot, the staging parity snapshot and
    the `out-*` folders were deleted. The small dry-run and reject logs are kept as an audit trail.
 3. Still open from 87-19: Task 3 (first real sale creates its batch; record the `create_batch` median)
