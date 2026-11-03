@@ -301,7 +301,7 @@ function snapshotPlato(v) {
 function parseDashSnapshot(text) {
   var out = { recipe_name: '', recipe_style: '', og: null, target_fg: null };
   var snap;
-  try { snap = JSON.parse(text); } catch (e) { return out; }
+  try { snap = JSON.parse(text); } catch { return out; }
   if (!snap || typeof snap !== 'object' || Array.isArray(snap)) return out;
   out.recipe_name = snapshotString(snap.name);
   out.recipe_style = snapshotString(snap.style);
