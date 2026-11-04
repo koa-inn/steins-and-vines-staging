@@ -3195,6 +3195,9 @@
       modified_ingredients: Array.isArray(_kcEnv.getModifiedIngredients()) ? _kcEnv.getModifiedIngredients() : undefined,
       customer_name: (_kcEnv.getCustomer() && _kcEnv.getCustomer().name) || '',
       contact_id: (_kcEnv.getCustomer() && _kcEnv.getCustomer().contact_id) || '',
+      // 97-10 (D-03): the email is already in kiosk memory from the contact search;
+      // the server carries it onto the new batch for packaging-booking matching.
+      customer_email: (_kcEnv.getCustomer() && _kcEnv.getCustomer().email) || '',
       reference_number: refNumber,
       idempotency_key: refNumber,
       discount: _kcEnv.getDiscount() ? { preset_id: _kcEnv.getDiscount().presetId, name: _kcEnv.getDiscount().name, type: _kcEnv.getDiscount().type, value: _kcEnv.getDiscount().value, scope: _kcEnv.getDiscount().scope } : undefined,
@@ -3282,6 +3285,7 @@
           modified_ingredients: recipeSaleBody.modified_ingredients,
           customer_name: recipeSaleBody.customer_name || '',
           contact_id: recipeSaleBody.contact_id || '',
+          customer_email: recipeSaleBody.customer_email || '',
           reference: refNumber,
           transaction_id: txnId,
           // CR-01: deterministic replay key so the server can short-circuit a duplicate confirm
@@ -7054,7 +7058,9 @@
     // 67 review fix (WR-04): recipe-context accessors (delegate through the
     // env bridge) so tests can pin the recipe sale body contract.
     _getRecipeContext: function () { return _kcEnv.getRecipeContext(); },
-    _setRecipeContext: function (v) { _kcEnv.setRecipeContext(v); }
+    _setRecipeContext: function (v) { _kcEnv.setRecipeContext(v); },
+    // 97-10: customer accessor so tests can pin the recipe-sale customer_email contract.
+    _setCustomer: function (v) { _kcEnv.setCustomer(v); }
   };
 
   // ===== Dual-mode export (D-01) =====

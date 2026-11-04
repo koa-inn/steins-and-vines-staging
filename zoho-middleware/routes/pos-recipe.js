@@ -1533,13 +1533,32 @@ function _bookRecipeConfirm(body, confirmIdemKey, req, res) {
                 modified_base_ingredients: modifiedConfirm,
                 is_modified: !!(modifiedConfirm && modifiedConfirm.length)
               };
-              brewpadIntegration.detectRecipeSale(
-                body.recipe_id,
-                snapshot,
-                invoiceNumber,
-                body.customer_name,
-                body.contact_id
-              );
+              // 97-10 (D-03): kiosk-supplied customer email, validated; never logged.
+              var kioskEmail = '';
+              if (typeof body.customer_email === 'string') {
+                var trimmedEmail = body.customer_email.trim();
+                if (trimmedEmail.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+                  kioskEmail = trimmedEmail;
+                }
+              }
+              if (kioskEmail) {
+                brewpadIntegration.detectRecipeSale(
+                  body.recipe_id,
+                  snapshot,
+                  invoiceNumber,
+                  body.customer_name,
+                  body.contact_id,
+                  kioskEmail
+                );
+              } else {
+                brewpadIntegration.detectRecipeSale(
+                  body.recipe_id,
+                  snapshot,
+                  invoiceNumber,
+                  body.customer_name,
+                  body.contact_id
+                );
+              }
             }
 
             // Log event
