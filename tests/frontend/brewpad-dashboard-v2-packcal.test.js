@@ -129,3 +129,251 @@ describe('buildPackagingCalendar', function () {
     expect(bp.buildPackagingCalendar(tasks, OK([]), typeById, today).note).toBe('');
   });
 });
+
+// ---------------------------------------------------------------- widget (DOM)
+
+var TODAY = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Vancouver' });
+var YEAR = +TODAY.slice(0, 4);
+var ASOF = { today: TODAY, year: YEAR, tz: 'America/Vancouver' };
+
+function d(n) {
+  var p = TODAY.split('-');
+  return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]) + n * 86400000).toISOString().slice(0, 10);
+}
+
+function lean(id, type, extra) {
+  return Object.assign({
+    batch_id: id, status: 'primary', batch_type: type, batch_type_source: 'recipe',
+    start_date: YEAR + '-01-05', completed_day: null, completed_at: null, completed_at_source: null,
+    vessel_id: null, source: 'kiosk', product_sku: '', product_name: id, product_subcategory: '',
+    product_brand: '', product_manufacturer: '', recipe_id: '', schedule_id: '',
+    schedule_category: '', target_volume_l: 20, tasks_total: 0, tasks_done: 0
+  }, extra || {});
+}
+
+function setUrl(hash) {
+  window.history.replaceState(null, '', '/brewpad.html?dash=v2' + (hash || ''));
+}
+
+var loadSeq = 1000;
+function mount() {
+  document.body.innerHTML =
+    '<div><button type="button" id="bp-dash-switch" hidden></button></div>' +
+    '<div id="bp-dashboard-inner"></div>' +
+    '<div id="bp-panel-dashboard"></div>' +
+    '<div id="bp-panel-batches"><div id="bp-batch-list-pane"></div></div>' +
+    '<div id="bp-batch-detail-pane"></div><div id="bp-toast-container"></div>';
+  var list = [lean('W1', 'wine'), lean('B1', 'beer', { source: 'manual' }), lean('C1', 'cider')];
+  loadSeq++;
+  bp._setStateForTest({
+    _allBatchesData: list,
+    _dashLoadTime: loadSeq,
+    _dashData: { asOf: ASOF, batches: list, staffBatchIds: [] },
+    _dashSummary: {},
+    _dashWineSkuLookup: {},
+    _upcomingTasks: [],
+    _upcomingLoaded: true
+  });
+}
+
+async function renderV2(hash) {
+  setUrl(hash ? '#' + hash : '');
+  bp._initDashV2FlagForTest();
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+  bp._renderDashboardForTest();
+  await flush();
+}
+
+function calTask(batch, due, extra) {
+  return Object.assign({
+    task_id: 'T-' + batch + due, batch_id: batch, due_date: due, completed: false, is_packaging: true,
+    customer_name: 'Cust ' + batch, title: 'Bottle'
+  }, extra || {});
+}
+
+function mockNet(opts) {
+  var o = opts || {};
+  var calls = { tasks: [], bookings: [] };
+  var pendingBookings = null;
+  global.fetch.mockImplementation(function (url, init) {
+    var u = String(url);
+    if (u.indexOf('/api/admin/packaging-bookings') !== -1) {
+      calls.bookings.push({ url: u, init: init });
+      if (o.bookingsPending) {
+        return new Promise(function (resolve) { pendingBookings = resolve; });
+      }
+      if (o.bookingsReject) return Promise.reject(new Error('down'));
+      return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve(o.bookings || { ok: true, bookings: [] }); } });
+    }
+    var body = {};
+    try { body = JSON.parse((init && init.body) || '{}'); } catch (e) { body = {}; }
+    if (body.action === 'get_tasks_calendar') {
+      calls.tasks.push(body);
+      if (o.tasksFail) return Promise.resolve({ ok: false, status: 500, json: function () { return Promise.resolve({ ok: false, error: 'x' }); } });
+      return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve({ ok: true, data: { tasks: o.tasks || [] } }); } });
+    }
+    return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve({ ok: true, data: {} }); } });
+  });
+  calls.resolveBookings = function (body) {
+    pendingBookings({ ok: true, status: 200, json: function () { return Promise.resolve(body); } });
+  };
+  return calls;
+}
+
+function slot() { return document.getElementById('bp-dash-v2-packcal'); }
+async function settleAll() { for (var i = 0; i < 6; i++) await flush(); }
+
+beforeEach(function () {
+  window.localStorage.clear();
+  window.Chart = function () {};
+  Array.prototype.forEach.call(document.head.querySelectorAll('script'), function (s) { s.parentNode.removeChild(s); });
+  mount();
+});
+
+afterEach(function () {
+  bp._clearDashDrillForTest();
+  delete window.Chart;
+});
+
+describe('packaging calendar widget', function () {
+  test('one tasks request and one bookings request per load; rerenders reuse them', async function () {
+    var net = mockNet({ tasks: [calTask('W1', d(2))] });
+    await renderV2('');
+    await settleAll();
+    expect(net.tasks).toHaveLength(1);
+    expect(net.tasks[0].start_date).toBe(TODAY);
+    expect(net.tasks[0].end_date).toBe(d(13));
+    expect(net.bookings).toHaveLength(1);
+    expect(net.bookings[0].init.credentials).toBe('include');
+    await go('type=wine');
+    await renderV2('');
+    await settleAll();
+    expect(net.tasks).toHaveLength(1);
+    expect(net.bookings).toHaveLength(1);
+    bp._setStateForTest({ _dashLoadTime: loadSeq + 500 });
+    await renderV2('');
+    await settleAll();
+    expect(net.tasks).toHaveLength(2);
+    expect(net.bookings).toHaveLength(2);
+  });
+
+  async function go(hash) {
+    setUrl('#' + hash);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await flush();
+  }
+
+  test('while bookings are pending, tasks show with a checking note', async function () {
+    var net = mockNet({ tasks: [calTask('W1', d(2))], bookingsPending: true });
+    await renderV2('');
+    await settleAll();
+    expect(slot().textContent).toContain('Checking bookings…');
+    expect(slot().querySelectorAll('li.bp-cal-entry')).toHaveLength(1);
+    expect(slot().textContent).not.toContain('not booked yet');
+    net.resolveBookings({ ok: true, bookings: [] });
+    await settleAll();
+    expect(slot().textContent).not.toContain('Checking bookings');
+    expect(slot().textContent).toContain('not booked yet');
+    expect(slot().querySelector('li.bp-cal-entry--unbooked')).not.toBeNull();
+  });
+
+  test.each([
+    ['ok false', { bookings: { ok: false, reason: 'unavailable' } }],
+    ['rejected', { bookingsReject: true }]
+  ])('bookings failure (%s) is soft', async function (name, opts) {
+    mockNet(Object.assign({ tasks: [calTask('W1', d(2))] }, opts));
+    await renderV2('');
+    await settleAll();
+    expect(slot().textContent).toContain('Bookings could not be loaded. Showing BrewPad tasks only.');
+    expect(slot().textContent).not.toContain('not booked yet');
+    expect(slot().querySelectorAll('li.bp-cal-entry')).toHaveLength(1);
+  });
+
+  test('semantic markup, kind chips and drill buttons', async function () {
+    var tasks = [calTask('W1', d(2)), calTask('B1', d(2))];
+    mockNet({
+      tasks: tasks,
+      bookings: { ok: true, bookings: [
+        { uid: 'a', start: new Date(Date.now() + 86400000 * 3).toISOString(), end: '', day: d(3), kind: 'bottling', batch_id: 'C1', customer_name: 'Cider Person' },
+        { uid: 'b', start: new Date(Date.now() + 86400000 * 3).toISOString(), end: '', day: d(3), kind: 'canning', batch_id: null, customer_name: 'Mystery' }
+      ] }
+    });
+    await renderV2('');
+    await settleAll();
+    var s = slot();
+    expect(s.querySelector('.bp-cal > .bp-cal-day > h4.bp-cal-day-head')).not.toBeNull();
+    expect(s.querySelector('.bp-cal-day > ul.bp-cal-list > li.bp-cal-entry')).not.toBeNull();
+    var chips = Array.prototype.map.call(s.querySelectorAll('.bp-badge'), function (x) { return x.textContent; });
+    expect(chips.sort()).toEqual(['Bottling', 'Bottling', 'Canning', 'Canning']);
+    var btns = s.querySelectorAll('button.bp-table-link');
+    expect(btns.length).toBe(3);
+    expect(btns[0].getAttribute('data-dash-row')).toMatch(/^t3:\d+$/);
+    var mystery = Array.prototype.filter.call(s.querySelectorAll('li.bp-cal-entry'), function (li) { return li.textContent.indexOf('Mystery') !== -1; })[0];
+    expect(mystery.textContent).toContain('no batch matched');
+    expect(mystery.querySelector('button')).toBeNull();
+    expect(s.querySelector('.bp-widget-title').textContent).toBe('Packaging calendar');
+    expect(s.querySelector('.bp-widget-sub').textContent).toBe('Next 14 days · wine and cider bottling, beer canning');
+  });
+
+  test('seven entries then Show all N', async function () {
+    var tasks = [];
+    for (var i = 0; i < 9; i++) tasks.push(calTask('W1', d(i), { task_id: 'k' + i }));
+    mockNet({ tasks: tasks });
+    await renderV2('');
+    await settleAll();
+    expect(slot().querySelectorAll('li.bp-cal-entry')).toHaveLength(7);
+    var btn = slot().querySelector('[data-dash-showall="t3:cal"]');
+    expect(btn.textContent).toBe('Show all 9');
+    btn.click();
+    await flush();
+    expect(slot().querySelectorAll('li.bp-cal-entry')).toHaveLength(9);
+  });
+
+  test('empty window and unavailable states', async function () {
+    mockNet({ tasks: [] });
+    await renderV2('');
+    await settleAll();
+    expect(slot().textContent).toContain('Nothing booked or due in the next 14 days.');
+  });
+
+  test('tasks failed and bookings not ok reads not available', async function () {
+    mockNet({ tasksFail: true, bookingsReject: true });
+    await renderV2('');
+    await settleAll();
+    expect(slot().textContent).toContain('Not available yet. Reopen the Dashboard tab to refresh.');
+  });
+
+  test('undated note only when there are undated packaging tasks', async function () {
+    mockNet({ tasks: [calTask('W1', d(1)), calTask('C1', '', { task_id: 'u1' }), calTask('B1', null, { task_id: 'u2' })] });
+    await renderV2('');
+    await settleAll();
+    expect(slot().textContent).toContain('2 packaging tasks have no date. See Ready to bottle.');
+    mount();
+    mockNet({ tasks: [calTask('W1', d(1))] });
+    await renderV2('');
+    await settleAll();
+    expect(slot().textContent).not.toContain('have no date');
+  });
+
+  test('filters are ignored and copy stays neutral', async function () {
+    mockNet({ tasks: [calTask('W1', d(1)), calTask('B1', d(2))] });
+    await renderV2('');
+    await settleAll();
+    var all = slot().innerHTML;
+    await go('type=wine');
+    await settleAll();
+    expect(slot().innerHTML).toBe(all);
+    expect(slot().textContent).not.toMatch(/overdue|missing|conflict|double-booked|error/i);
+  });
+
+  test('customer names are escaped', async function () {
+    mockNet({
+      tasks: [],
+      bookings: { ok: true, bookings: [{ uid: 'x', start: new Date().toISOString(), end: '', day: TODAY, kind: 'bottling', batch_id: null, customer_name: '<img src=x onerror=1>' }] }
+    });
+    await renderV2('');
+    await settleAll();
+    expect(slot().querySelector('img')).toBeNull();
+    expect(slot().textContent).toContain('<img src=x onerror=1>');
+  });
+});
