@@ -68,7 +68,7 @@ describeDb('migration 0008 batches staff_batch', function () {
   });
 
   it('rolls back and re-applies cleanly', async function () {
-    var down = migrate('down', 1);
+    var down = migrate('down', 2); // 0009 (Phase 97) then 0008
     expect(down.status).toBe(0);
     expect((await colQuery()).rows.length).toBe(0);
     var up = migrate('up');

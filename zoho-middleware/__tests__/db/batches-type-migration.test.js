@@ -75,8 +75,8 @@ describeDb('migration 0007 batches type columns', function () {
   });
 
   it('rolls back and re-applies cleanly', async function () {
-    // Roll back 0008 (staff_batch, Phase 95) and then 0007; this test is coupled to the latest migration.
-    var down = migrate('down', 2);
+    // Roll back 0009 (recipes target gravity, Phase 97), 0008 (staff_batch, Phase 95) and then 0007; this test is coupled to the latest migration.
+    var down = migrate('down', 3);
     expect(down.status).toBe(0);
     expect((await colQuery()).rows.length).toBe(0);
     var up = migrate('up');
