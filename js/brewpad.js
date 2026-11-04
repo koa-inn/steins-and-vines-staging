@@ -8026,6 +8026,14 @@ function parseWaitlistRecipeIds(value) {
       render: function (model, cs) { renderDashV2Ferment(model, cs); }
     },
     {
+      key: 't1', slot: 'bp-dash-v2-today-tasks', title: "Today's tasks", chart: '', needs: [],
+      render: function () { renderDashV2TodayTasks(); }
+    },
+    {
+      key: 't2', slot: 'bp-dash-v2-rtb', title: 'Ready to bottle', chart: '', needs: [],
+      render: function () { renderDashV2Rtb(); }
+    },
+    {
       key: 'g10', slot: 'bp-dash-v2-health', title: DASH_V2_HEALTH_TITLE, chart: 'health', needs: ['batchMeta'],
       render: function (model) { renderDashV2Health(model); }
     }
@@ -8788,69 +8796,21 @@ function parseWaitlistRecipeIds(value) {
       html += '<div class="bp-rtb-body" style="' + (rtbOpen ? '' : 'display:none;') + '">';
       html += '<div class="bp-dash-task-list">';
       rtb.forEach(function (it) {
-        html += '<div class="bp-task-row">';
-        html += '<div class="bp-task-body">';
-        html += '<button type="button" class="bp-batch-chip" data-batch-id="' + escapeHTML(it.batch_id || '') + '"' +
-          (it.overdue ? ' style="background:#ffebee;color:#c62828;border-color:#ef9a9a;"' : '') +
-          ' title="Open batch">' + escapeHTML(it.batch_id || '') + '</button>';
-        html += '<span class="bp-task-title">' + escapeHTML(it.product_name || '') + '</span>';
-        if (it.customer_name) html += '<span class="bp-task-customer">' + escapeHTML(it.customer_name) + '</span>';
-        var loc = [it.vessel_id, it.shelf_id].filter(Boolean).join(' · ');
-        if (loc) html += '<span class="bp-task-meta">' + escapeHTML(loc) + '</span>';
-        if (it.overdue) {
-          html += '<span style="font-size:0.75rem;color:#d32f2f;font-weight:600;margin-left:6px;">Overdue — ' + escapeHTML(it.bottling_due) + '</span>';
-        } else if (it.bottling_due) {
-          html += '<span style="font-size:0.75rem;color:#2e7d32;font-weight:600;margin-left:6px;">Due ' + escapeHTML(it.bottling_due) + '</span>';
-        } else {
-          html += '<span style="font-size:0.75rem;color:#5f5f5f;margin-left:6px;">Bottling date TBD</span>';
-        }
-        if (it.has_email) {
-          html += '<button type="button" class="bp-rtb-invite-btn" data-batch-id="' + escapeHTML(it.batch_id || '') + '" data-customer="' + escapeHTML(it.customer_name || 'this customer') + '" data-product="' + escapeHTML(it.product_name || '') + '" style="margin-left:8px;font-size:0.72rem;padding:2px 8px;border-radius:6px;border:1px solid #4a6f4b;background:#fff;color:#4a6f4b;cursor:pointer;">Send Invite</button>';
-        }
-        html += '</div></div>';
+        html += dashReadyToBottleRowHtml(it);
       });
       html += '</div></div>';
     }
 
     // Today's tasks checklist (including overdue)
-    var todayDateStr = todayStr();
-    var overdueTasks = _upcomingTasks.filter(function (t) {
-      var done = t.completed === true || t.completed === 'TRUE' || t.completed === '1';
-      return !done && t.due_date && String(t.due_date).slice(0, 10) < todayDateStr;
-    });
-    var todayTasks = _upcomingTasks.filter(function (t) {
-      var done = t.completed === true || t.completed === 'TRUE' || t.completed === '1';
-      return !done && t.due_date && String(t.due_date).slice(0, 10) === todayDateStr;
-    });
+    var todayParts = dashTodayTaskRows(_upcomingTasks, todayStr());
+    var overdueTasks = todayParts.overdue;
+    var todayTasks = todayParts.today;
     if (overdueTasks.length || todayTasks.length) {
       html += '<div class="bp-section-header">Today\u2019s Tasks</div>';
       html += '<div class="bp-dash-task-list">';
       // Overdue tasks first, with visual indicator
-      overdueTasks.forEach(function (t) {
-        html += '<div class="bp-task-row" data-task-id="' + escapeHTML(t.task_id) + '" style="background:rgba(244,67,54,0.06);border-left:3px solid #f44336;">';
-        html += '<label class="bp-task-check"><input type="checkbox" data-task-id="' + escapeHTML(t.task_id) + '"></label>';
-        html += '<div class="bp-task-body">';
-        html += '<button type="button" class="bp-batch-chip" data-batch-id="' + escapeHTML(t.batch_id || '') + '" style="background:#ffebee;color:#c62828;border-color:#ef9a9a;">' + escapeHTML(t.batch_id || '') + '</button>';
-        html += '<span class="bp-task-title">' + escapeHTML(t.title || ('Step ' + t.step_number)) + '</span>';
-        var overdueDate = escapeHTML(String(t.due_date).slice(0, 10));
-        html += '<span style="font-size:0.75rem;color:#d32f2f;font-weight:600;margin-left:6px;">Overdue \u2014 ' + overdueDate + '</span>';
-        if (getCustomerDisplayName(t)) html += '<span class="bp-task-customer">' + escapeHTML(getCustomerDisplayName(t)) + '</span>';
-        var meta = getBatchMeta(t.batch_id);
-        if (meta) html += '<span class="bp-task-meta">' + escapeHTML(meta) + '</span>';
-        html += '</div></div>';
-      });
-      // Today's tasks
-      todayTasks.forEach(function (t) {
-        html += '<div class="bp-task-row" data-task-id="' + escapeHTML(t.task_id) + '">';
-        html += '<label class="bp-task-check"><input type="checkbox" data-task-id="' + escapeHTML(t.task_id) + '"></label>';
-        html += '<div class="bp-task-body">';
-        html += '<button type="button" class="bp-batch-chip" data-batch-id="' + escapeHTML(t.batch_id || '') + '">' + escapeHTML(t.batch_id || '') + '</button>';
-        html += '<span class="bp-task-title">' + escapeHTML(t.title || ('Step ' + t.step_number)) + '</span>';
-        if (getCustomerDisplayName(t)) html += '<span class="bp-task-customer">' + escapeHTML(getCustomerDisplayName(t)) + '</span>';
-        var meta = getBatchMeta(t.batch_id);
-        if (meta) html += '<span class="bp-task-meta">' + escapeHTML(meta) + '</span>';
-        html += '</div></div>';
-      });
+      overdueTasks.forEach(function (t) { html += dashTodayTaskRowHtml(t, true); });
+      todayTasks.forEach(function (t) { html += dashTodayTaskRowHtml(t, false); });
       html += '</div>';
     }
 
@@ -8928,9 +8888,142 @@ function parseWaitlistRecipeIds(value) {
   // SERVER-computed _dashSummary.readyToBottle set (adminApi.gs:1847-1883). This is
   // the single definition used by BOTH the batch-view Ready-to-Bottle filter rows
   // AND its count chip (so they can never diverge — WR-03).
+  function readyToBottleList() {
+    return (_dashSummary && _dashSummary.readyToBottle) ||
+      (_dashData && _dashData.summary && _dashData.summary.readyToBottle) || [];
+  }
+
   function readyToBottleRows() {
-    return filterBatchesByReadyToBottle(
-      _allBatchesData, (_dashSummary && _dashSummary.readyToBottle) || []);
+    return filterBatchesByReadyToBottle(_allBatchesData, readyToBottleList());
+  }
+
+  // Phase 97-07: the classic dashboard and the v2 Today section share these row builders (no second copy).
+  function dashTaskIsDone(t) {
+    return t.completed === true || t.completed === 'TRUE' || t.completed === '1';
+  }
+
+  // Open tasks due before `today` (ascending by due date) and due on `today`. `today` is a YYYY-MM-DD string:
+  // classic passes todayStr(), v2 passes the Vancouver day.
+  function dashTodayTaskRows(tasks, today) {
+    var list = tasks || [];
+    var overdue = list.filter(function (t) {
+      return !dashTaskIsDone(t) && t.due_date && String(t.due_date).slice(0, 10) < today;
+    });
+    overdue.sort(function (x, y) {
+      var xd = String(x.due_date).slice(0, 10);
+      var yd = String(y.due_date).slice(0, 10);
+      return xd < yd ? -1 : (xd > yd ? 1 : 0);
+    });
+    var due = list.filter(function (t) {
+      return !dashTaskIsDone(t) && t.due_date && String(t.due_date).slice(0, 10) === today;
+    });
+    return { overdue: overdue, today: due };
+  }
+
+  function dashTodayTaskRowHtml(t, overdue) {
+    var h = '<div class="bp-task-row' + (overdue ? ' bp-task-row--overdue' : '') + '" data-task-id="' + escapeHTML(t.task_id) + '">';
+    h += '<label class="bp-task-check"><input type="checkbox" data-task-id="' + escapeHTML(t.task_id) + '"></label>';
+    h += '<div class="bp-task-body">';
+    h += '<button type="button" class="bp-batch-chip' + (overdue ? ' bp-batch-chip--overdue' : '') + '" data-batch-id="' + escapeHTML(t.batch_id || '') + '">' + escapeHTML(t.batch_id || '') + '</button>';
+    h += '<span class="bp-task-title">' + escapeHTML(t.title || ('Step ' + t.step_number)) + '</span>';
+    if (overdue) {
+      h += '<span class="bp-task-flag bp-task-flag--overdue">Overdue \u2014 ' + escapeHTML(String(t.due_date).slice(0, 10)) + '</span>';
+    }
+    var cust = getCustomerDisplayName(t);
+    if (cust) h += '<span class="bp-task-customer">' + escapeHTML(cust) + '</span>';
+    var meta = getBatchMeta(t.batch_id);
+    if (meta) h += '<span class="bp-task-meta">' + escapeHTML(meta) + '</span>';
+    h += '</div></div>';
+    return h;
+  }
+
+  function dashReadyToBottleRowHtml(it) {
+    var h = '<div class="bp-task-row"><div class="bp-task-body">';
+    h += '<button type="button" class="bp-batch-chip' + (it.overdue ? ' bp-batch-chip--overdue' : '') + '" data-batch-id="' + escapeHTML(it.batch_id || '') + '" title="Open batch">' + escapeHTML(it.batch_id || '') + '</button>';
+    h += '<span class="bp-task-title">' + escapeHTML(it.product_name || '') + '</span>';
+    if (it.customer_name) h += '<span class="bp-task-customer">' + escapeHTML(it.customer_name) + '</span>';
+    var loc = [it.vessel_id, it.shelf_id].filter(Boolean).join(' \u00b7 ');
+    if (loc) h += '<span class="bp-task-meta">' + escapeHTML(loc) + '</span>';
+    if (it.overdue) {
+      h += '<span class="bp-task-flag bp-task-flag--overdue">Overdue \u2014 ' + escapeHTML(it.bottling_due) + '</span>';
+    } else if (it.bottling_due) {
+      h += '<span class="bp-task-flag bp-task-flag--due">Due ' + escapeHTML(it.bottling_due) + '</span>';
+    } else {
+      h += '<span class="bp-task-flag bp-task-flag--tbd">Bottling date TBD</span>';
+    }
+    if (it.has_email) {
+      h += '<button type="button" class="bp-rtb-invite-btn" data-batch-id="' + escapeHTML(it.batch_id || '') + '" data-customer="' + escapeHTML(it.customer_name || 'this customer') + '" data-product="' + escapeHTML(it.product_name || '') + '">Send Invite</button>';
+    }
+    h += '</div></div>';
+    return h;
+  }
+
+  // ---- v2 Today widgets: ignore the global filter bar (D-15); today is the Vancouver day (D-13) ----
+  function dashV2TodayDate() {
+    return (_dashData && _dashData.asOf && _dashData.asOf.today) || todayPacific();
+  }
+
+  function dashV2ShowAllBtn(attr, total, expanded) {
+    return '<button type="button" class="bp-text-btn" data-dash-showall="' + attr + '" aria-expanded="' + (expanded ? 'true' : 'false') + '">' +
+      (expanded ? 'Show fewer' : 'Show all ' + total) + '</button>';
+  }
+
+  function dashV2ListWidget(slotId, title, sub, rowsHtml, attr) {
+    var slot = dashV2Widget(slotId, title);
+    if (!slot) return null;
+    slot.style.display = '';
+    slot.querySelector('.bp-widget-title').textContent = title;
+    slot.querySelector('.bp-widget-sub').textContent = sub;
+    var body = slot.querySelector('.bp-widget-body');
+    body.setAttribute('data-state', 'list');
+    var expanded = !!_dashV2Expanded[attr];
+    var shown = expanded ? rowsHtml : rowsHtml.slice(0, 5);
+    body.innerHTML = '<div class="bp-dash-task-list">' + shown.join('') + '</div>' +
+      (rowsHtml.length > 5 ? dashV2ShowAllBtn(attr, rowsHtml.length, expanded) : '');
+    return slot;
+  }
+
+  function renderDashV2TodayTasks() {
+    var slotId = 'bp-dash-v2-today-tasks';
+    var title = "Today's tasks";
+    if (!_upcomingLoaded) {
+      dashV2Msg(slotId, 't1', title, 'Not available yet. Reopen the Dashboard tab to refresh.');
+      return;
+    }
+    var parts = dashTodayTaskRows(_upcomingTasks, dashV2TodayDate());
+    var rowsHtml = [];
+    parts.overdue.forEach(function (t) { rowsHtml.push(dashTodayTaskRowHtml(t, true)); });
+    parts.today.forEach(function (t) { rowsHtml.push(dashTodayTaskRowHtml(t, false)); });
+    if (!rowsHtml.length) {
+      dashV2Msg(slotId, 't1', title, 'Nothing due today.');
+      var emptySlot = document.getElementById(slotId);
+      if (emptySlot) emptySlot.querySelector('.bp-widget-sub').textContent = 'Overdue first, then due today';
+      return;
+    }
+    dashV2ListWidget(slotId, title, 'Overdue first, then due today', rowsHtml, 't1:tasks');
+  }
+
+  function renderDashV2Rtb() {
+    var slotId = 'bp-dash-v2-rtb';
+    var list = readyToBottleList();
+    var seen = {};
+    var n = 0;
+    list.forEach(function (it) {
+      var k = it.batch_id || '';
+      if (!seen[k]) { seen[k] = true; n++; }
+    });
+    var title = 'Ready to bottle (' + n + ')';
+    if (!list.length) {
+      dashV2Msg(slotId, 't2', title, 'No batches are ready to bottle.');
+      var emptySlot = document.getElementById(slotId);
+      if (emptySlot) {
+        emptySlot.querySelector('.bp-widget-title').textContent = title;
+        emptySlot.querySelector('.bp-widget-sub').textContent = 'Ready now, not yet bottled';
+      }
+      return;
+    }
+    var rowsHtml = list.map(function (it) { return dashReadyToBottleRowHtml(it); });
+    dashV2ListWidget(slotId, title, 'Ready now, not yet bottled', rowsHtml, 't2:rtb');
   }
 
   // applyBatchFilter — the ONE place that derives _batchesData from _allBatchesData
@@ -16352,6 +16445,10 @@ function parseWaitlistRecipeIds(value) {
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = Object.assign(module.exports || {}, {
       buildBpAttachSnapshot: buildBpAttachSnapshot,
+      dashTodayTaskRows: dashTodayTaskRows,
+      dashTodayTaskRowHtml: dashTodayTaskRowHtml,
+      dashReadyToBottleRowHtml: dashReadyToBottleRowHtml,
+      readyToBottleList: readyToBottleList,
       refreshBpStockAdvisory: refreshBpStockAdvisory,
       bpSaveAsNewRecipe: bpSaveAsNewRecipe,
       bpAttachRecipe: bpAttachRecipe,

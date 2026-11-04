@@ -940,6 +940,22 @@ img { max-width: 100%; height: auto; display: block; }
 .bp-task-row--done { opacity: 0.5; }
 .bp-task-row--overdue { border-color: rgba(168,50,50,0.25); background: var(--batch-danger-bg); }
 .bp-task-row--today  { border-color: rgba(184,122,26,0.25); background: var(--batch-warning-bg); }
+.bp-dash-task-list .bp-task-row--overdue { border-left: 3px solid var(--batch-danger); }
+.bp-batch-chip--overdue { background: var(--batch-danger-bg); color: var(--batch-danger); }
+.bp-task-flag { font-size: 12px; font-weight: 700; margin-left: 6px; }
+.bp-task-flag--overdue { color: var(--batch-danger); }
+.bp-task-flag--due { color: var(--batch-success); }
+.bp-task-flag--tbd { color: var(--ink-secondary); font-weight: 400; }
+.bp-rtb-invite-btn {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--cellar-green);
+  background: #fff;
+  color: var(--cellar-green);
+  cursor: pointer;
+}
 
 /* Task auto-save states */
 .bp-task-row[data-save-state="saving"] {
