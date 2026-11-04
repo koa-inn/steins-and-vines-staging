@@ -66,7 +66,7 @@ router.get('/api/admin/packaging-bookings', function (req, res) {
     var win = packagingBookings.packagingWindow(new Date());
     var key = packagingBookings.cacheKey(win.start);
     var cachedP;
-    try { cachedP = Promise.resolve(cache.get(key)).catch(function () { return null; }); } catch (e) { cachedP = Promise.resolve(null); }
+    try { cachedP = Promise.resolve(cache.get(key)).catch(function () { return null; }); } catch { cachedP = Promise.resolve(null); }
 
     cachedP.then(function (hit) {
       if (hit) return res.json(hit);

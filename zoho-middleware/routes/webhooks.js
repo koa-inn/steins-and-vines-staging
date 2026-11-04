@@ -1,6 +1,7 @@
 var express = require('express');
 var helcimLib = require('../lib/helcim');
 var calcom = require('../lib/calcom');
+var packagingBookings = require('../lib/packaging-bookings');
 var cache = require('../lib/cache');
 var log = require('../lib/logger');
 var eventLog = require('../lib/eventLog');
@@ -550,6 +551,13 @@ router.post(['/api/webhooks/calcom', '/webhooks/calcom'], function (req, res) {
 
   log.info('[webhook/calcom] Event received: triggerEvent=' + triggerEvent);
   eventLog.logEvent('calcom.webhook_received', { triggerEvent: triggerEvent });
+
+  // Phase 97 D-02: next packaging-bookings request refetches. In-process generation bump, no
+  // cache.del, so the existing webhook cache expectations hold.
+  if (triggerEvent === 'BOOKING_CREATED' || triggerEvent === 'BOOKING_RESCHEDULED' ||
+      triggerEvent === 'BOOKING_CANCELLED') {
+    packagingBookings.invalidate();
+  }
 
   if (triggerEvent === 'BOOKING_CANCELLED') {
     handleCalcomCancellation(body);
