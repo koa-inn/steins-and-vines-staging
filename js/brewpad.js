@@ -374,6 +374,101 @@ function addDays(ymd, n) {
   return d.getUTCFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
 }
 
+// ---- Phase 97-08: packaging calendar model (pure; Vancouver days come from the caller / server) ----
+var DASH_DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+var DASH_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// 'Today', 'Tomorrow', then 'Wed 5 Nov' (fixed English names, not locale dependent).
+function dashCalDayLabel(ymd, today) {
+  var diff = dayNumber(ymd) - dayNumber(today);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  var p = String(ymd).slice(0, 10).split('-');
+  var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+  return DASH_DAY_NAMES[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + DASH_MONTH_NAMES[d.getUTCMonth()];
+}
+
+// '2:30 pm' in Vancouver time; '' for an invalid timestamp.
+function dashCalTimeLabel(iso) {
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-US', { timeZone: 'America/Vancouver', hour: 'numeric', minute: '2-digit', hour12: true })
+    .replace(/[  ]/g, ' ').toLowerCase();
+}
+
+function dashCalKind(isCanning) { return isCanning ? 'Canning' : 'Bottling'; }
+
+// Merge Cal.com bookings and open dated packaging tasks into day groups (today .. today+13).
+// bookingsResult: { state: 'loading'|'ok'|'failed', bookings: [...] }. A task whose batch has a
+// matched booking in the window is shown once, as the booking.
+function buildPackagingCalendar(tasks, bookingsResult, typeById, today) {
+  var end = addDays(today, 13);
+  var state = (bookingsResult && bookingsResult.state) || 'loading';
+  var bookings = state === 'ok' ? ((bookingsResult && bookingsResult.bookings) || []) : [];
+  var types = typeById || {};
+  var byDay = {};
+  var booked = {};
+  var undatedCount = 0;
+  var i;
+
+  function put(day, rank, sortKey, entry) {
+    if (!byDay[day]) byDay[day] = [];
+    entry._rank = rank;
+    entry._key = sortKey;
+    byDay[day].push(entry);
+  }
+
+  for (i = 0; i < bookings.length; i++) {
+    var b = bookings[i];
+    if (!b || !b.day || b.day < today || b.day > end) continue;
+    var matched = !!b.batch_id;
+    if (matched) booked[b.batch_id] = true;
+    put(b.day, matched ? 0 : 1, String(b.start || ''), {
+      source: 'booking',
+      time: dashCalTimeLabel(b.start) || 'All day',
+      customer: b.customer_name || '',
+      batch_id: matched ? b.batch_id : null,
+      kind: dashCalKind(matched ? types[b.batch_id] === 'beer' : b.kind === 'canning'),
+      status: matched ? '' : 'no batch matched'
+    });
+  }
+
+  var list = tasks || [];
+  for (i = 0; i < list.length; i++) {
+    var t = list[i];
+    if (!t || !t.is_packaging || t.completed) continue;
+    var due = t.due_date ? String(t.due_date).slice(0, 10) : '';
+    if (!due) { undatedCount++; continue; }
+    if (due < today || due > end || booked[t.batch_id]) continue;
+    put(due, 2, String(t.batch_id || ''), {
+      source: 'task',
+      time: 'All day',
+      customer: getCustomerDisplayName(t),
+      batch_id: t.batch_id || null,
+      kind: dashCalKind(types[t.batch_id] === 'beer'),
+      status: state === 'ok' ? 'not booked yet' : ''
+    });
+  }
+
+  var days = [];
+  var total = 0;
+  Object.keys(byDay).sort().forEach(function (day) {
+    var entries = byDay[day].sort(function (a, c) {
+      if (a._rank !== c._rank) return a._rank - c._rank;
+      return a._key < c._key ? -1 : (a._key > c._key ? 1 : 0);
+    }).map(function (e) {
+      return { source: e.source, time: e.time, customer: e.customer, batch_id: e.batch_id, kind: e.kind, status: e.status };
+    });
+    total += entries.length;
+    days.push({ day: day, label: dashCalDayLabel(day, today), entries: entries });
+  });
+
+  var note = '';
+  if (state === 'loading') note = 'Checking bookings…';
+  else if (state === 'failed') note = 'Bookings could not be loaded. Showing BrewPad tasks only.';
+  return { days: days, total: total, undatedCount: undatedCount, note: note };
+}
+
 // Whole days from start to completion; null when either is missing or span < 0.
 function cycleDays(startYmd, completedYmd) {
   if (!startYmd || !completedYmd) return null;
@@ -3962,7 +4057,9 @@ function parseWaitlistRecipeIds(value) {
   var _dashV2Model = null;        // last buildDashV2Model result
   var _dashV2Seq = 0;
   var _dashV2WidgetOpts = {};     // Phase 96: 'w:opt' -> value; in memory only, never hash/localStorage
-  var _dashV2Drills = {};         // Phase 96: widgetKey -> [{ids, label}] rebuilt each render
+  // Phase 97-08: packaging calendar data, fetched lazily once per dashboard load (token = load identity).
+  var _dashCal = { tok: null, loadTime: null, data: null, tasks: null, tasksFailed: false, bookingsState: 'loading', bookings: [] };
+  var _dashV2Drills = {};       // Phase 96: widgetKey -> [{ids, label}] rebuilt each render
   var _dashV2Expanded = {};       // Phase 96: 'w:list' -> true when "Show all" is on
   var _dashV2ChartState = 'pending';
   var _dashV2Charts = {};         // slotId -> Chart instance (filled by plan 08)
@@ -8034,6 +8131,10 @@ function parseWaitlistRecipeIds(value) {
       render: function () { renderDashV2Rtb(); }
     },
     {
+      key: 't3', slot: 'bp-dash-v2-packcal', title: 'Packaging calendar', chart: '', needs: [],
+      render: function () { renderDashV2PackCal(); }
+    },
+    {
       key: 'g10', slot: 'bp-dash-v2-health', title: DASH_V2_HEALTH_TITLE, chart: 'health', needs: ['batchMeta'],
       render: function (model) { renderDashV2Health(model); }
     }
@@ -9024,6 +9125,118 @@ function parseWaitlistRecipeIds(value) {
     }
     var rowsHtml = list.map(function (it) { return dashReadyToBottleRowHtml(it); });
     dashV2ListWidget(slotId, title, 'Ready now, not yet bottled', rowsHtml, 't2:rtb');
+  }
+
+  // ---- Phase 97-08: v2 packaging calendar (Today section, ignores the global filters per D-15) ----
+  // Fetches tasks (BrewPad) and bookings (Cal.com via the middleware) once per dashboard load; each
+  // settle re-renders only this widget. A bookings failure never blocks the tasks (D-02).
+  function ensureDashCalData(today) {
+    if (!_dashData || !isDashV2()) return;
+    if (_dashCal.tok && _dashCal.loadTime === _dashLoadTime && _dashCal.data === _dashData) return;
+    var tok = {};
+    _dashCal = { tok: tok, loadTime: _dashLoadTime, data: _dashData, tasks: null, tasksFailed: false, bookingsState: 'loading', bookings: [] };
+    function settle(patch) {
+      if (_dashCal.tok !== tok) return;
+      Object.keys(patch).forEach(function (k) { _dashCal[k] = patch[k]; });
+      if (isDashV2()) rerenderDashV2Widget('t3');
+    }
+    try {
+      adminApiGet('get_tasks_calendar', { start_date: today, end_date: addDays(today, 13) }).then(function (r) {
+        settle({ tasks: (r && r.data && r.data.tasks) || [] });
+      }, function () {
+        settle({ tasks: [], tasksFailed: true });
+      });
+    } catch (e) {
+      _dashCal.tasks = [];
+      _dashCal.tasksFailed = true;
+    }
+    try {
+      fetch(mwUrl() + '/api/admin/packaging-bookings', { credentials: 'include' })
+        .then(function (r) { return r.json(); })
+        .then(function (body) {
+          if (body && body.ok === true) settle({ bookingsState: 'ok', bookings: body.bookings || [] });
+          else settle({ bookingsState: 'failed' });
+        })
+        .catch(function () { settle({ bookingsState: 'failed' }); });
+    } catch (e2) {
+      _dashCal.bookingsState = 'failed';
+    }
+  }
+
+  function dashCalEntryHtml(en, drillIdx) {
+    var who = en.customer || '';
+    var main;
+    if (en.batch_id && drillIdx !== null) {
+      var label = who ? escapeHTML(who) + ' · ' + escapeHTML(en.batch_id) : escapeHTML(en.batch_id);
+      main = '<button type="button" class="bp-table-link" data-dash-row="t3:' + drillIdx + '">' + label + '</button>';
+    } else {
+      main = escapeHTML(who || 'Booking');
+    }
+    var timeCls = en.time === 'All day' ? 'bp-cal-time bp-cal-time--allday' : 'bp-cal-time';
+    return '<li class="bp-cal-entry' + (en.status === 'not booked yet' ? ' bp-cal-entry--unbooked' : '') + '">' +
+      '<span class="' + timeCls + '">' + escapeHTML(en.time) + '</span>' +
+      '<span class="bp-cal-main">' + main + '</span>' +
+      '<span class="bp-badge">' + escapeHTML(en.kind) + '</span>' +
+      (en.status ? '<span class="bp-cal-status">' + escapeHTML(en.status) + '</span>' : '') +
+      '</li>';
+  }
+
+  function renderDashV2PackCal() {
+    var slotId = 'bp-dash-v2-packcal';
+    var title = 'Packaging calendar';
+    var today = dashV2TodayDate();
+    ensureDashCalData(today);
+    var slot = dashV2Widget(slotId, title);
+    if (!slot) return;
+    slot.style.display = '';
+    slot.querySelector('.bp-widget-title').textContent = title;
+    slot.querySelector('.bp-widget-sub').textContent = 'Next 14 days · wine and cider bottling, beer canning';
+    var body = slot.querySelector('.bp-widget-body');
+    body.setAttribute('data-state', 'list');
+
+    if (_dashCal.tasksFailed && _dashCal.bookingsState !== 'ok') {
+      dashV2SetNote(slotId, '');
+      body.setAttribute('data-state', 'msg');
+      body.innerHTML = '<p class="bp-empty">Not available yet. Reopen the Dashboard tab to refresh.</p>';
+      return;
+    }
+
+    var typeById = {};
+    var ctx = dashV2ProdCtx();
+    for (var i = 0; i < ctx.rows.length; i++) {
+      typeById[ctx.rows[i].batch_id] = effectiveBatchType(ctx.rows[i], ctx.catMap);
+    }
+    var model = buildPackagingCalendar(_dashCal.tasks || [], { state: _dashCal.bookingsState, bookings: _dashCal.bookings }, typeById, today);
+    dashV2SetNote(slotId, model.note);
+
+    if (_dashCal.tasks === null) { body.innerHTML = '<div class="bp-cal"></div>'; return; }
+
+    var undated = model.undatedCount > 0
+      ? '<p class="bp-dash-foot-note">' + model.undatedCount + ' packaging tasks have no date. See Ready to bottle.</p>' : '';
+    if (!model.total) {
+      body.setAttribute('data-state', 'msg');
+      body.innerHTML = '<p class="bp-empty">Nothing booked or due in the next 14 days.</p>' + undated;
+      return;
+    }
+
+    var expanded = !!_dashV2Expanded['t3:cal'];
+    var limit = expanded ? model.total : 7;
+    var shown = 0;
+    var html = '<div class="bp-cal">';
+    for (var d = 0; d < model.days.length && shown < limit; d++) {
+      var day = model.days[d];
+      html += '<div class="bp-cal-day"><h4 class="bp-cal-day-head">' + escapeHTML(day.label) + '</h4><ul class="bp-cal-list">';
+      for (var e = 0; e < day.entries.length && shown < limit; e++) {
+        var en = day.entries[e];
+        var idx = en.batch_id ? dashV2DrillAdd('t3', [en.batch_id], en.batch_id, true) : null;
+        html += dashCalEntryHtml(en, idx);
+        shown++;
+      }
+      html += '</ul></div>';
+    }
+    html += '</div>';
+    if (model.total > 7) html += dashV2ShowAllBtn('t3:cal', model.total, expanded);
+    body.innerHTML = html + undated;
   }
 
   // applyBatchFilter — the ONE place that derives _batchesData from _allBatchesData
@@ -16622,6 +16835,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isBatchSourceEditable: isBatchSourceEditable,
     shouldShowInternalBadge: shouldShowInternalBadge,
     getCustomerDisplayName: getCustomerDisplayName,
+    dashCalDayLabel: dashCalDayLabel, dashCalTimeLabel: dashCalTimeLabel, buildPackagingCalendar: buildPackagingCalendar,
     calcAbv: calcAbv, renderDataGapWarning: renderDataGapWarning,
     isSessionStale: isSessionStale,
     isSessionExpired: isSessionExpired,
