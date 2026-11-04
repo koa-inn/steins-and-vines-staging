@@ -2626,7 +2626,7 @@ Plans:
   3. The cider section shows juice or recipe, yeast and the readings curve.
   4. A 2-week packaging calendar lists bottling for wine and cider and canning for beer.
 
-**Plans:** 9/12 plans executed
+**Plans:** 10/12 plans executed
 
 Plans:
 
@@ -2653,7 +2653,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 97-10-PLAN.md — Ready to Bottle (N) filter on the Batches tab + kiosk recipe batches keep customer email (wave 5)
+- [x] 97-10-PLAN.md — Ready to Bottle (N) filter on the Batches tab + kiosk recipe batches keep customer email (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
