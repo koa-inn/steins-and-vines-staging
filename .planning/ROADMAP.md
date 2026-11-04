@@ -2626,7 +2626,7 @@ Plans:
   3. The cider section shows juice or recipe, yeast and the readings curve.
   4. A 2-week packaging calendar lists bottling for wine and cider and canning for beer.
 
-**Plans:** 5/12 plans executed
+**Plans:** 7/12 plans executed
 
 Plans:
 
@@ -2640,8 +2640,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 97-06-PLAN.md — Packaging-bookings route with server-side email matching, cache, webhook invalidation (wave 2)
-- [ ] 97-07-PLAN.md — Six-section v2 layout, Today section with restored Today's tasks and Ready to bottle (wave 2, owner checkpoint)
+- [x] 97-06-PLAN.md — Packaging-bookings route with server-side email matching, cache, webhook invalidation (wave 2)
+- [x] 97-07-PLAN.md — Six-section v2 layout, Today section with restored Today's tasks and Ready to bottle (wave 2, owner checkpoint)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
