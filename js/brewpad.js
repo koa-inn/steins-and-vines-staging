@@ -378,14 +378,19 @@ function addDays(ymd, n) {
 var DASH_DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 var DASH_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// 'Today', 'Tomorrow', then 'Wed 5 Nov' (fixed English names, not locale dependent).
+// 'Thu 6 Nov' (fixed English names, not locale dependent).
+function dashWeekdayDate(ymd) {
+  var p = String(ymd).slice(0, 10).split('-');
+  var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+  return DASH_DAY_NAMES[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + DASH_MONTH_NAMES[d.getUTCMonth()];
+}
+
+// 'Today', 'Tomorrow', then 'Wed 5 Nov'.
 function dashCalDayLabel(ymd, today) {
   var diff = dayNumber(ymd) - dayNumber(today);
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Tomorrow';
-  var p = String(ymd).slice(0, 10).split('-');
-  var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
-  return DASH_DAY_NAMES[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + DASH_MONTH_NAMES[d.getUTCMonth()];
+  return dashWeekdayDate(ymd);
 }
 
 // '2:30 pm' in Vancouver time; '' for an invalid timestamp.
@@ -467,6 +472,150 @@ function buildPackagingCalendar(tasks, bookingsResult, typeById, today) {
   if (state === 'loading') note = 'Checking bookings…';
   else if (state === 'failed') note = 'Bookings could not be loaded. Showing BrewPad tasks only.';
   return { days: days, total: total, undatedCount: undatedCount, note: note };
+}
+
+// ---- Phase 97-09: Beer & cider cards (pure). Canning numbers come from the server (input.canning). ----
+function dashBcHas(v) { return v !== null && v !== undefined && String(v).trim() !== ''; }
+
+function dashBcPlato(n) {
+  var v = Number(n);
+  return isNaN(v) ? '' : v.toFixed(1) + ' °P';
+}
+
+function dashBcPos(n) {
+  if (n === null || n === undefined || n === '') return null;
+  var v = Number(n);
+  return isFinite(v) && v > 0 ? v : null;
+}
+
+function buildBeerCiderCards(input) {
+  var inp = input || {};
+  var st = inp.state || {};
+  var rows = inp.rows || [];
+  var meta = inp.metaById || {};
+  var facts = inp.cardsById || {};
+  var today = inp.today;
+  var type = st.type || 'all';
+  var out = { hidden: false, emptyText: '', cards: [] };
+  if (type !== 'all' && type !== 'beer' && type !== 'cider') {
+    out.hidden = true;
+    return out;
+  }
+  out.emptyText = type === 'beer' ? 'No active beer batches' : (type === 'cider' ? 'No active cider batches' : 'No active beer or cider batches');
+
+  var open = {};
+  var tasks = inp.taskRows || [];
+  var i;
+  for (i = 0; i < tasks.length; i++) {
+    var tk = tasks[i];
+    if (!tk || tk.completed === true) continue;
+    if (!open[tk.batch_id]) open[tk.batch_id] = [];
+    open[tk.batch_id].push({ t: tk, i: i });
+  }
+  var plato = {};
+  var rd = inp.readings || [];
+  for (i = 0; i < rd.length; i++) {
+    var r = rd[i];
+    if (!r || r.degrees_plato === null || r.degrees_plato === undefined || r.degrees_plato === '' || isNaN(Number(r.degrees_plato))) continue;
+    var at = String(r.reading_at || r.reading_day || '');
+    if (!plato[r.batch_id] || at >= plato[r.batch_id].at) plato[r.batch_id] = { at: at, v: Number(r.degrees_plato) };
+  }
+
+  var picked = [];
+  for (i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (!row) continue;
+    var status = String(row.status || '').toLowerCase();
+    if (status !== 'primary' && status !== 'secondary') continue;
+    var ty = effectiveBatchType(row, inp.catMap || {});
+    if (ty !== 'beer' && ty !== 'cider') continue;
+    if (type !== 'all' && ty !== type) continue;
+    if (!sourceMatches(row, st.source)) continue;
+    picked.push({ row: row, type: ty, status: status });
+  }
+  picked.sort(function (a, b) {
+    if (a.type !== b.type) return a.type === 'beer' ? -1 : 1;
+    var sa = String(a.row.start_date || '');
+    var sb = String(b.row.start_date || '');
+    if (sa !== sb) return sa < sb ? 1 : -1;
+    return a.row.batch_id < b.row.batch_id ? 1 : (a.row.batch_id > b.row.batch_id ? -1 : 0);
+  });
+
+  var canning = inp.canning || null;
+  for (i = 0; i < picked.length; i++) {
+    var p = picked[i];
+    var id = p.row.batch_id;
+    var m = meta[id] || {};
+    var cf = facts[id] || null;
+    var fl = [];
+    function add(label, value) { if (dashBcHas(value)) fl.push({ label: label, value: String(value) }); }
+    var abv = cf ? dashBcPos(cf.abv) : null;
+    var abvText = abv === null ? '' : (Math.round(abv * 10) / 10) + '%';
+    if (p.type === 'beer') {
+      add('Style', m.recipe_style);
+      add('ABV', abvText);
+      add('IBU', cf && dashBcPos(cf.ibu) !== null ? String(Math.round(dashBcPos(cf.ibu))) : '');
+    } else {
+      add('Juice', (cf && cf.juice) || m.recipe_name || p.row.product_name);
+      add('Yeast', cf && cf.yeast);
+      add('ABV', abvText);
+    }
+    var og = dashBcPos(m.og);
+    var fg = dashBcPos(m.target_fg);
+    var nextList = (open[id] || []).slice().sort(function (a, b) {
+      var da = a.t.due_date ? String(a.t.due_date).slice(0, 10) : '';
+      var db = b.t.due_date ? String(b.t.due_date).slice(0, 10) : '';
+      if (da !== db) {
+        if (!da) return 1;
+        if (!db) return -1;
+        return da < db ? -1 : 1;
+      }
+      return a.i - b.i;
+    });
+    var next = { text: 'No open tasks', when: '', temp: false, late: false };
+    if (nextList.length) {
+      var nt = nextList[0].t;
+      var due = nt.due_date ? String(nt.due_date).slice(0, 10) : '';
+      var when = '';
+      var late = false;
+      if (due) {
+        if (due === today) when = 'due today';
+        else { when = 'due ' + dashWeekdayDate(due); late = due < today; }
+      }
+      next = { text: String(nt.title || 'Task'), when: when, temp: dashTaskKind(nt) === 'temp', late: late };
+    }
+    var output = '';
+    if (canning && dashBcPos(canning.packaged_litres) !== null && dashBcPos(canning.brew_litres) !== null) {
+      var tv = dashBcPos(p.row.target_volume_l);
+      var litres = tv !== null ? tv * canning.packaged_litres / canning.brew_litres : Number(canning.packaged_litres);
+      output = '≈ ' + Math.round(litres) + ' L packaged';
+      if (p.type === 'beer' && canning.nominal) {
+        var c473 = Math.floor(Number(canning.nominal['473']) * litres / canning.packaged_litres);
+        var c355 = Math.floor(Number(canning.nominal['355']) * litres / canning.packaged_litres);
+        if (!isNaN(c473) && !isNaN(c355)) output += ' · ≈ ' + c473 + ' × 473 mL or ' + c355 + ' × 355 mL';
+      }
+    }
+    var name = m.recipe_name || p.row.product_name;
+    var start = p.row.start_date ? String(p.row.start_date).slice(0, 10) : '';
+    var dayLine = (start ? 'Day ' + Math.max(0, dayNumber(today) - dayNumber(start)) + ' · ' : '') + (p.status === 'primary' ? 'Primary' : 'Secondary');
+    out.cards.push({
+      batch_id: id,
+      type: p.type,
+      title: String(id) + (dashBcHas(name) ? ' · ' + name : ''),
+      typeLabel: p.type === 'beer' ? 'Beer' : 'Cider',
+      dayLine: dayLine,
+      facts: fl,
+      readings: {
+        og: og === null ? '' : dashBcPlato(og),
+        latest: plato[id] ? dashBcPlato(plato[id].v) : 'No readings yet',
+        targetFg: fg === null ? '' : dashBcPlato(fg)
+      },
+      next: next,
+      output: output,
+      hasReadings: !!plato[id]
+    });
+  }
+  return out;
 }
 
 // Whole days from start to completion; null when either is missing or span < 0.
@@ -16835,6 +16984,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isBatchSourceEditable: isBatchSourceEditable,
     shouldShowInternalBadge: shouldShowInternalBadge,
     getCustomerDisplayName: getCustomerDisplayName,
+    dashWeekdayDate: dashWeekdayDate, buildBeerCiderCards: buildBeerCiderCards,
     dashCalDayLabel: dashCalDayLabel, dashCalTimeLabel: dashCalTimeLabel, buildPackagingCalendar: buildPackagingCalendar,
     calcAbv: calcAbv, renderDataGapWarning: renderDataGapWarning,
     isSessionStale: isSessionStale,
