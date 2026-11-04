@@ -378,14 +378,19 @@ function addDays(ymd, n) {
 var DASH_DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 var DASH_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// 'Today', 'Tomorrow', then 'Wed 5 Nov' (fixed English names, not locale dependent).
+// 'Thu 6 Nov' (fixed English names, not locale dependent).
+function dashWeekdayDate(ymd) {
+  var p = String(ymd).slice(0, 10).split('-');
+  var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+  return DASH_DAY_NAMES[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + DASH_MONTH_NAMES[d.getUTCMonth()];
+}
+
+// 'Today', 'Tomorrow', then 'Wed 5 Nov'.
 function dashCalDayLabel(ymd, today) {
   var diff = dayNumber(ymd) - dayNumber(today);
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Tomorrow';
-  var p = String(ymd).slice(0, 10).split('-');
-  var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
-  return DASH_DAY_NAMES[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + DASH_MONTH_NAMES[d.getUTCMonth()];
+  return dashWeekdayDate(ymd);
 }
 
 // '2:30 pm' in Vancouver time; '' for an invalid timestamp.
@@ -467,6 +472,150 @@ function buildPackagingCalendar(tasks, bookingsResult, typeById, today) {
   if (state === 'loading') note = 'Checking bookings…';
   else if (state === 'failed') note = 'Bookings could not be loaded. Showing BrewPad tasks only.';
   return { days: days, total: total, undatedCount: undatedCount, note: note };
+}
+
+// ---- Phase 97-09: Beer & cider cards (pure). Canning numbers come from the server (input.canning). ----
+function dashBcHas(v) { return v !== null && v !== undefined && String(v).trim() !== ''; }
+
+function dashBcPlato(n) {
+  var v = Number(n);
+  return isNaN(v) ? '' : v.toFixed(1) + ' °P';
+}
+
+function dashBcPos(n) {
+  if (n === null || n === undefined || n === '') return null;
+  var v = Number(n);
+  return isFinite(v) && v > 0 ? v : null;
+}
+
+function buildBeerCiderCards(input) {
+  var inp = input || {};
+  var st = inp.state || {};
+  var rows = inp.rows || [];
+  var meta = inp.metaById || {};
+  var facts = inp.cardsById || {};
+  var today = inp.today;
+  var type = st.type || 'all';
+  var out = { hidden: false, emptyText: '', cards: [] };
+  if (type !== 'all' && type !== 'beer' && type !== 'cider') {
+    out.hidden = true;
+    return out;
+  }
+  out.emptyText = type === 'beer' ? 'No active beer batches' : (type === 'cider' ? 'No active cider batches' : 'No active beer or cider batches');
+
+  var open = {};
+  var tasks = inp.taskRows || [];
+  var i;
+  for (i = 0; i < tasks.length; i++) {
+    var tk = tasks[i];
+    if (!tk || tk.completed === true) continue;
+    if (!open[tk.batch_id]) open[tk.batch_id] = [];
+    open[tk.batch_id].push({ t: tk, i: i });
+  }
+  var plato = {};
+  var rd = inp.readings || [];
+  for (i = 0; i < rd.length; i++) {
+    var r = rd[i];
+    if (!r || r.degrees_plato === null || r.degrees_plato === undefined || r.degrees_plato === '' || isNaN(Number(r.degrees_plato))) continue;
+    var at = String(r.reading_at || r.reading_day || '');
+    if (!plato[r.batch_id] || at >= plato[r.batch_id].at) plato[r.batch_id] = { at: at, v: Number(r.degrees_plato) };
+  }
+
+  var picked = [];
+  for (i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (!row) continue;
+    var status = String(row.status || '').toLowerCase();
+    if (status !== 'primary' && status !== 'secondary') continue;
+    var ty = effectiveBatchType(row, inp.catMap || {});
+    if (ty !== 'beer' && ty !== 'cider') continue;
+    if (type !== 'all' && ty !== type) continue;
+    if (!sourceMatches(row, st.source)) continue;
+    picked.push({ row: row, type: ty, status: status });
+  }
+  picked.sort(function (a, b) {
+    if (a.type !== b.type) return a.type === 'beer' ? -1 : 1;
+    var sa = String(a.row.start_date || '');
+    var sb = String(b.row.start_date || '');
+    if (sa !== sb) return sa < sb ? 1 : -1;
+    return a.row.batch_id < b.row.batch_id ? 1 : (a.row.batch_id > b.row.batch_id ? -1 : 0);
+  });
+
+  var canning = inp.canning || null;
+  for (i = 0; i < picked.length; i++) {
+    var p = picked[i];
+    var id = p.row.batch_id;
+    var m = meta[id] || {};
+    var cf = facts[id] || null;
+    var fl = [];
+    function add(label, value) { if (dashBcHas(value)) fl.push({ label: label, value: String(value) }); }
+    var abv = cf ? dashBcPos(cf.abv) : null;
+    var abvText = abv === null ? '' : (Math.round(abv * 10) / 10) + '%';
+    if (p.type === 'beer') {
+      add('Style', m.recipe_style);
+      add('ABV', abvText);
+      add('IBU', cf && dashBcPos(cf.ibu) !== null ? String(Math.round(dashBcPos(cf.ibu))) : '');
+    } else {
+      add('Juice', (cf && cf.juice) || m.recipe_name || p.row.product_name);
+      add('Yeast', cf && cf.yeast);
+      add('ABV', abvText);
+    }
+    var og = dashBcPos(m.og);
+    var fg = dashBcPos(m.target_fg);
+    var nextList = (open[id] || []).slice().sort(function (a, b) {
+      var da = a.t.due_date ? String(a.t.due_date).slice(0, 10) : '';
+      var db = b.t.due_date ? String(b.t.due_date).slice(0, 10) : '';
+      if (da !== db) {
+        if (!da) return 1;
+        if (!db) return -1;
+        return da < db ? -1 : 1;
+      }
+      return a.i - b.i;
+    });
+    var next = { text: 'No open tasks', when: '', temp: false, late: false };
+    if (nextList.length) {
+      var nt = nextList[0].t;
+      var due = nt.due_date ? String(nt.due_date).slice(0, 10) : '';
+      var when = '';
+      var late = false;
+      if (due) {
+        if (due === today) when = 'due today';
+        else { when = 'due ' + dashWeekdayDate(due); late = due < today; }
+      }
+      next = { text: String(nt.title || 'Task'), when: when, temp: dashTaskKind(nt) === 'temp', late: late };
+    }
+    var output = '';
+    if (canning && dashBcPos(canning.packaged_litres) !== null && dashBcPos(canning.brew_litres) !== null) {
+      var tv = dashBcPos(p.row.target_volume_l);
+      var litres = tv !== null ? tv * canning.packaged_litres / canning.brew_litres : Number(canning.packaged_litres);
+      output = '≈ ' + Math.round(litres) + ' L packaged';
+      if (p.type === 'beer' && canning.nominal) {
+        var c473 = Math.floor(Number(canning.nominal['473']) * litres / canning.packaged_litres);
+        var c355 = Math.floor(Number(canning.nominal['355']) * litres / canning.packaged_litres);
+        if (!isNaN(c473) && !isNaN(c355)) output += ' · ≈ ' + c473 + ' × 473 mL or ' + c355 + ' × 355 mL';
+      }
+    }
+    var name = m.recipe_name || p.row.product_name;
+    var start = p.row.start_date ? String(p.row.start_date).slice(0, 10) : '';
+    var dayLine = (start ? 'Day ' + Math.max(0, dayNumber(today) - dayNumber(start)) + ' · ' : '') + (p.status === 'primary' ? 'Primary' : 'Secondary');
+    out.cards.push({
+      batch_id: id,
+      type: p.type,
+      title: String(id) + (dashBcHas(name) ? ' · ' + name : ''),
+      typeLabel: p.type === 'beer' ? 'Beer' : 'Cider',
+      dayLine: dayLine,
+      facts: fl,
+      readings: {
+        og: og === null ? '' : dashBcPlato(og),
+        latest: plato[id] ? dashBcPlato(plato[id].v) : 'No readings yet',
+        targetFg: fg === null ? '' : dashBcPlato(fg)
+      },
+      next: next,
+      output: output,
+      hasReadings: !!plato[id]
+    });
+  }
+  return out;
 }
 
 // Whole days from start to completion; null when either is missing or span < 0.
@@ -4059,6 +4208,7 @@ function parseWaitlistRecipeIds(value) {
   var _dashV2WidgetOpts = {};     // Phase 96: 'w:opt' -> value; in memory only, never hash/localStorage
   // Phase 97-08: packaging calendar data, fetched lazily once per dashboard load (token = load identity).
   var _dashCal = { tok: null, loadTime: null, data: null, tasks: null, tasksFailed: false, bookingsState: 'loading', bookings: [] };
+  var _dashCards = { tok: null, loadTime: null, data: null, state: 'loading', byId: {}, canning: null };
   var _dashV2Drills = {};       // Phase 96: widgetKey -> [{ids, label}] rebuilt each render
   var _dashV2Expanded = {};       // Phase 96: 'w:list' -> true when "Show all" is on
   var _dashV2ChartState = 'pending';
@@ -7307,6 +7457,13 @@ function parseWaitlistRecipeIds(value) {
     delete _dashV2Charts[key];
   }
 
+  function destroyDashV2ChartsByPrefix(prefix) {
+    var keys = Object.keys(_dashV2Charts);
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i].indexOf(prefix) === 0) destroyDashV2Slot(keys[i]);
+    }
+  }
+
   function dashV2Msg(slotId, key, title, msgHtml) {
     var slot = dashV2Widget(slotId, title);
     if (!slot) return;
@@ -7953,6 +8110,27 @@ function parseWaitlistRecipeIds(value) {
     return h + '</dl>';
   }
 
+  // Chart.js config for a G8 model; shared by the Floor-today widget and the Beer & cider card curves.
+  function dashG8ChartConfig(g) {
+    return {
+      type: 'line',
+      xType: 'linear',
+      xMin: 0,
+      xTitle: 'Days since start',
+      yTitle: '°P',
+      labels: undefined,
+      series: g.series,
+      unit: 'plato',
+      inertKeys: ['expected'],
+      hitDatasetIndex: true,
+      ariaLabel: g.ariaLabel,
+      onClick: function (hit) {
+        var ser = g.series[hit.datasetIndex];
+        if (ser && ser.batchId) dashV2Go([ser.batchId], '');
+      }
+    };
+  }
+
   // G8 Fermentation: Plato readings by day since start, plus a neutral "No readings yet" list.
   function renderDashV2Ferment(model, chartState) {
     var slotId = 'bp-dash-v2-ferment';
@@ -7997,23 +8175,7 @@ function parseWaitlistRecipeIds(value) {
       if (g.series[s].key === 'expected') items.push({ label: 'Expected (dashed)', colour: g.series[s].colour });
     }
     body.querySelector('.bp-chart-legend').innerHTML = dashV2LegendHtml(items);
-    _dashV2Charts.ferment = chart(canvas, {
-      type: 'line',
-      xType: 'linear',
-      xMin: 0,
-      xTitle: 'Days since start',
-      yTitle: '°P',
-      labels: undefined,
-      series: g.series,
-      unit: 'plato',
-      inertKeys: ['expected'],
-      hitDatasetIndex: true,
-      ariaLabel: g.ariaLabel,
-      onClick: function (hit) {
-        var ser = g.series[hit.datasetIndex];
-        if (ser && ser.batchId) dashV2Go([ser.batchId], '');
-      }
-    });
+    _dashV2Charts.ferment = chart(canvas, dashG8ChartConfig(g));
   }
 
   var DASH_V2_LOADING = 'Loading charts…';
@@ -8133,6 +8295,10 @@ function parseWaitlistRecipeIds(value) {
     {
       key: 't3', slot: 'bp-dash-v2-packcal', title: 'Packaging calendar', chart: '', needs: [],
       render: function () { renderDashV2PackCal(); }
+    },
+    {
+      key: 'bc', slot: 'bp-dash-v2-bc', title: 'Beer & cider', chart: '', needs: ['taskRows', 'readings', 'batchMeta'],
+      render: function (model, cs) { renderDashV2BeerCider(model, cs); }
     },
     {
       key: 'g10', slot: 'bp-dash-v2-health', title: DASH_V2_HEALTH_TITLE, chart: 'health', needs: ['batchMeta'],
@@ -8268,6 +8434,8 @@ function parseWaitlistRecipeIds(value) {
     }
     if ((el = t.closest('[data-dash-drill]'))) { onDashV2TileClick(el); return; }
     if ((el = t.closest('.bp-seg-btn[data-dash-w]'))) { selectDashV2WidgetOpt(el); return; }
+    if ((el = t.closest('[data-bc-curve]'))) { onDashV2BcCurve(el); return; }
+    if ((el = t.closest('[data-bc-view]'))) { onDashV2BcView(el); return; }
     if ((el = t.closest('[data-dash-row]'))) { onDashV2RowClick(el); return; }
     if ((el = t.closest('[data-dash-showall]'))) { onDashV2ShowAll(el); return; }
     if ((el = t.closest('[data-dash-acc]'))) { onDashV2Accordion(el); return; }
@@ -9237,6 +9405,173 @@ function parseWaitlistRecipeIds(value) {
     html += '</div>';
     if (model.total > 7) html += dashV2ShowAllBtn('t3:cal', model.total, expanded);
     body.innerHTML = html + undated;
+  }
+
+  // ---- Phase 97-09: Beer & cider cards (follow Type and Source; staff batches included, D-16) ----
+  // Card facts (ABV, IBU, juice, yeast) and the shared canning constants come from the middleware,
+  // fetched once per dashboard load. A failure only drops those facts; the cards still render.
+  function ensureDashCardsData() {
+    if (!_dashData || !isDashV2()) return;
+    if (_dashCards.tok && _dashCards.loadTime === _dashLoadTime && _dashCards.data === _dashData) return;
+    var tok = {};
+    _dashCards = { tok: tok, loadTime: _dashLoadTime, data: _dashData, state: 'loading', byId: {}, canning: null };
+    function settle(patch) {
+      if (_dashCards.tok !== tok) return;
+      Object.keys(patch).forEach(function (k) { _dashCards[k] = patch[k]; });
+      if (isDashV2()) rerenderDashV2Widget('bc');
+    }
+    try {
+      fetch(mwUrl() + '/api/admin/dashboard-cards', { credentials: 'include' })
+        .then(function (r) { return r.json(); })
+        .then(function (body) {
+          if (body && body.ok === true) {
+            var byId = {};
+            var list = body.cards || [];
+            for (var i = 0; i < list.length; i++) { if (list[i] && list[i].batch_id) byId[list[i].batch_id] = list[i]; }
+            settle({ state: 'ok', byId: byId, canning: body.canning || null });
+          } else {
+            settle({ state: 'failed' });
+          }
+        })
+        .catch(function () { settle({ state: 'failed' }); });
+    } catch (e) {
+      _dashCards.state = 'failed';
+    }
+  }
+
+  function dashBcLine(parts) {
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      if (!parts[i].value) continue;
+      out.push('<span class="bp-bc-fact"><span class="bp-bc-label">' + escapeHTML(parts[i].label) + '</span> <span class="bp-bc-value">' +
+        escapeHTML(parts[i].value) + '</span></span>');
+    }
+    return out.length ? '<p class="bp-bc-line">' + out.join('<span class="bp-bc-sep"> · </span>') + '</p>' : '';
+  }
+
+  function dashBcNextHtml(next) {
+    var title = next.temp
+      ? '<span class="bp-bc-temp"><span class="bp-bc-temp-tag">Temp step</span> ' + escapeHTML(next.text) + '</span>'
+      : '<span class="bp-bc-value">' + escapeHTML(next.text) + '</span>';
+    return '<p class="bp-bc-next"><span class="bp-bc-label">Next</span> ' + title +
+      (next.when ? '<span class="bp-bc-sep"> · </span><span class="bp-bc-value">' + escapeHTML(next.when) + '</span>' : '') +
+      (next.late ? ' <span class="bp-bc-late">late</span>' : '') + '</p>';
+  }
+
+  function dashBcCurveHtml(id, g, view, chartOk) {
+    var showChart = view === 'chart' && chartOk;
+    var toggle = '<div class="bp-seg" role="radiogroup" aria-label="View as">' +
+      ['chart', 'table'].map(function (v) {
+        var on = (v === 'chart') === showChart;
+        return '<button type="button" class="bp-seg-btn" role="radio" aria-checked="' + (on ? 'true' : 'false') + '" tabindex="' + (on ? '0' : '-1') +
+          '" data-bc-view="' + escapeHTML(id) + ':' + v + '">' + (v === 'chart' ? 'Chart' : 'Table') + '</button>';
+      }).join('') + '</div>';
+    if (g.state !== 'ok') return '<div class="bp-bc-curve">' + toggle + '<p class="bp-empty">' + escapeHTML(g.stateText) + '</p></div>';
+    var body = showChart
+      ? '<div class="bp-chart"><canvas data-bc-canvas="' + escapeHTML(id) + '"></canvas></div><div class="bp-chart-legend"></div>'
+      : dashTableHtml('bc', dashV2TableModel('bc', g.table));
+    return '<div class="bp-bc-curve">' + toggle + body +
+      (g.note ? '<p class="bp-dash-foot-note">' + escapeHTML(g.note) + '</p>' : '') +
+      (g.stats ? dashV2StatsHtml(g.stats) : '') + '</div>';
+  }
+
+  function renderDashV2BeerCider(model, chartState) {
+    var slotId = 'bp-dash-v2-bc';
+    if (!model || !document.getElementById(slotId)) return;
+    destroyDashV2ChartsByPrefix('bc:');
+    ensureDashCardsData();
+    var ctx = dashV2ProdCtx();
+    var metaById = {};
+    var bm = (_dashData && _dashData.batchMeta) || [];
+    for (var i = 0; i < bm.length; i++) { if (bm[i]) metaById[bm[i].batch_id] = bm[i]; }
+    var today = (_dashData && _dashData.asOf && _dashData.asOf.today) || todayPacific();
+    var m = buildBeerCiderCards({
+      rows: ctx.rows, metaById: metaById, cardsById: _dashCards.byId, taskRows: _dashData.taskRows,
+      readings: _dashData.readings, canning: _dashCards.canning, state: model.state, today: today, catMap: ctx.catMap
+    });
+    var slot = document.getElementById(slotId);
+    if (m.hidden) { slot.innerHTML = ''; return; }
+    dashV2Widget(slotId, 'Beer & cider');
+    slot.style.display = '';
+    slot.querySelector('.bp-widget-sub').textContent = 'Active batches, beer first, newest start first';
+    dashV2SetControls(slotId, '');
+    dashV2SetNote(slotId, '');
+    var body = slot.querySelector('.bp-widget-body');
+    body.setAttribute('data-state', 'bc');
+    if (!m.cards.length) {
+      body.innerHTML = '<p class="bp-empty">' + escapeHTML(m.emptyText) + '</p>';
+      return;
+    }
+    var expandedAll = !!_dashV2Expanded['bc:cards'];
+    var shown = expandedAll ? m.cards : m.cards.slice(0, 6);
+    var chartOk = chartState === 'ready' && !!window.Chart;
+    var html = '<div class="bp-bc-grid">';
+    var curves = [];
+    for (var c = 0; c < shown.length; c++) {
+      var card = shown[c];
+      var idx = dashV2DrillAdd('bc', [card.batch_id], 'Batch ' + card.batch_id, false);
+      var open = !!_dashV2Expanded['bc:curve:' + card.batch_id];
+      var view = _dashV2Expanded['bc:view:' + card.batch_id] === 'table' ? 'table' : 'chart';
+      html += '<article class="bp-bc-card bp-bc-card--' + card.type + '">' +
+        '<button type="button" class="bp-bc-head" data-dash-row="bc:' + idx + '">' +
+        '<span class="bp-bc-title">' + escapeHTML(card.title) + '</span>' +
+        '<span class="bp-badge">' + escapeHTML(card.typeLabel) + '</span>' +
+        '<span class="bp-bc-day">' + escapeHTML(card.dayLine) + '</span></button>' +
+        dashBcLine(card.facts) +
+        dashBcLine([{ label: 'OG', value: card.readings.og }, { label: 'Latest', value: card.readings.latest }, { label: 'Target FG', value: card.readings.targetFg }]) +
+        dashBcNextHtml(card.next) +
+        (card.output ? '<p class="bp-bc-out"><span class="bp-bc-label">Output</span> <span class="bp-bc-value">' + escapeHTML(card.output) + '</span></p>' : '');
+      if (card.hasReadings) {
+        html += '<button type="button" class="bp-text-btn" data-bc-curve="' + escapeHTML(card.batch_id) + '" aria-expanded="' + (open ? 'true' : 'false') + '">' +
+          (open ? 'Hide readings curve' : 'Show readings curve') + '</button>';
+        if (open) {
+          var synth = Object.assign({}, model, { state: Object.assign({}, model.state, { type: 'all', source: 'all', staff: '1' }) });
+          var g = buildG8Model(ctx.rows, _dashData.readings, metaById, synth, { batch: card.batch_id, staffIds: ctx.staffIds, catMap: ctx.catMap });
+          curves.push({ id: card.batch_id, g: g, view: view });
+          html += dashBcCurveHtml(card.batch_id, g, view, chartOk);
+        }
+      }
+      html += '</article>';
+    }
+    html += '</div>';
+    if (m.cards.length > 6) html += dashV2ShowAllBtn('bc:cards', m.cards.length, expandedAll);
+    html += '<p class="bp-dash-foot-note">Packaged amounts are estimates from the standard batch size.</p>';
+    body.innerHTML = html;
+    for (var k = 0; k < curves.length; k++) {
+      var cv = curves[k];
+      if (cv.g.state !== 'ok' || cv.view !== 'chart' || !chartOk) continue;
+      var canvas = null;
+      var canvases = body.querySelectorAll('canvas[data-bc-canvas]');
+      for (var q = 0; q < canvases.length; q++) { if (canvases[q].getAttribute('data-bc-canvas') === String(cv.id)) canvas = canvases[q]; }
+      if (!canvas) continue;
+      canvas.parentNode.style.height = (dashV2IsPhone() ? 220 : 240) + 'px';
+      var items = cv.g.legend.slice();
+      for (var s = 0; s < cv.g.series.length; s++) {
+        if (cv.g.series[s].key === 'expected') items.push({ label: 'Expected (dashed)', colour: cv.g.series[s].colour });
+      }
+      var leg = canvas.parentNode.parentNode.querySelector('.bp-chart-legend');
+      if (leg) leg.innerHTML = dashV2LegendHtml(items);
+      _dashV2Charts['bc:' + cv.id] = chart(canvas, dashG8ChartConfig(cv.g));
+    }
+  }
+
+  function onDashV2BcCurve(el) {
+    var id = el.getAttribute('data-bc-curve') || '';
+    var key = 'bc:curve:' + id;
+    _dashV2Expanded[key] = !_dashV2Expanded[key];
+    rerenderDashV2Widget('bc');
+    var btns = document.querySelectorAll('[data-bc-curve]');
+    for (var i = 0; i < btns.length; i++) { if (btns[i].getAttribute('data-bc-curve') === id) { btns[i].focus(); break; } }
+  }
+
+  function onDashV2BcView(el) {
+    var attr = el.getAttribute('data-bc-view') || '';
+    var at = attr.lastIndexOf(':');
+    if (at < 1) return;
+    _dashV2Expanded['bc:view:' + attr.slice(0, at)] = attr.slice(at + 1) === 'table' ? 'table' : 'chart';
+    rerenderDashV2Widget('bc');
+    var btns = document.querySelectorAll('[data-bc-view]');
+    for (var i = 0; i < btns.length; i++) { if (btns[i].getAttribute('data-bc-view') === attr) { btns[i].focus(); break; } }
   }
 
   // applyBatchFilter — the ONE place that derives _batchesData from _allBatchesData
@@ -16835,6 +17170,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isBatchSourceEditable: isBatchSourceEditable,
     shouldShowInternalBadge: shouldShowInternalBadge,
     getCustomerDisplayName: getCustomerDisplayName,
+    dashWeekdayDate: dashWeekdayDate, buildBeerCiderCards: buildBeerCiderCards,
     dashCalDayLabel: dashCalDayLabel, dashCalTimeLabel: dashCalTimeLabel, buildPackagingCalendar: buildPackagingCalendar,
     calcAbv: calcAbv, renderDataGapWarning: renderDataGapWarning,
     isSessionStale: isSessionStale,
