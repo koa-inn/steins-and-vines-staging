@@ -2626,17 +2626,17 @@ Plans:
   3. The cider section shows juice or recipe, yeast and the readings curve.
   4. A 2-week packaging calendar lists bottling for wine and cider and canning for beer.
 
-**Plans:** 12 plans in 7 waves
+**Plans:** 5/12 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 97-01-PLAN.md — Recipe Target OG/FG: migration 0009, validation, store, Apps Script mirror (wave 1)
-- [ ] 97-02-PLAN.md — Kiosk recipe snapshot carries target gravity, IBU, batch size and ingredient types (wave 1)
-- [ ] 97-03-PLAN.md — Cal.com listBookings + Beer Packaging event type wiring (wave 1)
-- [ ] 97-04-PLAN.md — Staff route for beer/cider card facts and shared canning constants (wave 1)
-- [ ] 97-05-PLAN.md — Recipe editor Target OG/FG inputs + attach snapshot copy (wave 1)
+- [x] 97-01-PLAN.md — Recipe Target OG/FG: migration 0009, validation, store, Apps Script mirror (wave 1)
+- [x] 97-02-PLAN.md — Kiosk recipe snapshot carries target gravity, IBU, batch size and ingredient types (wave 1)
+- [x] 97-03-PLAN.md — Cal.com listBookings + Beer Packaging event type wiring (wave 1)
+- [x] 97-04-PLAN.md — Staff route for beer/cider card facts and shared canning constants (wave 1)
+- [x] 97-05-PLAN.md — Recipe editor Target OG/FG inputs + attach snapshot copy (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
