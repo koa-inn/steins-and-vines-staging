@@ -850,8 +850,9 @@ function reconcileInvoiceBatchStatus(invoice, liveBatchIndex, opts) {
  * @param {string} invoiceNumber   - Zoho invoice number
  * @param {string} customerName    - full customer name (or empty for walk-in)
  * @param {string} contactId       - Zoho contact ID (or empty for walk-in)
+ * @param {string} [customerEmail] - validated customer email (97-10, D-03); omitted when absent
  */
-function detectRecipeSale(recipeId, recipeSnapshot, invoiceNumber, customerName, contactId) {
+function detectRecipeSale(recipeId, recipeSnapshot, invoiceNumber, customerName, contactId, customerEmail) {
   if (!recipeId) return;
   var nameParts = splitCustomerName(customerName);
   var batchPayload = {
@@ -868,6 +869,7 @@ function detectRecipeSale(recipeId, recipeSnapshot, invoiceNumber, customerName,
     target_volume_l:    (recipeSnapshot && recipeSnapshot.target_volume_l) || null,
     scale_factor:       (recipeSnapshot && recipeSnapshot.scale_factor) || null
   };
+  if (customerEmail) batchPayload.customer_email = customerEmail;
   callAppsScriptCreateBatch(batchPayload).catch(function () {});
 }
 
