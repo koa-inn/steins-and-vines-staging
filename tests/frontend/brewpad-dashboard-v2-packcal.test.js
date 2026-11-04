@@ -34,8 +34,8 @@ describe('dash calendar labels', function () {
   });
 
   test('time labels are Vancouver time', function () {
-    expect(bp.dashCalTimeLabel('2026-11-03T22:30:00.000Z')).toBe('2:30 pm');
-    expect(bp.dashCalTimeLabel('2026-11-06T05:00:00.000Z')).toBe('9:00 pm');
+    expect(bp.dashCalTimeLabel('2026-07-03T21:30:00.000Z')).toBe('2:30 pm');
+    expect(bp.dashCalTimeLabel('2026-07-06T04:00:00.000Z')).toBe('9:00 pm');
     expect(bp.dashCalTimeLabel('nonsense')).toBe('');
   });
 });
@@ -85,7 +85,7 @@ describe('buildPackagingCalendar', function () {
   });
 
   test('groups by the server Vancouver day field (9 pm PT stays on the 5th)', function () {
-    var m = bp.buildPackagingCalendar([], OK([bk('2026-11-05', '2026-11-06T05:00:00.000Z', 'W1')]), typeById, today);
+    var m = bp.buildPackagingCalendar([], OK([bk('2026-11-05', '2026-07-06T04:00:00.000Z', 'W1')]), typeById, today);
     expect(m.days[0].label).toBe('Thu 5 Nov');
     expect(m.days[0].entries[0].time).toBe('9:00 pm');
   });

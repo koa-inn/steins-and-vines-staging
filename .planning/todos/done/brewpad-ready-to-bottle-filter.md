@@ -29,3 +29,7 @@ is only a proxy and misses/over-includes.
 
 Small-to-medium frontend change + possibly one Apps Script list-payload field. Natural to bundle
 with brewpad-bottled-status-stale-ui in a single BrewPad-UX phase.
+
+## Resolution (Phase 97, 2026-11)
+
+Resolved by plan 97-10 (Ready to Bottle (N) filter label from the shared source).

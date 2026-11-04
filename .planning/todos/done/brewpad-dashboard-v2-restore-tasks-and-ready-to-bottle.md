@@ -39,3 +39,7 @@ of the new widgets.
 
 - Reuse the classic rendering and its tests rather than writing a second implementation.
 - Related: `brewpad-ready-to-bottle-filter.md` (a Ready-to-Bottle filter on the batch view).
+
+## Resolution (Phase 97, 2026-11)
+
+Resolved by plan 97-07 (Tasks and Ready to Bottle restored in the Today section of the v2 dashboard).
