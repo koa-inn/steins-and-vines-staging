@@ -3166,6 +3166,25 @@ button.bp-list-row:focus-visible { outline: 2px solid var(--ledger-focus); outli
 .bp-cal-main .bp-table-link { min-height: 44px; }
 .bp-cal-entry--unbooked { border-left: 1px dashed var(--ledger-line); }
 .bp-cal-status { font-size: 12px; color: var(--ink-secondary); }
+/* Phase 97-09: Beer & cider cards */
+.bp-bc-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-items: start; }
+.bp-bc-card { display: flex; flex-direction: column; gap: 8px; background: var(--cellar-raised); border: 1px solid var(--ledger-line); border-left-width: 4px; border-radius: var(--r-md); padding: 16px; min-width: 0; font-variant-numeric: tabular-nums; }
+.bp-bc-card--beer { border-left-color: var(--chart-beer); }
+.bp-bc-card--cider { border-left-color: var(--chart-cider); }
+.bp-bc-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 44px; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.bp-bc-head:focus-visible { outline: 2px solid var(--ledger-focus); outline-offset: 2px; }
+.bp-bc-title { font-size: 14px; font-weight: 700; }
+.bp-bc-day { font-size: 12px; color: var(--ink-secondary); }
+.bp-bc-line, .bp-bc-next, .bp-bc-out { margin: 0; font-size: 14px; }
+.bp-bc-label { display: inline-block; min-width: 72px; font-size: 12px; font-weight: 700; color: var(--ink-secondary); }
+.bp-bc-line .bp-bc-label { min-width: 0; margin-right: 4px; }
+.bp-bc-temp { display: inline-block; background: var(--cellar-surface); border: 1px solid var(--ledger-line); border-radius: var(--r-md); padding: 2px 8px; }
+.bp-bc-temp-tag { font-size: 12px; font-weight: 700; color: var(--ink-primary); }
+.bp-bc-late { font-size: 12px; color: var(--ink-secondary); }
+.bp-bc-curve { margin-top: 4px; }
+@media (max-width: 600px) {
+  .bp-bc-next .bp-bc-label, .bp-bc-out .bp-bc-label { display: block; }
+}
 .bp-g6,.bp-g8 { display: grid; grid-template-columns: 1fr; gap: 24px; }
 .bp-g6-list .bp-g4-subtitle, .bp-g8-list .bp-g4-subtitle { margin-bottom: 4px; }
 .bp-g6-list .bp-dash-foot-note { margin: 0 0 8px; }
