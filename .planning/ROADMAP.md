@@ -2626,7 +2626,7 @@ Plans:
   3. The cider section shows juice or recipe, yeast and the readings curve.
   4. A 2-week packaging calendar lists bottling for wine and cider and canning for beer.
 
-**Plans:** 10/12 plans executed
+**Plans:** 11/12 plans executed
 
 Plans:
 
@@ -2657,7 +2657,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 97-11-PLAN.md — Code gate, close two todos, staging push + migration/leak checks (wave 6, owner checkpoint)
+- [x] 97-11-PLAN.md — Code gate, close two todos, staging push + migration/leak checks (wave 6, owner checkpoint)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
