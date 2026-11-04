@@ -28,14 +28,20 @@ Both fail deterministically because Phase 97 added migration 0009, which changes
 - `zoho-middleware/__tests__/db/batches-type-migration.test.js` L79 `migrate('down', 2)` now rolls back 0009 and 0008, leaving the 0007 columns in place (expected 0 rows, got 3). Needs `down 3`.
 - `zoho-middleware/__tests__/db/batches-staff-migration.test.js` L71 `migrate('down', 1)` now rolls back only 0009 (expected 0 rows, got 1). Needs `down 2`.
 
-These are existing tests; CLAUDE.md rule 10 forbids editing them without owner approval, and that approval is not yet recorded. The new migration 0009 test suite passes. Status: awaiting owner decision.
+These are existing tests; CLAUDE.md rule 10 forbids editing them without owner approval. Status: RESOLVED 2026-11-04. Owner approved the edit in session (orchestrator relay); both rollback counts were bumped in a separate commit, and the rerun of `npm run test:db` passed: 55 / 55 suites, 455 / 455 tests (Node 24.21, Docker).
 
 ## Pre-existing test edits
 
 1. `zoho-middleware/__tests__/fixtures/recipes-sheet-shape.json` (97-01): added `target_og` and `target_fg` keys to every recipe object, because RECIPE_COLUMNS gained two keys. Owner-approved (plan OWNER-OK-TESTS; re-confirmed 2026-11-04 in session).
 2. `tests/frontend/brewpad-dashboard-v2-production.test.js` L195-217 (97-07): the section-shell test "four headed sections..." renamed "six headed sections...", with titles, hints, slots and the `bp-dash-full` id loop updated to the six-section order. Owner-approved 2026-11-04 in session.
 
-No other existing test was modified. Pending approval (see above): the two DB migration tests.
+3. `zoho-middleware/__tests__/db/batches-type-migration.test.js` (`down 2` -> `down 3`) and `zoho-middleware/__tests__/db/batches-staff-migration.test.js` (`down 1` -> `down 2`): rollback counts coupled to the latest migration, shifted by 0009. Owner-approved 2026-11-04 in session.
+
+No other existing test was modified.
+
+## Staging push decision
+
+Owner answered **push** on 2026-11-04 in session (orchestrator relay), after the DB gate went green.
 
 ## Folded todos
 
