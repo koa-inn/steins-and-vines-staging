@@ -52,3 +52,26 @@ Owner answered **push** on 2026-11-04 in session (orchestrator relay), after the
 ## CSP check
 
 `git diff 8a2184d6..HEAD -- '*.html'` touches brewpad.html and kiosk.html only; the number of lines mentioning content-security-policy is 0. No third-party domain added (Cal.com is server-side). No CSP change needed.
+
+## Staging deploy
+
+Date: 2026-11-04. Production untouched (production/main still 53484bdf).
+
+| Item | Result |
+|------|--------|
+| SHA pushed to origin main | c0fef5ee (from 8a2184d6) |
+| GitHub Pages staging run | 41901696887 — success |
+| Tests workflow run | 41901696843 — failed only on middleware `npm audit` (minimatch/glob, 1 high); pre-existing, also failed at 8a2184d6; tracked separately |
+| Railway staging deployment | f5204c4e-c42e-45dc-b57c-87d98b4ba4ff — SUCCESS |
+| Migration 0009_recipes_target_gravity | applied by preDeploy migrate; guard + allowlist 9 files OK |
+| information_schema (recipes) | target_og numeric nullable YES; target_fg numeric nullable YES |
+| GET /health | status ok, authenticated true, database true, database_required true |
+
+### Payload leak check (owner signed in, brewpad.html?dash=v2)
+
+| Route | HTTP | at-sign count | customer_ key | recipe_snapshot | Counts |
+|-------|------|-----------|---------------|-----------------|--------|
+| /api/admin/dashboard-cards | 200 | 0 | no | no | ok true, 39 cards, 3 canning constants |
+| /api/admin/packaging-bookings | 200 | 0 | no | no | ok true, 0 bookings, truncated false |
+
+Result: PASS.
