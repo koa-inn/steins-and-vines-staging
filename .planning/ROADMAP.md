@@ -2626,7 +2626,7 @@ Plans:
   3. The cider section shows juice or recipe, yeast and the readings curve.
   4. A 2-week packaging calendar lists bottling for wine and cider and canning for beer.
 
-**Plans:** 7/12 plans executed
+**Plans:** 8/12 plans executed
 
 Plans:
 
@@ -2645,7 +2645,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 97-08-PLAN.md — 2-week packaging calendar widget (wave 3)
+- [x] 97-08-PLAN.md — 2-week packaging calendar widget (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
