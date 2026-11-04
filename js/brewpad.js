@@ -9833,13 +9833,18 @@ function parseWaitlistRecipeIds(value) {
       filterOpts.forEach(function (f) {
         var active = _batchStatusFilter === f.val ? ' bp-filter-btn--active' : '';
         var count = f.val === 'pending' ? pendingCount : (f.val === 'readyToBottle' ? readyToBottleCount : 0);
-        var badge = ((f.val === 'pending' || f.val === 'readyToBottle') && count > 0)
+        // 97-10: Ready to Bottle shows an always-visible (N) in the label, no badge.
+        var badge = (f.val === 'pending' && count > 0)
           ? ' <span style="display:inline-block;min-width:16px;padding:0 5px;border-radius:8px;background:#e67e22;color:#fff;font-size:0.72rem;font-weight:700;line-height:16px;text-align:center;">' + count + '</span>'
           : '';
         // Phase 90 (D-06/D-24): the Unlinked count is always shown, including (0).
         var chipLabel = f.val === 'unlinked' ? f.label + ' (' + filterBatchesByUnlinked(_allBatchesData).length + ')' : f.label;
         // Phase 94 (D-07): same always-shown count as Unlinked, no badge.
         if (f.val === 'needsType') chipLabel = f.label + ' (' + needsTypeRows().length + ')';
+        // 97-10: count = rows actually listed (intersection with loaded batches, WR-03);
+        // the v2 widget count is the server list. Equal whenever the batch list holds every
+        // active batch, which it does after load. Both derive from readyToBottleList().
+        if (f.val === 'readyToBottle') chipLabel = f.label + ' (' + readyToBottleCount + ')';
         shellHtml += '<button type="button" class="bp-filter-btn' + active + '" data-status="' + f.val + '">' + chipLabel + badge + '</button>';
       });
       shellHtml += '<select id="bp-batch-product-filter" class="bp-filter-select"><option value="">All Products</option></select>';
@@ -9907,6 +9912,9 @@ function parseWaitlistRecipeIds(value) {
       if (btn.getAttribute('data-status') === 'needsType') {
         btn.textContent = 'Needs a type (' + needsTypeRows().length + ')';
       }
+      if (btn.getAttribute('data-status') === 'readyToBottle') {
+        btn.textContent = 'Ready to Bottle (' + readyToBottleRows().length + ')';
+      }
     });
 
     // Update product filter dropdown options
@@ -9962,6 +9970,8 @@ function parseWaitlistRecipeIds(value) {
         resultsHtml += '<p class="bp-empty"><strong>Every batch is linked</strong><br>Batches without an invoice are marked Internal.</p>';
       } else if (_batchStatusFilter === 'needsType') {
         resultsHtml += '<p class="bp-empty">Every batch has a type.</p>';
+      } else if (_batchStatusFilter === 'readyToBottle') {
+        resultsHtml += '<p class="bp-empty">No batches are ready to bottle.</p>';
       } else {
         resultsHtml += '<p class="bp-empty">No batches found.</p>';
       }
