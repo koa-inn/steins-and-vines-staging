@@ -7079,6 +7079,7 @@ function parseWaitlistRecipeIds(value) {
     for (var i = 0; i < ids.length; i++) staffIds[ids[i]] = true;
     _dashV2Model = buildDashV2Model(rows || [], asOf, _dashV2State, staffIds, buildScheduleCategoryById(_fermSchedules));
     updateDashV2Bar();
+    applyDashV2SectionVisibility(_dashV2State);
     renderDashV2Widgets();
   }
 
@@ -8316,17 +8317,22 @@ function parseWaitlistRecipeIds(value) {
   }
 
   var DASH_V2_SECTIONS = [
-    { title: 'Production', hint: 'Follows the filters above', slots: [['bp-dash-v2-period', true], ['bp-dash-v2-pipeline'], ['bp-dash-v2-cycle']] },
-    { title: 'Floor today', hint: 'Right now, mostly ignores the period filter', slots: [['bp-dash-v2-workload'], ['bp-dash-v2-vessels'], ['bp-dash-v2-tasks', true], ['bp-dash-v2-ferment', true]] },
-    { title: 'Products & sales', hint: 'Follows the filters above; staff batches hidden by default', slots: [['bp-dash-v2-wine', true], ['bp-dash-v2-source', true]] },
-    { title: 'Data health', hint: 'All batches, ignores the filters', slots: [['bp-dash-v2-health', true]] }
+    { key: 'today', title: 'Today', hint: "Right now. The filters above don't apply.", slots: [['bp-dash-v2-today-tasks'], ['bp-dash-v2-rtb'], ['bp-dash-v2-packcal', true]] },
+    { key: 'production', title: 'Production', hint: 'Follows the filters above', slots: [['bp-dash-v2-period', true], ['bp-dash-v2-pipeline'], ['bp-dash-v2-cycle']] },
+    { key: 'floor', title: 'Floor today', hint: 'Right now, mostly ignores the period filter', slots: [['bp-dash-v2-workload'], ['bp-dash-v2-vessels'], ['bp-dash-v2-tasks', true], ['bp-dash-v2-ferment', true]] },
+    {
+      key: 'bc', title: 'Beer & cider', hint: 'Follows the Type and Source filters. Staff batches included.', slots: [['bp-dash-v2-bc', true]],
+      hidden: function (state) { return !!state && state.type === 'wine'; }
+    },
+    { key: 'products', title: 'Products & sales', hint: 'Follows the filters above; staff batches hidden by default', slots: [['bp-dash-v2-wine', true], ['bp-dash-v2-source', true]] },
+    { key: 'health', title: 'Data health', hint: 'All batches, ignores the filters', slots: [['bp-dash-v2-health', true]] }
   ];
 
   function dashV2SectionsHtml() {
     var html = '';
     for (var i = 0; i < DASH_V2_SECTIONS.length; i++) {
       var sec = DASH_V2_SECTIONS[i];
-      html += '<section class="bp-dash-section"><div class="bp-dash-section-head"><h2 class="bp-dash-section-title">' + escapeHTML(sec.title) +
+      html += '<section class="bp-dash-section" data-dash-sec="' + sec.key + '"><div class="bp-dash-section-head"><h2 class="bp-dash-section-title">' + escapeHTML(sec.title) +
         '</h2><p class="bp-dash-section-hint">' + escapeHTML(sec.hint) + '</p></div><div class="bp-dash-grid">';
       for (var j = 0; j < sec.slots.length; j++) {
         html += '<div id="' + sec.slots[j][0] + '"' + (sec.slots[j][1] ? ' class="bp-dash-full"' : '') + '></div>';
@@ -8334,6 +8340,18 @@ function parseWaitlistRecipeIds(value) {
       html += '</div></section>';
     }
     return html;
+  }
+
+  // The shell is built once, so per-section visibility (D-16: Beer & cider hidden for Wine) is
+  // re-applied on every refresh.
+  function applyDashV2SectionVisibility(state) {
+    for (var i = 0; i < DASH_V2_SECTIONS.length; i++) {
+      var sec = DASH_V2_SECTIONS[i];
+      if (typeof sec.hidden !== 'function') continue;
+      var el = document.querySelector('section[data-dash-sec="' + sec.key + '"]');
+      if (!el) continue;
+      if (sec.hidden(state)) el.setAttribute('hidden', ''); else el.removeAttribute('hidden');
+    }
   }
 
   function renderDashboardV2() {
@@ -16478,6 +16496,8 @@ function parseWaitlistRecipeIds(value) {
         if ('_batchesData'       in patch) _batchesData       = patch._batchesData;
         if ('_dashSummary'       in patch) _dashSummary       = patch._dashSummary;
         if ('_dashData' in patch) _dashData = patch._dashData;
+        if ('_upcomingTasks' in patch) _upcomingTasks = patch._upcomingTasks;
+        if ('_upcomingLoaded' in patch) _upcomingLoaded = patch._upcomingLoaded;
         if ('_dashWineSkuLookup' in patch) _dashWineSkuLookup = patch._dashWineSkuLookup;
       },
       // Phase 73-05 (D-05): recipe editor save-resilience test seams.

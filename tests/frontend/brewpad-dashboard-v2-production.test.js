@@ -193,26 +193,30 @@ describe('completedBuckets', function () {
 });
 
 describe('section shell', function () {
-  test('four headed sections in order with hints and slots', async function () {
+  test('six headed sections in order with hints and slots', async function () {
     await renderV2('');
     var shell = document.getElementById('bp-dash-v2');
     var kids = Array.prototype.map.call(shell.children, function (c) { return c.id || c.tagName; });
     expect(kids.slice(0, 3)).toEqual(['bp-dash-filters', 'bp-dash-range', 'bp-dash-v2-tiles']);
     var secs = shell.querySelectorAll('section.bp-dash-section');
     expect(Array.prototype.map.call(secs, function (s) { return s.querySelector('h2.bp-dash-section-title').textContent; }))
-      .toEqual(['Production', 'Floor today', 'Products & sales', 'Data health']);
+      .toEqual(['Today', 'Production', 'Floor today', 'Beer & cider', 'Products & sales', 'Data health']);
     expect(Array.prototype.map.call(secs, function (s) { return s.querySelector('.bp-dash-section-hint').textContent; })).toEqual([
+      "Right now. The filters above don't apply.",
       'Follows the filters above',
       'Right now, mostly ignores the period filter',
+      'Follows the Type and Source filters. Staff batches included.',
       'Follows the filters above; staff batches hidden by default',
       'All batches, ignores the filters'
     ]);
     function slots(i) { return Array.prototype.map.call(secs[i].querySelectorAll('.bp-dash-grid > div'), function (d) { return d.id; }); }
-    expect(slots(0)).toEqual(['bp-dash-v2-period', 'bp-dash-v2-pipeline', 'bp-dash-v2-cycle']);
-    expect(slots(1)).toEqual(['bp-dash-v2-workload', 'bp-dash-v2-vessels', 'bp-dash-v2-tasks', 'bp-dash-v2-ferment']);
-    expect(slots(2)).toEqual(['bp-dash-v2-wine', 'bp-dash-v2-source']);
-    expect(slots(3)).toEqual(['bp-dash-v2-health']);
-    ['period', 'tasks', 'ferment', 'wine', 'source', 'health'].forEach(function (k) {
+    expect(slots(0)).toEqual(['bp-dash-v2-today-tasks', 'bp-dash-v2-rtb', 'bp-dash-v2-packcal']);
+    expect(slots(1)).toEqual(['bp-dash-v2-period', 'bp-dash-v2-pipeline', 'bp-dash-v2-cycle']);
+    expect(slots(2)).toEqual(['bp-dash-v2-workload', 'bp-dash-v2-vessels', 'bp-dash-v2-tasks', 'bp-dash-v2-ferment']);
+    expect(slots(3)).toEqual(['bp-dash-v2-bc']);
+    expect(slots(4)).toEqual(['bp-dash-v2-wine', 'bp-dash-v2-source']);
+    expect(slots(5)).toEqual(['bp-dash-v2-health']);
+    ['packcal', 'period', 'tasks', 'ferment', 'bc', 'wine', 'source', 'health'].forEach(function (k) {
       expect(document.getElementById('bp-dash-v2-' + k).className).toContain('bp-dash-full');
     });
   });
