@@ -184,6 +184,13 @@ function dashCards() {
   });
 }
 
+/** Phase 97 D-03: match candidates for packaging bookings; [] outside postgres mode. */
+function packagingCandidates() {
+  return dispatch('packagingCandidates', function (client) {
+    return pgRead().getPackagingMatchCandidates(client);
+  }).then(function (rows) { return rows || []; });
+}
+
 function calendar(payload) {
   var p = payload || {};
   return dispatch('calendar', function (client) {
@@ -373,6 +380,7 @@ module.exports = {
   dashboard: dashboard,
   dashStats: dashStats,
   dashCards: dashCards,
+  packagingCandidates: packagingCandidates,
   _setDashClockForTest: function (fn) { _clock = fn; },
   _clearDashMemoForTest: function () { _dashMemo = null; },
   calendar: calendar,

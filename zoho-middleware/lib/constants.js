@@ -36,6 +36,7 @@ var CACHE_KEYS = {
   BOOKING_SERVICES:    'zoho:booking-services',
   AVAILABILITY_PREFIX: 'zoho:availability:',     // append date string
   SLOTS_PREFIX:        'zoho:slots:',            // append date string
+  PACKAGING_BOOKINGS_PREFIX: 'calcom:packaging-bookings:', // Phase 97: + generation + ':' + window start
 
   // Auth
   REFRESH_TOKEN:       'zoho:refresh_token',

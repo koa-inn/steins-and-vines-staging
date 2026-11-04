@@ -348,6 +348,18 @@ function parseCardFacts(text) {
   return out;
 }
 
+// Phase 97 D-03: emails + earliest open packaging due date, for server-side Cal.com matching only.
+var PACKAGING_MATCH_SQL =
+  'select b.batch_id, b.customer_email, b.bottling_invite_email, ' +
+  "(select to_char(min(t.due_date), 'YYYY-MM-DD') from batch_tasks t " +
+  'where t.batch_id = b.batch_id and t.is_packaging = true and t.completed = false ' +
+  'and t.due_date is not null) as packaging_due ' +
+  "from batches b where b.status in ('primary', 'secondary') " + ID_ORDER_BATCH;
+
+function getPackagingMatchCandidates(client) {
+  return client.query(PACKAGING_MATCH_SQL).then(function (res) { return res.rows; });
+}
+
 function getDashboardCardFacts(client) {
   return client.query(DASH_CARD_FACTS_SQL).then(function (res) {
     return res.rows.map(function (r) {
@@ -513,6 +525,7 @@ module.exports = {
   parseDashSnapshot: parseDashSnapshot,
   parseCardFacts: parseCardFacts,
   getDashboardCardFacts: getDashboardCardFacts,
+  getPackagingMatchCandidates: getPackagingMatchCandidates,
   getTasksCalendar: getTasksCalendar,
   getTasksUpcoming: getTasksUpcoming,
   findLocationConflict: findLocationConflict,
