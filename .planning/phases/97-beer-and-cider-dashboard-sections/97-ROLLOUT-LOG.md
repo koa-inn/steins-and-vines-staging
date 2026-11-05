@@ -106,3 +106,18 @@ Claude-piloted in the owner's signed-in Chrome tab, 2026-11-04 (read-only except
 | 9 | Booking match | PASS 2026-11-05 20:17Z: test Beer Packaging booking (kind canning) linked to SV-B-000250; log "[packaging-bookings] ok bookings=1 matched=1". First attempt correctly returned no batch: the email was shared by 4 active batches with no packaging date (D-03 never-guess). Test booking cancelled by owner 2026-11-05 (confirmed) |
 
 Owner follow-up 2026-11-05: item 2 tick-to-save PASS; item 6 Target OG 12 / FG 3 save and reopen PASS (owner-reported).
+
+## Review fixes on staging
+
+2026-11-05. Owner approved fixing CR-01 and WR-01..WR-07 (WR-05: attendee name only on unmatched bookings, blanked when it contains an at-sign) and the staging push.
+
+| Item | Result |
+|------|--------|
+| Commits | 4d567cb4..f117790d (one per finding), report 6b5cc3b7 |
+| Gate | frontend 248 suites / 3398 tests; middleware (Node 24) 298 / 4055; DB 55 / 456; lint clean; migration guard 9 files OK; build artifacts current |
+| Push | origin main c0fef5ee -> 6b5cc3b7; production/main unchanged (53484bdf); Deploy Production (filtered) job skipped by its repo check |
+| Railway staging | deployment f680d601-6d6b-44b2-bca1-7f118c5c7ba7 SUCCESS; /health ok, authenticated true, database true |
+| Cal.com upcoming + past calls (CR-01) | '[packaging-bookings] ok bookings=0 matched=0 truncated=false', no 4xx; uncached call 1985 ms (was about 17 s) |
+| Leak re-check | dashboard-cards 40 cards, packaging-bookings ok; both: at-sign count 0, no customer_ key, no uid, no recipe_snapshot |
+| Apps Script | v67 deployed by owner (rollback v66) for WR-07 create/update |
+| WR-07 remainder | recipe verify/backfill scripts not updated: needs a change to a pre-existing test (recipes-spec-headers 19-header check) and a rule for optional columns. Logged as a todo |
