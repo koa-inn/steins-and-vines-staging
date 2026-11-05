@@ -3021,6 +3021,126 @@ function buildG10Model(rows, metaById, ctx) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Phase 98: Needs attention model (pure)
+// ---------------------------------------------------------------------------
+
+// Days beyond plan for an active batch, or null. Grace: only overruns > 14 count (D-09).
+// Missing/zero/negative/non-numeric planned_days never counts (D-11).
+function dashPastPlanDays(today, startDate, plannedDays) {
+  if (plannedDays === null || plannedDays === undefined) return null;
+  var pd = Number(plannedDays);
+  if (isNaN(pd) || pd <= 0) return null;
+  if (!startDate || String(startDate).length < 10) return null;
+  var over = dayNumber(today) - dayNumber(String(startDate).slice(0, 10)) - pd;
+  return over > 14 ? over : null;
+}
+
+function dashPastPlanNote(n) {
+  return n === 1 ? '1 day past plan' : n + ' days past plan';
+}
+
+function dashAttentionDrillLabel(key, n) {
+  if (key === 'past-schedule') {
+    return 'Showing ' + n + (n === 1 ? ' batch' : ' batches') + ' past schedule.';
+  }
+  if (key === 'invite') {
+    return 'Showing ' + n + (n === 1 ? ' ready-to-bottle batch' : ' ready-to-bottle batches') + ' with no invite sent.';
+  }
+  return '';
+}
+
+function buildDashAttentionModel(inp) {
+  var unavailable = 0;
+  var wl = inp.waitlist || {};
+  var tc = inp.taskCounts;
+  var items = [];
+  var i;
+
+  var tasksOk = !!tc && typeof tc === 'object';
+  var scheduleOk = Array.isArray(inp.batches);
+  var inviteOk = Array.isArray(inp.readyToBottle) && Array.isArray(inp.inviteSentIds);
+  var waitOk = wl.state === 'ok';
+  var pending = wl.state === 'loading';
+  if (!tasksOk) unavailable++;
+  if (!scheduleOk) unavailable++;
+  if (!inviteOk) unavailable++;
+  if (!waitOk && !pending) unavailable++;
+
+  var over = [];
+  if (scheduleOk) {
+    var metaById = dashMetaById(inp.batchMeta);
+    for (i = 0; i < inp.batches.length; i++) {
+      var row = inp.batches[i];
+      if (!row) continue;
+      var st = String(row.status || '').toLowerCase();
+      if (st !== 'primary' && st !== 'secondary') continue;
+      var o = dashPastPlanDays(inp.today, row.start_date, (metaById[row.batch_id] || {}).planned_days);
+      if (o !== null) over.push({ id: row.batch_id, over: o });
+    }
+    over.sort(function (a, b) {
+      if (b.over !== a.over) return b.over - a.over;
+      var x = String(a.id), y = String(b.id);
+      if (x.length !== y.length) return x.length - y.length;
+      return x < y ? -1 : (x > y ? 1 : 0);
+    });
+  }
+
+  var inviteIds = [];
+  if (inviteOk) {
+    var seen = {};
+    var sent = {};
+    for (i = 0; i < inp.inviteSentIds.length; i++) sent[inp.inviteSentIds[i]] = true;
+    var staff = inp.staffIds || {};
+    var local = inp.localSent || {};
+    for (i = 0; i < inp.readyToBottle.length; i++) {
+      var r = inp.readyToBottle[i];
+      if (!r || seen[r.batch_id]) continue;
+      seen[r.batch_id] = true;
+      if (r.has_email !== true) continue;
+      if (staff[r.batch_id] || r.staff_batch === true) continue;
+      if (sent[r.batch_id] || local[r.batch_id]) continue;
+      inviteIds.push(r.batch_id);
+    }
+  }
+
+  if (tasksOk && Number(tc.overdue) > 0) {
+    items.push({ key: 'overdue', label: 'Overdue', count: Number(tc.overdue), tone: 'danger',
+      aria: 'Overdue tasks, ' + Number(tc.overdue) + '. Opens the Tasks tab.' });
+  }
+  if (tasksOk && Number(tc.today) > 0) {
+    items.push({ key: 'today', label: 'Due today', count: Number(tc.today), tone: '',
+      aria: 'Tasks due today, ' + Number(tc.today) + '. Opens the Tasks tab.' });
+  }
+  if (over.length > 0) {
+    var ids = [];
+    var notes = {};
+    for (i = 0; i < over.length; i++) {
+      ids.push(over[i].id);
+      notes[over[i].id] = dashPastPlanNote(over[i].over);
+    }
+    items.push({ key: 'past-schedule', label: 'Past schedule', count: ids.length, tone: 'warn',
+      aria: 'Batches past schedule, ' + ids.length + '. Opens the Batches list.', ids: ids, notes: notes });
+  }
+  if (inviteIds.length > 0) {
+    items.push({ key: 'invite', label: 'Invite not sent', count: inviteIds.length, tone: '',
+      aria: 'Ready-to-bottle batches with no invite sent, ' + inviteIds.length + '. Opens the Batches list.',
+      ids: inviteIds });
+  }
+  if (waitOk && Number(wl.count) > 0) {
+    items.push({ key: 'waitlist', label: 'Waitlist waiting', count: Number(wl.count), tone: '',
+      aria: 'People waiting on the waitlist, ' + Number(wl.count) + '. Opens the Waitlist tab.' });
+  }
+
+  return {
+    items: items,
+    pending: pending,
+    unavailable: unavailable,
+    noneAvailable: unavailable === 4,
+    allClear: items.length === 0 && unavailable === 0 && !pending
+  };
+}
+
 function dashPlato(n) { return (Math.round(Number(n) * 10) / 10) + ' °P'; }
 
 function buildG8Model(rows, readings, metaById, model, ctx) {
@@ -17308,6 +17428,10 @@ if (typeof module !== 'undefined' && module.exports) {
     buildG6Model: buildG6Model,
     buildG8Model: buildG8Model,
     buildG10Model: buildG10Model,
+    buildDashAttentionModel: buildDashAttentionModel,
+    dashPastPlanDays: dashPastPlanDays,
+    dashPastPlanNote: dashPastPlanNote,
+    dashAttentionDrillLabel: dashAttentionDrillLabel,
     DASH_HEALTH_CATS: DASH_HEALTH_CATS,
     DASH_VESSEL_TYPE_ORDER: DASH_VESSEL_TYPE_ORDER,
     DASH_TASK_KINDS: DASH_TASK_KINDS,
