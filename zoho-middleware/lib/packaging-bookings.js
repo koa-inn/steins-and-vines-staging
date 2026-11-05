@@ -80,12 +80,11 @@ function shapeBookings(raw, ids, candidates, window) {
     if (!day || day < window.start || day > window.end) return;
     var typeId = Number((b.eventType && b.eventType.id) || b.eventTypeId);
     var att = (b.attendees && b.attendees[0]) || {};
+    // WR-04: no uid (it keys Cal.com's public manage page), end or event_type_id: the browser
+    // reads only these fields. Dedupe by uid happens in calcom.listBookings, server-side.
     out.push({
-      uid: b.uid,
       start: b.start,
-      end: b.end,
       day: day,
-      event_type_id: typeId,
       kind: typeId === Number(ids.packagingId) ? 'canning' : 'bottling',
       batch_id: matchBatch(att.email, day, candidates),
       customer_name: String(att.name || '').slice(0, 80)

@@ -68,12 +68,14 @@ describe('packaging-bookings', function () {
         bk('long', '2026-11-07T20:00:00Z', { attendees: [{ name: new Array(200).join('x'), email: 'z@z.com' }] })
       ];
       var out = pb.shapeBookings(raw, ids, cands, win);
-      expect(out.map(function (b) { return b.uid; })).toEqual(['early', 'long', 'late']);
+      expect(out.map(function (b) { return b.start; })).toEqual(['2026-11-05T20:00:00Z', '2026-11-07T20:00:00Z', '2026-11-10T20:00:00Z']);
       expect(out[0].kind).toBe('canning');
       expect(out[2].kind).toBe('bottling');
       expect(out[0].batch_id).toBe('A');
       expect(out[1].customer_name.length).toBe(80);
-      expect(Object.keys(out[0]).sort()).toEqual(['batch_id', 'customer_name', 'day', 'end', 'event_type_id', 'kind', 'start', 'uid']);
+      // WR-04: the Cal.com uid (manage-page key), end and event_type_id are not sent to the browser.
+      expect(Object.keys(out[0]).sort()).toEqual(['batch_id', 'customer_name', 'day', 'kind', 'start']);
+      expect(JSON.stringify(out)).not.toMatch(/early|late|long|uid/);
       expect(JSON.stringify(out)).not.toContain('@');
     });
 
