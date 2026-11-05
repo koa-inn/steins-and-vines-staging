@@ -409,7 +409,9 @@ var DASH_CAL_BOOKINGS_TIMEOUT_MS = 10000;
 // Merge Cal.com bookings and open dated packaging tasks into day groups (today .. today+13).
 // bookingsResult: { state: 'loading'|'ok'|'failed', bookings: [...] }. A task whose batch has a
 // matched booking in the window is shown once, as the booking.
-function buildPackagingCalendar(tasks, bookingsResult, typeById, today) {
+// WR-05: the server sends customer_name only for unmatched bookings, so a matched booking shows the
+// batch's customer: nameById (optional, batch_id -> display name) first, then the batch's tasks.
+function buildPackagingCalendar(tasks, bookingsResult, typeById, today, nameById) {
   var end = addDays(today, 13);
   var state = (bookingsResult && bookingsResult.state) || 'loading';
   var bookings = state === 'ok' ? ((bookingsResult && bookingsResult.bookings) || []) : [];
@@ -418,6 +420,16 @@ function buildPackagingCalendar(tasks, bookingsResult, typeById, today) {
   var booked = {};
   var undatedCount = 0;
   var i;
+  var list = tasks || [];
+  var names = {};
+  for (i = 0; i < list.length; i++) {
+    if (list[i] && list[i].batch_id && !names[list[i].batch_id]) {
+      names[list[i].batch_id] = getCustomerDisplayName(list[i]);
+    }
+  }
+  if (nameById) {
+    Object.keys(nameById).forEach(function (k) { if (nameById[k]) names[k] = nameById[k]; });
+  }
 
   function put(day, rank, sortKey, entry) {
     if (!byDay[day]) byDay[day] = [];
@@ -434,14 +446,13 @@ function buildPackagingCalendar(tasks, bookingsResult, typeById, today) {
     put(b.day, matched ? 0 : 1, String(b.start || ''), {
       source: 'booking',
       time: dashCalTimeLabel(b.start) || 'All day',
-      customer: b.customer_name || '',
+      customer: matched ? (names[b.batch_id] || '') : (b.customer_name || ''),
       batch_id: matched ? b.batch_id : null,
       kind: dashCalKind(matched ? types[b.batch_id] === 'beer' : b.kind === 'canning'),
       status: matched ? '' : 'no batch matched'
     });
   }
 
-  var list = tasks || [];
   for (i = 0; i < list.length; i++) {
     var t = list[i];
     if (!t || !t.is_packaging || t.completed) continue;
@@ -9353,6 +9364,26 @@ function parseWaitlistRecipeIds(value) {
     }
   }
 
+  // WR-05: batch_id -> customer display name from whatever batch lists are loaded (Batches tab list,
+  // Ready to bottle). Matched bookings no longer carry the attendee's typed name.
+  function dashCalNameById() {
+    var out = {};
+    var lists = [
+      _allBatchesData || [],
+      (_dashData && _dashData.summary && _dashData.summary.readyToBottle) || [],
+      (_dashSummary && _dashSummary.readyToBottle) || []
+    ];
+    for (var li = 0; li < lists.length; li++) {
+      for (var bi = 0; bi < lists[li].length; bi++) {
+        var row = lists[li][bi];
+        if (!row || !row.batch_id || out[row.batch_id]) continue;
+        var nm = getCustomerDisplayName(row);
+        if (nm) out[row.batch_id] = nm;
+      }
+    }
+    return out;
+  }
+
   function dashCalEntryHtml(en, drillIdx) {
     var who = en.customer || '';
     var main;
@@ -9396,7 +9427,7 @@ function parseWaitlistRecipeIds(value) {
     for (var i = 0; i < ctx.rows.length; i++) {
       typeById[ctx.rows[i].batch_id] = effectiveBatchType(ctx.rows[i], ctx.catMap);
     }
-    var model = buildPackagingCalendar(_dashCal.tasks || [], { state: _dashCal.bookingsState, bookings: _dashCal.bookings }, typeById, today);
+    var model = buildPackagingCalendar(_dashCal.tasks || [], { state: _dashCal.bookingsState, bookings: _dashCal.bookings }, typeById, today, dashCalNameById());
     dashV2SetNote(slotId, model.note);
 
     if (_dashCal.tasks === null) { body.innerHTML = '<div class="bp-cal"></div>'; return; }

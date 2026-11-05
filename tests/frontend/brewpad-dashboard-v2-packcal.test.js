@@ -115,7 +115,20 @@ describe('buildPackagingCalendar', function () {
         bk('2026-11-03', '2026-11-03T18:00:00.000Z', 'X2', { customer_name: 'Early' })
       ]), typeById, today);
     expect(m.days.map(function (d) { return d.label; })).toEqual(['Today', 'Tomorrow']);
-    expect(m.days[0].entries.map(function (e) { return e.customer || e.batch_id; })).toEqual(['Early', 'Late', 'Stranger', 'Cust C1', 'Cust W1']);
+    // WR-05: matched bookings take the customer from the batch, not the booking (none known for X1/X2).
+    expect(m.days[0].entries.map(function (e) { return e.customer || e.batch_id; })).toEqual(['X2', 'X1', 'Stranger', 'Cust C1', 'Cust W1']);
+  });
+
+  // WR-05: the server sends customer_name only for unmatched bookings, so matched rows use the batch.
+  test('a matched booking shows the batch customer from its tasks or the batch list', function () {
+    var m = bp.buildPackagingCalendar(
+      [pt('W1', '2026-11-20', { customer_name: '', customer_firstname: 'Wendy', customer_lastname: 'Wine' })],
+      OK([
+        bk('2026-11-05', '2026-11-05T20:00:00.000Z', 'W1', { customer_name: '' }),
+        bk('2026-11-06', '2026-11-06T20:00:00.000Z', 'C1', { customer_name: 'Ignored booking text' })
+      ]), typeById, today, { C1: 'Cara Cider' });
+    expect(m.days[0].entries[0]).toMatchObject({ batch_id: 'W1', customer: 'Wendy Wine' });
+    expect(m.days[1].entries[0]).toMatchObject({ batch_id: 'C1', customer: 'Cara Cider' });
   });
 
   test('loading and failed bookings never claim not booked yet', function () {
@@ -388,6 +401,19 @@ describe('packaging calendar widget', function () {
     await settleAll();
     expect(slot().innerHTML).toBe(all);
     expect(slot().textContent).not.toMatch(/overdue|missing|conflict|double-booked|error/i);
+  });
+
+  test('WR-05: a matched booking row shows the customer from the loaded batch list', async function () {
+    mockNet({
+      tasks: [],
+      bookings: { ok: true, bookings: [{ start: new Date(Date.now() + 86400000).toISOString(), day: d(1), kind: 'bottling', batch_id: 'C1', customer_name: '' }] }
+    });
+    var list = [lean('W1', 'wine'), lean('B1', 'beer'), lean('C1', 'cider', { customer_firstname: 'Cara', customer_lastname: 'Cider' })];
+    bp._setStateForTest({ _allBatchesData: list });
+    await renderV2('');
+    await settleAll();
+    var btn = slot().querySelector('button.bp-table-link');
+    expect(btn.textContent).toBe('Cara Cider · C1');
   });
 
   test('customer names are escaped', async function () {

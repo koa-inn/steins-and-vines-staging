@@ -71,6 +71,14 @@ function matchBatch(email, day, candidates) {
   return tied ? null : best.batch_id;
 }
 
+// WR-05: the attendee name is free text (people sometimes type their email there). It is only sent
+// for unmatched bookings; a matched row uses the batch's own customer. Anything with '@' is blanked.
+function safeAttendeeName(name) {
+  var nm = String(name || '').trim();
+  if (nm.indexOf('@') !== -1) return '';
+  return nm.slice(0, 80);
+}
+
 function shapeBookings(raw, ids, candidates, window) {
   var out = [];
   (raw || []).forEach(function (b) {
@@ -80,14 +88,15 @@ function shapeBookings(raw, ids, candidates, window) {
     if (!day || day < window.start || day > window.end) return;
     var typeId = Number((b.eventType && b.eventType.id) || b.eventTypeId);
     var att = (b.attendees && b.attendees[0]) || {};
+    var batchId = matchBatch(att.email, day, candidates);
     // WR-04: no uid (it keys Cal.com's public manage page), end or event_type_id: the browser
     // reads only these fields. Dedupe by uid happens in calcom.listBookings, server-side.
     out.push({
       start: b.start,
       day: day,
       kind: typeId === Number(ids.packagingId) ? 'canning' : 'bottling',
-      batch_id: matchBatch(att.email, day, candidates),
-      customer_name: String(att.name || '').slice(0, 80)
+      batch_id: batchId,
+      customer_name: batchId ? '' : safeAttendeeName(att.name)
     });
   });
   out.sort(function (a, b) { return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; });

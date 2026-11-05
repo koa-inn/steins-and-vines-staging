@@ -79,6 +79,22 @@ describe('packaging-bookings', function () {
       expect(JSON.stringify(out)).not.toContain('@');
     });
 
+    // WR-05: the attendee name is free text. Send it only for unmatched bookings (the batch has its
+    // own customer) and blank any value that contains an email.
+    it('sends customer_name only when no batch matched, and never a value with @', function () {
+      var raw = [
+        bk('m', '2026-11-05T20:00:00Z', { attendees: [{ name: 'Ann Matched', email: 'ann@x.com' }] }),
+        bk('u', '2026-11-06T20:00:00Z', { attendees: [{ name: '  Pat Stranger ', email: 'pat@y.com' }] }),
+        bk('e', '2026-11-07T20:00:00Z', { attendees: [{ name: 'pat@y.com', email: 'pat@y.com' }] }),
+        bk('e2', '2026-11-08T20:00:00Z', { attendees: [{ name: 'Pat (pat at y.com) @home', email: 'q@q.com' }] })
+      ];
+      var out = pb.shapeBookings(raw, ids, cands, win);
+      expect(out.map(function (b) { return b.batch_id; })).toEqual(['A', null, null, null]);
+      expect(out.map(function (b) { return b.customer_name; })).toEqual(['', 'Pat Stranger', '', '']);
+      expect(JSON.stringify(out)).not.toContain('@');
+      expect(JSON.stringify(out)).not.toContain('Ann');
+    });
+
     it('CR-01: keeps a booking that already ended earlier today (first window day)', function () {
       var raw = [bk('morning', '2026-11-03T18:00:00Z', { end: '2026-11-03T19:00:00Z', status: 'accepted' })];
       var out = pb.shapeBookings(raw, ids, cands, win);
