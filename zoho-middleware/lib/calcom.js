@@ -123,8 +123,14 @@ function createBooking(body) {
 
 var LIST_BOOKINGS_MAX_PAGES = 5;
 
+// CR-01: Cal.com 'upcoming' only returns bookings that have not ended yet, so a booking from earlier
+// today would vanish from the calendar. 'past' covers ended ones (Cal.com excludes cancelled/rejected
+// from both). One status per call on purpose: the comma-list form of `status` is documented but not
+// verified live, so the two lists are fetched in parallel and merged by uid instead.
+var LIST_BOOKINGS_STATUSES = ['upcoming', 'past'];
+
 /**
- * List upcoming bookings for the given event types in a window.
+ * List non-cancelled bookings (upcoming and already ended) for the given event types in a window.
  * @param {Object} opts - { eventTypeIds:number[], afterStart, beforeEnd } (ISO strings)
  * @returns {Promise<{bookings:Array, truncated:boolean}>}
  */
@@ -133,36 +139,56 @@ function listBookings(opts) {
   var ids = (opts.eventTypeIds || []).map(Number).filter(function (n) { return isFinite(n); });
   if (!ids.length) return Promise.resolve({ bookings: [], truncated: false });
 
-  var bookings = [];
+  function fetchStatus(status) {
+    var bookings = [];
 
-  function fetchPage(cursor, pageNo) {
-    var params = {
-      status: 'upcoming',
-      eventTypeIds: ids.join(','),
-      afterStart: opts.afterStart,
-      beforeEnd: opts.beforeEnd,
-      sortStart: 'asc',
-      limit: 100
-    };
-    if (cursor) params.cursor = cursor;
-    return zohoApi.withRetry(function () {
-      return axios.get(BASE + '/bookings', {
-        headers: makeHeaders(CAL_VERSIONS.bookingsList),
-        timeout: 15000,
-        params: params
+    function fetchPage(cursor, pageNo) {
+      var params = {
+        status: status,
+        eventTypeIds: ids.join(','),
+        afterStart: opts.afterStart,
+        beforeEnd: opts.beforeEnd,
+        sortStart: 'asc',
+        limit: 100
+      };
+      if (cursor) params.cursor = cursor;
+      return zohoApi.withRetry(function () {
+        return axios.get(BASE + '/bookings', {
+          headers: makeHeaders(CAL_VERSIONS.bookingsList),
+          timeout: 15000,
+          params: params
+        });
+      }).then(function (response) {
+        var body = (response && response.data) || {};
+        if (Array.isArray(body.data)) bookings = bookings.concat(body.data);
+        var pg = body.pagination || {};
+        var more = pg.hasMore === true && typeof pg.nextCursor === 'string' && pg.nextCursor !== '';
+        if (!more) return { bookings: bookings, truncated: false };
+        if (pageNo >= LIST_BOOKINGS_MAX_PAGES) return { bookings: bookings, truncated: true };
+        return fetchPage(pg.nextCursor, pageNo + 1);
       });
-    }).then(function (response) {
-      var body = (response && response.data) || {};
-      if (Array.isArray(body.data)) bookings = bookings.concat(body.data);
-      var pg = body.pagination || {};
-      var more = pg.hasMore === true && typeof pg.nextCursor === 'string' && pg.nextCursor !== '';
-      if (!more) return { bookings: bookings, truncated: false };
-      if (pageNo >= LIST_BOOKINGS_MAX_PAGES) return { bookings: bookings, truncated: true };
-      return fetchPage(pg.nextCursor, pageNo + 1);
-    });
+    }
+
+    return fetchPage(null, 1);
   }
 
-  return fetchPage(null, 1);
+  return Promise.all(LIST_BOOKINGS_STATUSES.map(fetchStatus)).then(function (results) {
+    var seen = {};
+    var merged = [];
+    var truncated = false;
+    results.forEach(function (r) {
+      if (r.truncated) truncated = true;
+      r.bookings.forEach(function (b) {
+        var key = b && (b.uid || b.id);
+        if (key !== undefined && key !== null && key !== '') {
+          if (Object.prototype.hasOwnProperty.call(seen, key)) return;
+          seen[key] = true;
+        }
+        merged.push(b);
+      });
+    });
+    return { bookings: merged, truncated: truncated };
+  });
 }
 
 // ---------------------------------------------------------------------------

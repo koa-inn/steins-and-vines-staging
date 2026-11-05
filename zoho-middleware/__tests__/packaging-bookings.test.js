@@ -76,6 +76,14 @@ describe('packaging-bookings', function () {
       expect(Object.keys(out[0]).sort()).toEqual(['batch_id', 'customer_name', 'day', 'end', 'event_type_id', 'kind', 'start', 'uid']);
       expect(JSON.stringify(out)).not.toContain('@');
     });
+
+    it('CR-01: keeps a booking that already ended earlier today (first window day)', function () {
+      var raw = [bk('morning', '2026-11-03T18:00:00Z', { end: '2026-11-03T19:00:00Z', status: 'accepted' })];
+      var out = pb.shapeBookings(raw, ids, cands, win);
+      expect(out).toHaveLength(1);
+      expect(out[0].day).toBe('2026-11-03');
+      expect(out[0].batch_id).toBe('A');
+    });
   });
 
   it('cacheKey changes after invalidate', function () {
