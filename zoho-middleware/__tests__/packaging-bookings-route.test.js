@@ -141,14 +141,16 @@ describe('GET /api/admin/packaging-bookings', function () {
     log.warn.mock.calls.forEach(function (c) { expect(String(c[0])).not.toContain('@'); });
   });
 
-  it('returns unmatched bookings and skips caching when candidates fail', async function () {
+  // WR-01: an unmatched list would make every task read "not booked yet", so a failed candidate
+  // query soft-fails like a Cal.com failure instead of answering ok:true.
+  it('soft-fails without caching when candidates fail', async function () {
     batchStore.packagingCandidates.mockRejectedValue(new Error('db down'));
     var res = makeRes();
     handler(staffReq(), res);
     await res._p;
-    expect(res._json.ok).toBe(true);
-    expect(res._json.bookings[0].batch_id).toBeNull();
+    expect(res._json).toEqual({ ok: false, reason: 'unavailable' });
     expect(cache.set).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalled();
   });
 
   it('rejects the device tier', async function () {

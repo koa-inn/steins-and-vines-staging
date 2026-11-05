@@ -49,7 +49,7 @@ function numEnv(name) {
  * GET /api/admin/packaging-bookings
  * Staff-only. Upcoming Cal.com Bottling / Beer Packaging bookings for today..today+13 (Vancouver),
  * matched to batches by email on the server (D-03). Only whitelisted fields leave; soft-fails with
- * 200 {ok:false, reason} and never caches a failure or a degraded (candidates-failed) result.
+ * 200 {ok:false, reason} (Cal.com or the candidate query failed) and never caches a failure.
  */
 router.get('/api/admin/packaging-bookings', function (req, res) {
   authTiers.requireTiers(['legacy', 'session'])(req, res, function () {
@@ -73,14 +73,18 @@ router.get('/api/admin/packaging-bookings', function (req, res) {
       var candidatesFailed = false;
       var candidatesP;
       try { candidatesP = Promise.resolve(batchStore.packagingCandidates()); } catch (e) { candidatesP = Promise.reject(e); }
-      candidatesP = candidatesP.then(function (rows) { return rows || []; }, function () {
+      candidatesP = candidatesP.then(function (rows) { return rows || []; }, function (e) {
         candidatesFailed = true;
+        log.warn('[packaging-bookings] candidates read failed: ' + ((e && e.code) || 'error'));
         return [];
       });
       return Promise.all([
         calcom.listBookings({ eventTypeIds: eventTypeIds, afterStart: win.afterStart, beforeEnd: win.beforeEnd }),
         candidatesP
       ]).then(function (r) {
+        // WR-01: without candidates every booking would read "no batch matched" and every task
+        // "not booked yet". Soft-fail so the browser omits the status labels instead.
+        if (candidatesFailed) return res.json({ ok: false, reason: 'unavailable' });
         var bookings = packagingBookings.shapeBookings(
           r[0].bookings, { bottlingId: bottlingId, packagingId: packagingId }, r[1], win);
         var body = {
@@ -92,7 +96,7 @@ router.get('/api/admin/packaging-bookings', function (req, res) {
         var matched = bookings.filter(function (b) { return b.batch_id; }).length;
         log.info('[packaging-bookings] ok bookings=' + bookings.length + ' matched=' + matched +
           ' truncated=' + body.truncated);
-        if (!candidatesFailed) cache.set(key, body, PACKAGING_CACHE_TTL);
+        cache.set(key, body, PACKAGING_CACHE_TTL);
         return res.json(body);
       }, function (err) {
         log.warn('[packaging-bookings] calcom list failed: ' +
