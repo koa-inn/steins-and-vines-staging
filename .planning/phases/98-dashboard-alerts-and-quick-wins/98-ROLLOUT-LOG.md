@@ -47,7 +47,7 @@ Claude-piloted pass, 2026-11-05 ~14:45 PT, desktop Chrome on staging ?dash=v2 (o
   - Invite not sent → banner "Showing 3 ready-to-bottle batches with no invite sent.", 3 rows.
   - Waitlist waiting → Waitlist tab on Waiting, 7 rows.
 - Item 5 (invite count drop): NOT RUN (sends a real email; owner to do with a self-addressed batch if wanted).
-- Item 6 (after 4 pm PT Tasks grouping): PENDING. Checked at ~14:45 PT, before 4 pm; covered by the 98-03 late-evening unit test.
+- Item 6 (after 4 pm PT Tasks grouping): PASS, checked 16:40 PT 2026-11-05. On All, SV-B-000250 "Brew, Cast, and Yeast Pitch" (due 2026-11-05) sits under the TODAY (1) header, not Overdue. The Due today chip lists it; the Overdue chip does not.
 - Item 7 (iPad portrait wrap): PARTIAL.
   - 390px same-origin iframe: 5 chips wrap onto 3 lines, no horizontal scroll, every chip 44px tall.
   - 768px: no horizontal scroll.
