@@ -4299,6 +4299,20 @@ function ensureRecipesTargetGravityColumns(sheet) {
   return out;
 }
 
+// WR-07: true when a recipe/payload carries a non-blank target gravity (columns are added lazily).
+function recipeHasTargetGravity(obj) {
+  return [obj.target_og, obj.target_fg].some(function (v) {
+    return v !== undefined && v !== null && v !== '';
+  });
+}
+
+// WR-07: sheet cell for a target gravity value ('' for blank; the middleware has already validated).
+function targetGravityCell(v) {
+  if (v === undefined || v === null || v === '') return '';
+  var n = Number(v);
+  return isFinite(n) ? n : '';
+}
+
 function createRecipe(payload, userEmail) {
   if (!payload.name) {
     return { ok: false, error: 'missing_fields', message: 'name is required' };
@@ -4364,6 +4378,15 @@ function createRecipe(payload, userEmail) {
     // Phase 89 D-03/D-05: persist beer_category by header lookup ('' when not supplied)
     var bcCol = ensureRecipesBeerCategoryColumn(recipesSheet);
     recipesSheet.getRange(recipesSheet.getLastRow(), bcCol + 1).setValue(beerCategory);
+
+    // Phase 97 WR-07: keep target gravity in sheets (rollback) mode; columns are added only when
+    // a value is present, as in mirrorRecipeState.
+    if (recipeHasTargetGravity(payload)) {
+      var tgCols = ensureRecipesTargetGravityColumns(recipesSheet);
+      var newRow = recipesSheet.getLastRow();
+      recipesSheet.getRange(newRow, tgCols.og + 1).setValue(targetGravityCell(payload.target_og));
+      recipesSheet.getRange(newRow, tgCols.fg + 1).setValue(targetGravityCell(payload.target_fg));
+    }
 
     var ingredientErrors = [];
     var ingredientsCreated = 0;
@@ -4465,6 +4488,8 @@ function updateRecipe(payload, userEmail) {
     var pmCol = ensureRecipesPricingModeColumn(recipesSheet);
     var schedCol = ensureRecipesScheduleIdColumn(recipesSheet);
     var bcCol = ensureRecipesBeerCategoryColumn(recipesSheet);
+    // Phase 97 WR-07: same stale-header hazard; only when a value is present (lazy columns).
+    if (recipeHasTargetGravity(payload)) ensureRecipesTargetGravityColumns(recipesSheet);
     invalidateSheetCache(RECIPES_SHEET_NAME);
 
     var result = findRowById(RECIPES_SHEET_NAME, payload.recipe_id);
@@ -4506,6 +4531,18 @@ function updateRecipe(payload, userEmail) {
         var col = headers.indexOf(field);
         if (col > 0) {
           rowValues[col] = Number(payload[field]);
+          if (minCol === null || col < minCol) minCol = col;
+          if (maxCol === null || col > maxCol) maxCol = col;
+        }
+      }
+    });
+
+    // Phase 97 WR-07: target gravity ('' clears) when its column exists
+    ['target_og', 'target_fg'].forEach(function (field) {
+      if (payload[field] !== undefined) {
+        var col = headers.indexOf(field);
+        if (col > 0) {
+          rowValues[col] = targetGravityCell(payload[field]);
           if (minCol === null || col < minCol) minCol = col;
           if (maxCol === null || col > maxCol) maxCol = col;
         }

@@ -12,7 +12,9 @@
  * errors are NOT caught so they reject and db.withTransaction rolls the whole transaction back.
  * Underscore-prefixed result keys (e.g. `_recipeId`) are for the facade and are stripped there.
  *
- * Response shapes are byte-identical (JSON.stringify) to Apps Script get_recipes / get_recipe:
+ * Response shapes match Apps Script get_recipes / get_recipe (JSON.stringify) once the sheet has the
+ * target_og/target_fg columns; Apps Script adds them lazily on the first recipe with a value, and
+ * until then its output has 19 keys, not 21 (Phase 97 WR-07).
  * 21 recipe keys in sheet column order (beer_category added in Phase 89, target_og/target_fg in Phase 97), '' for empty cells, JS numbers (pg returns numeric as
  * strings — Pitfall 1), ISO-ms timestamp strings (pg returns Date objects), ingredients in
  * position (sheet-row) order with no position key.

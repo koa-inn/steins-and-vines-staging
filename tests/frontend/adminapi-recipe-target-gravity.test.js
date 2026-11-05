@@ -45,6 +45,15 @@ function makeFakeSheet(headers) {
         }
         return rng;
       },
+      getFormulas: function () {
+        var out = [];
+        for (var i = 0; i < nr; i++) {
+          var row = [];
+          for (var j = 0; j < nc; j++) row.push('');
+          out.push(row);
+        }
+        return out;
+      },
       setValue: function (v) { pad(r)[c - 1] = v; return rng; },
       setFontWeight: function (w) { log.bold.push({ row: r, col: c, weight: w }); return rng; }
     };
@@ -91,7 +100,7 @@ function setup(headers) {
   var api = new Function(
     'SpreadsheetApp', 'LockService', 'Logger',
     GS_SRC + '\nreturn {' +
-      'mirrorRecipeState: mirrorRecipeState,' +
+      'mirrorRecipeState: mirrorRecipeState, createRecipe: createRecipe, updateRecipe: updateRecipe,' +
       'ensureRecipesTargetGravityColumns: (typeof ensureRecipesTargetGravityColumns !== "undefined" ? ensureRecipesTargetGravityColumns : undefined)' +
     '};'
   )(SpreadsheetApp, LockService, Logger);
@@ -150,5 +159,56 @@ describe('mirrorRecipeState - target gravity', function () {
     expect(t.recipes.data[0].length).toBe(21);
     expect(cell(t.recipes, 1, 'target_og')).toBe(11);
     expect(cell(t.recipes, 1, 'target_fg')).toBe(2.5);
+  });
+});
+
+// WR-07: in sheets (rollback) mode the Apps Script create/update paths must keep target gravity too.
+describe('createRecipe / updateRecipe - target gravity', function () {
+  function seed(t, extra) {
+    var headers = t.recipes.data[0];
+    var row = headers.map(function () { return ''; });
+    row[0] = 'SV-R-000001';
+    row[1] = 'Seed';
+    row[4] = 'active';
+    Object.keys(extra || {}).forEach(function (k) { row[headers.indexOf(k)] = extra[k]; });
+    t.recipes.data.push(row);
+  }
+
+  test('create with values adds the columns and writes them on the new row', function () {
+    var t = setup(HEADERS19);
+    var res = t.api.createRecipe({ name: 'Lager', target_og: 12, target_fg: 3.5 }, 'staff@example.test');
+    expect(res.ok).toBe(true);
+    expect(t.recipes.data[0].slice(-2)).toEqual(['target_og', 'target_fg']);
+    expect(cell(t.recipes, 1, 'target_og')).toBe(12);
+    expect(cell(t.recipes, 1, 'target_fg')).toBe(3.5);
+  });
+
+  test('create without values leaves the header untouched', function () {
+    var t = setup(HEADERS19);
+    t.api.createRecipe({ name: 'Plain', target_og: '', target_fg: '' }, 'staff@example.test');
+    t.api.createRecipe({ name: 'Plain 2' }, 'staff@example.test');
+    expect(t.recipes.data[0].length).toBe(19);
+  });
+
+  test('update with a value adds the columns and writes it; blank clears an existing value', function () {
+    var t = setup(HEADERS19);
+    seed(t);
+    var res = t.api.updateRecipe({ recipe_id: 'SV-R-000001', target_og: 11, target_fg: 2.5 }, 'staff@example.test');
+    expect(res.ok).toBe(true);
+    expect(t.recipes.data[0].slice(-2)).toEqual(['target_og', 'target_fg']);
+    expect(cell(t.recipes, 1, 'target_og')).toBe(11);
+    expect(cell(t.recipes, 1, 'target_fg')).toBe(2.5);
+    res = t.api.updateRecipe({ recipe_id: 'SV-R-000001', target_fg: '' }, 'staff@example.test');
+    expect(res.ok).toBe(true);
+    expect(cell(t.recipes, 1, 'target_og')).toBe(11);
+    expect(cell(t.recipes, 1, 'target_fg')).toBe('');
+  });
+
+  test('update without values leaves the header untouched', function () {
+    var t = setup(HEADERS19);
+    seed(t);
+    var res = t.api.updateRecipe({ recipe_id: 'SV-R-000001', notes: 'x', target_og: '' }, 'staff@example.test');
+    expect(res.ok).toBe(true);
+    expect(t.recipes.data[0].length).toBe(19);
   });
 });
