@@ -4342,6 +4342,9 @@ function parseWaitlistRecipeIds(value) {
   var _dashV2WidgetOpts = {};     // Phase 96: 'w:opt' -> value; in memory only, never hash/localStorage
   // Phase 97-08: packaging calendar data, fetched lazily once per dashboard load (token = load identity).
   var _dashCal = { tok: null, loadTime: null, data: null, tasks: null, tasksFailed: false, bookingsState: 'loading', bookings: [] };
+  // Phase 98-04: lazy waitlist count (count only, never rows) and the session invite-sent override (D-14).
+  var _dashWaitlist = { tok: null, loadTime: null, state: 'loading', count: 0 };
+  var _dashInviteSent = {};
   var _dashCards = { tok: null, loadTime: null, data: null, state: 'loading', byId: {}, canning: null };
   var _dashV2Drills = {};       // Phase 96: widgetKey -> [{ids, label}] rebuilt each render
   var _dashV2Expanded = {};       // Phase 96: 'w:list' -> true when "Show all" is on
@@ -8381,6 +8384,10 @@ function parseWaitlistRecipeIds(value) {
   // Registry: later plans add {key, slot, title, chart, needs, render(model, chartState)}.
   var DASH_V2_WIDGETS = [
     {
+      key: 't0', slot: 'bp-dash-v2-attn', title: 'Needs attention', chart: '', needs: [],
+      render: function () { renderDashV2Attention(); }
+    },
+    {
       key: 'g1', slot: 'bp-dash-v2-period', title: DASH_V2_PERIOD_TITLE, chart: 'period', needs: [],
       render: function (model, cs) {
         renderDashV2Production(model, cs);
@@ -8728,7 +8735,7 @@ function parseWaitlistRecipeIds(value) {
   }
 
   var DASH_V2_SECTIONS = [
-    { key: 'today', title: 'Today', hint: "Right now. The filters above don't apply.", slots: [['bp-dash-v2-today-tasks'], ['bp-dash-v2-rtb'], ['bp-dash-v2-packcal', true]] },
+    { key: 'today', title: 'Today', hint: "Right now. The filters above don't apply.", lead: 'bp-dash-v2-attn', slots: [['bp-dash-v2-today-tasks'], ['bp-dash-v2-rtb'], ['bp-dash-v2-packcal', true]] },
     { key: 'production', title: 'Production', hint: 'Follows the filters above', slots: [['bp-dash-v2-period', true], ['bp-dash-v2-pipeline'], ['bp-dash-v2-cycle']] },
     { key: 'floor', title: 'Floor today', hint: 'Right now, mostly ignores the period filter', slots: [['bp-dash-v2-workload'], ['bp-dash-v2-vessels'], ['bp-dash-v2-tasks', true], ['bp-dash-v2-ferment', true]] },
     {
@@ -8744,7 +8751,8 @@ function parseWaitlistRecipeIds(value) {
     for (var i = 0; i < DASH_V2_SECTIONS.length; i++) {
       var sec = DASH_V2_SECTIONS[i];
       html += '<section class="bp-dash-section" data-dash-sec="' + sec.key + '"><div class="bp-dash-section-head"><h2 class="bp-dash-section-title">' + escapeHTML(sec.title) +
-        '</h2><p class="bp-dash-section-hint">' + escapeHTML(sec.hint) + '</p></div><div class="bp-dash-grid">';
+        '</h2><p class="bp-dash-section-hint">' + escapeHTML(sec.hint) + '</p></div>' +
+        (sec.lead ? '<div id="' + sec.lead + '" class="bp-dash-lead"></div>' : '') + '<div class="bp-dash-grid">';
       for (var j = 0; j < sec.slots.length; j++) {
         html += '<div id="' + sec.slots[j][0] + '"' + (sec.slots[j][1] ? ' class="bp-dash-full"' : '') + '></div>';
       }
@@ -9427,6 +9435,81 @@ function parseWaitlistRecipeIds(value) {
     }
     var rowsHtml = list.map(function (it) { return dashReadyToBottleRowHtml(it); });
     dashV2ListWidget(slotId, title, 'Ready now, not yet bottled', rowsHtml, 't2:rtb');
+  }
+
+  // ---- Phase 98-04: Needs attention row (Today section lead slot; ignores the global filters, D-04) ----
+  function ensureDashWaitlist() {
+    if (!isDashV2()) return;
+    if (_dashWaitlist.tok && _dashWaitlist.loadTime === _dashLoadTime) return;
+    var tok = {};
+    _dashWaitlist = { tok: tok, loadTime: _dashLoadTime, state: 'loading', count: 0 };
+    function settle(patch) {
+      if (_dashWaitlist.tok !== tok) return;
+      Object.keys(patch).forEach(function (k) { _dashWaitlist[k] = patch[k]; });
+      if (isDashV2()) rerenderDashV2Widget('t0');
+    }
+    try {
+      adminApiGet('get_waitlist').then(function (res) {
+        var n;
+        try { n = filterWaitlistRows((res && res.data) || [], 'waiting', '').length; } catch (eShape) { n = -1; }
+        if (n < 0) settle({ state: 'failed' }); else settle({ count: n, state: 'ok' });
+      }, function () {
+        settle({ state: 'failed' });
+      });
+    } catch (e) {
+      _dashWaitlist.state = 'failed';
+    }
+  }
+
+  function dashV2AttentionModel() {
+    var staffIds = {};
+    var sb = (_dashData && _dashData.staffBatchIds) || [];
+    for (var i = 0; i < sb.length; i++) staffIds[sb[i]] = true;
+    var today = dashV2TodayDate();
+    var taskCounts = null;
+    if (_upcomingLoaded) {
+      var tr = dashTodayTaskRows(_upcomingTasks, today);
+      taskCounts = { overdue: tr.overdue.length, today: tr.today.length };
+    }
+    return buildDashAttentionModel({
+      today: today,
+      taskCounts: taskCounts,
+      batches: _dashData ? _dashData.batches : null,
+      batchMeta: (_dashData && _dashData.batchMeta) || [],
+      staffIds: staffIds,
+      readyToBottle: _dashData ? readyToBottleList() : null,
+      inviteSentIds: _dashData ? _dashData.inviteSentIds : undefined,
+      localSent: _dashInviteSent,
+      waitlist: _dashWaitlist
+    });
+  }
+
+  function renderDashV2Attention() {
+    var slot = document.getElementById('bp-dash-v2-attn');
+    if (!slot) return;
+    ensureDashWaitlist();
+    var html = '';
+    try {
+      var model = dashV2AttentionModel();
+      if (model.items.length) {
+        html = '<div class="bp-attn" role="group" aria-label="Needs attention">';
+        for (var i = 0; i < model.items.length; i++) {
+          var it = model.items[i];
+          var cls = 'bp-attn-chip' + (it.tone === 'danger' ? ' bp-attn-chip--danger' : (it.tone === 'warn' ? ' bp-attn-chip--warn' : ''));
+          html += '<button type="button" class="' + cls + '" data-attn="' + escapeHTML(it.key) + '" aria-label="' + escapeHTML(it.aria) + '">' +
+            '<span class="bp-attn-label">' + escapeHTML(it.label) + '</span> <span class="bp-attn-count">(' + Number(it.count) + ')</span>' +
+            '<span class="bp-attn-go" aria-hidden="true">\u203A</span></button>';
+        }
+        html += '</div>';
+      } else if (model.allClear) {
+        html = '<p class="bp-attn-empty">Nothing needs attention right now.</p>';
+      } else if (model.noneAvailable) {
+        html = '<p class="bp-empty">Not available yet. Reopen the Dashboard tab to refresh.</p>';
+      }
+    } catch (e) {
+      html = '<p class="bp-empty">Not available yet. Reopen the Dashboard tab to refresh.</p>';
+    }
+    slot.innerHTML = html;
   }
 
   // ---- Phase 97-08: v2 packaging calendar (Today section, ignores the global filters per D-15) ----
@@ -12543,6 +12626,8 @@ function parseWaitlistRecipeIds(value) {
                 b.bottling_invite_sent_at = sentAt;
                 b.bottling_invite_email = inviteEmail;
                 markInviteSent(sentAt, inviteEmail);
+                _dashInviteSent[b.batch_id] = true;
+                if (isDashV2()) rerenderDashV2Widget('t0');
                 showToast('Bottling invite sent to ' + inviteEmail, 'success');
               })
               .catch(function (err) { showToast('Failed: ' + err.message, 'error'); })
@@ -16076,7 +16161,11 @@ function parseWaitlistRecipeIds(value) {
               batchId: ibid,
               productName: rtbInvite.getAttribute('data-product') || ''
             })
-              .then(function () { showToast('Bottling invite sent', 'success'); })
+              .then(function () {
+                _dashInviteSent[ibid] = true;
+                if (isDashV2()) rerenderDashV2Widget('t0');
+                showToast('Bottling invite sent', 'success');
+              })
               .catch(function (err) { showToast('Failed: ' + err.message, 'error'); })
               .then(function () { rtbInvite.disabled = false; });
           });
@@ -17319,7 +17408,9 @@ function parseWaitlistRecipeIds(value) {
           _selectedBatchId: _selectedBatchId,
           _batchSearch: _batchSearch,
           _batchProductFilter: _batchProductFilter,
-          _taskFilter: _taskFilter
+          _taskFilter: _taskFilter,
+          _dashWaitlist: _dashWaitlist,
+          _dashInviteSent: _dashInviteSent
         };
       },
       _setStateForTest: function (patch) {
@@ -17338,6 +17429,8 @@ function parseWaitlistRecipeIds(value) {
         if ('_upcomingLoaded' in patch) _upcomingLoaded = patch._upcomingLoaded;
         if ('_dashWineSkuLookup' in patch) _dashWineSkuLookup = patch._dashWineSkuLookup;
         if ('_taskFilter' in patch) _taskFilter = patch._taskFilter;
+        if ('_dashWaitlist' in patch) _dashWaitlist = patch._dashWaitlist;
+        if ('_dashInviteSent' in patch) _dashInviteSent = patch._dashInviteSent;
         if ('_taskSearch' in patch) _taskSearch = patch._taskSearch;
       },
       // Phase 73-05 (D-05): recipe editor save-resilience test seams.

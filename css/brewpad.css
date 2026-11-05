@@ -3220,3 +3220,65 @@ button.bp-list-row:focus-visible { outline: 2px solid var(--ledger-focus); outli
 @media (prefers-reduced-motion: reduce) {
   .bp-accordion-head::after { transition: none; }
 }
+
+/* Phase 98-04: Needs attention chip row (v2 Today lead slot). Tokens only. */
+.bp-attn {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.bp-attn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--ledger-line);
+  border-radius: var(--r-md);
+  background: var(--cellar-raised);
+  color: var(--ink-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bp-attn-chip:active {
+  background: var(--cellar-surface);
+}
+
+.bp-attn-chip:focus-visible {
+  outline: 2px solid var(--ledger-focus);
+  outline-offset: 2px;
+}
+
+.bp-attn-chip--danger {
+  background: var(--batch-danger-bg);
+  border-color: var(--batch-danger);
+  color: var(--batch-danger);
+}
+
+.bp-attn-chip--warn {
+  background: var(--batch-warning-bg);
+  border-color: var(--batch-warning);
+  color: var(--ink-primary);
+}
+
+.bp-attn-count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bp-attn-go {
+  margin-left: 4px;
+}
+
+.bp-attn-empty {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
