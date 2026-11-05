@@ -187,6 +187,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
+*Last updated: 2026-11-05 after Phase 97 — beer and cider dashboard sections complete (12/12 plans, verification passed, staging UAT approved incl. live Cal.com booking match). Code review CR-01 + WR-01..07 fixed on staging (WR-07 verify/backfill remainder in todo). Recipe target OG/FG via migration 0009 (staging only). Production code release pending; Cal.com env var already on prod; Apps Script v67 live. Previous footer follows.*
+
 *Last updated: 2026-10-17 after Phase 93 — kiosk Ledger Week/Month views complete (6/6 plans, PSL-08..15 verified 8/8, owner staging UAT approved). Range per-day figures share ledgerRowsForDay with the day ledger. Staging only; production push pending. Advisory follow-ups in 93-REVIEW.md (WR-03, IN-01..06); buildCustomer /^\d+$/ payments-skip smell open. Previous footer follows.*
 
 *Last updated: 2026-10-02 after Phase 83 — Postgres infrastructure complete (14/14 plans, UAT 4/4, threats_open 0). DB-02 validated. Gap closure replaced the bypassable migration guard with a parser allowlist; nightly encrypted production backups live with a passed restore drill. Code is on staging; the production push of the 83 gap-closure work is still pending. Open before Phase 84: tests/CI use Postgres 16 while staging/prod run 18.6. Previous footer follows.*

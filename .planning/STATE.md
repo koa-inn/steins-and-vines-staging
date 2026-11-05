@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
-status: executing
-stopped_at: Phase 97 UI-SPEC approved
-last_updated: "2026-11-03T22:50:23.374Z"
+status: ready_to_plan
+stopped_at: Phase 97 complete (12/12) — ready to discuss Phase 98
+last_updated: 2026-11-05T21:02:34.060Z
 last_activity: 2026-11-03 -- Phase 97 execution started
 progress:
   total_phases: 86
   completed_phases: 39
   total_plans: 347
-  completed_plans: 333
+  completed_plans: 345
   percent: 45
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-19)
 
 **Core value:** Customers can discover, select, or co-create fermentation recipes and purchase them as a complete package — with ingredient inventory, pricing, and batch tracking handled automatically by the system.
-**Current focus:** Phase 97 — beer-and-cider-dashboard-sections
+**Current focus:** Phase 98 — dashboard alerts and quick wins
 
 ## Current Position
 
-Phase: 97 (beer-and-cider-dashboard-sections) — EXECUTING
-Plan: 1 of 12
+Phase: 98
+Plan: Not started
 Also open: Phase 87 — 87-19 Task 3 (first real sale). 87-20 rollback RETIRED 2026-11-03 (verify 0 mismatches); drift-check false-positive fix pending (quick task)
 **Phase 94 COMPLETE 2026-10-27:** live on production `141901a7` (`prod-20261027-1`, Railway `896f6942`; rollback target `90dfb9c1`). B3 (215 typed) + B2 (40 completion dates) applied on staging + prod with owner OK; replay + verify 0 mismatches; D-13 PASS (57d/59d/175); verification passed 5/5; owner signed off. Staging batches now on Postgres (refreshed + flipped 2026-10-27). Open from Phase 94: code review CR-01 + WR-01..04 FIXED 2026-10-28 (6c296bcc..73970cfb), LIVE on prod 2026-10-28 (`3f64da2d`, `prod-20261028-1`, Railway `d8ffd7bd`; rollback `896f6942`); IN-01..05 open; replay CLI needs retry/longer timeout/resume (Apps Script ~14 s per batch); prod recipes lack `beer_category` (Phase 89 gap); batch list/detail age still now − start_date. body-parser patch `13805fe9` LIVE on prod in the same release (CI audit green).
-Status: Executing Phase 97
-Last activity: 2026-11-03 -- Phase 97 execution started
+Status: Ready to plan
+Last activity: 2026-11-05
 
 **2026-10-27 production cutover (shop open, owner present):**
 
@@ -66,7 +66,7 @@ position notes".
 
 **Velocity:**
 
-- Total plans completed: 135 (prior milestone v4.1) + 11 (v4.2)
+- Total plans completed: 147 (prior milestone v4.1) + 11 (v4.2)
 - Average duration: 3 min
 - Total execution time: ~3 hrs
 
