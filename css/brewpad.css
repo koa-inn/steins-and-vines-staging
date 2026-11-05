@@ -3282,3 +3282,16 @@ button.bp-list-row:focus-visible { outline: 2px solid var(--ledger-focus); outli
   font-size: 14px;
   color: var(--ink-secondary);
 }
+
+/* Phase 98-05 (D-12): "N days past plan" row note in the Past schedule drill. Secondary ink with an
+   amber left border: amber text on its tint fails 4.5:1. */
+.bp-past-plan {
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 3px solid var(--batch-warning);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+}

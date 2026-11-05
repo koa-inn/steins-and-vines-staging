@@ -4275,7 +4275,7 @@ function parseWaitlistRecipeIds(value) {
   var _batchStatusFilter = 'active';
   var _batchProductFilter = '';
   var _batchSearch = '';
-  var _dashDrill = null;          // Phase 95 (D-14): { ids: {id:true}, count, label } while a dashboard click-through is active
+  var _dashDrill = null;          // Phase 95 (D-14): { ids: {id:true}, count, label, notes?, order? } while a dashboard click-through is active
   var _batchSearchTimer = null;   // module-scope so switchTab() can cancel a pending re-render
   var _batchViewMode = 'cards';   // 'cards' or 'table'
   var _batchTableSortCol = 'batch_id';
@@ -8574,6 +8574,7 @@ function parseWaitlistRecipeIds(value) {
       return;
     }
     if ((el = t.closest('[data-dash-drill]'))) { onDashV2TileClick(el); return; }
+    if ((el = t.closest('[data-attn]'))) { onDashV2AttnClick(el); return; }
     if ((el = t.closest('.bp-seg-btn[data-dash-w]'))) { selectDashV2WidgetOpt(el); return; }
     if ((el = t.closest('[data-bc-curve]'))) { onDashV2BcCurve(el); return; }
     if ((el = t.closest('[data-bc-view]'))) { onDashV2BcView(el); return; }
@@ -9484,6 +9485,38 @@ function parseWaitlistRecipeIds(value) {
     });
   }
 
+  // Phase 98-05 (D-05, D-06, D-13): Needs attention chip tap-throughs. The item is recomputed at tap
+  // time so the destination list always matches the count staff just saw. Never dashV2Go: a single id
+  // would skip the banner.
+  function onDashV2AttnClick(el) {
+    var key = el.getAttribute('data-attn');
+    var model = dashV2AttentionModel();
+    var item = null;
+    for (var i = 0; i < model.items.length; i++) {
+      if (model.items[i].key === key) { item = model.items[i]; break; }
+    }
+    if (!item) return;
+    if (key === 'overdue' || key === 'today') {
+      _taskFilter = key === 'overdue' ? 'overdue' : 'duetoday';
+      _taskSearch = '';
+      switchTab('tasks');
+      var tp = document.getElementById('bp-panel-tasks');
+      if (tp) tp.scrollTop = 0;
+      try { window.scrollTo(0, 0); } catch (e) { /* jsdom has no scrollTo */ }
+    } else if (key === 'past-schedule' || key === 'invite') {
+      openDashDrill({
+        ids: item.ids,
+        label: dashAttentionDrillLabel(key, item.ids.length),
+        notes: key === 'past-schedule' ? item.notes : null,
+        order: item.ids
+      });
+    } else if (key === 'waitlist') {
+      _waitlistFilter = 'waiting';
+      _waitlistSearch = '';
+      switchTab('waitlist');
+    }
+  }
+
   function renderDashV2Attention() {
     var slot = document.getElementById('bp-dash-v2-attn');
     if (!slot) return;
@@ -9879,7 +9912,8 @@ function parseWaitlistRecipeIds(value) {
     var ids = (spec && spec.ids) || [];
     var map = {};
     for (var i = 0; i < ids.length; i++) map[ids[i]] = true;
-    _dashDrill = { ids: map, count: ids.length, label: String((spec && spec.label) || '') };
+    _dashDrill = { ids: map, count: ids.length, label: String((spec && spec.label) || ''),
+      notes: (spec && spec.notes) || null, order: (spec && spec.order) || null };
     _batchStatusFilter = 'all';
     _batchSearch = '';
     _batchProductFilter = '';
@@ -10047,6 +10081,18 @@ function parseWaitlistRecipeIds(value) {
       filtered = filtered.filter(function (b) {
         return b.product_name === _batchProductFilter;
       });
+    }
+
+    // Phase 98-05 (D-12): a drill can force a row order (Past schedule: most days past plan first).
+    var drillRank = null;
+    if (_dashDrill && _dashDrill.order) {
+      drillRank = {};
+      for (var dri = 0; dri < _dashDrill.order.length; dri++) drillRank[_dashDrill.order[dri]] = dri;
+      filtered = filtered.slice().sort(function (a, b) { return drillRank[a.batch_id] - drillRank[b.batch_id]; });
+    }
+    function drillNoteHtml(b) {
+      return (_dashDrill && _dashDrill.notes && _dashDrill.notes[b.batch_id])
+        ? '<div class="bp-past-plan">' + escapeHTML(_dashDrill.notes[b.batch_id]) + '</div>' : '';
     }
 
     // First render: build the persistent shell (sub-tabs + filter bar + search row + results container)
@@ -10236,6 +10282,7 @@ function parseWaitlistRecipeIds(value) {
       var today = todayStr();
       var sortedFiltered = filtered.slice().sort(function (a, b) {
         var av, bv;
+        if (drillRank) return drillRank[a.batch_id] - drillRank[b.batch_id];
         if (_batchTableSortCol === 'days') {
           av = a.start_date ? Date.now() - new Date(a.start_date) : 0;
           bv = b.start_date ? Date.now() - new Date(b.start_date) : 0;
@@ -10283,7 +10330,7 @@ function parseWaitlistRecipeIds(value) {
         var unitLabel = computeUnitLabel(b, _allBatchesData);
         resultsHtml += '<tr class="' + rowCls + '" data-batch-id="' + escapeHTML(b.batch_id) + '">';
         resultsHtml += '<td class="bp-batch-tr-id">' + escapeHTML(b.batch_id) + (overdueCount > 0 ? ' <span class="bp-urgent-dot">\u25cf</span>' : '') + '</td>';
-        resultsHtml += '<td>' + escapeHTML(b.product_name || b.product_sku || '\u2014') + (unitLabel ? ' <span class="bp-batch-unit">\u2014 ' + escapeHTML(unitLabel) + '</span>' : '') + '</td>';
+        resultsHtml += '<td>' + escapeHTML(b.product_name || b.product_sku || '\u2014') + (unitLabel ? ' <span class="bp-batch-unit">\u2014 ' + escapeHTML(unitLabel) + '</span>' : '') + drillNoteHtml(b) + '</td>';
         resultsHtml += '<td>' + escapeHTML(getCustomerDisplayName(b) || '\u2014') + '</td>';
         resultsHtml += '<td>' + escapeHTML(loc || '\u2014') + '</td>';
         resultsHtml += '<td><span class="bp-status-badge bp-status-badge--' + statusColor + '" style="font-size:0.72rem;padding:1px 6px;">' + escapeHTML(statusLabel) + '</span>';
@@ -10346,6 +10393,7 @@ function parseWaitlistRecipeIds(value) {
         var loc = [b.shelf_id, b.bin_id, b.vessel_id].filter(Boolean).join(' \u00b7 ');
         if (loc) resultsHtml += '<span class="bp-batch-loc">' + escapeHTML(loc) + '</span>';
         resultsHtml += '</div>';
+        resultsHtml += drillNoteHtml(b);
         resultsHtml += '</div>';
       });
       resultsHtml += '</div>';
