@@ -2676,7 +2676,7 @@ Plans:
   3. "Ready to bottle, invite not sent" links to the existing invite flow. Nothing is emailed automatically (F9).
   4. A waitlist tile links to the Waitlist tab.
 
-**Plans:** 1/6 plans executed
+**Plans:** 2/6 plans executed
 
 Plans:
 
@@ -2686,7 +2686,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 98-02-PLAN.md — pure Needs attention model: counts, past-schedule rule, notes, banner copy (A1, A2, A4, A5)
+- [x] 98-02-PLAN.md — pure Needs attention model: counts, past-schedule rule, notes, banner copy (A1, A2, A4, A5)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
