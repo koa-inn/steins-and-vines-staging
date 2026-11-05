@@ -2676,13 +2676,13 @@ Plans:
   3. "Ready to bottle, invite not sent" links to the existing invite flow. Nothing is emailed automatically (F9).
   4. A waitlist tile links to the Waitlist tab.
 
-**Plans:** 6 plans (6 waves, sequential: 98-01 → 98-02 → 98-03 → 98-04 → 98-05 → 98-06)
+**Plans:** 1/6 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 98-01-PLAN.md — ids-only `inviteSentIds` on get_dashboard_stats (A4; owner-approved stats-96 key-list edit)
+- [x] 98-01-PLAN.md — ids-only `inviteSentIds` on get_dashboard_stats (A4; owner-approved stats-96 key-list edit)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
