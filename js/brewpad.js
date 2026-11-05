@@ -14149,7 +14149,7 @@ function parseWaitlistRecipeIds(value) {
     }
     // Always kick off a background refresh
     _upcomingLoadTime = Date.now();
-    adminApiGet('get_tasks_upcoming', { limit: 60 })
+    adminApiGet('get_tasks_upcoming', { limit: 200 })
       .then(function (result) {
         _upcomingTasks = (result.data && result.data.tasks) || [];
         _upcomingLoaded = true;
@@ -14174,7 +14174,7 @@ function parseWaitlistRecipeIds(value) {
     var searchSelStart = prevSearchEl ? prevSearchEl.selectionStart : 0;
     var searchSelEnd = prevSearchEl ? prevSearchEl.selectionEnd : 0;
 
-    var today = todayStr();
+    var today = dashV2TodayDate();
     var weekEnd = new Date();
     weekEnd.setDate(weekEnd.getDate() + 7);
     var weekEndStr = weekEnd.toISOString().slice(0, 10);
@@ -14189,7 +14189,10 @@ function parseWaitlistRecipeIds(value) {
     // Filter tasks by status/type
     var filteredTasks = _upcomingTasks.filter(function (t) {
       var done = t.completed === true || t.completed === 'TRUE' || t.completed === '1';
+      var dueStr = t.due_date ? String(t.due_date).slice(0, 10) : '';
       if (_taskFilter === 'incomplete') return !done;
+      if (_taskFilter === 'overdue') return !done && !!dueStr && dueStr < today;
+      if (_taskFilter === 'duetoday') return !done && !!dueStr && dueStr === today;
       if (_taskFilter === 'transfer') return !done && String(t.is_transfer).toUpperCase() === 'TRUE';
       if (_taskFilter === 'packaging') return !done && String(t.is_packaging).toUpperCase() === 'TRUE';
       return true; // 'all'
@@ -14237,6 +14240,8 @@ function parseWaitlistRecipeIds(value) {
     html += '<div class="bp-task-filters">';
     var taskFilterOpts = [
       { val: 'incomplete', label: 'To Do' },
+      { val: 'overdue', label: 'Overdue' },
+      { val: 'duetoday', label: 'Due today' },
       { val: 'all', label: 'All' },
       { val: 'transfer', label: 'Transfers' },
       { val: 'packaging', label: 'Packaging' }
@@ -14249,7 +14254,9 @@ function parseWaitlistRecipeIds(value) {
 
     var hasAny = groups.some(function (g) { return g.tasks.length > 0; });
     if (!hasAny) {
-      html += '<p class="bp-empty">No upcoming tasks \u2014 all caught up!</p>';
+      if (_taskFilter === 'overdue') html += '<p class="bp-empty">No overdue tasks.</p>';
+      else if (_taskFilter === 'duetoday') html += '<p class="bp-empty">No tasks due today.</p>';
+      else html += '<p class="bp-empty">No upcoming tasks \u2014 all caught up!</p>';
     } else {
       groups.forEach(function (g) {
         if (g.tasks.length === 0) return;
@@ -17272,6 +17279,8 @@ function parseWaitlistRecipeIds(value) {
       _bpStartRecipeFromExistingForTest: function (id, name, btn) { return bpStartRecipeFromExisting(id, name, btn); },
       // Plan 36-22: test-only state accessors for the cache-bust state vars
       _renderDashboardForTest: function () { renderDashboard(); },
+      _renderTasksForTest: function () { renderTasks(); },
+      _loadTasksForTest: function () { return loadTasks(); },
       _renderDashboardV2ForTest: function () { renderDashboardV2(); },
       _setDashV2ForTest: function (on) { _dashV2On = on === true; },
       _initDashV2FlagForTest: function () { initDashV2Flag(); },
@@ -17309,7 +17318,8 @@ function parseWaitlistRecipeIds(value) {
           _dashDrill: _dashDrill,
           _selectedBatchId: _selectedBatchId,
           _batchSearch: _batchSearch,
-          _batchProductFilter: _batchProductFilter
+          _batchProductFilter: _batchProductFilter,
+          _taskFilter: _taskFilter
         };
       },
       _setStateForTest: function (patch) {
@@ -17327,6 +17337,8 @@ function parseWaitlistRecipeIds(value) {
         if ('_upcomingTasks' in patch) _upcomingTasks = patch._upcomingTasks;
         if ('_upcomingLoaded' in patch) _upcomingLoaded = patch._upcomingLoaded;
         if ('_dashWineSkuLookup' in patch) _dashWineSkuLookup = patch._dashWineSkuLookup;
+        if ('_taskFilter' in patch) _taskFilter = patch._taskFilter;
+        if ('_taskSearch' in patch) _taskSearch = patch._taskSearch;
       },
       // Phase 73-05 (D-05): recipe editor save-resilience test seams.
       saveRecipe: saveRecipe,
