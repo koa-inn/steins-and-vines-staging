@@ -2680,11 +2680,28 @@ Plans:
 
 Plans:
 
+**Wave 1**
+
 - [ ] 98-01-PLAN.md — ids-only `inviteSentIds` on get_dashboard_stats (A4; owner-approved stats-96 key-list edit)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 98-02-PLAN.md — pure Needs attention model: counts, past-schedule rule, notes, banner copy (A1, A2, A4, A5)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 98-03-PLAN.md — Tasks tab Overdue / Due today chips on the Vancouver day, loadTasks limit 200 (D-06)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 98-04-PLAN.md — Needs attention row at the top of Today, lazy waitlist count, invite-sent override, chip CSS
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 98-05-PLAN.md — chip tap-throughs, drill notes/order, "N days past plan" (D-05, D-12)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 98-06-PLAN.md — read-only production past-schedule spike (D-10 gate, runs before UAT sign-off), staging deploy and owner UAT incl. after-4pm-PT Tasks grouping
 
 ### Phase 99: Dashboard responsiveness and performance
