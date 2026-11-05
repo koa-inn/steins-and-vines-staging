@@ -75,3 +75,34 @@ Date: 2026-11-04. Production untouched (production/main still 53484bdf).
 | /api/admin/packaging-bookings | 200 | 0 | no | no | ok true, 0 bookings, truncated false |
 
 Result: PASS.
+
+## Owner steps
+
+Done by the owner in-session, 2026-11-04. Claude made read-only checks only.
+
+| Step | Result |
+|------|--------|
+| Staging Railway env | CALCOM_EVENT_TYPE_BEER_PACKAGING 6028745 added; CALCOM_EVENT_TYPE_BEER_WAITLIST 6955754 already set. Deployment 7e4520e5-2ce4-4e28-b1bc-660b1e416783 SUCCESS |
+| Production Railway env | CALCOM_EVENT_TYPE_BEER_PACKAGING 6028745 added (stored with a leading space; Number() parses it, harmless, tidy optional); WAITLIST already set. Deployment 540dd4ae-1476-4a67-8fb3-06835adce23d SUCCESS (restart of current build, no code change) |
+| Production /health after restart | 2026-11-04T21:22:45Z: status ok, authenticated true, database true, redis true |
+| Production /api/bookings/services | 3 services on two consecutive calls, beer consult type listed |
+| Apps Script adminApi.gs | redeployed by owner as a new version of the existing web-app deployment; new version 66, previous (rollback) 65 |
+| Live Cal.com list (staging, header 2026-05-01) | '[packaging-bookings] ok bookings=0 matched=0 truncated=false' at 21:11Z (before BEER_PACKAGING was set); first uncached call took about 17 s |
+
+## Staging UAT
+
+Claude-piloted in the owner's signed-in Chrome tab, 2026-11-04 (read-only except where noted). Owner items still open are marked OWNER.
+
+| # | Item | Result |
+|---|------|--------|
+| 1 | Section order + Today hint | PASS: Today, Production, Floor today, Beer & cider, Products & sales, Data health; hint text exact |
+| 2 | Today's tasks / Ready to bottle | PASS for display: 12 tasks, all overdue rows first with "Overdue"; Ready to bottle (8) with Send Invite where an email exists. Tick-to-save not exercised (writes staging data): OWNER |
+| 3 | Packaging calendar | PASS for load: "Nothing booked or due in the next 14 days", no error note; '[packaging-bookings] ok bookings=0 matched=0 truncated=false'. Day grouping not observable with no entries (covered by jsdom tests) |
+| 4 | Type filter | PASS: Wine hides Beer & cider, Today unchanged; Beer shows beer cards only |
+| 5 | Beer & cider cards | PASS: SV-B-000229 shows Style/ABV/IBU, latest °P, Temp step pill "due today", 25 L and can counts; cider SV-B-000234 shows Juice/Yeast/ABV and "late" on a past step; readings curve opens and closes |
+| 6 | Recipe Target OG/FG | PASS for validation: OG 50 rejected with the 2..40 message. Save-and-persist (12/3) not exercised (writes a staging recipe): OWNER |
+| 7 | Ready to Bottle (N) chip | PASS: Batches chip reads Ready to Bottle (8), same as the dashboard widget |
+| 8 | iPad portrait | SKIPPED (optional) |
+| 9 | Booking match | PASS 2026-11-05 20:17Z: test Beer Packaging booking (kind canning) linked to SV-B-000250; log "[packaging-bookings] ok bookings=1 matched=1". First attempt correctly returned no batch: the email was shared by 4 active batches with no packaging date (D-03 never-guess). Test booking cancelled by owner 2026-11-05 (confirmed) |
+
+Owner follow-up 2026-11-05: item 2 tick-to-save PASS; item 6 Target OG 12 / FG 3 save and reopen PASS (owner-reported).

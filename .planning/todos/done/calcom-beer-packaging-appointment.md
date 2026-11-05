@@ -98,3 +98,6 @@ Mirrors the `CALCOM_EVENT_TYPE_BEER_WAITLIST` precedent exactly:
   customer-side to something unambiguous like "Wine Bottling Appointment", since its current generic
   name appears in booking emails and will read as if it covers beer.
 - `beer.html` step 4 + the "Can I have bottles instead of cans?" FAQ are the copy this supports.
+
+## Resolution (Phase 97, 2026-11)
+Beer Packaging type wired in code by 97-03, packaging bookings route and matcher by 97-06; 97-12 set CALCOM_EVENT_TYPE_BEER_PACKAGING=6028745 on staging and production (prod /health authenticated true after restart) and proved a live booking match on staging (SV-B-000250). Open question about the 60/90/120/150 duration ladder is still for the owner.
