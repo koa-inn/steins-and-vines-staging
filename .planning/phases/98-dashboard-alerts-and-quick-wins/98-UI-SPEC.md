@@ -1,7 +1,8 @@
 ---
 phase: 98
 slug: dashboard-alerts-and-quick-wins
-status: draft
+status: approved
+reviewed_at: 2026-11-05
 shadcn_initialized: false
 preset: none
 created: 2026-11-05
@@ -219,11 +220,11 @@ Dismissing the banner clears the exact-id filter and returns the list to the nor
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: FLAG (legacy 6px gap on .bp-task-filters kept; non-blocking)
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-11-05 (gsd-ui-checker; 5 PASS, 1 FLAG). Planner: add a contrast check for --batch-warning text on --batch-warning-bg, and test the 14-day grace vs the "N days past plan" note.
