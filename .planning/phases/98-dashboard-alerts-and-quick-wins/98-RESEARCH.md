@@ -354,20 +354,27 @@ It is one more query on the same sequential client in one request. Zero Zoho.
 | A3 | Staging/production serve `get_dashboard_stats` from Postgres (so `inviteSentIds` is available); Sheets mode answers `invalid_action` and falls back to summary only | Data sources | In Sheets mode `_dashData` is null and v2 shows its existing "not available" path; the Invite chip is simply omitted |
 | A4 | The owner is content with the invite drill showing normal batch cards (no list-row Send Invite button) | Pitfall 6 | Plan rework if a row button is wanted |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+Owner decisions 2026-11-05.
 
 1. **Server key vs client-only for invite-sent**
    - Known: adding `inviteSentIds` is the robust path but requires one existing-test key-list edit (`batch-pg-dashboard-stats-96.test.js:192`) and a middleware deploy.
    - Unclear: whether the owner accepts that one-line test change.
    - Recommendation: do the server key and state the test edit explicitly in the plan. Fallback if refused: derive from `_allBatchesData` rows (they carry `bottling_invite_sent_at`) and call `loadBatches()` when empty, omitting the chip until loaded. Weaker, but needs no middleware change.
+   - **RESOLVED:** owner approved the server-side `inviteSentIds` key, including the one key-list assertion edit in `batch-pg-dashboard-stats-96.test.js` (plan 98-01).
 
 2. **Production headroom of the task caps** — unknown number of open overdue tasks; recommend raising `loadTasks` to `limit: 200`.
+   - **RESOLVED:** owner approved; `loadTasks` limit raised from 60 to 200 in plan 98-03.
 
 3. **Send Invite on the invite drill rows** — see Pitfall 6; recommend detail-pane button only.
+   - **RESOLVED:** no Send Invite on list rows; the existing detail-pane button (and Ready to bottle row) is the only send path.
 
 4. **Waitlist failure copy** — recommend: on failure omit the chip and suppress the all-clear line, with no new copy.
+   - **RESOLVED:** owner approved; on waitlist failure the chip is omitted, no new copy is added, and the all-clear line is suppressed (plans 98-02 model, 98-04 render).
 
 5. **Past-schedule note singular** — with a 14-day grace the overrun is at least 15, so "1 day past plan" can never display. Keep the helper pluralising correctly for tests; no action.
+   - **RESOLVED:** per plan; 98-02 `dashPastPlanNote` pluralises ("1 day past plan" / "N days past plan") and is unit-tested, no other action.
 
 ## Environment Availability
 
