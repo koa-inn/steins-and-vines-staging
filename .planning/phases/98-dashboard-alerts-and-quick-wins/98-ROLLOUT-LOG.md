@@ -12,8 +12,20 @@
 
 ## Past-schedule spike (production, read-only)
 
-Pending (Task 2). Run in the production middleware container:
-`node - --run < scripts/spike-past-schedule-98.js`
+Run 2026-11-05 by Claude at the owner's request, via
+`railway ssh -e production -s sv_middleware -- 'cd /app/zoho-middleware && node - --run' < scripts/spike-past-schedule-98.js`
+(single SELECT, counts and batch_ids only).
+
+| Metric | Value |
+|--------|-------|
+| active | 40 |
+| noSchedule (D-11) | 1 |
+| mismatches | [] |
+| byPlannedDays any / plus7 / plus14 | 12 / 8 / 6 |
+| bySnapshot any / plus7 / plus14 | 12 / 8 / 6 |
+| flat90 | 5 |
+
+D-10 gate: PASS (no planned_days vs schedule_snapshot mismatches; plus14 = 6 reproduces the owner's 6 of 40; 1 batch excluded for no schedule).
 
 ## Staging deploy
 
