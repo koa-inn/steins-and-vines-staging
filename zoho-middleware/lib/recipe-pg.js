@@ -181,6 +181,13 @@ function invalid(message) {
   return { ok: false, error: 'invalid_data', message: message };
 }
 
+// pg returns numeric as a string; '' for NULL so checkTargetGravityPair treats it as blank.
+function storedGravity(value) {
+  if (value === null || value === undefined || value === '') return '';
+  var n = Number(value);
+  return isFinite(n) ? n : '';
+}
+
 async function createRecipe(client, payload, opts) {
   payload = payload || {};
   opts = opts || {};
@@ -376,6 +383,17 @@ async function updateRecipe(client, payload, opts) {
   var locked = await client.query(LOCK_RECIPE_SQL, [recipeId]);
   if (locked.rows.length === 0) return { ok: false, error: 'not_found', message: 'Recipe not found: ' + recipeId };
   if (isStale(opts.expectedUpdatedAt, locked.rows[0])) return staleResult();
+  // WR-02: with only one target key in the payload, check the pair against the stored partner.
+  if (gravityNext.target_og !== undefined || gravityNext.target_fg !== undefined) {
+    var merged = {
+      target_og: storedGravity(locked.rows[0].target_og),
+      target_fg: storedGravity(locked.rows[0].target_fg)
+    };
+    Object.keys(gravityNext).forEach(function (key) { merged[key] = gravityNext[key]; });
+    if (!recipeRules.checkTargetGravityPair(merged.target_og, merged.target_fg)) {
+      return invalid(recipeRules.TARGET_GRAVITY_MESSAGE);
+    }
+  }
 
   addSet('updated_at', now);
   await client.query('update recipes set ' + sets.join(', ') + ' where recipe_id = $1', params);

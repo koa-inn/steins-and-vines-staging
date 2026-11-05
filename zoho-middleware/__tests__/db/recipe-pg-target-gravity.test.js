@@ -96,6 +96,28 @@ describeDb('recipe-pg target gravity', function () {
     expect(rec.target_fg).toBe(3);
   });
 
+  // WR-02: the fg < og rule must hold against the stored value when only one key is sent.
+  it('partial update is checked against the stored partner value', async function () {
+    var client = harness.client();
+    var m = await make(client, { target_og: 10, target_fg: 3 });
+    var res = await recipePg.updateRecipe(client, { recipe_id: m.id, target_fg: 20 }, { expectedUpdatedAt: m.token });
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('invalid_data');
+    var rec = (await recipePg.getRecipe(client, m.id)).recipe;
+    expect(rec.target_fg).toBe(3);
+
+    res = await recipePg.updateRecipe(client, { recipe_id: m.id, target_og: 2.5 }, { expectedUpdatedAt: rec.updated_at });
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('invalid_data');
+    rec = (await recipePg.getRecipe(client, m.id)).recipe;
+    expect(rec.target_og).toBe(10);
+
+    res = await recipePg.updateRecipe(client, { recipe_id: m.id, target_fg: 4 }, { expectedUpdatedAt: rec.updated_at });
+    expect(res.ok).toBe(true);
+    rec = (await recipePg.getRecipe(client, m.id)).recipe;
+    expect(rec.target_fg).toBe(4);
+  });
+
   it('rejects out-of-range values and writes nothing', async function () {
     var client = harness.client();
     var before = await counts(client);
