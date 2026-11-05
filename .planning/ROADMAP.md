@@ -2676,7 +2676,7 @@ Plans:
   3. "Ready to bottle, invite not sent" links to the existing invite flow. Nothing is emailed automatically (F9).
   4. A waitlist tile links to the Waitlist tab.
 
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 
@@ -2698,7 +2698,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 98-05-PLAN.md — chip tap-throughs, drill notes/order, "N days past plan" (D-05, D-12)
+- [x] 98-05-PLAN.md — chip tap-throughs, drill notes/order, "N days past plan" (D-05, D-12)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
