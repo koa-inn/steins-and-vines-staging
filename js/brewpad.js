@@ -403,6 +403,9 @@ function dashCalTimeLabel(iso) {
 
 function dashCalKind(isCanning) { return isCanning ? 'Canning' : 'Bottling'; }
 
+// WR-03: client-side budget for /api/admin/packaging-bookings before the soft-fail note shows.
+var DASH_CAL_BOOKINGS_TIMEOUT_MS = 10000;
+
 // Merge Cal.com bookings and open dated packaging tasks into day groups (today .. today+13).
 // bookingsResult: { state: 'loading'|'ok'|'failed', bookings: [...] }. A task whose batch has a
 // matched booking in the window is shown once, as the booking.
@@ -9318,15 +9321,34 @@ function parseWaitlistRecipeIds(value) {
       _dashCal.tasks = [];
       _dashCal.tasksFailed = true;
     }
+    // WR-03: give up after DASH_CAL_BOOKINGS_TIMEOUT_MS so "Checking bookings…" can't hang; a late
+    // answer is ignored (the server still caches it for the next load).
+    var bookingsDone = false;
+    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = null;
+    function settleBookings(patch) {
+      if (bookingsDone) return;
+      bookingsDone = true;
+      if (timer) clearTimeout(timer);
+      settle(patch);
+    }
     try {
-      fetch(mwUrl() + '/api/admin/packaging-bookings', { credentials: 'include' })
+      var init = { credentials: 'include' };
+      if (ctl) init.signal = ctl.signal;
+      timer = setTimeout(function () {
+        settleBookings({ bookingsState: 'failed' });
+        if (ctl) { try { ctl.abort(); } catch (eAbort) { /* already settled */ } }
+      }, DASH_CAL_BOOKINGS_TIMEOUT_MS);
+      fetch(mwUrl() + '/api/admin/packaging-bookings', init)
         .then(function (r) { return r.json(); })
         .then(function (body) {
-          if (body && body.ok === true) settle({ bookingsState: 'ok', bookings: body.bookings || [] });
-          else settle({ bookingsState: 'failed' });
+          if (body && body.ok === true) settleBookings({ bookingsState: 'ok', bookings: body.bookings || [] });
+          else settleBookings({ bookingsState: 'failed' });
         })
-        .catch(function () { settle({ bookingsState: 'failed' }); });
+        .catch(function () { settleBookings({ bookingsState: 'failed' }); });
     } catch (e2) {
+      bookingsDone = true;
+      if (timer) clearTimeout(timer);
       _dashCal.bookingsState = 'failed';
     }
   }

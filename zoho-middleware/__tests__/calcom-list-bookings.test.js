@@ -80,6 +80,17 @@ describe('calcom.listBookings', () => {
     });
   });
 
+  // WR-03: the dashboard list call has a tight budget: 5 s per request and at most one retry.
+  test('uses a 5 s timeout and a single retry', () => {
+    var zohoApi = require('../lib/zoho-api');
+    axios.get.mockImplementation(byStatus({}));
+    return calcom.listBookings(OPTS).then(function () {
+      axios.get.mock.calls.forEach(function (call) { expect(call[1].timeout).toBe(5000); });
+      expect(zohoApi.withRetry).toHaveBeenCalledTimes(2);
+      zohoApi.withRetry.mock.calls.forEach(function (c) { expect(c[1]).toEqual({ retries: 1 }); });
+    });
+  });
+
   test('CR-01: a booking that already ended today is still listed', () => {
     var ended = { uid: 'morning', start: '2026-11-05T18:00:00Z', end: '2026-11-05T19:00:00Z', status: 'accepted' };
     var later = { uid: 'afternoon', start: '2026-11-05T23:00:00Z', end: '2026-11-06T00:00:00Z', status: 'accepted' };

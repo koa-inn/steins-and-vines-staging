@@ -122,6 +122,9 @@ function createBooking(body) {
 // ---------------------------------------------------------------------------
 
 var LIST_BOOKINGS_MAX_PAGES = 5;
+// WR-03: the dashboard waits on this call, so it gets a tight budget (5 s, one retry) instead of
+// the 15 s x 4 attempts used for booking writes. The browser gives up at 10 s and soft-fails.
+var LIST_BOOKINGS_TIMEOUT_MS = 5000;
 
 // CR-01: Cal.com 'upcoming' only returns bookings that have not ended yet, so a booking from earlier
 // today would vanish from the calendar. 'past' covers ended ones (Cal.com excludes cancelled/rejected
@@ -155,10 +158,10 @@ function listBookings(opts) {
       return zohoApi.withRetry(function () {
         return axios.get(BASE + '/bookings', {
           headers: makeHeaders(CAL_VERSIONS.bookingsList),
-          timeout: 15000,
+          timeout: LIST_BOOKINGS_TIMEOUT_MS,
           params: params
         });
-      }).then(function (response) {
+      }, { retries: 1 }).then(function (response) {
         var body = (response && response.data) || {};
         if (Array.isArray(body.data)) bookings = bookings.concat(body.data);
         var pg = body.pagination || {};

@@ -289,6 +289,30 @@ describe('packaging calendar widget', function () {
     expect(slot().querySelectorAll('li.bp-cal-entry')).toHaveLength(1);
   });
 
+  // WR-03: a slow Cal.com must not leave "Checking bookings…" up indefinitely.
+  test('bookings request gives up after 10 s and shows the soft-fail note', async function () {
+    var spy = jest.spyOn(global, 'setTimeout');
+    var net = mockNet({ tasks: [calTask('W1', d(2))], bookingsPending: true });
+    await renderV2('');
+    await settleAll();
+    expect(slot().textContent).toContain('Checking bookings…');
+    var init = net.bookings[0].init;
+    if (typeof AbortController !== 'undefined') expect(init.signal).toBeDefined();
+    var timer = spy.mock.calls.filter(function (c) { return c[1] === 10000; })[0];
+    spy.mockRestore();
+    expect(timer).toBeDefined();
+    timer[0]();
+    await settleAll();
+    expect(slot().textContent).not.toContain('Checking bookings');
+    expect(slot().textContent).toContain('Bookings could not be loaded. Showing BrewPad tasks only.');
+    expect(slot().textContent).not.toContain('not booked yet');
+    if (init.signal) expect(init.signal.aborted).toBe(true);
+    net.resolveBookings({ ok: true, bookings: [] });
+    await settleAll();
+    expect(slot().textContent).toContain('Bookings could not be loaded.');
+    expect(slot().textContent).not.toContain('not booked yet');
+  });
+
   test('semantic markup, kind chips and drill buttons', async function () {
     var tasks = [calTask('W1', d(2)), calTask('B1', d(2))];
     mockNet({
