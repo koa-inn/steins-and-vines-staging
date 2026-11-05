@@ -2676,11 +2676,16 @@ Plans:
   3. "Ready to bottle, invite not sent" links to the existing invite flow. Nothing is emailed automatically (F9).
   4. A waitlist tile links to the Waitlist tab.
 
-**Plans:** 0 plans
+**Plans:** 6 plans
 
 Plans:
 
-- [ ] TBD
+- [ ] 98-01-PLAN.md — ids-only `inviteSentIds` on get_dashboard_stats (A4; owner-approved stats-96 key-list edit)
+- [ ] 98-02-PLAN.md — pure Needs attention model: counts, past-schedule rule, notes, banner copy (A1, A2, A4, A5)
+- [ ] 98-03-PLAN.md — Tasks tab Overdue / Due today chips on the Vancouver day, loadTasks limit 200 (D-06)
+- [ ] 98-04-PLAN.md — Needs attention row at the top of Today, lazy waitlist count, invite-sent override, chip CSS
+- [ ] 98-05-PLAN.md — chip tap-throughs, drill notes/order, "N days past plan" (D-05, D-12)
+- [ ] 98-06-PLAN.md — read-only production past-schedule spike (6 of 40), staging deploy and owner UAT
 
 ### Phase 99: Dashboard responsiveness and performance
 
