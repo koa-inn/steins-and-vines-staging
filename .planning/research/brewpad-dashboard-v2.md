@@ -243,7 +243,7 @@ GSD's command prefix depends on the installed version: `/gsd:…` or `/gsd-…`.
 - [x] **G9** Sales source mix
 - [x] **G10** Data health card
 - [x] **Phase D** Beer and cider sections + packaging calendar
-- [ ] **A1–A5** Alerts and quick wins (strike any not wanted)
+- [x] **A1–A5** Alerts and quick wins (A1, A2, A4, A5 approved; ~~A3~~ struck)
 - [ ] **Phase F** Responsive and performance pass
 
 **Owner notes:**
@@ -252,3 +252,4 @@ GSD's command prefix depends on the installed version: `/gsd:…` or `/gsd-…`.
 - 2026-10-28: Phase 95 items D2, D3 (Chart.js 4, self-hosted in js/vendor), D4 and D5 approved. The redesign ships behind `?dash=v2`, remembered per device, and v1 is frozen. It adds an explicit staff/family/R&D batch flag with a reviewed candidate backfill (internal/research + McLachlan, Inn). See `95-CONTEXT.md`.
 - 2026-10-28: Phase 96 items G1–G10 approved. Amendments: G7 shows no on-time rate and no completions by staff (D-02, D-03); G6 shows "Shared vessels" as allowed, not as conflicts (D-04); G8 has no "readings due" list, only a neutral "No readings yet" list (D-08, D-09); G10 does not list shared vessels and calls a missing SO "no invoice link", never unbilled (D-14). See `96-CONTEXT.md`.
 - 2026-11-03: Phase 97 Phase D approved in full (beer card/section, cider section, 2-week packaging calendar). Folded: restore Today's tasks + Ready to bottle on v2, wire the Beer Packaging Cal.com type, Ready to Bottle filter on Batches. See `97-CONTEXT.md`.
+- 2026-11-05: Phase 98 items A1, A2, A4 and A5 approved; A3 struck (shared vessels are allowed, Phase 96 D-04). A4 is a count + filter on Ready to bottle, never automatic email. Stale = 14 days past the batch's own schedule length, neutral "Past schedule" wording. See `98-CONTEXT.md`.
