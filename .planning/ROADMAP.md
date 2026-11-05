@@ -2676,7 +2676,7 @@ Plans:
   3. "Ready to bottle, invite not sent" links to the existing invite flow. Nothing is emailed automatically (F9).
   4. A waitlist tile links to the Waitlist tab.
 
-**Plans:** 2/6 plans executed
+**Plans:** 3/6 plans executed
 
 Plans:
 
@@ -2690,7 +2690,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 98-03-PLAN.md — Tasks tab Overdue / Due today chips on the Vancouver day, loadTasks limit 200 (D-06)
+- [x] 98-03-PLAN.md — Tasks tab Overdue / Due today chips on the Vancouver day, loadTasks limit 200 (D-06)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
