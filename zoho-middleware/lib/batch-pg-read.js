@@ -93,6 +93,9 @@ var DASH_STATS_BATCHES_SQL =
 // per-row lean key set is unchanged.
 var DASH_STATS_STAFF_SQL =
   'select batch_id from batches where staff_batch = true order by length(batch_id), batch_id';
+// Phase 98 (A4, D-14): ids only, no email or timestamp. Drives the client-side Invite not sent count.
+var DASH_STATS_INVITED_SQL =
+  'select batch_id from batches where bottling_invite_sent_at is not null order by length(batch_id), batch_id';
 var DASH_STATS_TASKS_SQL =
   'select t.batch_id, t.task_id, to_char(t.due_date, \'YYYY-MM-DD\') as due_date, t.completed, ' +
   "to_char(t.completed_at at time zone $1, 'YYYY-MM-DD') as completed_day, " +
@@ -399,6 +402,9 @@ function getDashboardStats(client, opts) {
     return client.query(DASH_STATS_STAFF_SQL);
   }).then(function (res) {
     out.staffBatchIds = res.rows.map(function (r) { return r.batch_id; });
+    return client.query(DASH_STATS_INVITED_SQL);
+  }).then(function (res) {
+    out.inviteSentIds = res.rows.map(function (r) { return r.batch_id; });
     return client.query(DASH_STATS_TASK_ROWS_SQL, [tz]);
   }).then(function (res) {
     out.taskRows = res.rows;
@@ -433,6 +439,7 @@ function getDashboardStats(client, opts) {
       tasks: out.tasks,
       latestReadings: out.latestReadings,
       staffBatchIds: out.staffBatchIds,
+      inviteSentIds: out.inviteSentIds,
       summary: summary.data,
       taskRows: out.taskRows,
       readings: out.readings,

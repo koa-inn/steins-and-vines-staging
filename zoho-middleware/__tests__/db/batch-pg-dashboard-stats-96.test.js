@@ -189,7 +189,7 @@ describeDb('batch-pg-dashboard-stats-96', function () {
     expect(blob).not.toMatch(/customer_|access_token|completed_by|recorded_by|notes|recipe_snapshot/);
     res.data.tasks.forEach(function (t) { expect(Object.keys(t).sort()).toEqual(PHASE94_TASK_KEYS); });
     expect(Object.keys(res.data).sort()).toEqual([
-      'asOf', 'batchMeta', 'batches', 'latestReadings', 'readings', 'staffBatchIds', 'summary', 'taskRows', 'tasks', 'vessels'
+      'asOf', 'batchMeta', 'batches', 'inviteSentIds', 'latestReadings', 'readings', 'staffBatchIds', 'summary', 'taskRows', 'tasks', 'vessels'
     ]);
   });
 });
