@@ -98,6 +98,41 @@ describe('bookings routes — beer packaging event type', () => {
     expect(calcom.listEventType).toHaveBeenCalledTimes(3);
   });
 
+  // WR-06: a broken Beer Packaging lookup must not take down the public services list.
+  test('services drops a failed Beer Packaging lookup, logs it and does not cache', async () => {
+    setAllEnv();
+    process.env.CALCOM_EVENT_TYPE_BEER_PACKAGING = '6028745';
+    var log = require('../lib/logger');
+    calcom.listEventType.mockImplementation(function (id) {
+      if (id === 6028745) {
+        var err = new Error('Request failed for someone@example.com');
+        err.response = { status: 404 };
+        return Promise.reject(err);
+      }
+      return Promise.resolve({ data: { id: id, title: 't' + id, slug: 's' + id } });
+    });
+    var res = mockRes();
+    await getHandlers['/api/bookings/services']({}, res);
+    expect(res.status).not.toHaveBeenCalled();
+    var payload = res.json.mock.calls[0][0];
+    expect(payload.services.map(function (x) { return x.id; })).toEqual([111, 222, 333]);
+    expect(log.warn).toHaveBeenCalled();
+    log.warn.mock.calls.forEach(function (c) { expect(String(c[0])).not.toContain('@'); });
+    expect(cache.set).not.toHaveBeenCalled();
+  });
+
+  test('services still 502s when a non-packaging lookup fails', async () => {
+    setAllEnv();
+    process.env.CALCOM_EVENT_TYPE_BEER_PACKAGING = '6028745';
+    calcom.listEventType.mockImplementation(function (id) {
+      if (id === 222) return Promise.reject(new Error('down'));
+      return Promise.resolve({ data: { id: id } });
+    });
+    var res = mockRes();
+    await getHandlers['/api/bookings/services']({}, res);
+    expect(res.status).toHaveBeenCalledWith(502);
+  });
+
   test('beer-packaging selector books 6028745', async () => {
     setAllEnv();
     process.env.CALCOM_EVENT_TYPE_BEER_PACKAGING = '6028745';

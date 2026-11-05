@@ -154,14 +154,26 @@ router.get('/api/bookings/services', async function (req, res) {
       process.env.CALCOM_EVENT_TYPE_BEER_PACKAGING
     ].filter(function (id) { return id && String(id).trim() !== ''; });
 
+    // WR-06: no public page needs Beer Packaging here (the packaging calendar reads its id from env),
+    // so a failed lookup for it drops that one entry instead of failing the whole list. Other ids keep
+    // the all-or-nothing 502.
+    var packagingId = Number(process.env.CALCOM_EVENT_TYPE_BEER_PACKAGING);
+    var droppedPackaging = false;
     var serviceData;
     if (ids.length === 0) {
       serviceData = [];
     } else {
       var results = await Promise.all(ids.map(function (id) {
-        return calcom.listEventType(Number(id));
+        var p = calcom.listEventType(Number(id));
+        if (!(Number(id) === packagingId && isFinite(packagingId))) return p;
+        return p.catch(function (e) {
+          droppedPackaging = true;
+          log.warn('[api/bookings/services] beer packaging event type lookup failed (' +
+            (e && e.response ? 'HTTP ' + e.response.status : (e && e.code) || 'error') + '); omitted');
+          return null;
+        });
       }));
-      serviceData = results.map(function (r) {
+      serviceData = results.filter(function (r) { return r !== null; }).map(function (r) {
         var et = (r && r.data) || r || {};
         return {
           id: et.id,
@@ -177,7 +189,9 @@ router.get('/api/bookings/services', async function (req, res) {
     }
 
     var payload = { services: serviceData, staff: [] };
-    cache.set(BOOKING_SERVICES_CACHE_KEY, payload, BOOKING_SERVICES_CACHE_TTL).catch(function () {});
+    if (!droppedPackaging) {
+      cache.set(BOOKING_SERVICES_CACHE_KEY, payload, BOOKING_SERVICES_CACHE_TTL).catch(function () {});
+    }
     res.json(payload);
   } catch (err) {
     log.error('[api/bookings/services] ' + err.message);
