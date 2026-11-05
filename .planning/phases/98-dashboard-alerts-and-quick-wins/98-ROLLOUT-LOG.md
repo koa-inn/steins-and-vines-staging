@@ -29,11 +29,29 @@ D-10 gate: PASS (no planned_days vs schedule_snapshot mismatches; plus14 = 6 rep
 
 ## Staging deploy
 
-Pending (Task 3).
+- 2026-11-05 ~15:29 MST: `git push origin main` (6b5cc3b7..e0240304), owner said "push". Staging only; no production push.
+- Railway staging sv_middleware deploy fdc19b14: SUCCESS.
+- GitHub Actions "Deploy Staging (filtered)": success.
 
 ## Staging UAT
 
-Pending (Task 3).
+Claude-piloted pass, 2026-11-05 ~14:45 PT, desktop Chrome on staging ?dash=v2 (owner signed in to Cloudflare Access):
+
+- Item 2 (placement): PASS. The Needs attention row is first in Today, above Today's tasks. Counts unchanged after switching filters to Wine + 30d.
+- Item 3 (chips/order/colour): PASS. Overdue (11, red) · Due today (1) · Past schedule (8, amber) · Invite not sent (3) · Waitlist waiting (7).
+  - Past schedule 8 on staging vs 6 on prod is a data difference. The same read-only spike against the staging DB gives active 40, noSchedule 1, mismatches [], plus14 8.
+- Item 4 (tap-throughs): PASS.
+  - Overdue → Tasks with 11 tasks.
+  - Due today → Tasks with the Due today chip selected, 1 task.
+  - Past schedule → Batches, banner "Showing 8 batches past schedule.", 8 rows, "N days past plan" sorted desc (244…37); ✕ clears the banner.
+  - Invite not sent → banner "Showing 3 ready-to-bottle batches with no invite sent.", 3 rows.
+  - Waitlist waiting → Waitlist tab on Waiting, 7 rows.
+- Item 5 (invite count drop): NOT RUN (sends a real email; owner to do with a self-addressed batch if wanted).
+- Item 6 (after 4 pm PT Tasks grouping): PENDING. Checked at ~14:45 PT, before 4 pm; covered by the 98-03 late-evening unit test.
+- Item 7 (iPad portrait wrap): PARTIAL.
+  - 390px same-origin iframe: 5 chips wrap onto 3 lines, no horizontal scroll, every chip 44px tall.
+  - 768px: no horizontal scroll.
+  - Real iPad check pending with owner.
 
 ## Gaps
 
