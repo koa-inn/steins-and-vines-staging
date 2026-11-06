@@ -3105,12 +3105,12 @@ function buildDashAttentionModel(inp) {
   }
 
   if (tasksOk && Number(tc.overdue) > 0) {
-    items.push({ key: 'overdue', label: 'Overdue', count: Number(tc.overdue), tone: 'danger',
-      aria: 'Overdue tasks, ' + Number(tc.overdue) + '. Opens the Tasks tab.' });
+    items.push({ key: 'overdue', label: 'Overdue', count: Number(tc.overdue), tone: 'danger', plus: tc.truncated === true,
+      aria: 'Overdue tasks, ' + (tc.truncated === true ? 'at least ' : '') + Number(tc.overdue) + '. Opens the Tasks tab.' });
   }
   if (tasksOk && Number(tc.today) > 0) {
-    items.push({ key: 'today', label: 'Due today', count: Number(tc.today), tone: '',
-      aria: 'Tasks due today, ' + Number(tc.today) + '. Opens the Tasks tab.' });
+    items.push({ key: 'today', label: 'Due today', count: Number(tc.today), tone: '', plus: tc.truncated === true,
+      aria: 'Tasks due today, ' + (tc.truncated === true ? 'at least ' : '') + Number(tc.today) + '. Opens the Tasks tab.' });
   }
   if (over.length > 0) {
     var ids = [];
@@ -4303,6 +4303,7 @@ function parseWaitlistRecipeIds(value) {
   // Tasks
   var _upcomingTasks = [];
   var _upcomingLoaded = false;
+  var _upcomingTruncated = false;   // Review WR-02: last get_tasks_upcoming fetch returned its full row limit
   var _upcomingLoadTime = 0;
   var _taskSaveTimers = {};    // keyed by taskId — per-checkbox auto-save debounce
   var _taskFilter = 'incomplete';
@@ -7106,6 +7107,7 @@ function parseWaitlistRecipeIds(value) {
 
       if (r4) {
         _upcomingTasks    = (r4.data && r4.data.tasks) || [];
+        _upcomingTruncated = _upcomingTasks.length >= 200;
         _upcomingLoaded   = true;
         _upcomingLoadTime = Date.now();
       }
@@ -7168,6 +7170,7 @@ function parseWaitlistRecipeIds(value) {
       _dashData = results[0].stats;
       _dashSummary = results[0].summary;
       _upcomingTasks = (results[1].data && results[1].data.tasks) || _upcomingTasks;
+      if (results[1].data) _upcomingTruncated = _upcomingTasks.length >= 100;
       if (results[1].data) { _upcomingLoaded = true; _upcomingLoadTime = Date.now(); }
       renderDashboard();
     }).catch(function () {
@@ -9470,7 +9473,7 @@ function parseWaitlistRecipeIds(value) {
     var taskCounts = null;
     if (_upcomingLoaded) {
       var tr = dashTodayTaskRows(_upcomingTasks, today);
-      taskCounts = { overdue: tr.overdue.length, today: tr.today.length };
+      taskCounts = { overdue: tr.overdue.length, today: tr.today.length, truncated: _upcomingTruncated };
     }
     return buildDashAttentionModel({
       today: today,
@@ -9530,7 +9533,7 @@ function parseWaitlistRecipeIds(value) {
           var it = model.items[i];
           var cls = 'bp-attn-chip' + (it.tone === 'danger' ? ' bp-attn-chip--danger' : (it.tone === 'warn' ? ' bp-attn-chip--warn' : ''));
           html += '<button type="button" class="' + cls + '" data-attn="' + escapeHTML(it.key) + '" aria-label="' + escapeHTML(it.aria) + '">' +
-            '<span class="bp-attn-label">' + escapeHTML(it.label) + '</span> <span class="bp-attn-count">(' + Number(it.count) + ')</span>' +
+            '<span class="bp-attn-label">' + escapeHTML(it.label) + '</span> <span class="bp-attn-count">(' + Number(it.count) + (it.plus ? '+' : '') + ')</span>' +
             '<span class="bp-attn-go" aria-hidden="true">\u203A</span></button>';
         }
         html += '</div>';
@@ -14288,6 +14291,7 @@ function parseWaitlistRecipeIds(value) {
     adminApiGet('get_tasks_upcoming', { limit: 200 })
       .then(function (result) {
         _upcomingTasks = (result.data && result.data.tasks) || [];
+        _upcomingTruncated = _upcomingTasks.length >= 200;
         _upcomingLoaded = true;
         renderTasks();
       })
@@ -17478,6 +17482,7 @@ function parseWaitlistRecipeIds(value) {
         if ('_dashData' in patch) _dashData = patch._dashData;
         if ('_upcomingTasks' in patch) _upcomingTasks = patch._upcomingTasks;
         if ('_upcomingLoaded' in patch) _upcomingLoaded = patch._upcomingLoaded;
+        if ('_upcomingTruncated' in patch) _upcomingTruncated = patch._upcomingTruncated;
         if ('_dashWineSkuLookup' in patch) _dashWineSkuLookup = patch._dashWineSkuLookup;
         if ('_taskFilter' in patch) _taskFilter = patch._taskFilter;
         if ('_dashWaitlist' in patch) _dashWaitlist = patch._dashWaitlist;

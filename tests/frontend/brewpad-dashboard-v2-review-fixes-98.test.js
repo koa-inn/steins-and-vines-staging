@@ -138,3 +138,18 @@ describe('WR-01: chip-set task filter does not stick', function () {
   });
 });
 
+describe('WR-02: truncated task list is signalled', function () {
+  test('counts get a + suffix when the task list hit its limit', async function () {
+    mount({ tasks: [task('W1', 'a', d(-2)), task('W1', 'c', d(0))], truncated: true });
+    await renderV2();
+    expect(chip('overdue').querySelector('.bp-attn-count').textContent).toBe('(1+)');
+    expect(chip('today').querySelector('.bp-attn-count').textContent).toBe('(1+)');
+  });
+
+  test('no + suffix when the list was not truncated', async function () {
+    mount({ tasks: [task('W1', 'a', d(-2))] });
+    await renderV2();
+    expect(chip('overdue').querySelector('.bp-attn-count').textContent).toBe('(1)');
+  });
+});
+
