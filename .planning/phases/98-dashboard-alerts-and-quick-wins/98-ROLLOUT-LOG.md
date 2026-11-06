@@ -48,11 +48,15 @@ Claude-piloted pass, 2026-11-05 ~14:45 PT, desktop Chrome on staging ?dash=v2 (o
   - Waitlist waiting → Waitlist tab on Waiting, 7 rows.
 - Item 5 (invite count drop): NOT RUN (sends a real email; owner to do with a self-addressed batch if wanted).
 - Item 6 (after 4 pm PT Tasks grouping): PASS, checked 16:40 PT 2026-11-05. On All, SV-B-000250 "Brew, Cast, and Yeast Pitch" (due 2026-11-05) sits under the TODAY (1) header, not Overdue. The Due today chip lists it; the Overdue chip does not.
-- Item 7 (iPad portrait wrap): PARTIAL.
+- Item 7 (iPad portrait wrap): PASS.
   - 390px same-origin iframe: 5 chips wrap onto 3 lines, no horizontal scroll, every chip 44px tall.
   - 768px: no horizontal scroll.
-  - Real iPad check pending with owner.
+  - Real iPad portrait: owner approved.
+
+Owner approval: "approved", 2026-11-05 (after the after-4pm check). Past schedule signed off (D-10 gate PASS).
 
 ## Gaps
 
-None recorded yet.
+None. Follow-ups (not gaps):
+- Item 5 (invite count drop after Send Invite) was not run live, because it sends a real email; unit-covered in 98-04/98-05.
+- "This Week" Tasks boundary still uses UTC (98-03 follow-up).
