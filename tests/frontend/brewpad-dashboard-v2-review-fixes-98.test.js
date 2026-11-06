@@ -153,3 +153,34 @@ describe('WR-02: truncated task list is signalled', function () {
   });
 });
 
+describe('WR-03: waitlist failure recovers', function () {
+  test('failed fetch is retried once on a later render, then the chip shows', async function () {
+    var n = 0;
+    waitlistImpl = function () { n++; return n === 1 ? failedResp() : resp({ ok: true, data: [{ email: 'a@x.ca', status: 'waiting' }] }); };
+    mount();
+    await renderV2();
+    expect(bp.getStateForTest()._dashWaitlist.state).toBe('failed');
+    expect(waitlistCalls()).toBe(1);
+    bp._renderDashboardForTest();
+    await flushN();
+    expect(waitlistCalls()).toBe(2);
+    expect(bp.getStateForTest()._dashWaitlist.state).toBe('ok');
+    expect(chip('waitlist')).not.toBeNull();
+  });
+
+  test('persistent failure does not retry more than once per dashboard load', async function () {
+    waitlistImpl = failedResp;
+    mount();
+    await renderV2();
+    for (var i = 0; i < 4; i++) { bp._renderDashboardForTest(); await flushN(); }
+    expect(waitlistCalls()).toBe(2);
+  });
+
+  test('a synchronous throw settles to failed and re-renders', async function () {
+    waitlistImpl = function () { throw new Error('boom'); };
+    mount();
+    await renderV2();
+    expect(bp.getStateForTest()._dashWaitlist.state).toBe('failed');
+    expect(waitlistCalls()).toBe(1);
+  });
+});

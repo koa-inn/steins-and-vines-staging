@@ -9444,12 +9444,20 @@ function parseWaitlistRecipeIds(value) {
   // ---- Phase 98-04: Needs attention row (Today section lead slot; ignores the global filters, D-04) ----
   function ensureDashWaitlist() {
     if (!isDashV2()) return;
-    if (_dashWaitlist.tok && _dashWaitlist.loadTime === _dashLoadTime) return;
+    var prev = _dashWaitlist;
+    var sameLoad = !!(prev.tok && prev.loadTime === _dashLoadTime);
+    if (sameLoad) {
+      // Review WR-03: a failed fetch is retried once per dashboard load, on a later render
+      // (not the re-render settle() triggers itself).
+      if (prev.state !== 'failed' || prev.retried) return;
+      if (prev.skipNext) { prev.skipNext = false; return; }
+    }
     var tok = {};
-    _dashWaitlist = { tok: tok, loadTime: _dashLoadTime, state: 'loading', count: 0 };
+    _dashWaitlist = { tok: tok, loadTime: _dashLoadTime, state: 'loading', count: 0, retried: sameLoad, skipNext: false };
     function settle(patch) {
       if (_dashWaitlist.tok !== tok) return;
       Object.keys(patch).forEach(function (k) { _dashWaitlist[k] = patch[k]; });
+      if (patch.state === 'failed') _dashWaitlist.skipNext = true;
       if (isDashV2()) rerenderDashV2Widget('t0');
     }
     try {
@@ -9461,7 +9469,7 @@ function parseWaitlistRecipeIds(value) {
         settle({ state: 'failed' });
       });
     } catch (e) {
-      _dashWaitlist.state = 'failed';
+      settle({ state: 'failed' });
     }
   }
 
