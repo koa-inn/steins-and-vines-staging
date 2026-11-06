@@ -124,6 +124,13 @@ describe('POST /api/preorder/initialize', function () {
     expect(helcimLib.initializeCheckout).not.toHaveBeenCalled();
   });
 
+  test('a sold-out kit is 400 with its name and never reaches Helcim', async function () {
+    var res = await post('/api/preorder/initialize', { items: [{ item_id: '109900000001719012', qty: 1 }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Aria is sold out');
+    expect(helcimLib.initializeCheckout).not.toHaveBeenCalled();
+  });
+
   test('reCAPTCHA failure is 400 (production, no secret fails closed)', async function () {
     var prev = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';

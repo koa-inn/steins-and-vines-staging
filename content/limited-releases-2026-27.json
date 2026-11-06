@@ -133,6 +133,7 @@
     {
       "zoho_item_id": "109900000001719012",
       "sku": "80100270",
+      "sold_out": true,
       "collection": "rq27",
       "short_name": "Aria",
       "grapes": "Cabernet Franc",

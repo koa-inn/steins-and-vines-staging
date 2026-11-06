@@ -10,6 +10,11 @@
 // Per-item cap hook: set cap: N on an entry to limit reservations per order
 // line for that kit (handoff section 8 item 6). Cross-order caps would need
 // Zoho counts and are out of scope ("no cap" across orders is locked).
+//
+// Sold out: set sold_out: true here AND "sold_out": true on the kit in the
+// content JSON (a test checks they match). validateBasket then refuses new
+// deposits for it; existing deposits still price and redeem (getKitRate and
+// the pickup flow ignore the flag).
 // ---------------------------------------------------------------------------
 
 var DEPOSIT_PER_KIT = 50;
@@ -28,7 +33,8 @@ function kit(sku, name, collection, supplier, release, releaseLabel) {
     supplier: supplier,
     release: release,
     release_label: releaseLabel,
-    cap: undefined
+    cap: undefined,
+    sold_out: false
   };
 }
 
@@ -44,6 +50,8 @@ var ALLOWLIST = {
   '109900000001719045': kit('80100285', 'Sol', 'rq27', 'RJS', '2027-04', 'April 2027'),
   '109900000001719100': kit('G010404', 'Amici', 'le26', 'Winexpert', '2027-04', 'April 2027')
 };
+
+ALLOWLIST['109900000001719012'].sold_out = true; // Aria
 
 function has(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
@@ -71,6 +79,7 @@ function validateBasket(items) {
     if (!it || typeof it !== 'object' || Array.isArray(it)) return fail('Invalid basket line');
     var id = it.item_id;
     if (typeof id !== 'string' || !has(ALLOWLIST, id)) return fail('Unknown kit');
+    if (ALLOWLIST[id].sold_out) return fail(ALLOWLIST[id].name + ' is sold out');
     var qty = it.qty;
     if (typeof qty !== 'number' || !Number.isInteger(qty) || qty < 1 || qty > MAX_QTY_PER_LINE) {
       return fail('Invalid quantity');

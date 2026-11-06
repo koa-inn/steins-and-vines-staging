@@ -76,7 +76,14 @@ describe('validateBasket', function () {
   test('more than 10 lines rejected', function () {
     var ids = Object.keys(lr.ALLOWLIST);
     var lines = ids.map(function (id) { return { item_id: id, qty: 1 }; });
-    expect(lr.validateBasket(lines).ok).toBe(true); // exactly 10 lines / 10 kits
+    // Clear sold-out flags so all 10 kits can fill the 10-line boundary.
+    var soldOut = ids.filter(function (id) { return lr.ALLOWLIST[id].sold_out; });
+    soldOut.forEach(function (id) { lr.ALLOWLIST[id].sold_out = false; });
+    try {
+      expect(lr.validateBasket(lines).ok).toBe(true); // exactly 10 lines / 10 kits
+    } finally {
+      soldOut.forEach(function (id) { lr.ALLOWLIST[id].sold_out = true; });
+    }
     lines.push({ item_id: A, qty: 1 });
     expect(lr.validateBasket(lines).ok).toBe(false);
   });
