@@ -186,7 +186,7 @@
 - [x] **Phase 95: Global filters and chart engine** — sticky global filter bar for type, period, group-by, measure (batches or litres), source and staff toggle, held in the URL hash (D2); a chart library behind a small `chart()` helper, Chart.js 4 by default (D3); click-through from every bar, segment and tile to the filtered Batches tab (D4); trend deltas on KPI tiles (D5). (completed 2026-10-28)
 - [x] **Phase 96: New and upgraded dashboard graphs** — G1 production over time · G2 pipeline · G3 cycle-time distribution · G4 product breakdown for all types + leaderboard · G5 workload forecast · G6 vessel capacity + shared vessels · G7 task health · G8 fermentation curves + no-readings list · G9 sales source mix · G10 data-health card. (completed 2026-10-29)
 - [x] **Phase 97: Beer and cider dashboard sections** — beer batch card and section (style, ABV/IBU, OG vs target FG, current step including temperature steps, cans and litres packaged); cider section; 2-week packaging calendar for bottling and canning, coordinated with the canning handoffs without duplicating their scope. (completed 2026-11-05)
-- [ ] **Phase 98: Dashboard alerts and quick wins** — A1 "Needs attention" counts by type · A2 stale batches past their planned schedule · A3 vessel conflicts · A4 ready to bottle with invite not sent (link only, no automatic email) · A5 waitlist tile.
+- [x] **Phase 98: Dashboard alerts and quick wins** — A1 "Needs attention" counts by type · A2 stale batches past their planned schedule · A3 vessel conflicts · A4 ready to bottle with invite not sent (link only, no automatic email) · A5 waitlist tile. (completed 2026-11-06)
 - [ ] **Phase 99: Dashboard responsiveness and performance** — mobile-first grid with no horizontal scroll at 360 px; skeleton loaders and cached-first render; lazy charts below the fold; < 1.5 s warm / < 3 s cold on the shop tablet; Lighthouse mobile ≥ 85; a table view for every chart; then make v2 the default.
 - [x] **Phase 100: Limited Releases page and online deposits** — `limited-releases.html` for the ten 2026-27 limited-release wine kits (Winexpert LE26 + RJS RQ27 "Elemento") with supplier marketing assets; $50 non-refundable online deposit per kit via `POST /api/preorder/deposit`; launches only when deposits work end to end. Worked next (owner, 2026-10-29), independent of Phases 97–99. (completed 2026-10-30)
 
@@ -2676,7 +2676,7 @@ Plans:
   3. "Ready to bottle, invite not sent" links to the existing invite flow. Nothing is emailed automatically (F9).
   4. A waitlist tile links to the Waitlist tab.
 
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 
 Plans:
 
@@ -2702,7 +2702,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 98-06-PLAN.md — read-only production past-schedule spike (D-10 gate, runs before UAT sign-off), staging deploy and owner UAT incl. after-4pm-PT Tasks grouping
+- [x] 98-06-PLAN.md — read-only production past-schedule spike (D-10 gate, runs before UAT sign-off), staging deploy and owner UAT incl. after-4pm-PT Tasks grouping
 
 ### Phase 99: Dashboard responsiveness and performance
 
