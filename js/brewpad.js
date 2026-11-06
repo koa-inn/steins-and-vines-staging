@@ -9926,6 +9926,9 @@ function parseWaitlistRecipeIds(value) {
   // Phase 95-10 UAT: the bottom tab bar always opens the normal Batches list. Only a dashboard
   // click (openDashDrill) shows a drilled set, so a leftover drill is dropped here.
   function handleTabBarClick(tab) {
+    // Review WR-01: a Needs attention chip sets a narrowed task filter via switchTab directly;
+    // opening Tasks from the tab bar always starts from the full open list.
+    if (tab === 'tasks') _taskFilter = 'incomplete';
     if (tab === 'batches' && _dashDrill) {
       _dashDrill = null;
       _batchStatusFilter = 'active';
