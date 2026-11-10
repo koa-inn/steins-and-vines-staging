@@ -151,7 +151,7 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 **Defined:** 2026-11-10. **Source:** `101-CONTEXT.md` D-01..D-21 + `101-RESEARCH.md` phase_requirements.
 
 - [ ] **MIXR-01** (Phase 101, D-01..D-08, D-15): One kiosk / admin-POS cart holds several recipe entries (the same recipe can repeat; each keeps its own batch size, edits, sale type and milling) alongside products, wine kits, canning bundles, custom items and gift-card lines. Adding a recipe never clears the cart. Each recipe renders as one grouped block with one remove control.
-- [ ] **MIXR-02** (Phase 101, D-20): `/api/kiosk/sale` + `/confirm` price recipe components server-side with the same recipe pricing, unit conversion, discount and tax code (extracted to `lib/recipe-sale-lines.js`). A recipe-only cart prices exactly as the old recipe route did, proven by characterization tests written first.
+- [x] **MIXR-02** (Phase 101, D-20): `/api/kiosk/sale` + `/confirm` price recipe components server-side with the same recipe pricing, unit conversion, discount and tax code (extracted to `lib/recipe-sale-lines.js`). A recipe-only cart prices exactly as the old recipe route did, proven by characterization tests written first.
 - [ ] **MIXR-03** (Phase 101, D-14): A mixed sale books ONE Zoho invoice and ONE payment. Tax is grouped per rate across product and recipe lines before rounding (entity_level). Per-recipe package adjustments are summed into the single invoice adjustment, and the invoice total equals the charge.
 - [ ] **MIXR-04** (Phase 101, D-09, D-10): Every kiosk tender works for recipe-bearing sales: card terminal, cash (change-due), phone order (MOTO), and gift card alone or split. The tender panel is never skipped for recipe carts.
 - [ ] **MIXR-05** (Phase 101, D-11): Discount presets apply per line across the mixed cart (`scope: 'cart'` covers all lines; `scope: 'type'` with `recipe` / `service` tokens hits only recipe product / fee portions), and the charge equals what the invoice books.
@@ -165,7 +165,7 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | MIXR-01 | Phase 101 | Pending |
-| MIXR-02 | Phase 101 | Pending |
+| MIXR-02 | Phase 101 | Complete |
 | MIXR-03 | Phase 101 | Pending |
 | MIXR-04 | Phase 101 | Pending |
 | MIXR-05 | Phase 101 | Pending |

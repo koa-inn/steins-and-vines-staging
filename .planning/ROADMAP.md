@@ -1451,12 +1451,12 @@ Plans:
 **Goal:** One kiosk sale can hold a recipe together with products, custom items and gift cards, and recipe sales get the same Cash / Gift Card / Phone order tenders as other sales. The standard `/api/kiosk/sale` + `/confirm` route accepts a recipe component, reusing the pos-recipe pricing, unit conversion, package-price adjustment, stock-override prompt, recipe lock and batch creation, so there is one invoice and one payment. Removes the recipe-cart guard shipped in bbca0f28 (prod-20261110-2). Owner request 2026-11-10 after the report that adding a recipe cleared the cart and recipe checkout skipped the payment-method choice.
 **Requirements**: MIXR-01, MIXR-02, MIXR-03, MIXR-04, MIXR-05, MIXR-06, MIXR-07, MIXR-08, MIXR-09, MIXR-10, MIXR-11
 **Depends on:** Phase 100
-**Plans:** 15 plans
+**Plans:** 1/15 plans executed
 
 Plans:
 
 **Wave 1**
-- [ ] 101-01-PLAN.md — Characterization oracle: pin today's recipe-only charge, invoice lines, adjustment and tax (D-20, tests first)
+- [x] 101-01-PLAN.md — Characterization oracle: pin today's recipe-only charge, invoice lines, adjustment and tax (D-20, tests first)
 - [ ] 101-02-PLAN.md — detectRecipeSale unit_total for repeated recipes + cart-quote auth tier
 
 **Wave 2**
