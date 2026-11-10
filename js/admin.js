@@ -53,7 +53,7 @@
   }
 
   // Build timestamp - updated on each deploy
-  var BUILD_TIMESTAMP = '2026-11-10T19:20:50.855Z';
+  var BUILD_TIMESTAMP = '2026-11-10T22:40:09.808Z';
   console.log('[Admin] Build: ' + BUILD_TIMESTAMP); // eslint-disable-line no-console -- deploy build-verification log
 
   var accessToken = null;
@@ -10632,10 +10632,10 @@
   // authoritative price) and is read/written exclusively by kioskShowRecipePrompt
   // (kept local) — no KioskCore equivalent needed.
   var _kioskScaleFactor = 1.0;
-  // _kioskRecipeContext / _kioskModifiedIngredients are bridged into
+  // _kioskRecipeEntries / _kioskModifiedIngredients are bridged into
   // KioskCore.init below: KioskCore's sale-body/quote builders (now shared)
   // read/write them via the get/set callbacks, exactly as js/kiosk.js does.
-  var _kioskRecipeContext = null; // { recipe_id, recipe_name, sale_type, mill_grain, locked_price, ingredients, target_volume_l }
+  var _kioskRecipeEntries = []; // list of recipe cart entries (Phase 101 D-15)
   var _kioskModifiedIngredients = null;  // array of base-quantity ingredients (null = unmodified) (36-04)
   // _kioskModifyPanelOpen is touched only by the admin-only kioskShowRecipePrompt/
   // kioskOpenModifyPanel pair — stays local, not bridged (no KioskCore accessor).
@@ -10658,8 +10658,8 @@
     setGiftCard: function (v) { _kioskGiftCard = v; },
     getCustomer: function () { return _kioskCustomer; },
     setCustomer: function (v) { _kioskCustomer = v; },
-    getRecipeContext: function () { return _kioskRecipeContext; },
-    setRecipeContext: function (v) { _kioskRecipeContext = v; },
+    getRecipeEntries: function () { return _kioskRecipeEntries; },
+    setRecipeEntries: function (v) { _kioskRecipeEntries = v; },
     getModifiedIngredients: function () { return _kioskModifiedIngredients; },
     setModifiedIngredients: function (v) { _kioskModifiedIngredients = v; },
     // Behavior hooks bridging to the admin-only modals (kept in admin.js —
@@ -10855,6 +10855,7 @@
       // Issue mode: add gift_cert line to cart; cert is activated on payment success (G-44-01 fix, D-08)
       _kioskGiftCertCounter += 1;
       _kioskCart['giftcert-' + _kioskGiftCertCounter] = {
+        added_seq: window.KioskCore.nextSeq(),
         item: {
           gift_cert: true,
           gift_action: 'issue',
@@ -10892,6 +10893,7 @@
         // Cert is valid and active — add reload line to cart
         _kioskGiftCertCounter += 1;
         _kioskCart['giftcert-' + _kioskGiftCertCounter] = {
+        added_seq: window.KioskCore.nextSeq(),
           item: {
             gift_cert: true,
             gift_action: 'reload',
@@ -11215,7 +11217,7 @@
       taxable: !taxExempt
     };
     _kioskCustomCounter += 1;
-    _kioskCart['custom-' + _kioskCustomCounter] = { item: customItem, qty: qty };
+    _kioskCart['custom-' + _kioskCustomCounter] = { item: customItem, qty: qty, added_seq: window.KioskCore.nextSeq() };
 
     closeModal();
     kioskRenderCart();

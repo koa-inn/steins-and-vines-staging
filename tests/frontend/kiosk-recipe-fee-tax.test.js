@@ -37,7 +37,7 @@ function line(id, name, rate, pct) {
 function recipeCore(quote, discount) {
   var core = loadCore();
   core.init({
-    getRecipeContext: function () { return { recipe_id: 'SV-R-000002', sale_type: 'in-store' }; },
+    getRecipeEntries: function () { return [{ recipe_id: 'SV-R-000002', sale_type: 'in-store' }]; },
     getDiscount: function () { return discount || null; }
   });
   core._setQuote(quote);

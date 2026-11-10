@@ -65,8 +65,8 @@
     setGiftCard: function () {},
     getCustomer: function () { return null; },
     setCustomer: function () {},
-    getRecipeContext: function () { return null; },
-    setRecipeContext: function () {},
+    getRecipeEntries: function () { return []; },
+    setRecipeEntries: function () {},
     getModifiedIngredients: function () { return null; },
     setModifiedIngredients: function () {},
     // ---- Behavior hooks bridging to not-yet-migrated code (custom-item /
@@ -77,6 +77,48 @@
     // kiosk only. null (admin-embedded kiosk) means the opener is not rendered.
     showCanningBundleModal: null
   };
+
+  // Monotonic stamp for cart add order (Plan 12 render order).
+  var _kioskAddSeq = 0;
+  function _kioskNextSeq() { _kioskAddSeq += 1; return _kioskAddSeq; }
+
+  // INTERIM ADAPTER (removed in Plan 10): checkout/totals code still reads one
+  // recipe in the old context shape. Returns the first entry mapped to it.
+  function _kioskLegacyRecipeContext() {
+    var entries = _kcEnv.getRecipeEntries();
+    var e = entries && entries.length ? entries[0] : null;
+    if (!e) return null;
+    return {
+      recipe_id: e.recipe_id,
+      recipe_name: e.recipe_name,
+      sale_type: e.sale_type,
+      mill_grain: e.mill_grain,
+      locked_price: e.locked_price,
+      pricing_mode: e.pricing_mode,
+      ingredients: e._ingredients || [],
+      target_volume_l: e.target_volume_l
+    };
+  }
+
+  function _kioskSetLegacyRecipeContext(v) {
+    if (!v) { _kcEnv.setRecipeEntries([]); return; }
+    _kcEnv.setRecipeEntries([{
+      entry_id: 'r' + _kioskNextSeq(),
+      recipe_id: v.recipe_id,
+      recipe_name: v.recipe_name,
+      sale_type: v.sale_type,
+      mill_grain: v.mill_grain,
+      target_volume_l: v.target_volume_l,
+      modified_ingredients: null,
+      pricing_mode: v.pricing_mode,
+      locked_price: v.locked_price,
+      lines: [],
+      fee_lines: [],
+      total_before_discount: 0,
+      added_seq: _kioskAddSeq,
+      _ingredients: v.ingredients || []
+    }]);
+  }
 
   function kcInit(env) {
     if (!env) {
@@ -94,7 +136,7 @@
     }
     var bridgedFns = [
       'getCart', 'setCart', 'getDiscount', 'setDiscount', 'getGiftCard', 'setGiftCard',
-      'getCustomer', 'setCustomer', 'getRecipeContext', 'setRecipeContext',
+      'getCustomer', 'setCustomer', 'getRecipeEntries', 'setRecipeEntries',
       'getModifiedIngredients', 'setModifiedIngredients',
       'showCustomItemModal', 'showGiftCardIssueModal', 'showCanningBundleModal'
     ];
@@ -826,7 +868,7 @@
     var lineDiscount = {};
     var discountAmount = 0;
     var discount = _kcEnv.getDiscount();
-    var recipeContext = _kcEnv.getRecipeContext();
+    var recipeContext = _kioskLegacyRecipeContext();
 
     if (discount) {
       if (recipeContext) {
@@ -1747,7 +1789,7 @@
       var ingredients = data.ingredients || [];
       var pricingMode = fullRecipe.pricing_mode || recipe.pricing_mode || (Number(recipe.locked_price) > 0 ? 'locked' : 'dynamic');
 
-      _kcEnv.setRecipeContext({
+      _kioskSetLegacyRecipeContext({
         recipe_id: recipe.recipe_id,
         recipe_name: recipe.name,
         sale_type: _kioskSaleType,
@@ -2161,7 +2203,7 @@
   // /api/kiosk/recipe-sale charges only the recipe, on the card terminal.
   // A recipe cart must never hold or show anything that sale will not charge.
   function kioskCartHasRecipe() {
-    return !!_kcEnv.getRecipeContext();
+    return !!_kioskLegacyRecipeContext();
   }
 
   function kioskWarnRecipeCart() {
@@ -2178,7 +2220,7 @@
       var qty = parseFloat(input);
       if (!isFinite(qty) || qty <= 0) return;
       qty = Math.round(qty * 1000) / 1000;
-      cart[id] = { item: product, qty: qty };
+      cart[id] = { item: product, qty: qty, added_seq: _kioskNextSeq() };
     } else {
       var currentQty = cart[id] ? cart[id].qty : 0;
       var newQty = currentQty + 1;
@@ -2186,7 +2228,7 @@
       if (cart[id]) {
         cart[id].qty = newQty;
       } else {
-        cart[id] = { item: product, qty: 1 };
+        cart[id] = { item: product, qty: 1, added_seq: _kioskNextSeq() };
       }
     }
 
@@ -2263,7 +2305,7 @@
     _kioskSaleType = null;
     _kioskMillGrain = false;
     _kioskRecipeAvailability = null;
-    _kcEnv.setRecipeContext(null);
+    _kioskSetLegacyRecipeContext(null);
     _kioskQuote = null;
     _kcEnv.setModifiedIngredients(null);
     _kioskModifyPanelOpen = false;
@@ -2336,7 +2378,7 @@
     var bundle = KIOSK_CANNING_BUNDLES[opts.bundleKey];
     var size = Number(opts.canSize);
     if (size !== 473 && size !== 355) return { ok: false, reason: 'unknown_size' };
-    if (_kcEnv.getRecipeContext()) return { ok: false, reason: 'recipe_cart' };
+    if (_kioskLegacyRecipeContext()) return { ok: false, reason: 'recipe_cart' };
     if (kioskBundleInCart()) return { ok: false, reason: 'already_added' };
     var count = Number(opts.count);
     if (!isFinite(count) || Math.floor(count) !== count || count < 1 || count > KIOSK_BUNDLE_MAX_CANS) {
@@ -2357,6 +2399,7 @@
     // Bundle keys first so a fixed cart discount's last-line remainder lands on
     // a later line, never on the $0 can line (D-14: discount code untouched).
     newCart[KIOSK_BUNDLE_LINE_KEY] = {
+      added_seq: _kioskNextSeq(),
       item: {
         custom: true,
         bundle_key: opts.bundleKey,
@@ -2370,7 +2413,7 @@
       },
       qty: 1
     };
-    newCart[KIOSK_BUNDLE_CAN_KEY] = { item: canItem, qty: count };
+    newCart[KIOSK_BUNDLE_CAN_KEY] = { item: canItem, qty: count, added_seq: _kioskAddSeq };
     Object.keys(oldCart).forEach(function (k) { newCart[k] = oldCart[k]; });
     _kcEnv.setCart(newCart);
     var overCap = count > bundle.cap[size];
@@ -2407,7 +2450,7 @@
   }
 
   function kioskBundleOpenerHtml() {
-    if (typeof _kcEnv.showCanningBundleModal !== 'function' || _kcEnv.getRecipeContext()) return '';
+    if (typeof _kcEnv.showCanningBundleModal !== 'function' || _kioskLegacyRecipeContext()) return '';
     var added = kioskBundleInCart();
     return '<div style="margin-top:0.5rem;">' +
       '<button id="kiosk-canning-bundle-btn" type="button" class="kiosk-add-custom-btn kiosk-canning-bundle-btn"' +
@@ -3052,7 +3095,7 @@
     // product-catalog sale (recipe ingredients live in a separate catalog;
     // an imported Sales Order's lines come straight from Zoho) — neither is a
     // candidate for THIS catalog going stale.
-    if (!_kcEnv.getRecipeContext() && !_kioskImportedSoId &&
+    if (!_kioskLegacyRecipeContext() && !_kioskImportedSoId &&
         _kioskProductsLoaded && _kioskProducts.length) {
       for (var pgI = 0; pgI < items.length; pgI++) {
         var pgItem = items[pgI];
@@ -3211,17 +3254,17 @@
     var POLL_HARD_TIMEOUT_MS = 180000;
 
     // Determine sale endpoint: recipe sale or standard kiosk sale
-    var isRecipeSale = !!_kcEnv.getRecipeContext();
+    var isRecipeSale = !!_kioskLegacyRecipeContext();
     var saleUrl = isRecipeSale
       ? mwUrl + '/api/kiosk/recipe-sale'
       : mwUrl + '/api/kiosk/sale';
     var recipeSaleBody = isRecipeSale ? {
-      recipe_id: _kcEnv.getRecipeContext().recipe_id,
-      sale_type: _kcEnv.getRecipeContext().sale_type,
-      mill_grain: _kcEnv.getRecipeContext().mill_grain,
+      recipe_id: _kioskLegacyRecipeContext().recipe_id,
+      sale_type: _kioskLegacyRecipeContext().sale_type,
+      mill_grain: _kioskLegacyRecipeContext().mill_grain,
       // Forward the selected batch size + ingredient edits so the SERVER charges
       // the scaled/modified total shown in the cart (not the base 1× recipe).
-      target_volume_l: _kcEnv.getRecipeContext().target_volume_l,
+      target_volume_l: _kioskLegacyRecipeContext().target_volume_l,
       modified_ingredients: Array.isArray(_kcEnv.getModifiedIngredients()) ? _kcEnv.getModifiedIngredients() : undefined,
       customer_name: (_kcEnv.getCustomer() && _kcEnv.getCustomer().name) || '',
       contact_id: (_kcEnv.getCustomer() && _kcEnv.getCustomer().contact_id) || '',
@@ -6989,6 +7032,7 @@
     renderProductGrid: kioskRenderProductGrid,
     renderProductList: kioskRenderProductList,
     addToCart: kioskAddToCart,
+    nextSeq: _kioskNextSeq,
     setQty: kioskSetQty,
     removeFromCart: kioskRemoveFromCart,
     clearCart: kioskClearCart,
@@ -7100,8 +7144,10 @@
     _setImportedSo: function (id, num) { _kioskImportedSoId = id; _kioskImportedSoNumber = num || ''; },
     // 67 review fix (WR-04): recipe-context accessors (delegate through the
     // env bridge) so tests can pin the recipe sale body contract.
-    _getRecipeContext: function () { return _kcEnv.getRecipeContext(); },
-    _setRecipeContext: function (v) { _kcEnv.setRecipeContext(v); },
+    _getRecipeContext: function () { return _kioskLegacyRecipeContext(); },
+    _getRecipeEntries: function () { return _kcEnv.getRecipeEntries(); },
+    _setRecipeEntries: function (v) { _kcEnv.setRecipeEntries(v); },
+    _setRecipeContext: function (v) { _kioskSetLegacyRecipeContext(v); },
     // 97-10: customer accessor so tests can pin the recipe-sale customer_email contract.
     _setCustomer: function (v) { _kcEnv.setCustomer(v); }
   };
