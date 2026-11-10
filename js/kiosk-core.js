@@ -1728,6 +1728,13 @@
 
     if (avail && (avail.summary === 'cannot_brew' || avail.summary === 'unknown')) return;
 
+    // A recipe sale charges only the recipe, so it cannot share a cart with
+    // other items. Never wipe them silently; a recipe already here is replaced.
+    if (!kioskCartHasRecipe() && Object.keys(_kcEnv.getCart()).length > 0) {
+      showToast('Check out or clear the items in the cart before adding a recipe.', 'warning');
+      return;
+    }
+
     _kcEnv.setCart({});
 
     function processRecipeData(data) {
@@ -2151,7 +2158,18 @@
 
   // ===== Cart Management =====
 
+  // /api/kiosk/recipe-sale charges only the recipe, on the card terminal.
+  // A recipe cart must never hold or show anything that sale will not charge.
+  function kioskCartHasRecipe() {
+    return !!_kcEnv.getRecipeContext();
+  }
+
+  function kioskWarnRecipeCart() {
+    showToast('Recipe sales are checked out on their own. Finish or clear the recipe first.', 'warning');
+  }
+
   function kioskAddToCart(product) {
+    if (kioskCartHasRecipe()) { kioskWarnRecipeCart(); return; }
     var cart = _kcEnv.getCart();
     var id = product.item_id;
     if (kioskIsWeightItem(product)) {
@@ -2182,6 +2200,8 @@
   }
 
   function kioskSetQty(itemId, qty) {
+    // Recipe lines are priced by the server as one recipe; quantities are fixed.
+    if (kioskCartHasRecipe()) { kioskRenderCart(); return; }
     var cart = _kcEnv.getCart();
     // Phase 90 (D-16): the bundle line is pinned at qty 1; the can line edits
     // go through the cap-aware setter; dropping the can count to 0 removes both.
@@ -2214,6 +2234,8 @@
   }
 
   function kioskRemoveFromCart(itemId) {
+    // Removing any recipe line removes the recipe: the sale charges it whole.
+    if (kioskCartHasRecipe()) { kioskClearCart(); return; }
     var cart = _kcEnv.getCart();
     if (itemId === KIOSK_BUNDLE_LINE_KEY || itemId === KIOSK_BUNDLE_CAN_KEY) {
       kioskRemoveCanningBundle(); // D-16: either line removes both
@@ -2469,6 +2491,7 @@
     }
 
     var html = '';
+    var isRecipeCart = kioskCartHasRecipe();
     keys.forEach(function (id) {
       var entry = cart[id];
       if (!entry || !entry.item) return; // skip non-item entries (defensive guard)
@@ -2503,7 +2526,9 @@
       var isWeight = kioskIsWeightItem(item);
       html += '<div class="kiosk-cart-line-name" title="' + escapeHTML(item.name || '') + '">' + escapeHTML(item.name || '') +
         (isBundleCan ? '<div class="kiosk-bundle-note">Included in bundle</div>' : '') + '</div>';
-      if (isWeight) {
+      if (isRecipeCart) {
+        html += '<div class="kiosk-cart-qty"><span class="kiosk-qty-val">' + qty + '</span></div>';
+      } else if (isWeight) {
         html += '<div class="kiosk-cart-qty">';
         html += '<input type="number" class="kiosk-qty-input" data-id="' + id + '" value="' + qty + '" step="0.01" min="0.001" inputmode="decimal">';
         html += '<span class="kiosk-qty-unit">kg</span>';
@@ -2526,17 +2551,22 @@
       }
     });
 
-    html += '<div style="margin-top:0.5rem;">' +
-      '<button id="kiosk-add-custom-btn" type="button" class="kiosk-add-custom-btn" style="width:100%;padding:0.6rem;font-size:0.95rem;border:1px dashed #888;border-radius:6px;background:none;cursor:pointer;color:#555;">' +
-      '+ Add custom item' +
-      '</button>' +
-      '</div>';
-    html += kioskBundleOpenerHtml();
-    html += '<div style="margin-top:0.5rem;">' +
-      '<button id="kiosk-add-gc-btn" type="button" class="kiosk-add-custom-btn" style="width:100%;padding:0.6rem;font-size:0.95rem;border:1px dashed #5a3e1b;border-radius:6px;background:none;cursor:pointer;color:#5a3e1b;">' +
-      '+ Issue / Reload Gift Card' +
-      '</button>' +
-      '</div>';
+    if (isRecipeCart) {
+      html += '<p class="kiosk-recipe-cart-note" style="margin-top:0.5rem;font-size:0.85rem;color:#555;">' +
+        'Recipe sale: checked out on its own, card terminal only.</p>';
+    } else {
+      html += '<div style="margin-top:0.5rem;">' +
+        '<button id="kiosk-add-custom-btn" type="button" class="kiosk-add-custom-btn" style="width:100%;padding:0.6rem;font-size:0.95rem;border:1px dashed #888;border-radius:6px;background:none;cursor:pointer;color:#555;">' +
+        '+ Add custom item' +
+        '</button>' +
+        '</div>';
+      html += kioskBundleOpenerHtml();
+      html += '<div style="margin-top:0.5rem;">' +
+        '<button id="kiosk-add-gc-btn" type="button" class="kiosk-add-custom-btn" style="width:100%;padding:0.6rem;font-size:0.95rem;border:1px dashed #5a3e1b;border-radius:6px;background:none;cursor:pointer;color:#5a3e1b;">' +
+        '+ Issue / Reload Gift Card' +
+        '</button>' +
+        '</div>';
+    }
 
     container.innerHTML = bannerHtml + html;
 
@@ -3751,6 +3781,19 @@
     // === Phase 44: Gift Card Tender Panel — inject for non-recipe standard sales only ===
     // For recipe sales, push to terminal immediately (no GC tender on recipe path).
     if (isRecipeSale) {
+      // The recipe sale route has no cash, gift card or phone-order support yet,
+      // so say so instead of silently skipping the tender choice.
+      if (itemsEl && itemsEl.parentNode) {
+        var recipeNoteEl = document.getElementById('kiosk-gc-panel');
+        if (!recipeNoteEl) {
+          recipeNoteEl = document.createElement('div');
+          recipeNoteEl.id = 'kiosk-gc-panel';
+          itemsEl.parentNode.insertBefore(recipeNoteEl, itemsEl.nextSibling);
+        }
+        recipeNoteEl.style.cssText = 'margin:0.75rem 0;padding:0.75rem;border:1px solid #e0e0e0;border-radius:8px;background:#fafafa;';
+        recipeNoteEl.style.display = '';
+        recipeNoteEl.textContent = 'Recipe sales are card terminal only. Cash, gift cards and phone orders are not available for recipes yet.';
+      }
       _kioskPushToTerminal();
     } else {
       // Inject GC panel between kiosk-payment-items and payment footer
