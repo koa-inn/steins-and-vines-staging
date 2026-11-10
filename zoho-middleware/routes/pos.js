@@ -24,6 +24,8 @@ var depositLib = require('../lib/limited-releases-deposit');
 function batchProxy() { return require('../lib/batch-proxy'); }
 function batchStore() { return require('../lib/batch-store'); }
 function batchFlag() { return require('../lib/batch-flag'); }
+// Phase 101: lazy so product-only route tests that mock constants/cache are unaffected.
+function recipeLines() { return require('../lib/recipe-sale-lines'); }
 // 57-04: the sale-time auto-reconcile reuses routes/catalog.js's
 // rebuildKioskCatalog() (bounded one-shot rebuild on a catalog-miss), now via
 // lib/kiosk-sale-catalog, which also falls back to the last-good catalog when
@@ -247,7 +249,7 @@ function resolveDiscount(body, lineItems, subtotal, catalogMap) {
 // cent from the Zoho invoice on discounted multi-rate sales (INV-000226:
 // charged 247.59, invoiced 247.58, payment then 400'd). js/kiosk-core.js
 // kioskCalcTotals mirrors this so displayed == charged == invoiced.
-function computeTax(lineItems, catalogMap) {
+function taxGroups(lineItems, catalogMap) {
   var taxByRate = {};
   var unresolved = null;
   function addTax(pct, amount) {
@@ -285,9 +287,16 @@ function computeTax(lineItems, catalogMap) {
     addTax(isNaN(pct) ? 0 : pct, lineTotal);
   });
   if (unresolved) return unresolved;
+  return { byRate: taxByRate };
+}
+
+// Rounded wrapper: each rate group rounded on its own, then summed.
+function computeTax(lineItems, catalogMap) {
+  var groups = taxGroups(lineItems, catalogMap);
+  if (groups.error) return groups;
   var taxTotal = 0;
-  Object.keys(taxByRate).forEach(function (key) {
-    taxTotal += Math.round(taxByRate[key] * 100) / 100;
+  Object.keys(groups.byRate).forEach(function (key) {
+    taxTotal += Math.round(groups.byRate[key] * 100) / 100;
   });
   return { taxTotal: Math.round(taxTotal * 100) / 100 };
 }
@@ -472,6 +481,160 @@ function findMissingCatalogItem(items, catalogMap) {
   return null;
 }
 
+// Phase 101: the ONE pricing core shared by /sale (and later /confirm and
+// /cart-quote). Resolves { ok:true, lineItems, subtotal, taxTotal, grandTotal,
+// discountApplied, recipe } or { ok:false, status, error, tag }. lineItems are
+// the NON-recipe lines only. Nothing here touches res or the charge path.
+function computeCartPricing(body, catalogMap) {
+  // Phase 90: canning bundle validation + standard tax. /sale runs before any
+  // charge, so a plain 400 is safe here (the confirm path throws a tagged error).
+  var bundleCtx = prepareBundleContext(body.items, catalogMap);
+  if (bundleCtx.error) {
+    return Promise.resolve({ ok: false, status: 400, error: bundleCtx.error, tag: 'bundle' });
+  }
+
+  // Fail-closed guard: if any gift_cert line is present, KIOSK_GIFT_CARD_ITEM_ID must be set
+  // (T-44-G4 — mirrors the issue route guard).
+  if (body.items.some(function (i) { return i.gift_cert === true; }) &&
+      !process.env.KIOSK_GIFT_CARD_ITEM_ID) {
+    log.warn('[pos/kiosk/sale] gift_cert line rejected — KIOSK_GIFT_CARD_ITEM_ID not configured');
+    return Promise.resolve({ ok: false, status: 503, error: 'Gift card accounting not configured (KIOSK_GIFT_CARD_ITEM_ID missing)', tag: 'bundle' });
+  }
+
+  // Validate gift_cert line fields before building lineItems (cannot return inside .map).
+  for (var gcv = 0; gcv < body.items.length; gcv++) {
+    var gcItem = body.items[gcv];
+    if (!gcItem.gift_cert) continue;
+    var gcCertNum = String(gcItem.cert_number || '').trim().toUpperCase();
+    if (!/^GC-\d{6}$/.test(gcCertNum)) {
+      return Promise.resolve({ ok: false, status: 400, error: 'gift_cert cert_number must match GC-NNNNNN format (e.g. GC-000042)', tag: 'bundle' });
+    }
+    var gcRate = Number(gcItem.rate);
+    if (!isFinite(gcRate) || gcRate <= 0 || gcRate > 2000) {
+      return Promise.resolve({ ok: false, status: 400, error: 'gift_cert rate must be between $0.01 and $2000', tag: 'bundle' });
+    }
+  }
+
+  // Pre-resolve GST tax_id for any taxable custom lines (D-02 fail-closed).
+  // Must happen before the lineItems builder to avoid returning inside .map().
+  var needGstTaxId = body.items.some(function (item) {
+    return item.custom && item.taxable !== false && !kioskBundles.isBundleLine(item);
+  });
+  var gstTaxId = null;
+  if (needGstTaxId) {
+    gstTaxId = resolveGstTaxId(catalogMap);
+    if (!gstTaxId) {
+      return Promise.resolve({
+        ok: false, status: 400, tag: 'bundle',
+        error: 'Cannot tax this custom line: no GST tax rate configured. Mark the line tax-exempt or set KIOSK_GST_TAX_ID.'
+      });
+    }
+  }
+
+  // Build line items using catalog price, ignoring client-supplied rate
+  // D-03: Include per-item tax_id from catalog so Zoho computes tax using its rules
+  var subtotal = 0;
+  var lineItems = body.items.map(function (item) {
+    // Phase 90: server-priced canning bundle + its $0 can line (shared builders).
+    if (kioskBundles.isBundleLine(item)) {
+      var bundleLi = kioskBundles.buildBundleLine(item, bundleCtx.canCatalogItem, bundleCtx.standardTaxId);
+      subtotal += bundleLi.rate * bundleLi.quantity;
+      return bundleLi;
+    }
+    if (kioskBundles.isBundleCanLine(item)) {
+      return kioskBundles.buildBundleCanLine(item, catalogMap[item.item_id]);
+    }
+    if (item.custom) {
+      // Custom line: rate is staff-entered (bounded by validation above)
+      var qty = Number(item.quantity) || 1;
+      var rate = Number(item.rate);
+      subtotal += qty * rate;
+      var taxable = item.taxable !== false;
+      var desc = String(item.description || '').trim().replace(/[\x00-\x1F\x7F]/g, '').slice(0, 100);
+      var note = String(item.note || '').trim().replace(/[\x00-\x1F\x7F]/g, '').slice(0, 100);
+      var fullDesc = note ? (desc + ' — ' + note) : desc;
+      var li = {
+        custom: true,
+        description: fullDesc,
+        rate: rate,
+        quantity: qty,
+        tax_percentage: taxable ? 5 : 0
+      };
+      if (taxable) {
+        li.tax_id = gstTaxId;
+      } else if (process.env.ZOHO_TAX_ZERO_ID) {
+        // F3 (45-09): exempt custom lines have no backing Zoho item — tag with
+        // the explicit Zero Rate tax so Zoho does not default-tax them. Mirrors
+        // the confirm path; keeps /sale and the invoice in agreement.
+        li.tax_id = process.env.ZOHO_TAX_ZERO_ID;
+      }
+      return li;
+    }
+    // Gift cert line (Phase 44-09): server-authoritative item_id, zero-tax (D-03, T-44-G1).
+    // Client-supplied item_id is ignored; face value / reload amount validated above.
+    if (item.gift_cert) {
+      var gcCertNumSale = String(item.cert_number || '').trim().toUpperCase();
+      var gcRateSale = Number(item.rate);
+      var gcNameSale = item.gift_action === 'reload'
+        ? 'Gift Certificate Reload ' + gcCertNumSale
+        : 'Gift Certificate ' + gcCertNumSale;
+      subtotal += gcRateSale;
+      return {
+        gift_cert: true,
+        gift_action: item.gift_action || 'issue',
+        cert_number: gcCertNumSale,
+        item_id: process.env.KIOSK_GIFT_CARD_ITEM_ID, // server-authoritative (D-05)
+        name: gcNameSale,
+        quantity: 1,
+        rate: gcRateSale
+        // NO tax_id — item carries its own EXEMPT setting (D-03)
+      };
+    }
+    var qty = Number(item.quantity) || 1;
+    var catalogItem = catalogMap[item.item_id];
+    var rate = catalogItem.rate; // authoritative price from catalog
+    subtotal += qty * rate;
+    var li = {
+      item_id: item.item_id,
+      name: item.name || '',
+      sku: catalogItem.sku || '',
+      quantity: qty,
+      rate: rate
+    };
+    if (catalogItem.tax_id) {
+      li.tax_id = catalogItem.tax_id;
+    }
+    return li;
+  });
+  subtotal = Math.round(subtotal * 100) / 100;
+
+  // Apply discount (if any) before computing tax and terminal charge
+  return resolveDiscount(body, lineItems, subtotal, catalogMap).then(function (discResult) {
+    if (discResult && discResult.error) {
+      return { ok: false, status: discResult.status, error: discResult.error, tag: 'discount' };
+    }
+    var discountApplied = null;
+    if (discResult) {
+      subtotal = discResult.subtotal;
+      discountApplied = discResult.discountApplied || null;
+    }
+
+    // Phase 67 (KIOSK-TAX-QUOTE-01): SALE path — no charge has been made
+    // yet, so an early 400 is safe here (unlike the confirm path below,
+    // which must void rather than bare-400 after a charge).
+    var taxResult = computeTax(lineItems, catalogMap);
+    if (taxResult.error) {
+      return { ok: false, status: 400, error: taxResult.error, tag: 'tax' };
+    }
+    var taxTotal = taxResult.taxTotal;
+    var grandTotal = Math.round((subtotal + taxTotal) * 100) / 100;
+    return {
+      ok: true, lineItems: lineItems, subtotal: subtotal, taxTotal: taxTotal,
+      grandTotal: grandTotal, discountApplied: discountApplied, recipe: null
+    };
+  });
+}
+
 function processSale(body, idempotencyKey, req, res, stageStart) {
   // D-50-03 (50-03 / H4 / SC#2): mirrors the confirm-path hook above — release
   // the sale idempotency lock on EVERY failure return in processSale AND
@@ -575,148 +738,12 @@ function processSale(body, idempotencyKey, req, res, stageStart) {
     return continueSaleWithCatalog(catalogMap);
 
     function continueSaleWithCatalog(catalogMap) {
-      // Phase 90: canning bundle validation + standard tax. /sale runs before any
-      // charge, so a plain 400 is safe here (the confirm path throws a tagged error).
-      var bundleCtx = prepareBundleContext(body.items, catalogMap);
-      if (bundleCtx.error) {
-        return res.status(400).json({ error: bundleCtx.error });
-      }
-
-      // Fail-closed guard: if any gift_cert line is present, KIOSK_GIFT_CARD_ITEM_ID must be set
-      // (T-44-G4 — mirrors the issue route guard).
-      if (body.items.some(function (i) { return i.gift_cert === true; }) &&
-          !process.env.KIOSK_GIFT_CARD_ITEM_ID) {
-        log.warn('[pos/kiosk/sale] gift_cert line rejected — KIOSK_GIFT_CARD_ITEM_ID not configured');
-        return res.status(503).json({ error: 'Gift card accounting not configured (KIOSK_GIFT_CARD_ITEM_ID missing)' });
-      }
-
-      // Validate gift_cert line fields before building lineItems (cannot return inside .map).
-      for (var gcv = 0; gcv < body.items.length; gcv++) {
-        var gcItem = body.items[gcv];
-        if (!gcItem.gift_cert) continue;
-        var gcCertNum = String(gcItem.cert_number || '').trim().toUpperCase();
-        if (!/^GC-\d{6}$/.test(gcCertNum)) {
-          return res.status(400).json({ error: 'gift_cert cert_number must match GC-NNNNNN format (e.g. GC-000042)' });
+      return computeCartPricing(body, catalogMap).then(function (pricing) {
+        if (!pricing.ok) {
+          return res.status(pricing.status).json({ error: pricing.error });
         }
-        var gcRate = Number(gcItem.rate);
-        if (!isFinite(gcRate) || gcRate <= 0 || gcRate > 2000) {
-          return res.status(400).json({ error: 'gift_cert rate must be between $0.01 and $2000' });
-        }
-      }
-
-      // Pre-resolve GST tax_id for any taxable custom lines (D-02 fail-closed).
-      // Must happen before the lineItems builder to avoid returning inside .map().
-      var needGstTaxId = body.items.some(function (item) {
-        return item.custom && item.taxable !== false && !kioskBundles.isBundleLine(item);
-      });
-      var gstTaxId = null;
-      if (needGstTaxId) {
-        gstTaxId = resolveGstTaxId(catalogMap);
-        if (!gstTaxId) {
-          return res.status(400).json({
-            error: 'Cannot tax this custom line: no GST tax rate configured. Mark the line tax-exempt or set KIOSK_GST_TAX_ID.'
-          });
-        }
-      }
-
-      // Build line items using catalog price, ignoring client-supplied rate
-      // D-03: Include per-item tax_id from catalog so Zoho computes tax using its rules
-      var subtotal = 0;
-      var lineItems = body.items.map(function (item) {
-        // Phase 90: server-priced canning bundle + its $0 can line (shared builders).
-        if (kioskBundles.isBundleLine(item)) {
-          var bundleLi = kioskBundles.buildBundleLine(item, bundleCtx.canCatalogItem, bundleCtx.standardTaxId);
-          subtotal += bundleLi.rate * bundleLi.quantity;
-          return bundleLi;
-        }
-        if (kioskBundles.isBundleCanLine(item)) {
-          return kioskBundles.buildBundleCanLine(item, catalogMap[item.item_id]);
-        }
-        if (item.custom) {
-          // Custom line: rate is staff-entered (bounded by validation above)
-          var qty = Number(item.quantity) || 1;
-          var rate = Number(item.rate);
-          subtotal += qty * rate;
-          var taxable = item.taxable !== false;
-          var desc = String(item.description || '').trim().replace(/[\x00-\x1F\x7F]/g, '').slice(0, 100);
-          var note = String(item.note || '').trim().replace(/[\x00-\x1F\x7F]/g, '').slice(0, 100);
-          var fullDesc = note ? (desc + ' — ' + note) : desc;
-          var li = {
-            custom: true,
-            description: fullDesc,
-            rate: rate,
-            quantity: qty,
-            tax_percentage: taxable ? 5 : 0
-          };
-          if (taxable) {
-            li.tax_id = gstTaxId;
-          } else if (process.env.ZOHO_TAX_ZERO_ID) {
-            // F3 (45-09): exempt custom lines have no backing Zoho item — tag with
-            // the explicit Zero Rate tax so Zoho does not default-tax them. Mirrors
-            // the confirm path; keeps /sale and the invoice in agreement.
-            li.tax_id = process.env.ZOHO_TAX_ZERO_ID;
-          }
-          return li;
-        }
-        // Gift cert line (Phase 44-09): server-authoritative item_id, zero-tax (D-03, T-44-G1).
-        // Client-supplied item_id is ignored; face value / reload amount validated above.
-        if (item.gift_cert) {
-          var gcCertNumSale = String(item.cert_number || '').trim().toUpperCase();
-          var gcRateSale = Number(item.rate);
-          var gcNameSale = item.gift_action === 'reload'
-            ? 'Gift Certificate Reload ' + gcCertNumSale
-            : 'Gift Certificate ' + gcCertNumSale;
-          subtotal += gcRateSale;
-          return {
-            gift_cert: true,
-            gift_action: item.gift_action || 'issue',
-            cert_number: gcCertNumSale,
-            item_id: process.env.KIOSK_GIFT_CARD_ITEM_ID, // server-authoritative (D-05)
-            name: gcNameSale,
-            quantity: 1,
-            rate: gcRateSale
-            // NO tax_id — item carries its own EXEMPT setting (D-03)
-          };
-        }
-        var qty = Number(item.quantity) || 1;
-        var catalogItem = catalogMap[item.item_id];
-        var rate = catalogItem.rate; // authoritative price from catalog
-        subtotal += qty * rate;
-        var li = {
-          item_id: item.item_id,
-          name: item.name || '',
-          sku: catalogItem.sku || '',
-          quantity: qty,
-          rate: rate
-        };
-        if (catalogItem.tax_id) {
-          li.tax_id = catalogItem.tax_id;
-        }
-        return li;
-      });
-      subtotal = Math.round(subtotal * 100) / 100;
-
-      // Apply discount (if any) before computing tax and terminal charge
-      return resolveDiscount(body, lineItems, subtotal, catalogMap).then(function (discResult) {
-        if (discResult && discResult.error) {
-          return res.status(discResult.status).json({ error: discResult.error });
-        }
-        if (discResult) {
-          subtotal = discResult.subtotal;
-        }
-
-        // Phase 67 (KIOSK-TAX-QUOTE-01): SALE path — no charge has been made
-        // yet, so an early 400 is safe here (unlike the confirm path below,
-        // which must void rather than bare-400 after a charge).
-        var taxResult = computeTax(lineItems, catalogMap);
-        if (taxResult.error) {
-          return res.status(400).json({ error: taxResult.error });
-        }
-        var taxTotal = taxResult.taxTotal;
-        var grandTotal = Math.round((subtotal + taxTotal) * 100) / 100;
-
         processSaleWithPrices(body, idempotencyKey, req, res,
-          lineItems, subtotal, taxTotal, grandTotal, stageStart);
+          pricing.lineItems, pricing.subtotal, pricing.taxTotal, pricing.grandTotal, stageStart);
       });
     }
   }).catch(function (cacheErr) {
@@ -4905,5 +4932,7 @@ module.exports = router;
 // Exposed for unit testing (pure-ish helpers)
 module.exports.resolveDiscount = resolveDiscount;
 module.exports.computeTax = computeTax;
+module.exports.taxGroups = taxGroups;
+module.exports.computeCartPricing = computeCartPricing;
 module.exports.computeSalesOrderAmountDue = computeSalesOrderAmountDue;
 module.exports.resolveGstTaxId = resolveGstTaxId;
