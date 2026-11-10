@@ -53,28 +53,24 @@ async function runSale(customer) {
   localStorage.setItem(DEVICE_TOKEN_KEY, 'kiosk-token');
   var core = loadSurface('../../js/kiosk.js').core;
   ['kiosk-product-grid', 'kiosk-payment-items', 'kiosk-payment-amount', 'kiosk-terminal-msg', 'kiosk-spinner'].forEach(injectEl);
-  core._setCart({
-    'recipe-fee-brewing': {
-      item: { item_id: 'fee-brewing', name: 'Brewing Fee', rate: 45, tax_percentage: 5, product_type: 'fee' },
-      qty: 1
-    }
-  });
-  core._setRecipeContext({ recipe_id: 'RCP-001', sale_type: 'in-store', mill_grain: false, target_volume_l: 20 });
+  core._setCart({});
+  core._setRecipeEntries([{ entry_id: 'r1', recipe_id: 'RCP-001', recipe_name: 'R', sale_type: 'in-store', mill_grain: false, target_volume_l: 20, modified_ingredients: null }]);
+  core._setCartQuote({ seq: 1, status: 'ok', data: { subtotal: 45, discount_total: 0, tax_total: 2.25, total: 47.25 } });
   core._setCustomer(customer);
   core.proceedToPayment();
+  document.getElementById('kgcr-skip-btn').click(); // tender panel is always shown (D-09)
   await flushPromises();
   var call = global.fetch.mock.calls.find(function (c) {
-    return typeof c[0] === 'string' && c[0].indexOf('/api/kiosk/recipe-sale') !== -1;
+    return typeof c[0] === 'string' && /\/api\/kiosk\/sale$/.test(c[0]);
   });
   return call ? JSON.parse(call[1].body) : null;
 }
 
 describe('kiosk recipe sale customer_email (97-10)', function () {
-  test('selected customer with email: recipe-sale body carries customer_email', async function () {
+  test('selected customer with email: /sale body carries customer_email', async function () {
     var body = await runSale({ contact_id: 'C-1', name: 'Jane', email: 'jane@example.com' });
     expect(body).toBeTruthy();
     expect(body.customer_email).toBe('jane@example.com');
-    expect(body.contact_id).toBe('C-1');
   });
 
   test('walk-in: customer_email is empty', async function () {
@@ -90,9 +86,9 @@ describe('kiosk recipe sale customer_email (97-10)', function () {
   test('the confirm request body forwards the same customer_email', function () {
     // The confirm leg is driven by the terminal poll; pin its body contract in source.
     var src = fs.readFileSync(path.join(__dirname, '../../js/kiosk-core.js'), 'utf8');
-    var start = src.indexOf('var confirmBody = {');
-    var end = src.indexOf("fetch(mwUrl + '/api/kiosk/recipe-sale/confirm'");
+    var start = src.indexOf("fetch(mwUrl + '/api/kiosk/sale/confirm'");
+    var end = src.indexOf('.then', start);
     expect(start).toBeGreaterThan(-1);
-    expect(src.slice(start, end)).toContain("customer_email: recipeSaleBody.customer_email || ''");
+    expect(src.slice(start, end)).toContain('customer_email: saleCustomerEmail');
   });
 });

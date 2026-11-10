@@ -82,44 +82,6 @@
   var _kioskAddSeq = 0;
   function _kioskNextSeq() { _kioskAddSeq += 1; return _kioskAddSeq; }
 
-  // INTERIM ADAPTER (removed in Plan 10): checkout/totals code still reads one
-  // recipe in the old context shape. Returns the first entry mapped to it.
-  function _kioskLegacyRecipeContext() {
-    var entries = _kcEnv.getRecipeEntries();
-    var e = entries && entries.length ? entries[0] : null;
-    if (!e) return null;
-    return {
-      recipe_id: e.recipe_id,
-      recipe_name: e.recipe_name,
-      sale_type: e.sale_type,
-      mill_grain: e.mill_grain,
-      locked_price: e.locked_price,
-      pricing_mode: e.pricing_mode,
-      ingredients: e._ingredients || [],
-      target_volume_l: e.target_volume_l
-    };
-  }
-
-  function _kioskSetLegacyRecipeContext(v) {
-    if (!v) { _kcEnv.setRecipeEntries([]); return; }
-    _kcEnv.setRecipeEntries([{
-      entry_id: 'r' + _kioskNextSeq(),
-      recipe_id: v.recipe_id,
-      recipe_name: v.recipe_name,
-      sale_type: v.sale_type,
-      mill_grain: v.mill_grain,
-      target_volume_l: v.target_volume_l,
-      modified_ingredients: null,
-      pricing_mode: v.pricing_mode,
-      locked_price: v.locked_price,
-      lines: [],
-      fee_lines: [],
-      total_before_discount: 0,
-      added_seq: _kioskAddSeq,
-      _ingredients: v.ingredients || []
-    }]);
-  }
-
   function kcInit(env) {
     if (!env) {
       return;
@@ -1847,8 +1809,7 @@
         lines: lines,
         fee_lines: feeLines,
         total_before_discount: kioskR2(total),
-        added_seq: seq,
-        _ingredients: ingredients // interim: read by _kioskLegacyRecipeContext (removed in Plan 10)
+        added_seq: seq
       });
       _kcEnv.setRecipeEntries(entries);
 
@@ -2984,7 +2945,15 @@
     // the DOM disables, a client retry, a stale onclick already queued).
     if (_kioskPaymentInFlight) return;
 
+    // Pitfall 5: a manager override is per-attempt, never sticky across sales.
+    _kioskStockOverride = false;
+
     var totals = kioskCalcTotals();
+    // D-19 / T-101-32: a recipe cart is priced only by the server cart-quote.
+    if (totals.pending) {
+      showToast(totals.error ? 'Could not price the recipes. Try again.' : 'Pricing recipes, one moment...', 'error');
+      return;
+    }
     var mwUrl = _kcEnv.mwUrl;
     if (!mwUrl) {
       showToast('Middleware URL not configured', 'error');
@@ -3048,7 +3017,7 @@
     // product-catalog sale (recipe ingredients live in a separate catalog;
     // an imported Sales Order's lines come straight from Zoho) — neither is a
     // candidate for THIS catalog going stale.
-    if (!_kioskLegacyRecipeContext() && !_kioskImportedSoId &&
+    if (!_kioskImportedSoId &&
         _kioskProductsLoaded && _kioskProducts.length) {
       for (var pgI = 0; pgI < items.length; pgI++) {
         var pgItem = items[pgI];
@@ -3206,41 +3175,21 @@
     // but no Zoho invoice was created (charged-but-unbooked orphan).
     var POLL_HARD_TIMEOUT_MS = 180000;
 
-    // Determine sale endpoint: recipe sale or standard kiosk sale
-    var isRecipeSale = !!_kioskLegacyRecipeContext();
-    var saleUrl = isRecipeSale
-      ? mwUrl + '/api/kiosk/recipe-sale'
-      : mwUrl + '/api/kiosk/sale';
-    var recipeSaleBody = isRecipeSale ? {
-      recipe_id: _kioskLegacyRecipeContext().recipe_id,
-      sale_type: _kioskLegacyRecipeContext().sale_type,
-      mill_grain: _kioskLegacyRecipeContext().mill_grain,
-      // Forward the selected batch size + ingredient edits so the SERVER charges
-      // the scaled/modified total shown in the cart (not the base 1× recipe).
-      target_volume_l: _kioskLegacyRecipeContext().target_volume_l,
-      modified_ingredients: Array.isArray(_kcEnv.getModifiedIngredients()) ? _kcEnv.getModifiedIngredients() : undefined,
-      customer_name: (_kcEnv.getCustomer() && _kcEnv.getCustomer().name) || '',
-      contact_id: (_kcEnv.getCustomer() && _kcEnv.getCustomer().contact_id) || '',
-      // 97-10 (D-03): the email is already in kiosk memory from the contact search;
-      // the server carries it onto the new batch for packaging-booking matching.
-      customer_email: (_kcEnv.getCustomer() && _kcEnv.getCustomer().email) || '',
-      reference_number: refNumber,
-      idempotency_key: refNumber,
-      discount: _kcEnv.getDiscount() ? { preset_id: _kcEnv.getDiscount().presetId, name: _kcEnv.getDiscount().name, type: _kcEnv.getDiscount().type, value: _kcEnv.getDiscount().value, scope: _kcEnv.getDiscount().scope } : undefined,
-      // D-07 (Manager Override): refreshed on every _kioskPushToTerminal
-      // invocation (incl. the override-button resubmit) so a stale `false`
-      // captured here isn't sent after the staff clicks Override.
-      override: _kioskStockOverride || false,
-      // 67 review fix (WR-04): recipe sales carry the kiosk's DISPLAYED
-      // totals too (same field names as the standard sale body, 67-01
-      // interface contract). The server side is a LOG-ONLY divergence
-      // detector for recipes (pos-recipe.js) — its recomputed grandTotal
-      // carries no tax component while this displayed total does, so a
-      // blocking assertion would false-reject taxed recipe carts. Never
-      // trusted for pricing.
-      client_grand_total: totals.total,
-      client_tax_total: totals.tax
-    } : null;
+    // 101 D-16: one standard route for every cart. Recipes travel as parameters
+    // only (never prices); the server re-prices and asserts client_grand_total.
+    var saleUrl = mwUrl + '/api/kiosk/sale';
+    var recipeWire = _kcEnv.getRecipeEntries().map(function (e) {
+      return {
+        recipe_id: e.recipe_id,
+        sale_type: e.sale_type,
+        mill_grain: e.mill_grain,
+        target_volume_l: e.target_volume_l,
+        modified_ingredients: Array.isArray(e.modified_ingredients) ? e.modified_ingredients : null
+      };
+    });
+    var saleCustomer = _kcEnv.getCustomer();
+    // 97-10 (D-03): the email is already in kiosk memory from the contact search.
+    var saleCustomerEmail = (saleCustomer && saleCustomer.email) || '';
     // Phase 44 (D-05): gift_card set inside _kioskPushToTerminal after the GC panel step
     var standardSaleBody = {
       items: items,
@@ -3255,9 +3204,12 @@
       client_grand_total: totals.total,
       client_tax_total: totals.tax,
       discount: _kcEnv.getDiscount() ? { preset_id: _kcEnv.getDiscount().presetId, name: _kcEnv.getDiscount().name, type: _kcEnv.getDiscount().type, value: _kcEnv.getDiscount().value, scope: _kcEnv.getDiscount().scope } : undefined,
-      gift_card: undefined
+      gift_card: undefined,
+      // D-07 (Manager Override): refreshed on every push/resubmit.
+      override: _kioskStockOverride || false,
+      customer_email: saleCustomerEmail
     };
-    var saleBody = isRecipeSale ? recipeSaleBody : standardSaleBody;
+    if (recipeWire.length) standardSaleBody.recipes = recipeWire;
 
     var confirmBtn = document.getElementById('kiosk-confirm-payment');
     if (confirmBtn) confirmBtn.style.display = 'none';
@@ -3301,60 +3253,6 @@
       if (confirmBtn) confirmBtn.style.display = 'none';
       if (cancelBtn) cancelBtn.disabled = true;
 
-      if (isRecipeSale) {
-        var confirmBody = {
-          recipe_id: recipeSaleBody.recipe_id,
-          sale_type: recipeSaleBody.sale_type,
-          mill_grain: recipeSaleBody.mill_grain,
-          // Mirror the sale request so the invoice + charge match the cart total.
-          target_volume_l: recipeSaleBody.target_volume_l,
-          modified_ingredients: recipeSaleBody.modified_ingredients,
-          customer_name: recipeSaleBody.customer_name || '',
-          contact_id: recipeSaleBody.contact_id || '',
-          customer_email: recipeSaleBody.customer_email || '',
-          reference: refNumber,
-          transaction_id: txnId,
-          // CR-01: deterministic replay key so the server can short-circuit a duplicate confirm
-          idempotency_key: refNumber,
-          discount: recipeSaleBody.discount,
-          // D-07 (Manager Override): belt-and-suspenders — pos-recipe.js
-          // re-checks stock at confirm time too (pos-recipe.js:610).
-          override: recipeSaleBody.override || false
-        };
-        fetch(mwUrl + '/api/kiosk/recipe-sale/confirm', _kcMergeAuth({
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(confirmBody)
-        }))
-        .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
-        .then(function (result) {
-          if (cancelled || saleCompleted) return;
-          saleCompleted = true;
-          if (spinnerEl) spinnerEl.style.display = 'none';
-          if (result.status === 201 && result.data.ok) {
-            _kioskSaleData = result.data;
-            kioskShowReceipt(result.data, totals, items, []);
-            kioskClearCart();
-          } else if (result.data && result.data.payment_voided) {
-            kioskShowError('Sale Could Not Complete',
-              (result.data.error || 'Payment was taken but could not be recorded. Payment has been voided.'),
-              false);
-          } else {
-            kioskShowError('Sale Error',
-              (result.data && result.data.error) || 'An error occurred. Please try again.',
-              true);
-          }
-        })
-        .catch(function () {
-          if (cancelled || saleCompleted) return;
-          _kcReportClientError({ message: 'recipe-sale/confirm fetch rejected', http_status: null,
-            endpoint: '/api/kiosk/recipe-sale/confirm' });
-          if (spinnerEl) spinnerEl.style.display = 'none';
-          kioskShowError('Connection Error', 'Could not confirm the recipe sale. Contact staff for assistance.', false);
-        });
-        return;
-      }
-
       // Phase 44 (D-05): include gift_card in confirm body so server records split payment.
       // 70-01: tender is forwarded so the server can route cash bookings; cash NEVER
       // sends a transaction_id (txnId is undefined for cash — JSON.stringify drops it).
@@ -3370,6 +3268,9 @@
           idempotency_key: refNumber,
           customer_name: _kcEnv.getCustomer() ? _kcEnv.getCustomer().name : '',
           contact_id: _kcEnv.getCustomer() ? _kcEnv.getCustomer().contact_id : '',
+          customer_email: saleCustomerEmail,
+          recipes: recipeWire.length ? recipeWire : undefined,
+          override: _kioskStockOverride || false,
           discount: _kcEnv.getDiscount() ? { preset_id: _kcEnv.getDiscount().presetId, name: _kcEnv.getDiscount().name, type: _kcEnv.getDiscount().type, value: _kcEnv.getDiscount().value, scope: _kcEnv.getDiscount().scope } : undefined,
           gift_card: _kcEnv.getGiftCard() ? { cert_number: _kcEnv.getGiftCard().cert_number, amount_applied: _kcEnv.getGiftCard().amount_applied } : undefined
         })
@@ -3393,12 +3294,10 @@
       // D-07: refresh the override flag on every invocation (initial push AND
       // the override-button resubmit) so the current _kioskStockOverride value
       // is always sent — never a stale snapshot from construction time.
-      if (isRecipeSale) {
-        recipeSaleBody.override = _kioskStockOverride || false;
-      }
+      standardSaleBody.override = _kioskStockOverride || false;
 
       // Update standardSaleBody with the current gift card state (D-05: client-side clamp already applied in GC panel)
-      if (!isRecipeSale) {
+      {
         standardSaleBody.gift_card = _kcEnv.getGiftCard()
           ? { cert_number: _kcEnv.getGiftCard().cert_number, amount_applied: _kcEnv.getGiftCard().amount_applied }
           : undefined;
@@ -3413,7 +3312,7 @@
       }
 
       // Update amount display to terminal amount (total minus gift card)
-      var terminalAmtDisplay = (!isRecipeSale && _kcEnv.getGiftCard())
+      var terminalAmtDisplay = _kcEnv.getGiftCard()
         ? Math.max(0, Math.round((totals.total - _kcEnv.getGiftCard().amount_applied) * 100) / 100)
         : totals.total;
       if (amountEl) amountEl.textContent = kioskFmt(terminalAmtDisplay);
@@ -3467,7 +3366,7 @@
       fetch(saleUrl, _kcMergeAuth({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(saleBody)
+        body: JSON.stringify(standardSaleBody)
       }))
       .then(function (r) { return r.json().then(function (d) { return { status: r.status, data: d }; }); })
       .then(function (result) {
@@ -3481,7 +3380,7 @@
         // half; kiosk.js's own _kioskStockOverride was dead/never wired):
         // recipe-sale stock gate (pos-recipe.js:328) 409s with conflicts.
         // Render them + wire the override button to resubmit with override=true.
-        if (isRecipeSale && result.status === 409 && result.data && result.data.conflicts) {
+        if (result.status === 409 && result.data && result.data.conflicts) {
           if (spinnerEl) spinnerEl.style.display = 'none';
           var conflictEl = document.getElementById('kiosk-stock-conflict');
           var conflictMsgEl = document.querySelector('#kiosk-stock-conflict .kiosk-stock-conflict-msg');
@@ -3612,6 +3511,7 @@
         ? { cert_number: _kcEnv.getGiftCard().cert_number, amount_applied: _kcEnv.getGiftCard().amount_applied }
         : undefined;
       standardSaleBody.tender = 'cash';
+      standardSaleBody.override = _kioskStockOverride || false;
       // WR-02 (70-review): scope the idempotency key to THIS tender attempt.
       // The three tender paths share standardSaleBody; a bare refNumber key meant
       // that aborting a MOTO attempt and switching to cash replayed the cached
@@ -3679,6 +3579,7 @@
         ? { cert_number: _kcEnv.getGiftCard().cert_number, amount_applied: _kcEnv.getGiftCard().amount_applied }
         : undefined;
       standardSaleBody.tender = 'moto';
+      standardSaleBody.override = _kioskStockOverride || false;
       // WR-02 (70-review): tender-scoped idempotency key — see _kioskGoCash. A
       // fresh moto attempt after a prior aborted tender starts a clean scope
       // instead of replaying a stale cached response.
@@ -3774,24 +3675,9 @@
       };
     }
 
-    // === Phase 44: Gift Card Tender Panel — inject for non-recipe standard sales only ===
-    // For recipe sales, push to terminal immediately (no GC tender on recipe path).
-    if (isRecipeSale) {
-      // The recipe sale route has no cash, gift card or phone-order support yet,
-      // so say so instead of silently skipping the tender choice.
-      if (itemsEl && itemsEl.parentNode) {
-        var recipeNoteEl = document.getElementById('kiosk-gc-panel');
-        if (!recipeNoteEl) {
-          recipeNoteEl = document.createElement('div');
-          recipeNoteEl.id = 'kiosk-gc-panel';
-          itemsEl.parentNode.insertBefore(recipeNoteEl, itemsEl.nextSibling);
-        }
-        recipeNoteEl.style.cssText = 'margin:0.75rem 0;padding:0.75rem;border:1px solid #e0e0e0;border-radius:8px;background:#fafafa;';
-        recipeNoteEl.style.display = '';
-        recipeNoteEl.textContent = 'Recipe sales are card terminal only. Cash, gift cards and phone orders are not available for recipes yet.';
-      }
-      _kioskPushToTerminal();
-    } else {
+    // === Phase 44: Gift Card Tender Panel — injected for every cart (D-09/D-10:
+    // recipe carts get the same gift card / cash / phone order / card choice) ===
+    {
       // Inject GC panel between kiosk-payment-items and payment footer
       if (itemsEl && itemsEl.parentNode) {
         var gcPanelEl2 = document.getElementById('kiosk-gc-panel');
@@ -7100,10 +6986,8 @@
     _setImportedSo: function (id, num) { _kioskImportedSoId = id; _kioskImportedSoNumber = num || ''; },
     // 67 review fix (WR-04): recipe-context accessors (delegate through the
     // env bridge) so tests can pin the recipe sale body contract.
-    _getRecipeContext: function () { return _kioskLegacyRecipeContext(); },
     _getRecipeEntries: function () { return _kcEnv.getRecipeEntries(); },
     _setRecipeEntries: function (v) { _kcEnv.setRecipeEntries(v); },
-    _setRecipeContext: function (v) { _kioskSetLegacyRecipeContext(v); },
     // 97-10: customer accessor so tests can pin the recipe-sale customer_email contract.
     _setCustomer: function (v) { _kcEnv.setCustomer(v); }
   };

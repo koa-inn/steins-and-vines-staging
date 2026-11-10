@@ -151,10 +151,10 @@ describe('kiosk client-error beacon (57-01)', function () {
     // mechanism), this covers must_haves surfaces #3 and #4.
     var src = fs.readFileSync(path.join(__dirname, '../../js/kiosk-core.js'), 'utf8');
     expect(src).toMatch(/_kcReportClientError\([^)]*['"]\/api\/kiosk\/sale\/confirm['"]/);
-    expect(src).toMatch(/_kcReportClientError\([^)]*['"]\/api\/kiosk\/recipe-sale\/confirm['"]/);
-    // And all four call sites exist (1 definition + 4 calls => >= 5 occurrences).
+    expect(src).not.toContain('/api/kiosk/recipe-sale');
+    // And all four call sites exist (1 definition + calls => >= 4 occurrences).
     var occurrences = (src.match(/_kcReportClientError\(/g) || []).length;
-    expect(occurrences).toBeGreaterThanOrEqual(5);
+    expect(occurrences).toBeGreaterThanOrEqual(4);
   });
 
   test('Test 5 (PII): the beacon BODY carries only the six whitelisted keys — no token/card/customer', async function () {

@@ -7,7 +7,7 @@
 // server's recomputed charge (the dynamically-priced recipe path is
 // arguably the highest-divergence surface).
 //
-// Contract this test pins: POST /api/kiosk/recipe-sale carries
+// Contract this test pins: POST /api/kiosk/sale carries
 // client_grand_total === totals.total and client_tax_total === totals.tax
 // (same field names as the standard sale body, pinned by the 67-01
 // interface contract). The SERVER side of this contract is log-only for
@@ -67,7 +67,7 @@ beforeEach(function () {
 
 describe('WR-04 — recipe sale body carries the kiosk displayed totals', function () {
 
-  test('POST /api/kiosk/recipe-sale carries client_grand_total and client_tax_total matching the displayed totals', async function () {
+  test('POST /api/kiosk/sale carries client_grand_total and client_tax_total matching the displayed totals', async function () {
     localStorage.setItem(DEVICE_TOKEN_KEY, 'kiosk-token');
     var core = loadSurface('../../js/kiosk.js').core;
     injectEl('kiosk-product-grid');
@@ -86,6 +86,7 @@ describe('WR-04 — recipe sale body carries the kiosk displayed totals', functi
     expect(totals.tax).toBe(2.25);
 
     core.proceedToPayment();
+    document.getElementById('kgcr-skip-btn').click(); // tender panel is always shown (D-09)
     await flushPromises();
 
     var saleCall = global.fetch.mock.calls.find(function (c) {
@@ -97,8 +98,8 @@ describe('WR-04 — recipe sale body carries the kiosk displayed totals', functi
     expect(body.client_grand_total).toBe(totals.total);
     expect(body.client_tax_total).toBe(totals.tax);
     // Existing recipe body fields must be untouched by the addition.
-    expect(body.recipe_id).toBe('RCP-001');
-    expect(body.sale_type).toBe('in-store');
+    expect(body.recipes[0].recipe_id).toBe('RCP-001');
+    expect(body.recipes[0].sale_type).toBe('in-store');
   });
 
   test('Checkout is disabled + aria-busy while the recipe cart quote is not ok, enabled once ok', function () {

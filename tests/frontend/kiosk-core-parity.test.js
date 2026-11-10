@@ -276,7 +276,10 @@ describe('kiosk-core parity — recipe sale', function () {
       });
     });
     surface.core.addRecipeToCart();
-    return flushPromises();
+    return flushPromises().then(function () {
+      // 101 D-19: recipe carts are priced by the server cart-quote.
+      surface.core._setCartQuote({ seq: 1, status: 'ok', data: { subtotal: 50, discount_total: 0, tax_total: 0, total: 50 } });
+    });
   }
 
   test('kiosk and admin produce the same fetch URL + body for an identical recipe cart, including override:false', function () {
@@ -296,8 +299,8 @@ describe('kiosk-core parity — recipe sale', function () {
           expect(global.fetch).toHaveBeenCalledTimes(1);
           var adminCall = global.fetch.mock.calls[0];
 
-          expect(kioskCall[0]).toBe('http://mw.test/api/kiosk/recipe-sale');
-          expect(adminCall[0]).toBe('http://mw.test/api/kiosk/recipe-sale');
+          expect(kioskCall[0]).toBe('http://mw.test/api/kiosk/sale');
+          expect(adminCall[0]).toBe('http://mw.test/api/kiosk/sale');
 
           var kioskBody = JSON.parse(kioskCall[1].body);
           var adminBody = JSON.parse(adminCall[1].body);
@@ -333,24 +336,24 @@ describe('kiosk-core parity — recipe sale', function () {
 
     var kioskSurface = loadSurface('../../js/kiosk.js');
     localStorage.setItem(DEVICE_TOKEN_KEY, 'parity-test-device-token');
+    kioskSurface.core._setModifiedIngredients(mods);
     return seedRecipeCart(kioskSurface).then(function () {
-      kioskSurface.core._setModifiedIngredients(mods);
       global.fetch.mockClear();
       kioskSurface.core.proceedToPayment();
       var kioskBody = JSON.parse(global.fetch.mock.calls[0][1].body);
 
       var adminSurface = loadSurface('../../js/admin.js');
+      adminSurface.core._setModifiedIngredients(mods);
       return seedRecipeCart(adminSurface).then(function () {
-        adminSurface.core._setModifiedIngredients(mods);
         global.fetch.mockClear();
         adminSurface.core.proceedToPayment();
         var adminBody = JSON.parse(global.fetch.mock.calls[0][1].body);
 
         // Non-tautological: the edited quantities are actually present...
-        expect(kioskBody.modified_ingredients).toEqual(mods);
-        expect(kioskBody.modified_ingredients[0].quantity).toBe(9);
+        expect(kioskBody.recipes[0].modified_ingredients).toEqual(mods);
+        expect(kioskBody.recipes[0].modified_ingredients[0].quantity).toBe(9);
         // ...and identical across both surfaces (the whole point of the de-fork).
-        expect(adminBody.modified_ingredients).toEqual(kioskBody.modified_ingredients);
+        expect(adminBody.recipes[0].modified_ingredients).toEqual(kioskBody.recipes[0].modified_ingredients);
       });
     });
   });
@@ -371,7 +374,7 @@ describe('kiosk-core parity — recipe sale', function () {
       surface.core.proceedToPayment();
       var saleUrl = global.fetch.mock.calls[0][0];
       global.SHEETS_CONFIG.MIDDLEWARE_URL = origUrl; // restore before asserting (shared global)
-      expect(saleUrl).toBe('http://mw-late.test/api/kiosk/recipe-sale');
+      expect(saleUrl).toBe('http://mw-late.test/api/kiosk/sale');
     });
   });
 });
@@ -392,7 +395,10 @@ describe('kiosk-core parity — Manager Override (D-07)', function () {
       });
     });
     surface.core.addRecipeToCart();
-    return flushPromises();
+    return flushPromises().then(function () {
+      // 101 D-19: recipe carts are priced by the server cart-quote.
+      surface.core._setCartQuote({ seq: 1, status: 'ok', data: { subtotal: 50, discount_total: 0, tax_total: 0, total: 50 } });
+    });
   }
 
   function runOverrideFlow(surface) {
@@ -455,8 +461,8 @@ describe('kiosk-core parity — Manager Override (D-07)', function () {
           global.fetch.mockClear();
           return runOverrideFlow(adminSurface).then(function (adminResult) {
             // Initial push: both include override:false, same URL
-            expect(kioskResult.initialUrl).toBe('http://mw.test/api/kiosk/recipe-sale');
-            expect(adminResult.initialUrl).toBe('http://mw.test/api/kiosk/recipe-sale');
+            expect(kioskResult.initialUrl).toBe('http://mw.test/api/kiosk/sale');
+            expect(adminResult.initialUrl).toBe('http://mw.test/api/kiosk/sale');
             expect(kioskResult.initialBody.override).toBe(false);
             expect(adminResult.initialBody.override).toBe(false);
 
@@ -465,8 +471,8 @@ describe('kiosk-core parity — Manager Override (D-07)', function () {
             expect(adminResult.conflictHiddenAfterClick).toBe(true);
 
             // Resubmit: same URL, override:true, identical body (modulo idempotency)
-            expect(kioskResult.resubmitUrl).toBe('http://mw.test/api/kiosk/recipe-sale');
-            expect(adminResult.resubmitUrl).toBe('http://mw.test/api/kiosk/recipe-sale');
+            expect(kioskResult.resubmitUrl).toBe('http://mw.test/api/kiosk/sale');
+            expect(adminResult.resubmitUrl).toBe('http://mw.test/api/kiosk/sale');
             expect(kioskResult.resubmitBody.override).toBe(true);
             expect(adminResult.resubmitBody.override).toBe(true);
 
