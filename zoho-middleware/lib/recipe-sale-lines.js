@@ -335,7 +335,7 @@ function getFeeCatalogMap() {
 // ingredient lines resolve as kit lines do (an untaxed tax_id-tagged line is
 // 0%). Resolves { taxTotal } or { error } — the fee catalog is only read when
 // a fee line actually carries an amount.
-function computeRecipeTax(lineItems, catalogMap) {
+function recipeTaxGroups(lineItems, catalogMap) {
   var feeIds = recipeFeeItemIds();
   var needsFees = lineItems.some(function (li) {
     return feeIds.indexOf(li.item_id) !== -1 && recipeLineAmount(li) > 0;
@@ -369,10 +369,21 @@ function computeRecipeTax(lineItems, catalogMap) {
       }
       taxByRate[String(pct)] = (taxByRate[String(pct)] || 0) + amount * (pct / 100);
     }
+    var out = { byRate: taxByRate };
+    if (feeResolved.source === 'stale') out.catalogSource = 'stale';
+    return out;
+  });
+}
+
+// Rounded tax total: each rate group rounded on its own (entity_level).
+function computeRecipeTax(lineItems, catalogMap) {
+  return recipeTaxGroups(lineItems, catalogMap).then(function (groups) {
+    if (groups.error) return groups;
+    var taxByRate = groups.byRate;
     var taxTotal = 0;
     Object.keys(taxByRate).forEach(function (k) { taxTotal += round2(taxByRate[k]); });
     var taxOut = { taxTotal: round2(taxTotal) };
-    if (feeResolved.source === 'stale') taxOut.catalogSource = 'stale';
+    if (groups.catalogSource === 'stale') taxOut.catalogSource = 'stale';
     return taxOut;
   });
 }
@@ -554,6 +565,7 @@ module.exports = {
   recipeLineAmount: recipeLineAmount,
   getFeeCatalogMap: getFeeCatalogMap,
   computeRecipeTax: computeRecipeTax,
+  recipeTaxGroups: recipeTaxGroups,
   priceRecipe: priceRecipe,
   loadRecipe: loadRecipe,
   typedSnapshotIngredients: typedSnapshotIngredients,
