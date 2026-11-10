@@ -76,22 +76,12 @@ describe('WR-04 — recipe sale body carries the kiosk displayed totals', functi
     injectEl('kiosk-terminal-msg');
     injectEl('kiosk-spinner');
 
-    // A dynamic-mode recipe cart: one ingredient line + a taxed brewing fee
-    // (the shapes kioskAddRecipeToCart builds).
-    core._setCart({
-      'recipe-ing-0-ing1': {
-        item: { item_id: 'ing1', name: 'Pale Malt 2-Row (5 kg)', rate: 17.50, tax_percentage: 0, product_type: 'recipe_ingredient' },
-        qty: 1
-      },
-      'recipe-fee-brewing': {
-        item: { item_id: 'fee-brewing', name: 'Brewing Fee', rate: 45, tax_percentage: 5, product_type: 'fee' },
-        qty: 1
-      }
-    });
-    core._setRecipeContext({ recipe_id: 'RCP-001', sale_type: 'in-store', mill_grain: false, target_volume_l: 20 });
+    // A recipe cart: totals come only from the server cart-quote (D-19).
+    core._setCart({});
+    core._setRecipeEntries([{ entry_id: 'r1', recipe_id: 'RCP-001', recipe_name: 'R', sale_type: 'in-store', mill_grain: false, target_volume_l: 20, modified_ingredients: null }]);
+    core._setCartQuote({ seq: 1, status: 'ok', data: { subtotal: 62.5, discount_total: 0, tax_total: 2.25, total: 64.75 } });
 
     var totals = core.calcTotals();
-    // sanity: 17.50 + 45.00 subtotal; tax = 45 * 5% = 2.25 → 64.75
     expect(totals.total).toBe(64.75);
     expect(totals.tax).toBe(2.25);
 
@@ -99,7 +89,7 @@ describe('WR-04 — recipe sale body carries the kiosk displayed totals', functi
     await flushPromises();
 
     var saleCall = global.fetch.mock.calls.find(function (c) {
-      return typeof c[0] === 'string' && c[0].indexOf('/api/kiosk/recipe-sale') !== -1;
+      return typeof c[0] === 'string' && /\/api\/kiosk\/(recipe-)?sale$/.test(c[0]);
     });
     expect(saleCall).toBeTruthy();
     var body = JSON.parse(saleCall[1].body);
@@ -109,5 +99,24 @@ describe('WR-04 — recipe sale body carries the kiosk displayed totals', functi
     // Existing recipe body fields must be untouched by the addition.
     expect(body.recipe_id).toBe('RCP-001');
     expect(body.sale_type).toBe('in-store');
+  });
+
+  test('Checkout is disabled + aria-busy while the recipe cart quote is not ok, enabled once ok', function () {
+    localStorage.setItem(DEVICE_TOKEN_KEY, 'kiosk-token');
+    var core = loadSurface('../../js/kiosk.js').core;
+    injectEl('kiosk-cart-items');
+    injectEl('kiosk-cart-totals');
+    injectEl('kiosk-checkout-total');
+    var btn = injectEl('kiosk-checkout-btn', 'button');
+    core._setCart({});
+    core._setRecipeEntries([{ entry_id: 'r1', recipe_id: 'RCP-001', recipe_name: 'R', sale_type: 'in-store', total_before_discount: 50 }]);
+    core._setCartQuote({ seq: 1, status: 'pending', data: null });
+    core.renderCart();
+    expect(btn.disabled).toBe(true);
+    expect(btn.getAttribute('aria-busy')).toBe('true');
+    core._setCartQuote({ seq: 1, status: 'ok', data: { subtotal: 50, discount_total: 0, tax_total: 0, total: 50 } });
+    core.renderCart();
+    expect(btn.disabled).toBe(false);
+    expect(btn.hasAttribute('aria-busy')).toBe(false);
   });
 });

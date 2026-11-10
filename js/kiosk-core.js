@@ -455,6 +455,9 @@
   var _kioskImportedSoNumber = null;    // SO number for display (e.g., "SO-001234")
   var _kioskImportedSoUpdated = false;  // true after SO update succeeds -- skip on retry (D-08)
   var _kioskQuote = null;
+  // 101 D-19: server cart-quote for carts with recipe entries (fetched in Plan 11).
+  // null | {seq, status: 'pending'|'ok'|'error', data}
+  var _kioskCartQuote = null;
   var _kioskQuoteTimer = null;
   var _kioskModifyPanelOpen = false;
   var _kioskIngredientCatalog = [];
@@ -868,17 +871,10 @@
     var lineDiscount = {};
     var discountAmount = 0;
     var discount = _kcEnv.getDiscount();
-    var recipeContext = _kioskLegacyRecipeContext();
 
     if (discount) {
-      if (recipeContext) {
-        // Recipe cart: the discount is server-authoritative — the discount-aware
-        // quote already computed it against the recipe's product/fee portions.
-        discountAmount = (_kioskQuote && _kioskQuote.discount && typeof _kioskQuote.discount.amount === 'number')
-          ? _kioskQuote.discount.amount : 0;
-        discountAmount = Math.min(discountAmount, subtotal);
-      } else {
-        // Standard cart: discount only the lines whose product type matches.
+      {
+        // Discount only the lines whose product type matches.
         var scope = discount.scope;
         var matchedIds = [];
         var matchedSubtotal = 0;
@@ -944,10 +940,6 @@
       if (!entry || !entry.item) return;
       var lt = (parseFloat(entry.item.rate) || 0) * entry.qty;
       var d = lineDiscount[id] || 0;
-      // Recipe cart uses a uniform ratio (recipe lines are mostly tax-exempt anyway).
-      if (recipeContext && discountAmount > 0 && subtotal > 0) {
-        d = kioskR2(lt * (discountAmount / subtotal));
-      }
       var taxable = Math.max(lt - d, 0);
       var pct = parseFloat(entry.item.tax_percentage);
       if (isNaN(pct)) {
@@ -968,12 +960,26 @@
       taxTotal += kioskR2(taxByRate[rateKey]);
     });
     taxTotal = kioskR2(taxTotal);
-    // Recipe cart: the server charges pre-tax total + fee tax (2026-10-13) and
-    // the discount-aware quote reports it. A locked recipe is one untaxed
-    // package line, so show the server's tax or the display undercuts the
-    // terminal charge. Older servers send no tax_total: keep the line tax.
-    if (recipeContext && _kioskQuote && typeof _kioskQuote.tax_total === 'number') {
-      taxTotal = kioskR2(_kioskQuote.tax_total);
+    // 101 D-19: a cart with recipe entries shows ONLY the server cart-quote
+    // values (the server prices recipes); until the quote is ok the totals are
+    // pending and Checkout stays disabled.
+    if (_kcEnv.getRecipeEntries().length) {
+      var cq = _kioskCartQuote;
+      if (cq && cq.status === 'ok' && cq.data) {
+        return {
+          subtotal: kioskR2(cq.data.subtotal),
+          discount: kioskR2(cq.data.discount_total),
+          tax: kioskR2(cq.data.tax_total),
+          total: kioskR2(cq.data.total),
+          missingTaxItem: missingTaxItem
+        };
+      }
+      return {
+        subtotal: 0, discount: 0, tax: 0, total: 0,
+        pending: true,
+        error: !!(cq && cq.status === 'error'),
+        missingTaxItem: missingTaxItem
+      };
     }
 
     return {
@@ -2646,8 +2652,12 @@
     if (taxEl) taxEl.textContent = kioskFmt(totals.tax);
     if (totalEl) totalEl.textContent = kioskFmt(totals.total);
     if (totalsEl) totalsEl.style.display = '';
-    if (checkoutBtn) checkoutBtn.disabled = false;
-    if (checkoutTotal) checkoutTotal.textContent = kioskFmt(totals.total);
+    if (checkoutBtn) {
+      checkoutBtn.disabled = !!totals.pending;
+      if (totals.pending) checkoutBtn.setAttribute('aria-busy', 'true');
+      else checkoutBtn.removeAttribute('aria-busy');
+    }
+    if (checkoutTotal) checkoutTotal.textContent = totals.pending ? '\u2026' : kioskFmt(totals.total);
     if (discountBtn) discountBtn.disabled = kioskCartIsEmpty();
     kioskUpdateDiscountDisplay();
   }
@@ -7053,6 +7063,8 @@
     wireCertInput: kioskWireCertInput,
 
     // ---- Test-export-style accessors (mirror js/kiosk.js's existing idiom) ----
+    _getCartQuote: function () { return _kioskCartQuote; },
+    _setCartQuote: function (v) { _kioskCartQuote = v; },
     _getQuote: function () { return _kioskQuote; },
     _setQuote: function (q) { _kioskQuote = q; },
     _getSelectedRecipe: function () { return _kioskSelectedRecipe; },

@@ -34,28 +34,28 @@ function line(id, name, rate, pct) {
   return { item: { item_id: id, name: name, rate: rate, tax_percentage: pct }, qty: 1 };
 }
 
-function recipeCore(quote, discount) {
+function recipeCore(quoteData, discount) {
   var core = loadCore();
   core.init({
     getRecipeEntries: function () { return [{ recipe_id: 'SV-R-000002', sale_type: 'in-store' }]; },
     getDiscount: function () { return discount || null; }
   });
-  core._setQuote(quote);
-  core._setCart({ pkg: line('SV-R-000002', 'Czech Lager — Package Price', 120, 0) });
+  core._setCartQuote(quoteData === null ? null : { seq: 1, status: quoteData.status || 'ok', data: quoteData });
+  core._setCart({ prod: line('P1', 'Product', 10, 5) });
   return core;
 }
 
-describe('kioskCalcTotals — recipe carts show the server fee tax', function () {
-  test('uses the quote tax_total: 120 + 2.85 = 122.85', function () {
-    var t = recipeCore({ ok: true, recipe_id: 'SV-R-000002', total: 120, tax_total: 2.85, total_with_tax: 122.85 }).calcTotals();
+describe('kioskCalcTotals — recipe carts show the server cart-quote (D-19)', function () {
+  test('uses the quote values: subtotal 120, tax 2.85, total 122.85', function () {
+    var t = recipeCore({ subtotal: 120, discount_total: 0, tax_total: 2.85, total: 122.85 }).calcTotals();
+    expect(t.subtotal).toBe(120);
     expect(t.tax).toBe(2.85);
     expect(t.total).toBe(122.85);
   });
 
-  test('applies the server discount and the server tax together', function () {
+  test('shows the server discount and tax together', function () {
     var t = recipeCore(
-      { ok: true, recipe_id: 'SV-R-000002', total: 110, total_before_discount: 120, tax_total: 2.35,
-        total_with_tax: 112.35, discount: { amount: 10, name: 'Staff' } },
+      { subtotal: 120, discount_total: 10, tax_total: 2.35, total: 112.35 },
       { scope: 'cart', type: 'fixed', value: 10 }
     ).calcTotals();
     expect(t.discount).toBe(10);
@@ -63,14 +63,27 @@ describe('kioskCalcTotals — recipe carts show the server fee tax', function ()
     expect(t.total).toBe(112.35);
   });
 
-  test('falls back to line tax when the quote has no tax_total (older server)', function () {
-    var t = recipeCore({ ok: true, recipe_id: 'SV-R-000002', total: 120 }).calcTotals();
-    expect(t.tax).toBe(0);
-    expect(t.total).toBe(120);
+  test('no quote yet -> pending, never a client-computed total', function () {
+    var t = recipeCore(null).calcTotals();
+    expect(t.pending).toBe(true);
+    expect(t.total).toBe(0);
+  });
+
+  test('pending quote -> pending', function () {
+    var t = recipeCore({ status: 'pending' }).calcTotals();
+    expect(t.pending).toBe(true);
+    expect(t.error).toBe(false);
+  });
+
+  test('error quote -> pending + error', function () {
+    var t = recipeCore({ status: 'error' }).calcTotals();
+    expect(t.pending).toBe(true);
+    expect(t.error).toBe(true);
   });
 
   test('standard (non-recipe) carts ignore any stale recipe quote', function () {
     var core = loadCore();
+    core._setCartQuote({ seq: 1, status: 'ok', data: { subtotal: 1, discount_total: 0, tax_total: 9, total: 10 } });
     core._setQuote({ ok: true, recipe_id: 'SV-R-000002', total: 120, tax_total: 2.85 });
     core._setCart({ makers: line('makers', 'Makers Fee', 45, 5) });
     expect(core.calcTotals().tax).toBe(2.25);
