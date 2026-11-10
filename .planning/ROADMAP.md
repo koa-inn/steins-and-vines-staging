@@ -1451,7 +1451,7 @@ Plans:
 **Goal:** One kiosk sale can hold a recipe together with products, custom items and gift cards, and recipe sales get the same Cash / Gift Card / Phone order tenders as other sales. The standard `/api/kiosk/sale` + `/confirm` route accepts a recipe component, reusing the pos-recipe pricing, unit conversion, package-price adjustment, stock-override prompt, recipe lock and batch creation, so there is one invoice and one payment. Removes the recipe-cart guard shipped in bbca0f28 (prod-20261110-2). Owner request 2026-11-10 after the report that adding a recipe cleared the cart and recipe checkout skipped the payment-method choice.
 **Requirements**: MIXR-01, MIXR-02, MIXR-03, MIXR-04, MIXR-05, MIXR-06, MIXR-07, MIXR-08, MIXR-09, MIXR-10, MIXR-11
 **Depends on:** Phase 100
-**Plans:** 9/15 plans executed
+**Plans:** 10/15 plans executed
 
 Plans:
 
@@ -1479,7 +1479,7 @@ Plans:
 - [x] 101-09-PLAN.md — Re-point/retire middleware tests that used the legacy initiate route (D-20)
 
 **Wave 8**
-- [ ] 101-10-PLAN.md — Quote-based totals + one standard sale/confirm body with recipes on every tender; tender panel unskipped
+- [x] 101-10-PLAN.md — Quote-based totals + one standard sale/confirm body with recipes on every tender; tender panel unskipped
 
 **Wave 9**
 - [ ] 101-11-PLAN.md — Cart-quote client: debounced, stale-safe fetch and checkout gate
