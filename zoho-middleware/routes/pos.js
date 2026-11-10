@@ -801,6 +801,14 @@ function findMissingRecipeFeeItem(entries, catalogMap) {
   return null;
 }
 
+// Phase 101: tagged error for any recipe-specific failure on the confirm leg.
+function recipeInvalidError(status, message) {
+  var e = new Error(message);
+  e.__recipeInvalid = true;
+  e.__status = status;
+  return e;
+}
+
 function processSale(body, idempotencyKey, req, res, stageStart) {
   // D-50-03 (50-03 / H4 / SC#2): mirrors the confirm-path hook above — release
   // the sale idempotency lock on EVERY failure return in processSale AND
@@ -1437,7 +1445,10 @@ router.post('/api/kiosk/telemetry', function (req, res) {
 
 router.post('/api/kiosk/sale/confirm', function (req, res) {
   var body = req.body;
-  if (!body || !Array.isArray(body.items) || body.items.length === 0) {
+  // Phase 101: a recipe-only cart carries no items[].
+  var confirmHasRecipes = !!(body && Array.isArray(body.recipes) && body.recipes.length > 0);
+  if (confirmHasRecipes && !Array.isArray(body.items)) body.items = [];
+  if (!body || !Array.isArray(body.items) || (body.items.length === 0 && !confirmHasRecipes)) {
     return res.status(400).json({ error: 'Cart is empty' });
   }
 
@@ -1507,12 +1518,33 @@ function runConfirm(body, confirmIdemKey, req, res) {
   // rebuild (never has been one on confirm) — but when the live cache cannot
   // price the cart (rebuild failed during /sale, quota exhausted) use the
   // same last-good catalog /sale priced from.
+  // Phase 101: recipe-bearing confirm. Every recipe failure here is a TAGGED
+  // error (__recipeInvalid) thrown into the chain, never a bare 4xx: a card may
+  // already be captured, so with a transaction_id the outer catch voids it.
+  var hasConfirmRecipes = !!(body && Array.isArray(body.recipes) && body.recipes.length > 0);
+  var confirmRecipeEntries = null;
+  var confirmRecipeErr = null;
+  if (hasConfirmRecipes) {
+    if ((process.env.BEER_SALES_ENABLED || 'false').toLowerCase() !== 'true') {
+      confirmRecipeErr = recipeInvalidError(403, 'Recipe sales are not enabled');
+    } else {
+      var confirmRecipeValidation = recipeLines().validateRecipeEntries(body.recipes);
+      if (!confirmRecipeValidation.ok) {
+        confirmRecipeErr = recipeInvalidError(confirmRecipeValidation.status, confirmRecipeValidation.error);
+      } else {
+        confirmRecipeEntries = confirmRecipeValidation.entries;
+      }
+    }
+  }
   kioskSaleCatalog.getKioskCatalogForSale({
     rebuild: false,
     isUsable: function (items) {
-      return findMissingCatalogItem(body.items, buildKioskCatalogMap(items)) === null;
+      var usableMap = buildKioskCatalogMap(items);
+      return findMissingCatalogItem(body.items, usableMap) === null &&
+        (!confirmRecipeEntries || findMissingRecipeFeeItem(confirmRecipeEntries, usableMap) === null);
     }
   }).then(function (resolvedCatalog) {
+    if (confirmRecipeErr) throw confirmRecipeErr;
     var catalog = resolvedCatalog.items;
     if (resolvedCatalog.source === 'stale') {
       log.info('[pos/kiosk/sale/confirm] Pricing from last-good kiosk catalog of ' + (resolvedCatalog.staleAt || 'unknown'));
@@ -1529,6 +1561,14 @@ function runConfirm(body, confirmIdemKey, req, res) {
       if (body.items[ci].gift_cert) continue; // gift_cert lines bypass catalog check
       if (catalogMap[body.items[ci].item_id] === undefined) {
         return res.status(400).json({ error: 'Item not found in catalog. Refresh and try again.' });
+      }
+    }
+
+    if (confirmRecipeEntries) {
+      var missingFeeItem = findMissingRecipeFeeItem(confirmRecipeEntries, catalogMap);
+      if (missingFeeItem !== null) {
+        throw recipeInvalidError(400, 'Recipe fee item not found in current catalog: ' + missingFeeItem +
+          '. Refresh the product list and try again.');
       }
     }
 
@@ -1645,7 +1685,24 @@ function runConfirm(body, confirmIdemKey, req, res) {
     });
     subtotal = Math.round(subtotal * 100) / 100;
 
-    return resolveDiscount(body, lineItems, subtotal, catalogMap).then(function (discResult) {
+    // Phase 101: a recipe-bearing cart is re-priced as a whole through the
+    // shared core (D-14); product-only carts keep the original path untouched.
+    var recipePricing = null;
+    var confirmPricing = hasConfirmRecipes
+      ? computeCartPricing(body, catalogMap).then(function (p) {
+          if (!p.ok) {
+            if (p.tag === 'tax') {
+              var rTaxErr = new Error(p.error);
+              rTaxErr.__taxUnresolved = true;
+              throw rTaxErr;
+            }
+            throw recipeInvalidError(p.status || 400, p.error);
+          }
+          recipePricing = p;
+          return null;
+        })
+      : resolveDiscount(body, lineItems, subtotal, catalogMap);
+    return confirmPricing.then(function (discResult) {
       if (discResult && discResult.error) {
         return res.status(discResult.status).json({ error: discResult.error });
       }
@@ -1654,6 +1711,23 @@ function runConfirm(body, confirmIdemKey, req, res) {
       if (discResult) {
         subtotal = discResult.subtotal;
         discountApplied = discResult.discountApplied;
+      }
+      if (recipePricing) {
+        // Product lines come back from the core already discounted; the recipe
+        // lines are kept apart so the ledger / batch hooks only ever see these.
+        lineItems = recipePricing.lineItems;
+        subtotal = recipePricing.subtotal;
+        discountApplied = recipePricing.discountApplied;
+        // A charge may already exist, so short stock can never be a 409 here
+        // (D-12/D-13 gated it at /sale): record it for staff and carry on.
+        if (!recipePricing.recipe.stock.ok) {
+          log.warn('[pos/kiosk/sale/confirm] recipe stock short at confirm (' +
+            recipePricing.recipe.stock.recipes_short.length + ' recipe(s)) — booking anyway');
+          eventLog.logEvent('kiosk.confirm_stock_short', {
+            reference_number: (typeof body.reference_number === 'string') ? body.reference_number.slice(0, 64) : '',
+            recipes_short: recipePricing.recipe.stock.recipes_short.length
+          });
+        }
       }
 
     // Phase 67 (KIOSK-TAX-QUOTE-01): CONFIRM path — a terminal charge may
@@ -1664,15 +1738,22 @@ function runConfirm(body, confirmIdemKey, req, res) {
     // the promise chain so it reaches the outer .catch below, which routes
     // through void-on-failure when a charge exists — mirroring the existing
     // __manualVerify tagged-error idiom.
-    var taxResultConfirm = computeTax(lineItems, catalogMap);
-    if (taxResultConfirm.error) {
-      var taxUnresolvedErr = new Error(taxResultConfirm.error);
-      taxUnresolvedErr.__taxUnresolved = true;
-      taxUnresolvedErr.__taxUnresolvedItemName = taxResultConfirm.itemName;
-      throw taxUnresolvedErr;
+    var taxTotal;
+    var grandTotal;
+    if (recipePricing) {
+      taxTotal = recipePricing.taxTotal;
+      grandTotal = recipePricing.grandTotal;
+    } else {
+      var taxResultConfirm = computeTax(lineItems, catalogMap);
+      if (taxResultConfirm.error) {
+        var taxUnresolvedErr = new Error(taxResultConfirm.error);
+        taxUnresolvedErr.__taxUnresolved = true;
+        taxUnresolvedErr.__taxUnresolvedItemName = taxResultConfirm.itemName;
+        throw taxUnresolvedErr;
+      }
+      taxTotal = taxResultConfirm.taxTotal;
+      grandTotal = Math.round((subtotal + taxTotal) * 100) / 100;
     }
-    var taxTotal = taxResultConfirm.taxTotal;
-    var grandTotal = Math.round((subtotal + taxTotal) * 100) / 100;
     var refNumber = (body.reference_number || 'KIOSK-' + Date.now()).slice(0, 64);
     var txnId = body.transaction_id || 'manual-confirm';
     var today = new Date().toISOString().slice(0, 10);
@@ -2243,7 +2324,7 @@ function runConfirm(body, confirmIdemKey, req, res) {
     // after a charge, pos.js:816-819 invariant).
     // Phase 90: an invalid canning bundle / unresolvable standard tax (tagged
     // __bundleInvalid) follows the exact same rule as __taxUnresolved.
-    if (err && (err.__taxUnresolved || err.__bundleInvalid) && !(body && body.transaction_id)) {
+    if (err && (err.__taxUnresolved || err.__bundleInvalid || err.__recipeInvalid) && !(body && body.transaction_id)) {
       if (res.headersSent) return;
       // Phase 67 review fix (WR-01): release the confirm idempotency lock on
       // this actionable no-charge 400 — acquireIdempotencyLock only replays
@@ -2252,7 +2333,7 @@ function runConfirm(body, confirmIdemKey, req, res) {
       // Mirrors the sale path's pre-charge-assertion 400 (same reason:
       // "so a corrected re-ring can retry immediately").
       if (confirmIdemKey) { cache.releaseLock(confirmIdemKey).catch(function () {}); }
-      return res.status(400).json({ error: err.message });
+      return res.status(err.__status || 400).json({ error: err.message });
     }
     log.error('[pos/kiosk/sale/confirm] Error: ' + err.message);
     // M-A3 / SC#1 (50-03): a captured-amount mismatch is a 402 (payment
