@@ -106,6 +106,8 @@ Milestone: v4.5 Security & Money-Path Closeout — NOT complete (the 2026-07-08 
 
 ### Roadmap Evolution
 
+- Phase 101 added (2026-11-10): Kiosk mixed recipe carts and full tenders. The owner reported that adding a recipe cleared the kiosk cart and that recipe checkout skipped the payment-method choice. A guard (bbca0f28, live on prod 2026-11-10) blocks mixing for now; the owner chose a single combined sale (recipe inside /api/kiosk/sale) over two separate charges.
+
 - Phase 100 added (2026-10-29): Limited Releases page and online deposits (LE26 + RQ27, $50 deposit per kit, supplier marketing assets). From todo `limited-releases-page-and-deposits.md` and the two `HANDOFF-limited-releases-*.md` specs. Owner wants it worked next, ahead of Phases 97–99, which stay planned.
 
 - Phase 93 added (2026-10-17): Kiosk ledger week and month views. The owner requested it at Phase 92 UAT and chose per-day summary rows, Mon–Sun weeks and calendar months, and a count + gross footer.

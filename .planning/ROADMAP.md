@@ -1446,6 +1446,16 @@ Plans:
 
 - [ ] 81-09-PLAN.md — Production middleware + frontend cutover, live verification, and the RUNBOOK/STATE outcome record (OPS-05 stays open — this phase closes the fermentation-time slice only)
 
+### Phase 101: Kiosk mixed recipe carts and full tenders
+
+**Goal:** One kiosk sale can hold a recipe together with products, custom items and gift cards, and recipe sales get the same Cash / Gift Card / Phone order tenders as other sales. The standard `/api/kiosk/sale` + `/confirm` route accepts a recipe component, reusing the pos-recipe pricing, unit conversion, package-price adjustment, stock-override prompt, recipe lock and batch creation, so there is one invoice and one payment. Removes the recipe-cart guard shipped in bbca0f28 (prod-20261110-2). Owner request 2026-11-10 after the report that adding a recipe cleared the cart and recipe checkout skipped the payment-method choice.
+**Requirements**: TBD
+**Depends on:** Phase 100
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 101 to break down)
+
 ---
 
 ### Phase 46: Auth Re-Architecture (CRITICAL — split from Phase 45)
