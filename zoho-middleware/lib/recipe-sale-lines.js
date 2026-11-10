@@ -392,7 +392,7 @@ function loadRecipe(recipeId) {
   return recipeStore.get(recipeId);
 }
 
-function priceRecipe(data, rawTarget, saleType, millGrain, modifiedIngredients, discountReq) {
+function priceRecipe(data, rawTarget, saleType, millGrain, modifiedIngredients, discountReq, preloadedCatalog) {
   if (!data || !data.ok || !data.data || !data.data.recipe) {
     return Promise.reject({ status: 404, body: { error: 'Recipe not found' } });
   }
@@ -434,7 +434,10 @@ function priceRecipe(data, rawTarget, saleType, millGrain, modifiedIngredients, 
   var isModified = Array.isArray(modifiedIngredients);
   var baseIngredients = isModified ? modifiedIngredients : ingredients;
 
-  return getIngredientCatalog().then(function (ingredientCatalog) {
+  // preloadedCatalog (Phase 101): mixed carts load the catalog once and pass it
+  // to every entry; the no-argument path is unchanged.
+  var catalogLoad = Array.isArray(preloadedCatalog) ? Promise.resolve(preloadedCatalog) : getIngredientCatalog();
+  return catalogLoad.then(function (ingredientCatalog) {
     if (!ingredientCatalog || !Array.isArray(ingredientCatalog)) {
       return Promise.reject({ status: 503, body: { error: 'Ingredient catalog not available — try again shortly' } });
     }
@@ -554,7 +557,226 @@ function priceRecipe(data, rawTarget, saleType, millGrain, modifiedIngredients, 
   });
 }
 
+// ---------------------------------------------------------------------------
+// Phase 101: mixed-cart recipe helpers. /sale, /confirm and /cart-quote compose
+// these so the three routes cannot drift. All pure or catalog-cache only —
+// zero Zoho calls.
+// ---------------------------------------------------------------------------
+
+var MAX_RECIPE_ENTRIES = 25;
+
+function entryList(priced) {
+  return Array.isArray(priced) ? priced : ((priced && priced.entries) || []);
+}
+
+/**
+ * Validate the client recipes[] array. Copies parameters only — any client
+ * price/total field is dropped (T-101-09).
+ */
+function validateRecipeEntries(recipes) {
+  if (!Array.isArray(recipes) || recipes.length < 1) {
+    return { status: 400, error: 'recipes must be a non-empty array' };
+  }
+  if (recipes.length > MAX_RECIPE_ENTRIES) {
+    return { status: 400, error: 'Too many recipes in one sale (max ' + MAX_RECIPE_ENTRIES + ')' };
+  }
+  var entries = [];
+  for (var i = 0; i < recipes.length; i++) {
+    var r = recipes[i];
+    if (!r || typeof r !== 'object' || Array.isArray(r)) {
+      return { status: 400, error: 'recipes[' + i + '] must be an object' };
+    }
+    var id = typeof r.recipe_id === 'string' ? r.recipe_id.trim() : '';
+    if (!id || id.length > 64) {
+      return { status: 400, error: 'recipes[' + i + '].recipe_id is required (max 64 chars)' };
+    }
+    if (r.sale_type !== 'in-store' && r.sale_type !== 'take-out') {
+      return { status: 400, error: 'recipes[' + i + '].sale_type must be in-store or take-out' };
+    }
+    var tv = r.target_volume_l;
+    if (tv !== undefined && tv !== null && !(typeof tv === 'number' && isFinite(tv) && tv > 0)) {
+      return { status: 400, error: 'recipes[' + i + '].target_volume_l must be a number > 0' };
+    }
+    if (r.modified_ingredients !== undefined && !Array.isArray(r.modified_ingredients)) {
+      return { status: 400, error: 'recipes[' + i + '].modified_ingredients must be an array' };
+    }
+    entries.push({
+      index: i,
+      recipe_id: id,
+      sale_type: r.sale_type,
+      mill_grain: r.mill_grain === true,
+      target_volume_l: tv === undefined ? null : tv,
+      modified_ingredients: r.modified_ingredients
+    });
+  }
+  return { ok: true, entries: entries };
+}
+
+/** Labels per entry; duplicate recipe names get ' #1', ' #2' in entry order. */
+function recipeEntryLabels(priced) {
+  var list = entryList(priced);
+  var counts = {};
+  list.forEach(function (e) { counts[e.recipe_name] = (counts[e.recipe_name] || 0) + 1; });
+  var seen = {};
+  return list.map(function (e) {
+    if (counts[e.recipe_name] < 2) return e.recipe_name;
+    seen[e.recipe_name] = (seen[e.recipe_name] || 0) + 1;
+    return e.recipe_name + ' #' + seen[e.recipe_name];
+  });
+}
+
+/**
+ * Price every entry with ONE ingredient-catalog load, discountReq null (the
+ * discount is applied per recipe by the caller). Rejects with priceRecipe's
+ * { status, body } shape.
+ */
+function priceRecipeEntries(entries) {
+  return getIngredientCatalog().then(function (catalog) {
+    if (!Array.isArray(catalog)) {
+      return Promise.reject({ status: 503, body: { error: 'Ingredient catalog not available — try again shortly' } });
+    }
+    var out = [];
+    var chain = Promise.resolve();
+    entries.forEach(function (entry) {
+      chain = chain.then(function () {
+        return Promise.resolve(loadRecipe(entry.recipe_id)).then(function (data) {
+          // priceRecipe stamps _scale_factor on the recipe object; clone so the
+          // same recipe sold twice (D-02) never shares state between entries.
+          var clone = data && data.ok ? JSON.parse(JSON.stringify(data)) : data;
+          return priceRecipe(clone, entry.target_volume_l, entry.sale_type, entry.mill_grain,
+            entry.modified_ingredients, null, catalog);
+        }).then(function (res) {
+          var built = buildRecipeLineItems(res.recipe, res.scaledIngredients, res.catalogMap, entry.sale_type, entry.mill_grain);
+          if (built.unpriceable) return Promise.reject({ status: 422, body: { error: built.unpriceable } });
+          if (built.millingNotConfigured) {
+            return Promise.reject({ status: 400, body: { error: 'Milling fee not configured. Contact admin.' } });
+          }
+          out.push({
+            index: entry.index,
+            recipe_id: entry.recipe_id,
+            recipe_name: res.recipe.name,
+            sale_type: entry.sale_type,
+            mill_grain: entry.mill_grain,
+            target_volume_l: res.targetVolumeL,
+            pricing_mode: res.pricingMode,
+            base_total: res.totalBeforeDiscount,
+            fee_portion: res.feePortion,
+            lines: built.lineItems,
+            scaled_ingredients: res.scaledIngredients,
+            recipe: res.recipe,
+            catalog_map: res.catalogMap,
+            stock_check: res.stockCheck
+          });
+        });
+      });
+    });
+    return chain.then(function () { return { entries: out }; });
+  });
+}
+
+/**
+ * Sum need per item_id across ALL entries (D-12) and name every short recipe
+ * (D-13). A non-convertible unit is a conflict (fail closed).
+ */
+function checkCombinedStock(priced) {
+  var list = entryList(priced);
+  var labels = recipeEntryLabels(list);
+  var byItem = {};
+  var order = [];
+  list.forEach(function (e, ei) {
+    (e.scaled_ingredients || []).forEach(function (ing) {
+      var cat = e.catalog_map[ing.item_id];
+      if (!cat) return;
+      var acc = byItem[ing.item_id];
+      if (!acc) {
+        acc = byItem[ing.item_id] = {
+          item_id: ing.item_id, item_name: ing.item_name, needed: 0,
+          stock: Number(cat.stock_on_hand) || 0, unit: cat.unit, bad: false, entries: []
+        };
+        order.push(ing.item_id);
+      }
+      var cost = scaling.ingredientLineCost(cat, ing);
+      if (cost.ok) {
+        acc.needed += cost.convertedQty;
+      } else {
+        acc.bad = true;
+        acc.needed += Number(ing.quantity) || 0;
+        acc.unit = ing.unit;
+      }
+      if (acc.entries.indexOf(ei) === -1) acc.entries.push(ei);
+    });
+  });
+  var conflicts = [];
+  var shortIdx = {};
+  order.forEach(function (id) {
+    var acc = byItem[id];
+    var needed = Math.round(acc.needed * 10000) / 10000;
+    if (!acc.bad && needed <= acc.stock) return;
+    conflicts.push({
+      item_id: acc.item_id,
+      item_name: acc.item_name,
+      needed: needed,
+      stock: acc.stock,
+      unit: acc.unit,
+      recipes: acc.entries.map(function (ei) { shortIdx[ei] = true; return labels[ei]; })
+    });
+  });
+  var recipesShort = [];
+  list.forEach(function (e, ei) {
+    if (shortIdx[ei]) recipesShort.push({ index: e.index, recipe_id: e.recipe_id, name: labels[ei] });
+  });
+  return { ok: conflicts.length === 0, conflicts: conflicts, recipes_short: recipesShort };
+}
+
+/** The portion of a recipe computeRecipeDiscount would discount (same targeting rule). */
+function recipeDiscountBase(preset, baseTotal, feePortion) {
+  if (!preset) return 0;
+  if (preset.scope === 'cart') return round2(baseTotal);
+  if (preset.scope === 'type') {
+    var at = preset.applies_to || [];
+    var base = 0;
+    if (at.indexOf('recipe') !== -1) base += round2(baseTotal - feePortion);
+    if (at.indexOf('service') !== -1) base += feePortion;
+    return round2(base);
+  }
+  return 0;
+}
+
+/** Deep-copy the entry's lines, spread `amount` over them, return { lines, pre_tax }. */
+function applyRecipeDiscount(pricedEntry, amount, preset) {
+  var lines = JSON.parse(JSON.stringify(pricedEntry.lines));
+  if (preset && amount > 0) distributeRecipeDiscount(lines, recipeFeeItemIds(), preset, amount);
+  return { lines: lines, pre_tax: round2(pricedEntry.base_total - (amount || 0)) };
+}
+
+/** Invoice adjustment so lines + adjustment == the pre-tax package price. */
+function recipeAdjustment(preTax, lines) {
+  var sum = lines.reduce(function (acc, li) { return acc + recipeLineAmount(li); }, 0);
+  return round2(preTax - round2(sum));
+}
+
+/** 'Recipes: House Pale (in-store, 23 L), Saison (take-out, milled, 23 L)' */
+function recipeNotesSummary(priced) {
+  var list = entryList(priced);
+  var labels = recipeEntryLabels(list);
+  return 'Recipes: ' + list.map(function (e, i) {
+    var parts = [e.sale_type];
+    if (e.sale_type === 'take-out' && e.mill_grain) parts.push('milled');
+    parts.push(e.target_volume_l + ' L');
+    return labels[i] + ' (' + parts.join(', ') + ')';
+  }).join(', ');
+}
+
 module.exports = {
+  MAX_RECIPE_ENTRIES: MAX_RECIPE_ENTRIES,
+  validateRecipeEntries: validateRecipeEntries,
+  priceRecipeEntries: priceRecipeEntries,
+  checkCombinedStock: checkCombinedStock,
+  recipeDiscountBase: recipeDiscountBase,
+  applyRecipeDiscount: applyRecipeDiscount,
+  recipeAdjustment: recipeAdjustment,
+  recipeEntryLabels: recipeEntryLabels,
+  recipeNotesSummary: recipeNotesSummary,
   getIngredientCatalog: getIngredientCatalog,
   computeRecipeDiscount: computeRecipeDiscount,
   distributeRecipeDiscount: distributeRecipeDiscount,
