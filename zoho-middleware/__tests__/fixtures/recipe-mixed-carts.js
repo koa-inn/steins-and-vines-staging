@@ -287,7 +287,1244 @@ var ORACLE = {
       tax_total: 1.23
     }
   },
-  confirm: {}
+  confirm: {
+    'RCP-LOCKED/in-store/none': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 4.21,
+      payment_amount: 249.21
+    },
+    'RCP-LOCKED/in-store/cart-pct': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 5.73,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 2.38,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 1.49,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45,
+          discount: 13.4
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5,
+          discount: 1.5
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 2.96,
+      payment_amount: 223.46
+    },
+    'RCP-LOCKED/in-store/cart-fixed': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 1.76,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 0.73,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 0.46,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45,
+          discount: 4.1
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5,
+          discount: 0.45
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 3.83,
+      payment_amount: 241.33
+    },
+    'RCP-LOCKED/in-store/type-recipe': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 11.64,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 4.84,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 3.02,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 3.39,
+      payment_amount: 228.89
+    },
+    'RCP-LOCKED/in-store/type-service': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45,
+          discount: 4.5
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5,
+          discount: 0.5
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 3.93,
+      payment_amount: 243.93
+    },
+    'RCP-LOCKED/take-out/none': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          tax_id: 'tax-zero'
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 1.36,
+      payment_amount: 196.36
+    },
+    'RCP-LOCKED/take-out/cart-pct': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 11.64,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 4.84,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 3.02,
+          tax_id: 'tax-zero'
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 0.54,
+      payment_amount: 176.04
+    },
+    'RCP-LOCKED/take-out/cart-fixed': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 4.48,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 1.86,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 1.16,
+          tax_id: 'tax-zero'
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 1.05,
+      payment_amount: 188.55
+    },
+    'RCP-LOCKED/take-out/type-recipe': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 11.64,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 4.84,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 3.02,
+          tax_id: 'tax-zero'
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 0.54,
+      payment_amount: 176.04
+    },
+    'RCP-LOCKED/take-out/type-service': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          tax_id: 'tax-zero'
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 1.36,
+      payment_amount: 196.36
+    },
+    'RCP-LOCKED/take-out-mill/none': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 2.56,
+      payment_amount: 207.56
+    },
+    'RCP-LOCKED/take-out-mill/cart-pct': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 9.34,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 3.88,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 2.43,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10,
+          discount: 4.85
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 1.32,
+      payment_amount: 185.82
+    },
+    'RCP-LOCKED/take-out-mill/cart-fixed': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 3.42,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 1.42,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 0.89,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10,
+          discount: 1.77
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 2.11,
+      payment_amount: 199.61
+    },
+    'RCP-LOCKED/take-out-mill/type-recipe': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 11.64,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 4.84,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 3.02,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 1.74,
+      payment_amount: 187.24
+    },
+    'RCP-LOCKED/take-out-mill/type-service': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10,
+          discount: 1
+        }
+      ],
+      adjustment: 162.75,
+      adjustment_description: 'Recipe package price',
+      tax: 2.44,
+      payment_amount: 206.44
+    },
+    'RCP-LOCKED/in-store/none/scale2x': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 11,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.2,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5
+        }
+      ],
+      adjustment: 325.5,
+      adjustment_description: 'Recipe package price',
+      tax: 5.57,
+      payment_amount: 445.57
+    },
+    'RCP-LOCKED/take-out-mill/cart-pct/scale2x': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 11,
+          rate: 3.5,
+          discount: 20.67,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.2,
+          rate: 80,
+          discount: 8.59,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 5.37,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10,
+          discount: 5.37
+        }
+      ],
+      adjustment: 325.5,
+      adjustment_description: 'Recipe package price',
+      tax: 1.82,
+      payment_amount: 361.82
+    },
+    'RCP-LOCKED/in-store/none/modified': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.15,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5
+        }
+      ],
+      adjustment: 158.75,
+      adjustment_description: 'Recipe package price',
+      tax: 4.41,
+      payment_amount: 249.41
+    },
+    'RCP-LOCKED/take-out/type-recipe/modified': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 5.5,
+          rate: 3.5,
+          discount: 10.36,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.15,
+          rate: 80,
+          discount: 6.46,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 1,
+          rate: 5,
+          discount: 2.68,
+          tax_id: 'tax-zero'
+        }
+      ],
+      adjustment: 158.75,
+      adjustment_description: 'Recipe package price',
+      tax: 0.72,
+      payment_amount: 176.22
+    },
+    'RCP-DYN/in-store/none': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5
+        }
+      ],
+      tax: 4.1,
+      payment_amount: 89.1
+    },
+    'RCP-DYN/in-store/cart-pct': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 2.1,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          discount: 0.4,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 1,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45,
+          discount: 4.5
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5,
+          discount: 0.5
+        }
+      ],
+      tax: 3.69,
+      payment_amount: 80.19
+    },
+    'RCP-DYN/in-store/cart-fixed': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 1.85,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          discount: 0.35,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 0.88,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45,
+          discount: 3.97
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5,
+          discount: 0.45
+        }
+      ],
+      tax: 3.74,
+      payment_amount: 81.24
+    },
+    'RCP-DYN/in-store/type-recipe': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 2.1,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          discount: 0.4,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 1,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5
+        }
+      ],
+      tax: 3.98,
+      payment_amount: 85.48
+    },
+    'RCP-DYN/in-store/type-service': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45,
+          discount: 4.5
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5,
+          discount: 0.5
+        }
+      ],
+      tax: 3.82,
+      payment_amount: 83.82
+    },
+    'RCP-DYN/take-out/none': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          tax_id: 'tax-zero'
+        }
+      ],
+      tax: 1.25,
+      payment_amount: 36.25
+    },
+    'RCP-DYN/take-out/cart-pct': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 2.1,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          discount: 0.4,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 1,
+          tax_id: 'tax-zero'
+        }
+      ],
+      tax: 1.13,
+      payment_amount: 32.63
+    },
+    'RCP-DYN/take-out/cart-fixed': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 4.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          discount: 0.86,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 2.14,
+          tax_id: 'tax-zero'
+        }
+      ],
+      tax: 0.98,
+      payment_amount: 28.48
+    },
+    'RCP-DYN/take-out/type-recipe': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 2.1,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          discount: 0.4,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 1,
+          tax_id: 'tax-zero'
+        }
+      ],
+      tax: 1.13,
+      payment_amount: 32.63
+    },
+    'RCP-DYN/take-out/type-service': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          tax_id: 'tax-zero'
+        }
+      ],
+      tax: 1.25,
+      payment_amount: 36.25
+    },
+    'RCP-DYN/take-out-mill/none': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10
+        }
+      ],
+      tax: 2.45,
+      payment_amount: 47.45
+    },
+    'RCP-DYN/take-out-mill/cart-pct': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 2.1,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          discount: 0.4,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 1,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10,
+          discount: 1
+        }
+      ],
+      tax: 2.21,
+      payment_amount: 42.71
+    },
+    'RCP-DYN/take-out-mill/cart-fixed': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          discount: 0.67,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 1.67,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10,
+          discount: 1.66
+        }
+      ],
+      tax: 2.04,
+      payment_amount: 39.54
+    },
+    'RCP-DYN/take-out-mill/type-recipe': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 2.1,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          discount: 0.4,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 1,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10
+        }
+      ],
+      tax: 2.33,
+      payment_amount: 43.83
+    },
+    'RCP-DYN/take-out-mill/type-service': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.05,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10,
+          discount: 1
+        }
+      ],
+      tax: 2.33,
+      payment_amount: 46.33
+    },
+    'RCP-DYN/in-store/none/scale2x': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 12,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 4,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5
+        }
+      ],
+      tax: 5.35,
+      payment_amount: 125.35
+    },
+    'RCP-DYN/take-out-mill/cart-pct/scale2x': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 12,
+          rate: 3.5,
+          discount: 4.2,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.1,
+          rate: 80,
+          discount: 0.8,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 4,
+          rate: 5,
+          discount: 2,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-milling-1',
+          quantity: 1,
+          rate: 10,
+          discount: 1
+        }
+      ],
+      tax: 3.33,
+      payment_amount: 75.33
+    },
+    'RCP-DYN/in-store/none/modified': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.08,
+          rate: 80,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          tax_id: 'tax-zero'
+        },
+        {
+          item_id: 'fee-makers-1',
+          quantity: 1,
+          rate: 45
+        },
+        {
+          item_id: 'fee-materials-1',
+          quantity: 1,
+          rate: 5
+        }
+      ],
+      tax: 4.22,
+      payment_amount: 91.62
+    },
+    'RCP-DYN/take-out/type-recipe/modified': {
+      line_items: [
+        {
+          item_id: 'ing-grain-1',
+          quantity: 6,
+          rate: 3.5,
+          discount: 2.1,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-hop-1',
+          quantity: 0.08,
+          rate: 80,
+          discount: 0.64,
+          tax_id: 'tax-gst'
+        },
+        {
+          item_id: 'ing-yeast-1',
+          quantity: 2,
+          rate: 5,
+          discount: 1,
+          tax_id: 'tax-zero'
+        }
+      ],
+      tax: 1.23,
+      payment_amount: 34.89
+    }
+  }
 };
 // ORACLE-END
 

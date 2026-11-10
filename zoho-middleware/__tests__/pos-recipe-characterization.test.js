@@ -15,7 +15,6 @@
 // ---------------------------------------------------------------------------
 
 var fx = require('./fixtures/recipe-mixed-carts');
-var fs = require('fs');
 
 var mockRouteHandlers = {};
 
@@ -202,11 +201,8 @@ function flush() {
   return new Promise(function (resolve) { setImmediate(resolve); });
 }
 
+// bucket is 'initiate' (ORACLE.initiate) or 'confirm' (ORACLE.confirm).
 function expectOracle(bucket, key, actual) {
-  if (process.env.ORACLE_CAPTURE_FILE) {
-    fs.appendFileSync(process.env.ORACLE_CAPTURE_FILE, JSON.stringify({ bucket: bucket, key: key, value: actual }) + '\n');
-    return;
-  }
   expect(fx.ORACLE[bucket][key]).toBeDefined();
   expect(actual).toEqual(fx.ORACLE[bucket][key]);
 }
@@ -286,6 +282,97 @@ describe('recipe-sale initiate oracle', function () {
       expect(res._body.error).toBe('Insufficient stock for scaled batch');
       expect(res._body.conflicts[0].item_id).toBe('ing-grain-1');
       expect(mocks.helcim.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Confirm leg
+// ---------------------------------------------------------------------------
+
+function r2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+
+// Independent tax derivation from the posted invoice lines: per-rate group,
+// each group rounded on its own (Zoho entity_level rounding).
+function deriveTax(lines) {
+  var pctById = {};
+  fx.MOCK_INGREDIENTS_CATALOG.forEach(function (e) { pctById[e.item_id] = e.tax_percentage || 0; });
+  fx.KIOSK_FEE_CATALOG.forEach(function (e) { pctById[e.item_id] = e.tax_percentage; });
+  var groups = {};
+  lines.forEach(function (li) {
+    var amount = Math.max(r2(r2(li.quantity * li.rate) - (li.discount || 0)), 0);
+    var pct = pctById[li.item_id] || 0;
+    groups[pct] = (groups[pct] || 0) + amount * pct / 100;
+  });
+  var total = 0;
+  Object.keys(groups).forEach(function (k) { total += r2(groups[k]); });
+  return r2(total);
+}
+
+describe('recipe-sale/confirm oracle', function () {
+  var mocks;
+  var invoicePayload;
+
+  beforeEach(function () {
+    setupEnv();
+    mocks = resetAndLoadPosRecipe();
+    invoicePayload = null;
+    mocks.helcim.isTerminalEnabled.mockReturnValue(true);
+    mocks.cache.acquireLock.mockResolvedValue(true);
+    stubCache(mocks);
+    mocks.zohoApi.zohoPost.mockImplementation(function (path, payload) {
+      if (path === '/invoices') {
+        invoicePayload = payload;
+        var lineSum = payload.line_items.reduce(function (s, li) {
+          return s + Math.max(r2(r2(li.quantity * li.rate) - (li.discount || 0)), 0);
+        }, 0);
+        var total = r2(lineSum + deriveTax(payload.line_items) + (payload.adjustment || 0));
+        return Promise.resolve({
+          invoice: {
+            invoice_id: 'inv-1',
+            invoice_number: 'INV-001',
+            total: total,
+            line_items: payload.line_items
+          }
+        });
+      }
+      return Promise.resolve({});
+    });
+    mocks.zohoApi.zohoPut.mockResolvedValue({});
+  });
+
+  afterEach(function () {
+    restoreEnv();
+    jest.restoreAllMocks();
+  });
+
+  CASES.forEach(function (c, i) {
+    test('confirm ' + c.key, function () {
+      var charge = fx.ORACLE.initiate[c.key].charge;
+      mocks.helcim.getCardTransactionById.mockResolvedValue({ status: 'APPROVED', amount: charge });
+      var body = buildBody(c, { transaction_id: 'txn-char-' + i, reference: 'RECIPE-CHAR-' + i });
+      return callHandler('POST', '/api/kiosk/recipe-sale/confirm', { body: body }).then(function (res) {
+        expect(res._status).toBe(201);
+        expect(res._body.total).toBe(charge);
+        return flush().then(function () { return flush(); }).then(function () {
+          var payCall = mocks.zohoApi.zohoPost.mock.calls.filter(function (call) { return call[0] === '/customerpayments'; })[0];
+          expect(payCall).toBeDefined();
+          // No re-balance PUT: the invoice Zoho echoes already equals the charge.
+          expect(mocks.zohoApi.zohoPut).not.toHaveBeenCalled();
+          expect(mocks.helcim.voidTransaction).not.toHaveBeenCalled();
+          expectOracle('confirm', c.key, {
+            line_items: invoicePayload.line_items.map(function (li) {
+              return { item_id: li.item_id, quantity: li.quantity, rate: li.rate, discount: li.discount, tax_id: li.tax_id };
+            }),
+            adjustment: invoicePayload.adjustment,
+            adjustment_description: invoicePayload.adjustment_description,
+            tax: deriveTax(invoicePayload.line_items),
+            payment_amount: payCall[1].amount
+          });
+          // tax + pre-tax lines/adjustment reconcile to the charge
+          expect(payCall[1].amount).toBe(charge);
+        });
+      });
     });
   });
 });
