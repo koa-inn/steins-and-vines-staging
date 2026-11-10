@@ -1,7 +1,6 @@
 'use strict';
 
 var express = require('express');
-var crypto = require('crypto');
 var fs = require('fs');
 var path = require('path');
 var helcimLib = require('../lib/helcim');
@@ -262,199 +261,18 @@ function computeRecipeQuote(recipeId, rawTarget, saleType, millGrain, modifiedIn
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/kiosk/recipe-sale
-// Initiate a recipe sale: validate, compute total, acquire mutex, push to terminal.
+// POST /api/kiosk/recipe-sale  (RETIRED, Phase 101 D-16/D-18)
+// Recipes now ride the merged /api/kiosk/sale route. A stale cached kiosk gets
+// a refresh message BEFORE any lock, pricing or terminal call, so no money
+// moves. /recipe-sale/confirm below stays alive to book in-flight charges.
 // ---------------------------------------------------------------------------
 
 router.post('/api/kiosk/recipe-sale', function (req, res) {
-  // Feature gate (D-13, KSK-04): BEER_SALES_ENABLED must be 'true'
-  if ((process.env.BEER_SALES_ENABLED || 'false').toLowerCase() !== 'true') {
-    return res.status(403).json({ error: 'Recipe sales are not enabled' });
-  }
-
-  // Terminal must be configured
-  if (!helcimLib.isTerminalEnabled()) {
-    return res.status(503).json({ error: 'POS terminal not configured' });
-  }
-
   var body = req.body || {};
-
-  // Input validation
-  if (!body.recipe_id || typeof body.recipe_id !== 'string' || !body.recipe_id.trim()) {
-    return res.status(400).json({ error: 'Missing recipe_id' });
-  }
-  if (body.sale_type !== 'in-store' && body.sale_type !== 'take-out') {
-    return res.status(400).json({ error: 'sale_type must be in-store or take-out' });
-  }
-  var millGrain = body.mill_grain === true;
-  // MOD-02 (36-03): pass modified_ingredients to pricing helper if provided (array from JSON body)
-  var modifiedIngredients = Array.isArray(body.modified_ingredients) ? body.modified_ingredients : undefined;
-  var discountReq = (body.discount && body.discount.preset_id) ? body.discount : null;
-
-  // D-50-06 (M12): idempotency gate — a DISTINCT duplicate-charge guard from
-  // the RECIPE_SALE inventory mutex below (D-04/INV-02, unchanged). Acquired
-  // BEFORE computeRecipeQuote so a duplicate fails fast without burning a
-  // Zoho quote call. Required in production (mirrors pos.js:341-349); the
-  // kiosk client has always sent this key on this route, so there is no
-  // stale-client outage risk (unlike salesorder-pay's D-50-01 fallback).
-  var idempotencyKey = (body.idempotency_key && typeof body.idempotency_key === 'string')
-    ? C.CACHE_KEYS.KIOSK_IDEM_PREFIX + body.idempotency_key.slice(0, 128)
-    : null;
-
-  if (!idempotencyKey && process.env.NODE_ENV === 'production') {
-    return res.status(400).json({ error: 'idempotency_key is required' });
-  }
-
-  if (idempotencyKey) {
-    return moneyPath.acquireIdempotencyLock(cache, idempotencyKey, moneyPath.CHECKOUT_IDEMPOTENCY_TTL)
-      .then(function (lockResult) {
-        if (lockResult.status === 'replay') {
-          log.info('[pos-recipe/recipe-sale] Idempotent replay: ' + idempotencyKey);
-          return res.status(202).json(lockResult.cached);
-        }
-        if (lockResult.status === 'contention' || lockResult.status === 'failclosed') {
-          return res.status(409).json({ error: 'Recipe sale already in progress — please wait and check the order before retrying' });
-        }
-        // status === 'acquired' — proceed
-        _runRecipeSale(body, idempotencyKey, millGrain, modifiedIngredients, discountReq, req, res);
-      });
-  }
-
-  _runRecipeSale(body, null, millGrain, modifiedIngredients, discountReq, req, res);
+  var ref = (typeof body.reference_number === 'string') ? body.reference_number.slice(0, 64) : null;
+  log.warn('[pos-recipe/recipe-sale] retired initiate route hit by stale kiosk reference=' + ref);
+  return res.status(410).json({ error: 'This kiosk is out of date. Refresh the page and try again.' });
 });
-
-function _runRecipeSale(body, idempotencyKey, millGrain, modifiedIngredients, discountReq, req, res) {
-  computeRecipeQuote(body.recipe_id, body.target_volume_l, body.sale_type, millGrain, modifiedIngredients, discountReq, 'sale')
-    .then(function (quote) {
-      // The terminal is charged the taxed total (fee tax, 2026-10-13).
-      var grandTotal = quote.chargeTotal;
-      var scaleFactor = quote.scaleFactor;
-      var targetVolumeL = quote.targetVolumeL;
-      var pricingMode = quote.pricingMode;
-
-      // Stock gate: scaled quantities vs stock_on_hand (D-08)
-      if (!quote.stockCheck.ok && !body.override) {
-        return res.status(409).json({
-          error: 'Insufficient stock for scaled batch',
-          conflicts: quote.stockCheck.conflicts
-        });
-      }
-
-      log.info('[recipe-sale] target_volume_l=' + targetVolumeL + ' base_vol=' + quote.baseVol + ' scale_factor=' + scaleFactor);
-      log.info('[recipe-sale] pricing_mode=' + pricingMode + ' (raw=' + quote.recipe.pricing_mode + ') locked_price=' + quote.recipe.locked_price);
-      log.info('[recipe-sale] grandTotal=' + grandTotal + ' pricingMode=' + pricingMode);
-
-      // --- Phase 67 review fix (WR-04): recipe quote-vs-charge divergence
-      // DETECTOR. The kiosk now sends its displayed totals with recipe sales
-      // (same optional field names as /api/kiosk/sale). Unlike the standard
-      // sale path this comparison is deliberately LOG-ONLY (never a blocking
-      // 400). The server total now includes fee tax (2026-10-13) and the
-      // kiosk displays the quote's tax_total, but a kiosk still running
-      // cached pre-tax JS would display less — so divergence stays LOUD in
-      // logs + the event stream without risking a checkout outage. Client
-      // totals are never trusted for pricing.
-      if (typeof body.client_grand_total === 'number' && isFinite(body.client_grand_total) &&
-          Math.abs(body.client_grand_total - grandTotal) > 0.01) {
-        var recipeMismatchDelta = Math.round((body.client_grand_total - grandTotal) * 100) / 100;
-        log.error('[pos-recipe/recipe-sale] recipe pre-charge total mismatch (log-only): client_grand_total=' + body.client_grand_total +
-          ' client_tax_total=' + body.client_tax_total +
-          ' server_grand_total=' + grandTotal +
-          ' delta=' + recipeMismatchDelta + ' recipe_id=' + body.recipe_id +
-          ' pricing_mode=' + pricingMode + ' scale_factor=' + scaleFactor);
-        eventLog.logEvent('kiosk.recipe_total_mismatch', {
-          client_grand_total: body.client_grand_total,
-          client_tax_total: (typeof body.client_tax_total === 'number' && isFinite(body.client_tax_total))
-            ? body.client_tax_total : null,
-          server_grand_total: grandTotal,
-          delta: recipeMismatchDelta,
-          recipe_id: body.recipe_id,
-          pricing_mode: pricingMode,
-          scale_factor: scaleFactor
-        });
-      }
-
-      // Acquire Redis mutex before terminal push (D-04, INV-02)
-      cache.acquireLock(C.LOCK_KEYS.RECIPE_SALE, 30).then(function (acquired) {
-        if (!acquired) {
-          return res.status(503).json({ error: 'Another recipe sale in progress — try again in a moment.' });
-        }
-
-        // Use the kiosk's reference (mirrors pos.js:803) — /confirm keys the
-        // pending-charge sentinel, the invoice reference and the manual-confirm
-        // terminal poll on body.reference, which the kiosk sets to this value.
-        // A server-minted ref here left the sentinel uncleared and unpollable.
-        var refNumber = (body.reference_number && typeof body.reference_number === 'string')
-          ? body.reference_number.slice(0, 64)
-          : ('RECIPE-' + Date.now());
-
-        // D-50-06a: derive the Helcim terminal idempotency key deterministically
-        // from the client idempotency_key (mirrors pos.js:870-872) so Helcim
-        // itself refuses a duplicate charge even if the Redis lock is bypassed.
-        var helcimIdemKey = (body.idempotency_key && typeof body.idempotency_key === 'string')
-          ? crypto.createHash('sha256').update(body.idempotency_key).digest('hex').substring(0, 25)
-          : null;
-
-        // Push to terminal
-        helcimLib.terminalPurchase(grandTotal, refNumber, helcimIdemKey)
-          .then(function () {
-            var responseBody = {
-              pending: true,
-              reference: refNumber,
-              recipe_id: body.recipe_id,
-              sale_type: body.sale_type,
-              mill_grain: millGrain,
-              total: grandTotal,
-              total_before_tax: quote.grandTotal,
-              tax_total: quote.taxTotal,
-              total_before_discount: quote.totalBeforeDiscount,
-              discount: quote.discount ? quote.discount.discountApplied : null,
-              scale_factor: scaleFactor,
-              target_volume_l: targetVolumeL
-            };
-
-            // M12: pending-charge record so an orphaned recipe charge is
-            // reconcilable — mirrors pos.js:881-892 (D-13/SC#4). Fire-and-forget.
-            var pendingCacheKey = C.CACHE_KEYS.KIOSK_PENDING_CHARGE_PREFIX + refNumber;
-            var pendingContext = {
-              reference_number: refNumber,
-              amount: grandTotal,
-              idempotency_key: (body.idempotency_key && typeof body.idempotency_key === 'string')
-                ? body.idempotency_key : null,
-              created_at: new Date().toISOString()
-            };
-            cache.set(pendingCacheKey, pendingContext, KIOSK_PENDING_CHARGE_TTL).catch(function () {});
-
-            var cacheWrite = idempotencyKey
-              ? cache.set(idempotencyKey, responseBody, moneyPath.CHECKOUT_IDEMPOTENCY_TTL).catch(function () {})
-              : Promise.resolve();
-
-            cacheWrite.then(function () {
-              res.status(202).json(responseBody);
-            });
-          })
-          .catch(function (termErr) {
-            log.error('[pos-recipe/recipe-sale] Terminal push failed: ' + termErr.message);
-            // Release locks on terminal failure (Pitfall 1) — no charge was
-            // taken, so a retry under a fresh idempotency lock is safe.
-            cache.releaseLock(C.LOCK_KEYS.RECIPE_SALE).catch(function () {});
-            if (idempotencyKey) {
-              cache.releaseLock(idempotencyKey).catch(function () {});
-            }
-            res.status(502).json({ error: 'Terminal error — please try again' });
-          });
-      }).catch(function (lockErr) {
-        log.error('[pos-recipe/recipe-sale] Lock acquisition error: ' + lockErr.message);
-        res.status(503).json({ error: 'Service temporarily unavailable — try again in a moment.' });
-      });
-    })
-    .catch(function (err) {
-      if (err && err.status) {
-        return res.status(err.status).json(err.body);
-      }
-      log.error('[pos-recipe/recipe-sale] Error: ' + (err && err.message));
-      res.status(502).json({ error: 'Failed to fetch recipe. Please try again.' });
-    });
-}
 
 // ---------------------------------------------------------------------------
 // GET /api/kiosk/recipe-quote
@@ -579,6 +397,14 @@ router.post('/api/kiosk/recipe-sale/confirm', function (req, res) {
   if (typeof body.transaction_id === 'number' && isFinite(body.transaction_id)) {
     body.transaction_id = String(body.transaction_id);
   }
+
+  // D-18 soak: measure legacy-confirm use (reference + boolean only, no customer data).
+  var legacyRef = (typeof body.reference === 'string') ? body.reference.slice(0, 64) : null;
+  log.warn('[pos-recipe/recipe-sale/confirm] legacy confirm used reference=' + legacyRef);
+  eventLog.logEvent('kiosk.recipe_sale_legacy_confirm', {
+    reference_number: legacyRef,
+    has_transaction_id: !!body.transaction_id
+  });
 
   // Input validation
   if (!body.recipe_id || typeof body.recipe_id !== 'string' || !body.recipe_id.trim()) {
