@@ -249,6 +249,40 @@ Process an in-store kiosk sale via GP terminal. Validates items against cached p
 ```
 **Note:** Client `rate` and `tax_total` are ignored. Prices anchored server-side.
 
+**Recipes in the cart (Phase 101):** the body may also carry an optional `recipes[]` array (max 25 entries; each entry has `recipe_id`, `sale_type`, `mill_grain`, optional `target_volume_l` and `modified_ingredients`). Rules:
+- Requires `BEER_SALES_ENABLED=true`, otherwise `403 {error: 'Recipe sales are not enabled'}`.
+- `client_grand_total` is required when `recipes[]` is present.
+- A cart may be recipes-only (`items` may be empty). Card tender only for any cart containing a recipe.
+- Stock shortfall returns `409` with `conflicts` (products) and `recipes_short` (recipe ingredients); resend with `override: true` to proceed (negative stock is an intentional oversell override).
+- Charge limits: minimum $0 exclusive (a $0 cart is rejected) and maximum $10,000.
+
+**`/api/kiosk/sale/confirm`:** re-prices `recipes[]` server-side, books ONE Zoho invoice with the product lines plus the recipe lines and a single summed "Recipe package price" adjustment, then creates batches. If invoice creation fails after the charge, the card transaction is voided.
+
+### `POST /api/kiosk/cart-quote`
+Read-only server price for the whole kiosk cart (products + recipes), used by the kiosk to display the authoritative total before checkout. No terminal call, no lock, no Zoho calls (served from the cached catalog).
+
+**Auth:** Kiosk tier
+**Body:** same shape as `/api/kiosk/sale` (`items[]`, optional `recipes[]`, optional `discount`).
+**Response 200:**
+```json
+{
+  "subtotal": 0, "discount_total": 0, "tax_total": 0, "total": 0,
+  "discount": null,
+  "recipes": [{ "index": 0, "label": "", "total_before_discount": 0, "discount": 0, "pre_tax": 0, "sale_type": "in-store", "mill_grain": false, "target_volume_l": 20 }],
+  "stock": { "ok": true, "conflicts": [], "recipes_short": [] }
+}
+```
+**Errors:** `400` empty/invalid cart, `403` recipes while `BEER_SALES_ENABLED` is off, `503` catalog unavailable, `502` pricing failed.
+
+### `POST /api/kiosk/recipe-sale` (retired)
+Returns `410 {error: 'This kiosk is out of date. Refresh the page and try again.'}` since Phase 101. No lock, pricing or terminal call happens. Recipe sales now go through `/api/kiosk/sale`.
+
+### `POST /api/kiosk/recipe-sale/confirm` (legacy, scheduled for deletion)
+Kept only so a charge started by a stale cached kiosk before the cutover can still be booked. Every call logs the event `kiosk.recipe_sale_legacy_confirm`. See `.planning/todos/pending/delete-legacy-recipe-sale-confirm.md`.
+
+### `GET /api/kiosk/recipe-quote`
+Dry-run recipe quote (unchanged), gated by `BEER_SALES_ENABLED`.
+
 ### `POST /api/pos/sale`
 Process a POS sale (similar to kiosk but for the admin POS interface).
 

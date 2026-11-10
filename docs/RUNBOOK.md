@@ -53,6 +53,14 @@ error + no tracking, but avoid it):
 
 ---
 
+## Phase 101 release order (mixed recipe carts)
+
+1. **Deploy the middleware first**, then confirm `/health` is OK and that `POST /api/kiosk/cart-quote` answers (any non-404, e.g. 400 for an empty body) before the frontend goes out. The new kiosk JS calls `cart-quote` and `recipes[]` on `/api/kiosk/sale`; shipping the frontend before the middleware would 404 every cart.
+2. **D-17 staging gate:** before production, run a real card sale on the staging terminal with a mixed cart (products + at least one recipe) and confirm one Zoho invoice with the summed "Recipe package price" adjustment and the batches created.
+3. **Legacy soak (D-18):** `POST /api/kiosk/recipe-sale` now returns 410; `/recipe-sale/confirm` stays for in-flight charges. Count legacy use by searching the event stream / logs for `kiosk.recipe_sale_legacy_confirm`. After about 1 week on prod with zero such events, do the deletion todo `.planning/todos/pending/delete-legacy-recipe-sale-confirm.md`.
+
+---
+
 ## Deploy History
 
 <!-- gated-deploy.yml inserts each new deploy row directly under the table separator below (newest first). -->
