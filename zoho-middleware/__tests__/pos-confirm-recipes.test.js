@@ -616,3 +616,198 @@ describe('reconcile after create', function () {
       });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 3: money-path parity per tender (verify, void, replay, sentinel)
+// ---------------------------------------------------------------------------
+
+describe('terminal tender verification', function () {
+  test('captured amount != recipe-bearing grandTotal -> 402, void, nothing booked', function () {
+    approveCharge(CHARGE - 5);
+    return confirm({ recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-cap', reference_number: 'REF-CAP' })
+      .then(function (out) {
+        expect(out.code).toBe(402);
+        expect(out.body.payment_voided).toBe(true);
+        expect(moneyPath.voidWithTimeout).toHaveBeenCalledTimes(1);
+        expect(moneyPath.voidWithTimeout.mock.calls[0][1]).toBe('txn-cap');
+        expect(invoiceCalls()).toHaveLength(0);
+      });
+  });
+
+  test('manual-confirm that cannot be verified -> 409 and nothing booked or voided', function () {
+    helcimLib.pollTerminalResult.mockResolvedValue({ approved: false, status: 'PENDING' });
+    return confirm({ recipes: [recipeEntry('RCP-LOCKED')], reference_number: 'REF-MV' }).then(function (out) {
+      expect(out.code).toBe(409);
+      expect(invoiceCalls()).toHaveLength(0);
+      expect(moneyPath.voidWithTimeout).not.toHaveBeenCalled();
+    });
+  });
+
+  test('manual-confirm declined -> 400 and nothing booked', function () {
+    helcimLib.pollTerminalResult.mockResolvedValue({ approved: false, status: 'DECLINED' });
+    return confirm({ recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'manual-confirm', reference_number: 'REF-MD' })
+      .then(function (out) {
+        expect(out.code).toBe(400);
+        expect(invoiceCalls()).toHaveLength(0);
+        expect(moneyPath.voidWithTimeout).not.toHaveBeenCalled();
+      });
+  });
+
+  test('manual-confirm approved resolves the real txn id onto the payment', function () {
+    helcimLib.pollTerminalResult.mockResolvedValue({ approved: true, transactionId: 'real-77' });
+    approveCharge(CHARGE);
+    return confirm({ recipes: [recipeEntry('RCP-LOCKED')], reference_number: 'REF-MA' }).then(function (out) {
+      expect(out.code).toBe(201);
+      expect(paymentCalls()[0][1].reference_number).toBe('real-77');
+      expect(paymentCalls()[0][1].payment_mode).toBe('creditcard');
+    });
+  });
+});
+
+describe('moto tender', function () {
+  test('APPROVED transaction with amount == terminalApplied books a creditcard payment', function () {
+    approveCharge(CHARGE);
+    return confirm({ tender: 'moto', recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-m1', reference_number: 'REF-M1' })
+      .then(function (out) {
+        expect(out.code).toBe(201);
+        expect(paymentCalls()[0][1].amount).toBe(CHARGE);
+        expect(paymentCalls()[0][1].notes).toContain('card-not-present');
+      });
+  });
+
+  test('MOTO amount mismatch is rejected and the charge voided', function () {
+    approveCharge(CHARGE + 3);
+    return confirm({ tender: 'moto', recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-m2', reference_number: 'REF-M2' })
+      .then(function (out) {
+        expect(out.code).toBe(502);
+        expect(out.body.payment_voided).toBe(true);
+        expect(moneyPath.voidWithTimeout.mock.calls[0][1]).toBe('txn-m2');
+        expect(invoiceCalls()).toHaveLength(0);
+      });
+  });
+});
+
+describe('cash tender', function () {
+  test('books a cash customerpayment and never touches Helcim', function () {
+    return confirm({ tender: 'cash', recipes: [recipeEntry('RCP-LOCKED')], reference_number: 'REF-CASH' })
+      .then(function (out) {
+        expect(out.code).toBe(201);
+        var pay = paymentCalls()[0][1];
+        expect(pay.payment_mode).toBe('cash');
+        expect(pay.amount).toBe(CHARGE);
+        expect(pay.reference_number).toBe('REF-CASH');
+        expect(helcimLib.pollTerminalResult).not.toHaveBeenCalled();
+        expect(helcimLib.getCardTransactionById).not.toHaveBeenCalled();
+        expect(helcimLib.voidTransaction).not.toHaveBeenCalled();
+      });
+  });
+
+  test('invoice create failure shows the error, books no payment, and calls no void (D-10)', function () {
+    zohoApi.zohoPost.mockImplementation(function (path) {
+      if (path === '/invoices') return Promise.reject(new Error('zoho down'));
+      return Promise.resolve({});
+    });
+    return confirm({ tender: 'cash', recipes: [recipeEntry('RCP-LOCKED')], reference_number: 'REF-CF' })
+      .then(function (out) {
+        expect(out.code).toBe(502);
+        expect(paymentCalls()).toHaveLength(0);
+        expect(moneyPath.voidWithTimeout).not.toHaveBeenCalled();
+        expect(helcimLib.voidTransaction).not.toHaveBeenCalled();
+      });
+  });
+});
+
+describe('gift card split with a recipe', function () {
+  test('posts the creditcard leg and the gift-card others leg, redeeming last', function () {
+    var gift = 20;
+    approveCharge(r2(CHARGE - gift));
+    return confirm({
+      recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-gc', reference_number: 'REF-GC',
+      gift_card: { cert_number: 'GC-000001', amount_applied: gift }
+    }).then(function (out) {
+      expect(out.code).toBe(201);
+      var pays = paymentCalls().map(function (c) { return c[1]; });
+      expect(pays).toHaveLength(2);
+      expect(pays[0].payment_mode).toBe('creditcard');
+      expect(pays[0].amount).toBe(r2(CHARGE - gift));
+      expect(pays[1].payment_mode).toBe('others');
+      expect(pays[1].amount).toBe(gift);
+      expect(giftCardStore.redeem).toHaveBeenCalledTimes(1);
+      var lastPayOrder = zohoApi.zohoPost.mock.invocationCallOrder[zohoApi.zohoPost.mock.calls.length - 1];
+      expect(giftCardStore.redeem.mock.invocationCallOrder[0]).toBeGreaterThan(lastPayOrder);
+    });
+  });
+});
+
+describe('failure after a charge voids the whole payment', function () {
+  test('customerpayments failure voids the full charge and reports payment_voided (D-21)', function () {
+    approveCharge(CHARGE);
+    var base = zohoApi.zohoPost.getMockImplementation();
+    zohoApi.zohoPost.mockImplementation(function (path, payload) {
+      if (path === '/customerpayments') return Promise.reject(new Error('payment rejected'));
+      return base(path, payload);
+    });
+    return confirm({ recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-pf', reference_number: 'REF-PF' })
+      .then(function (out) {
+        expect(out.code).toBe(502);
+        expect(out.body.payment_voided).toBe(true);
+        expect(out.body.voided_transaction_id).toBe('txn-pf');
+        expect(moneyPath.voidWithTimeout).toHaveBeenCalledTimes(1);
+      });
+  });
+
+  test('a failed void reports needs_manual_review and keeps the confirm lock', function () {
+    approveCharge(CHARGE);
+    helcimLib.voidTransaction.mockRejectedValue(new Error('void failed'));
+    moneyPath.voidWithTimeout.mockImplementation(function (h, id) {
+      return h.voidTransaction(id).catch(function () {});
+    });
+    var base = zohoApi.zohoPost.getMockImplementation();
+    zohoApi.zohoPost.mockImplementation(function (path, payload) {
+      if (path === '/customerpayments') return Promise.reject(new Error('payment rejected'));
+      return base(path, payload);
+    });
+    return confirm({ recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-vf', reference_number: 'REF-VF' })
+      .then(function (out) {
+        expect(out.code).toBe(502);
+        expect(out.body.payment_voided).toBe(false);
+        expect(out.body.needs_manual_review).toBe(true);
+        expect(out.res.locals.__keepIdemLock).toBe(true);
+        return flush().then(function () {
+          expect(cache.releaseLock).not.toHaveBeenCalled();
+        });
+      });
+  });
+});
+
+describe('idempotency and the pending-charge sentinel', function () {
+  test('a second confirm with the same key replays the cached 201 without booking again', function () {
+    approveCharge(CHARGE);
+    var cached = null;
+    cache.set.mockImplementation(function (key, value) {
+      if (key.indexOf('confirm:') !== -1) cached = value;
+      return Promise.resolve('OK');
+    });
+    var body = { recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-id', reference_number: 'REF-ID', idempotency_key: 'idem-1' };
+    return confirm(body).then(function (first) {
+      expect(first.code).toBe(201);
+      expect(cached).not.toBe(null);
+      var postsAfterFirst = zohoApi.zohoPost.mock.calls.length;
+      moneyPath.acquireIdempotencyLock.mockResolvedValue({ status: 'replay', cached: cached });
+      return confirm(body).then(function (second) {
+        expect(second.code).toBe(201);
+        expect(second.body.invoice_number).toBe('INV-001');
+        expect(zohoApi.zohoPost.mock.calls.length).toBe(postsAfterFirst);
+      });
+    });
+  });
+
+  test('the pending-charge sentinel is deleted after a successful recipe-bearing confirm', function () {
+    approveCharge(CHARGE);
+    return confirm({ recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-sn', reference_number: 'REF-SN' })
+      .then(function (out) {
+        expect(out.code).toBe(201);
+        expect(cache.del).toHaveBeenCalledWith('kiosk:pending-charge:REF-SN');
+      });
+  });
+});
