@@ -488,6 +488,152 @@ router.post('/api/kiosk/sale', function (req, res) {
   processSale(body, null, req, res, stageStart);
 });
 
+// Phase 101 D-19: read-only server cart pricing (no lock, no charge, no Zoho calls).
+// Returns exactly what /api/kiosk/sale would charge for the same body, so the kiosk
+// can display (and assert against) the server total for recipe-bearing carts.
+router.post('/api/kiosk/cart-quote', function (req, res) {
+  var body = req.body;
+  var hasRecipes = !!(body && Array.isArray(body.recipes) && body.recipes.length > 0);
+  if (body && hasRecipes && !Array.isArray(body.items)) body.items = [];
+  if (!body || !Array.isArray(body.items) || (body.items.length === 0 && !hasRecipes)) {
+    return res.status(400).json({ error: 'Cart is empty' });
+  }
+  if (body.items.length > 50) {
+    return res.status(400).json({ error: 'Too many items in cart' });
+  }
+  var recipeEntries = null;
+  if (hasRecipes) {
+    if ((process.env.BEER_SALES_ENABLED || 'false').toLowerCase() !== 'true') {
+      return res.status(403).json({ error: 'Recipe sales are not enabled' });
+    }
+    var quoteValidation = recipeLines().validateRecipeEntries(body.recipes);
+    if (!quoteValidation.ok) {
+      return res.status(quoteValidation.status).json({ error: quoteValidation.error });
+    }
+    recipeEntries = quoteValidation.entries;
+  }
+  var quoteItemsError = validateCartItems(body.items);
+  if (quoteItemsError) {
+    return res.status(400).json({ error: quoteItemsError });
+  }
+
+  // rebuild:false — a quote must never spend Zoho quota (shared 1,000 calls/day).
+  kioskSaleCatalog.getKioskCatalogForSale({
+    rebuild: false,
+    isUsable: function (items) {
+      var usableMap = buildKioskCatalogMap(items);
+      return findMissingCatalogItem(body.items, usableMap) === null &&
+        findMissingRecipeFeeItem(recipeEntries, usableMap) === null;
+    }
+  }).then(function (resolved) {
+    if (!Array.isArray(resolved.items)) {
+      return res.status(503).json({ error: 'Unable to verify item prices. Please try again.' });
+    }
+    var catalogMap = buildKioskCatalogMap(resolved.items);
+    var missingFee = findMissingRecipeFeeItem(recipeEntries, catalogMap);
+    if (missingFee !== null) {
+      return res.status(400).json({
+        error: 'Recipe fee item not found in current catalog: ' + missingFee +
+          '. Refresh the product list and try again.'
+      });
+    }
+    var missingItemId = findMissingCatalogItem(body.items, catalogMap);
+    if (missingItemId !== null) {
+      return res.status(400).json({
+        error: 'Item not found in current catalog: ' + missingItemId +
+          '. Refresh the product list and try again.'
+      });
+    }
+    return computeCartPricing(body, catalogMap).then(function (pricing) {
+      if (!pricing.ok) {
+        return res.status(pricing.status).json({ error: pricing.error });
+      }
+      var discountTotal = 0;
+      var recipes = [];
+      var stock = { ok: true, conflicts: [], recipes_short: [] };
+      if (pricing.recipe) {
+        // With recipes, resolveDiscount stamps discountApplied.amount = product + recipe discount.
+        discountTotal = (pricing.discountApplied && Number(pricing.discountApplied.amount)) || 0;
+        recipes = pricing.recipe.sections.map(function (sec) {
+          return {
+            index: sec.index,
+            label: sec.label,
+            total_before_discount: sec.entry.base_total,
+            discount: sec.discount_amount,
+            pre_tax: sec.pre_tax,
+            sale_type: sec.entry.sale_type,
+            mill_grain: sec.entry.mill_grain,
+            target_volume_l: sec.entry.target_volume_l
+          };
+        });
+        stock = pricing.recipe.stock;
+      } else if (pricing.discountApplied) {
+        // Product-only: pricing.subtotal is already discounted; the gap to gross is the discount.
+        var gross = 0;
+        pricing.lineItems.forEach(function (li) { gross += li.quantity * li.rate; });
+        discountTotal = Math.max(gross - pricing.subtotal, 0);
+      }
+      return res.status(200).json({
+        subtotal: pricing.subtotal,
+        discount_total: Math.round(discountTotal * 100) / 100,
+        tax_total: pricing.taxTotal,
+        total: pricing.grandTotal,
+        discount: pricing.discountApplied || null,
+        recipes: recipes,
+        stock: stock
+      });
+    });
+  }).catch(function (err) {
+    if (res.headersSent) return;
+    if (err && err.stage === 'cache') {
+      log.error('[pos/kiosk/cart-quote] Catalog cache read failed: ' + err.message);
+      return res.status(503).json({ error: 'Unable to verify item prices. Please try again.' });
+    }
+    log.error('[pos/kiosk/cart-quote] Pricing failed: ' + (err && err.message));
+    res.status(502).json({ error: 'Failed to price cart. Please try again.' });
+  });
+});
+
+// Structural validation of cart item lines (price comes from the catalog, never the
+// client). Returns an error string, or null when every line is well-formed. Shared by
+// /sale and /cart-quote so both reject identically.
+function validateCartItems(items) {
+  for (var v = 0; v < items.length; v++) {
+    var vi = items[v];
+    // Phase 90: bundle lines are fully server-built (price, tax, description);
+    // validated against the catalog downstream.
+    if (kioskBundles.isBundleLine(vi)) continue;
+    if (vi.custom) {
+      // Custom line validation (D-05, T-43-01)
+      var vDesc = typeof vi.description === 'string' ? vi.description.trim() : '';
+      if (vDesc.length < 1 || vDesc.length > 100) {
+        return 'Custom line description must be 1-100 characters for item ' + v;
+      }
+      var vRate = Number(vi.rate);
+      if (!isFinite(vRate)) {
+        return 'Custom line rate must be a number for item ' + v;
+      }
+      if (Math.abs(vRate) > 10000) {
+        return 'Custom line rate exceeds maximum allowed magnitude ($10,000) for item ' + v;
+      }
+      var vQtyC = Number(vi.quantity);
+      if (!isFinite(vQtyC) || !Number.isInteger(vQtyC) || vQtyC <= 0 || vQtyC > 100) {
+        return 'Custom line quantity must be an integer 1-100 for item ' + v;
+      }
+      continue;
+    }
+    if (vi.gift_cert) continue; // gift_cert lines have no catalog item_id; validated in computeCartPricing
+    if (!vi.item_id || typeof vi.item_id !== 'string' || vi.item_id.length > 64) {
+      return 'Invalid item_id for item ' + v;
+    }
+    var vQty = Number(vi.quantity);
+    if (!isFinite(vQty) || vQty <= 0 || vQty > 100) {
+      return 'Invalid quantity for item ' + v;
+    }
+  }
+  return null;
+}
+
 // 68-01: emit a per-stage timing event on the existing eventLog channel — the
 // exact idiom already used for kiosk.total_mismatch (log.info THEN
 // eventLog.logEvent). Observation-only: never called from inside a
@@ -809,6 +955,65 @@ function recipeInvalidError(status, message) {
   return e;
 }
 
+// Phase 101 (MIXR-08): one BrewPad batch per IN-STORE recipe entry (D-02/D-03).
+// Repeated in-store entries of one recipe each carry unit_total = their count;
+// take-out entries create none. Fire-and-forget; the customer email is validated
+// like the legacy confirm and is never logged.
+function createRecipeBatchesAfterConfirm(recipeResult, body, invoiceNumber) {
+  var sections = recipeResult.sections || [];
+  var inStoreCount = {};
+  sections.forEach(function (sec) {
+    if (sec.entry.sale_type === 'in-store') {
+      inStoreCount[sec.entry.recipe_id] = (inStoreCount[sec.entry.recipe_id] || 0) + 1;
+    }
+  });
+  var kioskEmail = '';
+  if (typeof body.customer_email === 'string') {
+    var trimmedEmail = body.customer_email.trim();
+    if (trimmedEmail.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      kioskEmail = trimmedEmail;
+    }
+  }
+  var lines = recipeLines();
+  sections.forEach(function (sec) {
+    var e = sec.entry;
+    if (e.sale_type !== 'in-store') return;
+    var recipe = e.recipe || {};
+    var reqEntry = (Array.isArray(body.recipes) && body.recipes[e.index]) || {};
+    var modified = Array.isArray(reqEntry.modified_ingredients) ? reqEntry.modified_ingredients : null;
+    var snapshot = {
+      name: recipe.name,
+      style: recipe.style,
+      abv: recipe.abv,
+      ibu: recipe.ibu,
+      batch_size_l: recipe.batch_size_l,
+      og: lines.snapshotGravity(recipe.target_og),
+      target_fg: lines.snapshotGravity(recipe.target_fg),
+      locked_price: recipe.locked_price,
+      service_fee: recipe.service_fee,
+      materials_fee: recipe.materials_fee,
+      target_volume_l: e.target_volume_l,
+      scale_factor: recipe._scale_factor,
+      ingredients: lines.typedSnapshotIngredients(e.scaled_ingredients, e.catalog_map),
+      modified_base_ingredients: modified,
+      is_modified: !!(modified && modified.length)
+    };
+    var opts = inStoreCount[e.recipe_id] > 1 ? { unit_total: inStoreCount[e.recipe_id] } : undefined;
+    try {
+      var p = brewpadIntegration.detectRecipeSale(
+        e.recipe_id, snapshot, invoiceNumber, body.customer_name || '', body.contact_id || '', kioskEmail, opts
+      );
+      if (p && typeof p.catch === 'function') {
+        p.catch(function (err) {
+          log.error('[pos/kiosk/sale/confirm] recipe batch creation failed: ' + (err && err.message));
+        });
+      }
+    } catch (err) {
+      log.error('[pos/kiosk/sale/confirm] recipe batch creation threw: ' + (err && err.message));
+    }
+  });
+}
+
 function processSale(body, idempotencyKey, req, res, stageStart) {
   // D-50-03 (50-03 / H4 / SC#2): mirrors the confirm-path hook above — release
   // the sale idempotency lock on EVERY failure return in processSale AND
@@ -854,39 +1059,9 @@ function processSale(body, idempotencyKey, req, res, stageStart) {
     }
   }
 
-  // Validate each line item (structural validation only — price comes from catalog)
-  for (var v = 0; v < body.items.length; v++) {
-    var vi = body.items[v];
-    // Phase 90: bundle lines are fully server-built (price, tax, description);
-    // validated against the catalog in continueSaleWithCatalog.
-    if (kioskBundles.isBundleLine(vi)) continue;
-    if (vi.custom) {
-      // Custom line validation (D-05, T-43-01)
-      var vDesc = typeof vi.description === 'string' ? vi.description.trim() : '';
-      if (vDesc.length < 1 || vDesc.length > 100) {
-        return res.status(400).json({ error: 'Custom line description must be 1-100 characters for item ' + v });
-      }
-      var vRate = Number(vi.rate);
-      if (!isFinite(vRate)) {
-        return res.status(400).json({ error: 'Custom line rate must be a number for item ' + v });
-      }
-      if (Math.abs(vRate) > 10000) {
-        return res.status(400).json({ error: 'Custom line rate exceeds maximum allowed magnitude ($10,000) for item ' + v });
-      }
-      var vQtyC = Number(vi.quantity);
-      if (!isFinite(vQtyC) || !Number.isInteger(vQtyC) || vQtyC <= 0 || vQtyC > 100) {
-        return res.status(400).json({ error: 'Custom line quantity must be an integer 1-100 for item ' + v });
-      }
-      continue;
-    }
-    if (vi.gift_cert) continue; // gift_cert lines have no catalog item_id; validated below
-    if (!vi.item_id || typeof vi.item_id !== 'string' || vi.item_id.length > 64) {
-      return res.status(400).json({ error: 'Invalid item_id for item ' + v });
-    }
-    var vQty = Number(vi.quantity);
-    if (!isFinite(vQty) || vQty <= 0 || vQty > 100) {
-      return res.status(400).json({ error: 'Invalid quantity for item ' + v });
-    }
+  var itemsError = validateCartItems(body.items);
+  if (itemsError) {
+    return res.status(400).json({ error: itemsError });
   }
 
   // Item #1: Anchor prices to the server-side catalog cache.
@@ -2271,21 +2446,46 @@ function runConfirm(body, confirmIdemKey, req, res) {
 
       return paymentChain.then(function () {
         cache.del(KIOSK_PRODUCTS_CACHE_KEY);
+        if (recipePricing) {
+          // Recipe ingredients changed stock: bust the ingredient caches as the legacy confirm did.
+          cache.del(C.CACHE_KEYS.INGREDIENTS);
+          cache.del(C.CACHE_KEYS.INGREDIENTS_ALL);
+          cache.del(C.CACHE_KEYS.RECIPES_TS);
+        }
         ledger.decrementStock(lineItems, 'kiosk:' + (invoiceNumber || 'unknown')).catch(function () {});
 
         var saleCompletedEvent = {
           txnId: txnId, itemCount: lineItems.length, grandTotal: grandTotal, invoiceNumber: invoiceNumber
         };
         if (resolvedCatalog.source === 'stale') saleCompletedEvent.catalog_source = 'stale';
+        if (recipePricing) {
+          saleCompletedEvent.has_recipes = true;
+          saleCompletedEvent.recipe_count = recipePricing.recipe.sections.length;
+        }
         eventLog.logEvent('kiosk.sale_completed', saleCompletedEvent);
 
-        // Trigger batch creation for kit items with Maker's Fee (fire-and-forget per D-01)
+        // Trigger batch creation for kit items with Maker's Fee (fire-and-forget per D-01).
+        // lineItems holds NON-recipe lines only (Phase 101, D-04): recipe lines never
+        // reach the kit/Maker's-fee slot math. The Zoho cf_batch_status label counts kit
+        // batches only (accepted limitation, RESEARCH Open Question 5).
         brewpadIntegration.createBatchesFromSale(lineItems, invoiceNumber, body.customer_name || '', body.contact_id || '', catalogMap, invoiceId);
+
+        if (recipePricing) {
+          createRecipeBatchesAfterConfirm(recipePricing.recipe, body, invoiceNumber);
+        }
 
         var result = {
           ok: true, transaction_id: txnId, invoice_id: invoiceId, invoice_number: invoiceNumber,
           reference_number: refNumber, subtotal: subtotal, tax_total: taxTotal, total: grandTotal, date: today
         };
+        if (recipePricing) {
+          result.recipes = recipePricing.recipe.sections.map(function (sec) {
+            return {
+              label: sec.label, sale_type: sec.entry.sale_type, mill_grain: sec.entry.mill_grain,
+              target_volume_l: sec.entry.target_volume_l, total: sec.pre_tax
+            };
+          });
+        }
         if (discountApplied) result.discount_applied = discountApplied;
         // Surface activation failure so 44-10 frontend can alert staff (T-44-G11)
         if (giftCardActivationFailed) {
