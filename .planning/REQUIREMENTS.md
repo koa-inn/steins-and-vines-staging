@@ -152,10 +152,10 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 
 - [ ] **MIXR-01** (Phase 101, D-01..D-08, D-15): One kiosk / admin-POS cart holds several recipe entries (the same recipe can repeat; each keeps its own batch size, edits, sale type and milling) alongside products, wine kits, canning bundles, custom items and gift-card lines. Adding a recipe never clears the cart. Each recipe renders as one grouped block with one remove control.
 - [x] **MIXR-02** (Phase 101, D-20): `/api/kiosk/sale` + `/confirm` price recipe components server-side with the same recipe pricing, unit conversion, discount and tax code (extracted to `lib/recipe-sale-lines.js`). A recipe-only cart prices exactly as the old recipe route did, proven by characterization tests written first.
-- [ ] **MIXR-03** (Phase 101, D-14): A mixed sale books ONE Zoho invoice and ONE payment. Tax is grouped per rate across product and recipe lines before rounding (entity_level). Per-recipe package adjustments are summed into the single invoice adjustment, and the invoice total equals the charge.
+- [x] **MIXR-03** (Phase 101, D-14): A mixed sale books ONE Zoho invoice and ONE payment. Tax is grouped per rate across product and recipe lines before rounding (entity_level). Per-recipe package adjustments are summed into the single invoice adjustment, and the invoice total equals the charge.
 - [ ] **MIXR-04** (Phase 101, D-09, D-10): Every kiosk tender works for recipe-bearing sales: card terminal, cash (change-due), phone order (MOTO), and gift card alone or split. The tender panel is never skipped for recipe carts.
-- [ ] **MIXR-05** (Phase 101, D-11): Discount presets apply per line across the mixed cart (`scope: 'cart'` covers all lines; `scope: 'type'` with `recipe` / `service` tokens hits only recipe product / fee portions), and the charge equals what the invoice books.
-- [ ] **MIXR-06** (Phase 101, D-12, D-13): Before any charge, stock is checked across all recipes combined; the 409 names the short recipe(s); staff can override (sell anyway) on every tender.
+- [x] **MIXR-05** (Phase 101, D-11): Discount presets apply per line across the mixed cart (`scope: 'cart'` covers all lines; `scope: 'type'` with `recipe` / `service` tokens hits only recipe product / fee portions), and the charge equals what the invoice books.
+- [x] **MIXR-06** (Phase 101, D-12, D-13): Before any charge, stock is checked across all recipes combined; the 409 names the short recipe(s); staff can override (sell anyway) on every tender.
 - [ ] **MIXR-07** (Phase 101, D-14, D-21): Recipe-bearing sales get money-path parity: idempotency, pending-charge sentinel, manual-confirm / MOTO / captured-amount verification, void-whole-payment on booking or payment-record failure, orphan reconcile, and the $0 < total <= $10,000 limits. The confirm leg never bare-4xx's after a charge.
 - [x] **MIXR-08** (Phase 101, D-02, D-04): One BrewPad batch per in-store recipe entry (duplicates of one recipe all created via `unit_total`), kit batches unaffected by recipe lines, kiosk `customer_email` carried to recipe batches only.
 - [ ] **MIXR-09** (Phase 101, D-16, D-18): `POST /api/kiosk/recipe-sale` stops starting sales (safe "refresh" response, no charge); `POST /api/kiosk/recipe-sale/confirm` stays with a usage event for the soak window; a pending todo schedules its deletion. `BEER_SALES_ENABLED` still gates recipe components.
@@ -166,10 +166,10 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 |-------------|-------|--------|
 | MIXR-01 | Phase 101 | Pending |
 | MIXR-02 | Phase 101 | Complete |
-| MIXR-03 | Phase 101 | Pending |
+| MIXR-03 | Phase 101 | Complete |
 | MIXR-04 | Phase 101 | Pending |
-| MIXR-05 | Phase 101 | Pending |
-| MIXR-06 | Phase 101 | Pending |
+| MIXR-05 | Phase 101 | Complete |
+| MIXR-06 | Phase 101 | Complete |
 | MIXR-07 | Phase 101 | Pending |
 | MIXR-08 | Phase 101 | Complete |
 | MIXR-09 | Phase 101 | Pending |
