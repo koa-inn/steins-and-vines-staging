@@ -2379,6 +2379,81 @@
     }
   }
 
+  // 101 D-07/D-08: recipe display helpers. A recipe's label carries ' #n' only
+  // when the same recipe_id appears more than once (the server uses the same rule).
+  function kioskRecipeLabel(entries, idx) {
+    var e = entries[idx];
+    var total = 0;
+    var nth = 0;
+    entries.forEach(function (x, i) {
+      if (x.recipe_id === e.recipe_id) {
+        total++;
+        if (i <= idx) nth++;
+      }
+    });
+    return (e.recipe_name || '') + (total > 1 ? ' #' + nth : '');
+  }
+
+  function kioskRecipeMeta(e) {
+    var vol = parseFloat(e.target_volume_l);
+    return (vol > 0 ? vol + ' L \u00b7 ' : '') +
+      (e.sale_type === 'take-out' ? 'Take-out' : 'Brew in store') +
+      (e.mill_grain ? ' \u00b7 Milled' : '');
+  }
+
+  // Server total for entry idx from the last ok quote, else the entry snapshot.
+  function kioskRecipeTotal(entries, idx, cq) {
+    if (cq && cq.status === 'ok' && cq.data && Array.isArray(cq.data.recipes)) {
+      for (var i = 0; i < cq.data.recipes.length; i++) {
+        var r = cq.data.recipes[i];
+        if (r && r.index === idx && typeof r.pre_tax === 'number') return r.pre_tax;
+      }
+    }
+    return entries[idx].total_before_discount;
+  }
+
+  // Detail lines (ingredients, then fees) shared by cart, payment and receipt.
+  function kioskRecipeDetailHtml(e, cls) {
+    var h = '';
+    (e.lines || []).forEach(function (ln) {
+      h += '<div class="' + cls + '"><span>' + escapeHTML((ln.qty_text ? ln.qty_text + ' ' : '') + (ln.name || '')) + '</span></div>';
+    });
+    (e.fee_lines || []).forEach(function (fl) {
+      h += '<div class="' + cls + '"><span>' + escapeHTML(fl.name || '') + '</span><span>' + kioskFmt(fl.amount) + '</span></div>';
+    });
+    return h;
+  }
+
+  function kioskRecipeGroupHtml(entries, idx, cq) {
+    var e = entries[idx];
+    var label = kioskRecipeLabel(entries, idx);
+    var h = '<div class="kiosk-cart-line kiosk-recipe-entry kiosk-recipe-group" data-entry-id="' + escapeHTML(e.entry_id) + '">';
+    h += '<div class="kiosk-recipe-group-head">';
+    h += '<div class="kiosk-recipe-group-name" title="' + escapeHTML(label) + '">' + escapeHTML(label) + '</div>';
+    h += '<div class="kiosk-recipe-group-total">' + kioskFmt(kioskRecipeTotal(entries, idx, cq)) + '</div>';
+    h += '<button type="button" class="kiosk-recipe-remove kiosk-recipe-entry-remove" data-recipe-entry="' + escapeHTML(e.entry_id) +
+      '" aria-label="Remove ' + escapeHTML(label) + ' from cart">&times;</button>';
+    h += '</div>';
+    h += '<div class="kiosk-recipe-group-meta">' + escapeHTML(kioskRecipeMeta(e)) + '</div>';
+    h += kioskRecipeDetailHtml(e, 'kiosk-recipe-group-detail');
+    h += '</div>';
+    return h;
+  }
+
+  // Receipt/payment sections, one per recipe in cart order.
+  function kioskRecipeSectionsHtml(rowCls, detailCls, headCls, metaCls) {
+    var entries = _kcEnv.getRecipeEntries();
+    var cq = _kioskCartQuote;
+    var h = '';
+    entries.forEach(function (e, i) {
+      h += '<div class="' + rowCls + ' ' + headCls + '"><strong>' + escapeHTML(kioskRecipeLabel(entries, i)) + '</strong><strong>' +
+        kioskFmt(kioskRecipeTotal(entries, i, cq)) + '</strong></div>';
+      h += '<div class="' + metaCls + '">' + escapeHTML(kioskRecipeMeta(e)) + '</div>';
+      h += kioskRecipeDetailHtml(e, rowCls + ' ' + detailCls);
+    });
+    return h;
+  }
+
   function kioskRenderCart() {
     var container = document.getElementById('kiosk-cart-items');
     var totalsEl = document.getElementById('kiosk-cart-totals');
@@ -2446,16 +2521,24 @@
     }
 
     var html = '';
-    // Interim plain rows (Plan 12 replaces them with the grouped block).
-    recipeEntries.forEach(function (re) {
-      html += '<div class="kiosk-cart-line kiosk-recipe-entry" data-entry-id="' + escapeHTML(re.entry_id) + '">';
-      html += '<div class="kiosk-cart-line-name" title="' + escapeHTML(re.recipe_name || '') + '">' + escapeHTML(re.recipe_name || '') + '</div>';
-      html += '<div class="kiosk-cart-qty"><span class="kiosk-qty-val">1</span></div>';
-      html += '<div class="kiosk-cart-line-total">' + kioskFmt(re.total_before_discount) + '</div>';
-      html += '<button class="kiosk-recipe-entry-remove" data-entry-id="' + escapeHTML(re.entry_id) + '">&times;</button>';
-      html += '</div>';
+    // 101 D-04/D-05: recipe blocks and other lines render interleaved in add
+    // order. Lines without an added_seq (legacy) come first in key order.
+    var renderList = [];
+    keys.forEach(function (id, i) {
+      var ce = cart[id];
+      renderList.push({ kind: 'item', id: id, seq: (ce && typeof ce.added_seq === 'number') ? ce.added_seq : -1, ord: i });
     });
-    keys.forEach(function (id) {
+    recipeEntries.forEach(function (re, i) {
+      renderList.push({ kind: 'recipe', idx: i, seq: typeof re.added_seq === 'number' ? re.added_seq : 1e12, ord: 100000 + i });
+    });
+    renderList.sort(function (a, b) { return (a.seq - b.seq) || (a.ord - b.ord); });
+    var cqNow = _kioskCartQuote;
+    renderList.forEach(function (node) {
+      if (node.kind === 'recipe') {
+        html += kioskRecipeGroupHtml(recipeEntries, node.idx, cqNow);
+        return;
+      }
+      var id = node.id;
       var entry = cart[id];
       if (!entry || !entry.item) return; // skip non-item entries (defensive guard)
       var item = entry.item;
@@ -2512,6 +2595,12 @@
       }
     });
 
+    if (recipeEntries.length && cqNow && cqNow.status === 'error') {
+      html += '<div class="kiosk-quote-error" role="alert">' +
+        '<span>Couldn\'t price this cart. Check the connection and try again.</span>' +
+        '<button type="button" class="kiosk-quote-retry-btn">Try pricing again</button>' +
+        '</div>';
+    }
     html += '<div style="margin-top:0.5rem;">' +
       '<button id="kiosk-add-custom-btn" type="button" class="kiosk-add-custom-btn" style="width:100%;padding:0.6rem;font-size:0.95rem;border:1px dashed #888;border-radius:6px;background:none;cursor:pointer;color:#555;">' +
       '+ Add custom item' +
@@ -2587,11 +2676,18 @@
       });
     });
 
-    container.querySelectorAll('.kiosk-recipe-entry-remove').forEach(function (btn) {
+    container.querySelectorAll('[data-recipe-entry]').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        kioskRemoveRecipeEntry(btn.getAttribute('data-entry-id'));
+        kioskRemoveRecipeEntry(btn.getAttribute('data-recipe-entry'));
       });
     });
+
+    var quoteRetryBtn = container.querySelector('.kiosk-quote-retry-btn');
+    if (quoteRetryBtn) {
+      quoteRetryBtn.addEventListener('click', function () {
+        kioskRequestCartQuote();
+      });
+    }
 
     var addCustomBtn = document.getElementById('kiosk-add-custom-btn');
     if (addCustomBtn) {
@@ -2620,7 +2716,7 @@
     var totalEl = document.getElementById('kiosk-total');
     if (subEl) subEl.textContent = kioskFmt(totals.subtotal);
     if (taxEl) taxEl.textContent = kioskFmt(totals.tax);
-    if (totalEl) totalEl.textContent = kioskFmt(totals.total);
+    if (totalEl) totalEl.textContent = (totals.pending && !totals.error) ? 'Calculating\u2026' : kioskFmt(totals.total);
     if (totalsEl) totalsEl.style.display = '';
     if (checkoutBtn) {
       checkoutBtn.disabled = !!totals.pending;
@@ -2836,6 +2932,72 @@
     var skipBtn = document.getElementById('kiosk-customer-skip');
     if (proceedBtn) proceedBtn.disabled = !_kcEnv.getCustomer();
     if (skipBtn) skipBtn.disabled = false;
+  }
+
+  // ===== 101 D-12/D-13: shared low-stock panel for card, cash and phone order =====
+
+  function kioskIsStockConflict(result) {
+    return !!(result && result.status === 409 && result.data && result.data.conflicts);
+  }
+
+  // Server mismatch (client_grand_total) rejection: 400 'Totals changed ...'.
+  function kioskIsTotalChanged(result) {
+    return !!(result && result.status === 400 && result.data &&
+      typeof result.data.error === 'string' && result.data.error.indexOf('Totals changed') === 0);
+  }
+
+  function kioskShowTotalChanged() {
+    kioskShowError('Total Changed', 'The total changed. Review the cart and check out again.', false);
+    kioskRequestCartQuote();
+  }
+
+  function kioskHandleStockConflict(result, retryFn) {
+    var conflictEl = document.getElementById('kiosk-stock-conflict');
+    if (!conflictEl) return;
+    var groups = [];
+    var byLabel = {};
+    var combined = false;
+    (result.data.conflicts || []).forEach(function (c) {
+      var unit = c.unit ? ' ' + c.unit : '';
+      var line = '- ' + (c.item_name || c.item_id) + ': need ' + c.needed + unit + ', have ' + c.stock + unit;
+      var labels = (Array.isArray(c.recipes) && c.recipes.length) ? c.recipes : [''];
+      if (labels.length > 1) combined = true;
+      labels.forEach(function (label) {
+        if (!byLabel[label]) { byLabel[label] = { label: label, lines: [] }; groups.push(byLabel[label]); }
+        byLabel[label].lines.push(line);
+      });
+    });
+    var body = '';
+    groups.forEach(function (g) {
+      body += '<div class="kiosk-stock-conflict-group">';
+      if (g.label) body += '<div class="kiosk-stock-conflict-recipe">' + escapeHTML(g.label) + '</div>';
+      g.lines.forEach(function (l) { body += '<div class="kiosk-stock-conflict-line">' + escapeHTML(l) + '</div>'; });
+      body += '</div>';
+    });
+    if (combined) body += '<div class="kiosk-stock-conflict-line">Combined need is more than we have.</div>';
+    conflictEl.className = 'kiosk-stock-conflict';
+    conflictEl.setAttribute('role', 'alert');
+    conflictEl.innerHTML = '<div class="kiosk-stock-conflict-title">Not enough stock</div>' +
+      '<div class="kiosk-stock-conflict-msg">' + body + '</div>' +
+      '<div class="kiosk-stock-conflict-actions">' +
+      '<button type="button" class="kiosk-stock-override-btn" id="kiosk-stock-override-btn">Sell anyway</button>' +
+      '<button type="button" class="kiosk-stock-back-btn" id="kiosk-stock-back-btn">Back to cart</button>' +
+      '</div>';
+    // Lives in the recipe screen markup, which is hidden during payment: lift it
+    // to body so it shows as the only active element (backdrop blocks the rest).
+    if (conflictEl.parentNode !== document.body) document.body.appendChild(conflictEl);
+    conflictEl.style.display = '';
+    document.getElementById('kiosk-stock-override-btn').onclick = function () {
+      _kioskStockOverride = true;
+      conflictEl.style.display = 'none';
+      if (typeof retryFn === 'function') retryFn();
+    };
+    document.getElementById('kiosk-stock-back-btn').onclick = function () {
+      _kioskStockOverride = false;
+      conflictEl.style.display = 'none';
+      _kioskEndPaymentAttempt();
+      kioskShowView('browse');
+    };
   }
 
   function kioskShowError(title, msg, canRetry, extra) {
@@ -3202,7 +3364,7 @@
     if (spinnerEl) spinnerEl.style.display = 'none';
 
     if (itemsEl) {
-      var itemHtml = '';
+      var itemHtml = kioskRecipeSectionsHtml('kiosk-payment-item-row', 'kiosk-payment-recipe-detail', 'kiosk-payment-recipe-head', 'kiosk-payment-recipe-meta');
       items.forEach(function (it) {
         itemHtml += '<div class="kiosk-payment-item-row">';
         itemHtml += '<span>' + escapeHTML(it.name || '') + ' x' + (it.quantity || 1) + '</span>';
@@ -3445,31 +3607,15 @@
           confirmSale(undefined); // no transaction_id — terminal was not charged
           return;
         }
-        // D-07 (Manager Override, ported from js/admin.js — the only WORKING
-        // half; kiosk.js's own _kioskStockOverride was dead/never wired):
-        // recipe-sale stock gate (pos-recipe.js:328) 409s with conflicts.
-        // Render them + wire the override button to resubmit with override=true.
-        if (result.status === 409 && result.data && result.data.conflicts) {
+        // D-07 / 101 D-12: stock-gate 409 -> ONE shared panel for every tender.
+        if (kioskIsStockConflict(result)) {
           if (spinnerEl) spinnerEl.style.display = 'none';
-          var conflictEl = document.getElementById('kiosk-stock-conflict');
-          var conflictMsgEl = document.querySelector('#kiosk-stock-conflict .kiosk-stock-conflict-msg');
-          if (conflictMsgEl) {
-            var lines = ['Insufficient stock for scaled batch:'];
-            result.data.conflicts.forEach(function (c) {
-              lines.push('• ' + (c.item_name || c.item_id) + ': need ' + c.needed + ' ' + (c.unit || '') + ', have ' + c.stock);
-            });
-            conflictMsgEl.textContent = lines.join('\n');
-          }
-          if (conflictEl) conflictEl.style.display = '';
-          var overrideBtn = document.getElementById('kiosk-stock-override-btn');
-          if (overrideBtn) {
-            overrideBtn.onclick = function () {
-              _kioskStockOverride = true;
-              if (conflictEl) conflictEl.style.display = 'none';
-              // Re-trigger the sale with override=true (re-invoke the same push routine).
-              _kioskPushToTerminal();
-            };
-          }
+          kioskHandleStockConflict(result, function () { _kioskPushToTerminal(); });
+          return;
+        }
+        if (kioskIsTotalChanged(result)) {
+          if (spinnerEl) spinnerEl.style.display = 'none';
+          kioskShowTotalChanged();
           return;
         }
         if (result.status !== 202 || !result.data.pending) {
@@ -3618,6 +3764,11 @@
         }
         if (spinnerEl) spinnerEl.style.display = 'none';
         if (cancelBtn) cancelBtn.disabled = false;
+        if (kioskIsStockConflict(result)) {
+          kioskHandleStockConflict(result, function () { _kioskGoCash(); });
+          return;
+        }
+        if (kioskIsTotalChanged(result)) { kioskShowTotalChanged(); return; }
         var cashErrMsg = (result.data && result.data.error) || '';
         _kcReportClientError({
           message: cashErrMsg, http_status: result.status, endpoint: '/api/kiosk/sale'
@@ -3721,6 +3872,11 @@
         }
         if (spinnerEl) spinnerEl.style.display = 'none';
         if (cancelBtn) cancelBtn.disabled = false;
+        if (kioskIsStockConflict(result)) {
+          kioskHandleStockConflict(result, function () { _kioskGoMoto(); });
+          return;
+        }
+        if (kioskIsTotalChanged(result)) { kioskShowTotalChanged(); return; }
         var motoErrMsg = (result.data && result.data.error) || '';
         _kcReportClientError({
           message: motoErrMsg, http_status: result.status, endpoint: '/api/kiosk/sale'
@@ -4194,7 +4350,7 @@
     var body = document.getElementById('kiosk-receipt-body');
     if (!body) return;
 
-    var html = '';
+    var html = kioskRecipeSectionsHtml('kiosk-receipt-row', 'kiosk-receipt-recipe-detail', 'kiosk-receipt-recipe-head', 'kiosk-receipt-recipe-meta');
 
     items.forEach(function (it) {
       html += '<div class="kiosk-receipt-row">';

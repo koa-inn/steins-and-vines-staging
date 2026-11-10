@@ -3086,3 +3086,124 @@ input.kiosk-bundle-count { flex: 1; cursor: text; }
   .kiosk-ps-modes { padding-left: 0.75rem; padding-right: 0.75rem; }
   .kiosk-ps-backlink { margin-left: 0.75rem; }
 }
+
+/* ===== Phase 101: mixed recipe carts ===== */
+.kiosk-recipe-group {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-1);
+  border-left: 3px solid var(--cork);
+  padding-left: var(--sp-2);
+  background: var(--cellar-raised);
+  margin: var(--sp-2) 0;
+  border-radius: 0 6px 6px 0;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.kiosk-recipe-group-head { display: flex; align-items: center; gap: var(--sp-2); }
+.kiosk-recipe-group-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.kiosk-recipe-group-total { font-size: 14px; font-weight: 700; line-height: 1.3; color: var(--barrel); text-align: right; flex-shrink: 0; }
+.kiosk-recipe-group-meta { font-size: 12px; font-weight: 400; line-height: 1.3; color: var(--ink-tertiary); }
+.kiosk-recipe-group-detail {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding-left: var(--sp-2);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--ink-secondary);
+}
+.kiosk-recipe-remove {
+  min-width: 44px;
+  min-height: 44px;
+  background: none;
+  border: none;
+  color: var(--ink-tertiary);
+  font-size: 1.25rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.kiosk-recipe-remove:hover, .kiosk-recipe-remove:active { color: var(--batch-danger); }
+
+.kiosk-payment-recipe-head, .kiosk-receipt-recipe-head { font-size: 14px; line-height: 1.3; }
+.kiosk-payment-recipe-meta, .kiosk-receipt-recipe-meta { font-size: 12px; line-height: 1.3; color: var(--ink-tertiary); }
+.kiosk-payment-recipe-detail, .kiosk-receipt-recipe-detail { font-size: 12px; line-height: 1.3; padding-left: var(--sp-4); color: var(--ink-secondary); }
+
+.kiosk-quote-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+  padding: var(--sp-2);
+  background: var(--batch-danger-bg);
+  border-left: 3px solid var(--batch-danger);
+  border-radius: 0 6px 6px 0;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--ink-primary);
+}
+.kiosk-quote-error span { flex: 1; min-width: 12rem; }
+.kiosk-quote-retry-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 var(--sp-4);
+  background: transparent;
+  border: 1px solid var(--batch-danger);
+  border-radius: 6px;
+  color: var(--batch-danger);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Low-stock panel: shared by card, cash and phone order. Shown as a fixed
+   overlay; the box-shadow backdrop blocks everything behind it. */
+.kiosk-stock-conflict {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  width: min(92vw, 480px);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: var(--sp-4);
+  background-color: var(--cellar-raised);
+  background-image: linear-gradient(var(--batch-warning-bg), var(--batch-warning-bg));
+  border-left: 3px solid var(--batch-warning);
+  border-radius: 6px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
+  color: var(--ink-primary);
+}
+.kiosk-stock-conflict-title { font-size: 16px; font-weight: 700; line-height: 1.2; margin-bottom: var(--sp-2); }
+.kiosk-stock-conflict-msg { font-size: 12px; line-height: 1.3; margin-bottom: var(--sp-4); }
+.kiosk-stock-conflict-group { margin-bottom: var(--sp-2); }
+.kiosk-stock-conflict-recipe { font-size: 14px; font-weight: 700; line-height: 1.3; }
+.kiosk-stock-conflict-line { font-size: 12px; font-weight: 400; line-height: 1.3; }
+.kiosk-stock-conflict-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.kiosk-stock-override-btn, .kiosk-stock-back-btn {
+  min-height: 44px;
+  min-width: 120px;
+  padding: 0 var(--sp-4);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+/* Fill darkened from --batch-warning (3.6:1 with white) to reach 4.5:1. */
+.kiosk-stock-override-btn { background: #8a5a10; border: 1px solid #8a5a10; color: #fff; }
+.kiosk-stock-back-btn { background: transparent; border: 1px solid var(--batch-warning); color: var(--ink-primary); }
