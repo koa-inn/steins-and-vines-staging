@@ -781,6 +781,26 @@ function computeCartPricing(body, catalogMap) {
   });
 }
 
+// Phase 101 (Pitfall 4): recipe fee lines take their tax from the kiosk catalog,
+// so the fee items an entry needs (Maker + Materials in-store, Milling for
+// milled take-out) must be in the map. Returns the first missing id or null.
+// Unset env ids are skipped here (an unconfigured fee never prices as a line).
+function findMissingRecipeFeeItem(entries, catalogMap) {
+  if (!entries || !entries.length) return null;
+  var need = [];
+  entries.forEach(function (e) {
+    if (e.sale_type === 'in-store') {
+      need.push(process.env.MAKERS_FEE_ITEM_ID, process.env.MATERIALS_FEE_ITEM_ID);
+    } else if (e.mill_grain) {
+      need.push(process.env.MILLING_FEE_ITEM_ID);
+    }
+  });
+  for (var i = 0; i < need.length; i++) {
+    if (need[i] && catalogMap[need[i]] === undefined) return need[i];
+  }
+  return null;
+}
+
 function processSale(body, idempotencyKey, req, res, stageStart) {
   // D-50-03 (50-03 / H4 / SC#2): mirrors the confirm-path hook above — release
   // the sale idempotency lock on EVERY failure return in processSale AND
@@ -807,6 +827,23 @@ function processSale(body, idempotencyKey, req, res, stageStart) {
   }
   if (body.items.length > 50) {
     return res.status(400).json({ error: 'Too many items in cart' });
+  }
+
+  // Phase 101: recipe components. Gate, structure and the required client total
+  // are all checked before any catalog work or charge (T-101-13, T-101-18).
+  var recipeEntries = null;
+  if (hasRecipes) {
+    if ((process.env.BEER_SALES_ENABLED || 'false').toLowerCase() !== 'true') {
+      return res.status(403).json({ error: 'Recipe sales are not enabled' });
+    }
+    var recipeValidation = recipeLines().validateRecipeEntries(body.recipes);
+    if (!recipeValidation.ok) {
+      return res.status(recipeValidation.status).json({ error: recipeValidation.error });
+    }
+    recipeEntries = recipeValidation.entries;
+    if (typeof body.client_grand_total !== 'number' || !isFinite(body.client_grand_total)) {
+      return res.status(400).json({ error: 'Totals missing — refresh the kiosk and re-ring the sale.' });
+    }
   }
 
   // Validate each line item (structural validation only — price comes from catalog)
@@ -853,7 +890,9 @@ function processSale(body, idempotencyKey, req, res, stageStart) {
   // are never used in any branch.
   kioskSaleCatalog.getKioskCatalogForSale({
     isUsable: function (items) {
-      return findMissingCatalogItem(body.items, buildKioskCatalogMap(items)) === null;
+      var usableMap = buildKioskCatalogMap(items);
+      return findMissingCatalogItem(body.items, usableMap) === null &&
+        findMissingRecipeFeeItem(recipeEntries, usableMap) === null;
     }
   }).then(function (resolved) {
     var catalogMap = buildKioskCatalogMap(resolved.items);
@@ -864,6 +903,16 @@ function processSale(body, idempotencyKey, req, res, stageStart) {
 
     // Rebuilt (or last-good) catalog: an item absent even here is genuinely
     // invalid/phantom. Price-anchoring stays intact: reject, client rate ignored.
+    var stillMissingFee = findMissingRecipeFeeItem(recipeEntries, catalogMap);
+    if (stillMissingFee !== null) {
+      if (resolved.rebuildError) {
+        log.error('[pos/kiosk/sale] catalog auto-reconcile rebuild failed: ' + resolved.rebuildError.message);
+      }
+      return res.status(400).json({
+        error: 'Recipe fee item not found in current catalog: ' + stillMissingFee +
+          '. Refresh the product list and try again.'
+      });
+    }
     var stillMissingItemId = findMissingCatalogItem(body.items, catalogMap);
     if (stillMissingItemId !== null) {
       if (resolved.rebuildError) {
@@ -889,6 +938,23 @@ function processSale(body, idempotencyKey, req, res, stageStart) {
       return computeCartPricing(body, catalogMap).then(function (pricing) {
         if (!pricing.ok) {
           return res.status(pricing.status).json({ error: pricing.error });
+        }
+        // D-12/D-13: combined recipe stock is gated BEFORE every tender branch
+        // (cash and gift-only included). The 409 releases the idempotency lock via
+        // the finish hook, so a same-key resubmit with override:true can proceed.
+        // Negative Zoho stock is an intentional oversell override (owner rule).
+        if (pricing.recipe && !pricing.recipe.stock.ok) {
+          if (body.override !== true) {
+            return res.status(409).json({
+              error: 'Insufficient stock for scaled batch',
+              conflicts: pricing.recipe.stock.conflicts,
+              recipes_short: pricing.recipe.stock.recipes_short
+            });
+          }
+          eventLog.logEvent('kiosk.stock_override', {
+            reference_number: (typeof body.reference_number === 'string') ? body.reference_number.slice(0, 64) : '',
+            recipes_short: pricing.recipe.stock.recipes_short.length
+          });
         }
         processSaleWithPrices(body, idempotencyKey, req, res,
           pricing.lineItems, pricing.subtotal, pricing.taxTotal, pricing.grandTotal, stageStart);
@@ -948,6 +1014,7 @@ function processSaleWithPrices(body, idempotencyKey, req, res,
         server_tax_total: taxTotal,
         delta: mismatchDelta,
         item_count: lineItems.length,
+        has_recipes: !!(body.recipes && body.recipes.length),
         reference_number: (typeof body.reference_number === 'string') ? body.reference_number.slice(0, 64) : ''
       });
       if (idempotencyKey) {

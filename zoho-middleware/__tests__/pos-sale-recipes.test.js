@@ -434,3 +434,211 @@ describe('discounts span the mixed cart', function () {
       });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 3: gate, validation, fee-catalog usability, combined stock, limits
+// ---------------------------------------------------------------------------
+
+describe('validation and gate', function () {
+  var good = function () { return recipeEntry('RCP-LOCKED'); };
+  var total = fx.ORACLE.initiate['RCP-LOCKED/in-store/none'].charge;
+
+  test('BEER_SALES_ENABLED unset + recipes -> 403 and nothing is charged', function () {
+    delete process.env.BEER_SALES_ENABLED;
+    return sale({ recipes: [good()], client_grand_total: total }).then(function (out) {
+      expect(out.code).toBe(403);
+      expect(out.body.error).toBe('Recipe sales are not enabled');
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+
+  test('items-only cart still works with BEER_SALES_ENABLED unset', function () {
+    delete process.env.BEER_SALES_ENABLED;
+    return sale({ items: [{ item_id: 'p-5', quantity: 1 }] }).then(function (out) {
+      expect(out.code).toBe(202);
+      expect(helcimLib.terminalPurchase).toHaveBeenCalled();
+    });
+  });
+
+  test('items [] and recipes [] -> 400 Cart is empty', function () {
+    return sale({ items: [], recipes: [] }).then(function (out) {
+      expect(out.code).toBe(400);
+      expect(out.body.error).toBe('Cart is empty');
+    });
+  });
+
+  test('26 recipes -> 400', function () {
+    var many = [];
+    for (var i = 0; i < 26; i++) many.push(good());
+    return sale({ items: [], recipes: many, client_grand_total: 1 }).then(function (out) {
+      expect(out.code).toBe(400);
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+
+  test('invalid sale_type -> 400', function () {
+    return sale({ recipes: [{ recipe_id: 'RCP-LOCKED', sale_type: 'delivery' }], client_grand_total: 1 }).then(function (out) {
+      expect(out.code).toBe(400);
+    });
+  });
+
+  test('recipe cart without client_grand_total -> 400 pre-charge and the lock is released', function () {
+    return sale({ recipes: [good()], idempotency_key: 'k-nototal' }).then(function (out) {
+      expect(out.code).toBe(400);
+      expect(out.body.error).toMatch(/Totals missing/);
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+      expect(cache.releaseLock).toHaveBeenCalledWith('kiosk:idem:k-nototal');
+    });
+  });
+
+  test('client total mismatch -> 400 Totals changed and the event carries has_recipes', function () {
+    return sale({ recipes: [good()], client_grand_total: total + 1 }).then(function (out) {
+      expect(out.code).toBe(400);
+      expect(out.body.error).toMatch(/Totals changed/);
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+      var evt = eventLog.logEvent.mock.calls.filter(function (c) { return c[0] === 'kiosk.total_mismatch'; })[0];
+      expect(evt[1].has_recipes).toBe(true);
+    });
+  });
+
+  test('a product-only mismatch event reports has_recipes false', function () {
+    return sale({ items: [{ item_id: 'p-5', quantity: 1 }], client_grand_total: 99 }).then(function (out) {
+      expect(out.code).toBe(400);
+      var evt = eventLog.logEvent.mock.calls.filter(function (c) { return c[0] === 'kiosk.total_mismatch'; })[0];
+      expect(evt[1].has_recipes).toBe(false);
+    });
+  });
+
+  test('recipe-bearing total above $10,000 -> 400 Sale total exceeds maximum', function () {
+    var big = [];
+    for (var i = 0; i < 6; i++) big.push(recipeEntry('RCP-LOCKED', { target_volume_l: 230 }));
+    return sale({ recipes: big, override: true, client_grand_total: 1 }).then(function (out) {
+      expect(out.code).toBe(400);
+      expect(out.body.error).toBe('Sale total exceeds maximum');
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+
+  test('a 100% cart discount -> 400 Sale total must be greater than zero', function () {
+    var presets = fx.DISCOUNT_PRESETS.concat([
+      { id: 'p-all', name: 'Free', active: true, scope: 'cart', type: 'percentage', value: 100 }
+    ]);
+    cache.get.mockImplementation(function (key) {
+      if (key === 'test:kiosk-products') return Promise.resolve(kioskCatalog());
+      if (key === 'zoho:ingredients:all') return Promise.resolve(ingredientCatalog());
+      if (key === 'kiosk:discount-presets') return Promise.resolve(presets);
+      return Promise.resolve(null);
+    });
+    return sale({ recipes: [good()], discount: { preset_id: 'p-all' }, client_grand_total: 0 }).then(function (out) {
+      expect(out.code).toBe(400);
+      expect(out.body.error).toBe('Sale total must be greater than zero');
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('fee items in the kiosk catalog (Pitfall 4)', function () {
+  var total = fx.ORACLE.initiate['RCP-LOCKED/in-store/none'].charge;
+
+  test('a cached catalog without the Makers fee triggers a rebuild, which then serves the sale', function () {
+    var withoutFees = PRODUCTS.slice();
+    var rebuild = require('../routes/catalog').rebuildKioskCatalog;
+    cache.get.mockImplementation(function (key) {
+      // A real rebuild repopulates the cache; mirror that once it has run.
+      if (key === 'test:kiosk-products') {
+        return Promise.resolve(rebuild.mock.calls.length ? kioskCatalog() : withoutFees);
+      }
+      if (key === 'zoho:ingredients:all') return Promise.resolve(ingredientCatalog());
+      return Promise.resolve(null);
+    });
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total }).then(function (out) {
+      expect(require('../routes/catalog').rebuildKioskCatalog).toHaveBeenCalled();
+      expect(out.code).toBe(202);
+    });
+  });
+
+  test('fee still missing after the rebuild -> 400 before any charge', function () {
+    global.__rebuildCatalog = PRODUCTS.slice();
+    cache.get.mockImplementation(function (key) {
+      if (key === 'test:kiosk-products') return Promise.resolve(PRODUCTS.slice());
+      if (key === 'zoho:ingredients:all') return Promise.resolve(ingredientCatalog());
+      return Promise.resolve(null);
+    });
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total }).then(function (out) {
+      expect(out.code).toBe(400);
+      expect(out.body.error).toMatch(/Recipe fee item not found/);
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('combined recipe stock (D-12, D-13)', function () {
+  // RCP-LOCKED needs 5.5 kg grain and RCP-DYN 6 kg: each fits in 8 kg alone, not together.
+  function twoRecipes() { return [recipeEntry('RCP-LOCKED'), recipeEntry('RCP-DYN')]; }
+
+  function totalFor(recipes) {
+    return pos.computeCartPricing({ items: [], recipes: recipes }, {}).then(function (p) {
+      expect(p.ok).toBe(true);
+      return p.grandTotal;
+    });
+  }
+
+  beforeEach(function () {
+    ingredientStock = { 'ing-grain-1': 8 };
+  });
+
+  function body(extra, total) {
+    return Object.assign({
+      items: [], recipes: twoRecipes(), client_grand_total: total, idempotency_key: 'idem-short-1'
+    }, extra || {});
+  }
+
+  ['terminal', 'cash', 'moto', 'gift-only'].forEach(function (tender) {
+    test('short stock -> 409 naming both recipes before the ' + tender + ' branch; lock released', function () {
+      return totalFor(twoRecipes()).then(function (total) {
+        var extra = {};
+        if (tender === 'cash' || tender === 'moto') extra.tender = tender;
+        if (tender === 'gift-only') extra.gift_card = { cert_number: 'GC-000001', amount_applied: total + 10 };
+        return sale(body(extra, total)).then(function (out) {
+          expect(out.code).toBe(409);
+          expect(out.body.error).toBe('Insufficient stock for scaled batch');
+          expect(out.body.conflicts[0].recipes).toHaveLength(2);
+          expect(out.body.recipes_short).toHaveLength(2);
+          expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+          expect(helcimLib.initializeCheckout).not.toHaveBeenCalled();
+          expect(cache.set).not.toHaveBeenCalledWith('kiosk:idem:idem-short-1', expect.anything(), expect.anything());
+          expect(cache.releaseLock).toHaveBeenCalledWith('kiosk:idem:idem-short-1');
+        });
+      });
+    });
+  });
+
+  ['terminal', 'cash', 'moto'].forEach(function (tender) {
+    test('same-key resubmit with override:true succeeds on ' + tender + ' and logs kiosk.stock_override', function () {
+      return totalFor(twoRecipes()).then(function (total) {
+        var extra = tender === 'terminal' ? {} : { tender: tender, reference_number: 'KIOSK-OVR-1' };
+        return sale(body(extra, total)).then(function (first) {
+          expect(first.code).toBe(409);
+          return sale(body(Object.assign({ override: true }, extra), total));
+        }).then(function (second) {
+          expect(second.code).toBe(202);
+          var evt = eventLog.logEvent.mock.calls.filter(function (c) { return c[0] === 'kiosk.stock_override'; })[0];
+          expect(evt[1].recipes_short).toBe(2);
+          expect(JSON.stringify(evt[1])).not.toMatch(/email|name|phone/i);
+          if (tender === 'terminal') expect(helcimLib.terminalPurchase).toHaveBeenCalledTimes(1);
+          if (tender === 'moto') expect(helcimLib.initializeCheckout).toHaveBeenCalledTimes(1);
+        });
+      });
+    });
+  });
+
+  test('enough stock -> no 409 and no override event', function () {
+    ingredientStock = null;
+    return totalFor(twoRecipes()).then(function (total) {
+      return sale(body({}, total)).then(function (out) {
+        expect(out.code).toBe(202);
+        expect(eventLog.logEvent.mock.calls.filter(function (c) { return c[0] === 'kiosk.stock_override'; })).toHaveLength(0);
+      });
+    });
+  });
+});
