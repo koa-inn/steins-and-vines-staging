@@ -92,7 +92,8 @@ function buildCalendar(data) {
         sku: kit.sku,
         short_name: kit.short_name,
         supplier: lrSupplierTag(g.collection),
-        collection: kit.collection
+        collection: kit.collection,
+        sold_out: kit.sold_out === true
       });
     });
   });
@@ -126,7 +127,7 @@ function isPayEnabled(totalKits, consentTicked) {
 /**
  * Applies a quantity change without mutating the input.
  * @returns {{basket:Object, changed:boolean, reason:string}} reason is one of
- *   '', 'kit-max', 'order-max', 'min'
+ *   '', 'kit-max', 'order-max', 'min', 'sold-out'
  */
 function applyQtyChange(basket, sku, delta) {
   var next = {};
@@ -137,6 +138,11 @@ function applyQtyChange(basket, sku, delta) {
   var target = cur + delta;
   var reason = '';
   if (delta > 0) {
+    // Sold-out kits can only be removed, never added.
+    var soldKit = lrKitBySku(sku);
+    if (soldKit && soldKit.sold_out) {
+      return { basket: next, changed: false, reason: 'sold-out' };
+    }
     if (cur >= LR_MAX_PER_KIT) {
       return { basket: next, changed: false, reason: 'kit-max' };
     }
@@ -218,7 +224,7 @@ function buildJsonLd(data) {
           '@type': 'Offer',
           priceCurrency: 'CAD',
           price: kit.price,
-          availability: 'https://schema.org/PreOrder',
+          availability: kit.sold_out ? 'https://schema.org/SoldOut' : 'https://schema.org/PreOrder',
           availabilityStarts: kit.release + '-01',
           url: LR_SITE_URL + 'limited-releases#lr-kit-' + kit.sku,
           seller: { '@type': 'Organization', name: 'Steins & Vines' }
@@ -302,7 +308,7 @@ function lrBuildStepper(kit) {
 }
 
 function lrBuildKitCard(kit) {
-  var card = lrEl('article', 'lr-kit');
+  var card = lrEl('article', 'lr-kit' + (kit.sold_out ? ' lr-kit--sold-out' : ''));
   card.id = 'lr-kit-' + kit.sku;
   var nameId = 'lr-kit-name-' + kit.sku;
   card.setAttribute('aria-labelledby', nameId);
@@ -312,6 +318,7 @@ function lrBuildKitCard(kit) {
   }
   var media = lrEl('div', 'lr-kit__media');
   media.appendChild(lrImg(kit.image, kit.image_alt, 'lr-kit__bottle'));
+  if (kit.sold_out) media.appendChild(lrEl('span', 'lr-soldout-badge', 'Sold out'));
   card.appendChild(media);
 
   card.appendChild(lrEl('span', 'lr-chip', 'Releases ' + kit.release_label));
@@ -340,7 +347,7 @@ function lrBuildKitCard(kit) {
   var price = lrEl('span', 'lr-price', 'Kit price ');
   price.appendChild(lrEl('strong', '', lrFormatMoney(kit.price)));
   footer.appendChild(price);
-  footer.appendChild(lrBuildStepper(kit));
+  footer.appendChild(kit.sold_out ? lrEl('span', 'lr-soldout', 'Sold out') : lrBuildStepper(kit));
   card.appendChild(footer);
 
   var note = lrEl('p', 'lr-max-note');
@@ -405,13 +412,18 @@ function lrBuildCalendar(data) {
     li.appendChild(label);
     var kits = lrEl('ul', 'lr-calendar__kits');
     cell.kits.forEach(function (k) {
-      var entry = lrEl('li', 'lr-calendar__kit lr-calendar__kit--' + (k.supplier === 'RJS' ? 'rjs' : 'we'));
+      var entry = lrEl('li', 'lr-calendar__kit lr-calendar__kit--' + (k.supplier === 'RJS' ? 'rjs' : 'we') +
+        (k.sold_out ? ' lr-calendar__kit--sold-out' : ''));
       // The supplier tag sits inside the link so the whole 44px row is the tap target.
       var a = lrEl('a', '');
       a.href = '#lr-kit-' + k.sku;
       a.appendChild(lrEl('span', 'lr-calendar__name', k.short_name));
       a.appendChild(document.createTextNode(' '));
       a.appendChild(lrEl('span', 'lr-calendar__tag', k.supplier));
+      if (k.sold_out) {
+        a.appendChild(document.createTextNode(' '));
+        a.appendChild(lrEl('span', 'lr-calendar__soldout', 'Sold out'));
+      }
       entry.appendChild(a);
       kits.appendChild(entry);
     });
@@ -652,7 +664,7 @@ function getBasketLines() {
   var lines = [];
   _lrKits.forEach(function (k) {
     var q = _lrQty[k.sku] || 0;
-    if (q > 0) lines.push({ item_id: k.zoho_item_id, qty: q });
+    if (q > 0 && !k.sold_out) lines.push({ item_id: k.zoho_item_id, qty: q });
   });
   return lines;
 }
@@ -1021,6 +1033,30 @@ function lrValidateFields() {
   return first;
 }
 
+/**
+ * A kit sold out after this page loaded: the server answers initialize with
+ * 400 "<Name> is sold out". Mark that kit sold out on the page and drop it
+ * from the basket so the customer can pay for the rest.
+ * @returns {string} the server message, or '' when it is not a sold-out error
+ */
+function lrApplyServerSoldOut(body) {
+  var err = body && typeof body.error === 'string' ? body.error : '';
+  var kit = null;
+  for (var i = 0; i < _lrKits.length; i++) {
+    if (err === _lrKits[i].short_name + ' is sold out') kit = _lrKits[i];
+  }
+  if (!kit) return '';
+  kit.sold_out = true;
+  _lrQty[kit.sku] = 0;
+  var old = lrById('lr-kit-' + kit.sku);
+  if (old && old.parentNode) old.parentNode.replaceChild(lrBuildKitCard(kit), old);
+  if (_lrData) {
+    lrBuildCalendar(_lrData);
+    lrInjectJsonLd(_lrData);
+  }
+  return err;
+}
+
 function submitPayment() {
   if (_lrSubmitting || _lrPayState !== 'ready') return;
   var bad = lrValidateFields();
@@ -1044,7 +1080,7 @@ function submitPayment() {
     }
     var msg = LR_MSG_UNREACHABLE;
     if (res.status === 503) msg = LR_MSG_NOT_OPEN;
-    else if (res.status === 400) msg = LR_MSG_VERIFY;
+    else if (res.status === 400) msg = lrApplyServerSoldOut(b) || LR_MSG_VERIFY;
     lrClearSession();
     lrSetPaymentState('ready', { alert: msg });
   }, function () {

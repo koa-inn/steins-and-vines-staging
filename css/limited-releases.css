@@ -237,6 +237,42 @@ body[data-page="limited-releases"] #lr-calendar-section .lr-calendar-legend {
   padding: 4px 8px;
 }
 
+/* ===== Sold-out kit =====
+   Only the images are dimmed, so text and the badge keep full contrast. */
+.lr-kit--sold-out .lr-kit__bottle,
+.lr-kit--sold-out .lr-kit__scene {
+  filter: grayscale(0.6);
+  opacity: 0.75;
+}
+
+.lr-soldout-badge {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-white);
+  background: var(--color-text);
+  border-radius: var(--radius-xs);
+  padding: 4px 8px;
+}
+
+.lr-soldout {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text);
+  border: 2px solid var(--color-text);
+  border-radius: var(--radius-sm);
+}
+
 .lr-kit > :not(.lr-kit__scene):not(.lr-kit__media) {
   margin-left: 16px;
   margin-right: 16px;
@@ -526,6 +562,15 @@ body[data-page="limited-releases"] .content p.lr-pairs__title,
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--color-muted);
+}
+
+.lr-calendar__soldout {
+  grid-column: 2;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text);
 }
 
 .lr-calendar-legend {

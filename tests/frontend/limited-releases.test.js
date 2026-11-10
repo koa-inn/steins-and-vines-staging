@@ -116,7 +116,8 @@ describe('pure functions', function () {
       expect(p.offers.priceCurrency).toBe('CAD');
       expect(p.offers.price).toBe(src.price);
       expect(p.offers.price).not.toBe(50);
-      expect(p.offers.availability).toBe('https://schema.org/PreOrder');
+      // Sold-out kits are SoldOut (covered in limited-releases-sold-out.test.js).
+      if (!src.sold_out) expect(p.offers.availability).toBe('https://schema.org/PreOrder');
       expect(p.offers.availabilityStarts).toBe(src.release + '-01');
     });
   });
@@ -239,7 +240,12 @@ describe('render', function () {
   });
 
   test('no scarcity text anywhere (D-12)', function () {
-    expect(document.body.textContent).not.toMatch(/reserved by|only \d+ left|sold out/i);
+    expect(document.body.textContent).not.toMatch(/reserved by|only \d+ left/i);
+    // D-12 amended: "Sold out" is allowed only on kits flagged sold_out.
+    var clone = document.body.cloneNode(true);
+    var marked = clone.querySelectorAll('.lr-kit--sold-out, .lr-calendar__kit--sold-out');
+    for (var i = 0; i < marked.length; i++) marked[i].parentNode.removeChild(marked[i]);
+    expect(clone.textContent).not.toMatch(/sold out/i);
   });
 
   test('re-rendering does not duplicate the JSON-LD script', function () {
