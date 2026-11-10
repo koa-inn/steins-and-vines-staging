@@ -156,9 +156,18 @@ function discountedLineTotal(li) {
 // discountedLineTotal above) so the displayed total and the charged total
 // agree to the cent and the pre-charge assertion's $0.01 tolerance stays
 // honest.
-function resolveDiscount(body, lineItems, subtotal, catalogMap) {
+//
+// Phase 101: optional 5th param recipeUnits = [{ index, base_total, fee_portion }]
+// folds recipe components into the same discount. Percentage presets discount
+// each recipe by computeRecipeDiscount; fixed presets are allocated over
+// [matched product lines..., one unit per recipe] with the LAST unit absorbing
+// the cent (D-11). With recipeUnits undefined/empty every path below is
+// byte-identical to the product-only behaviour. The result then also carries
+// recipeAmounts ({ index: amount }) and discountApplied.amount.
+function resolveDiscount(body, lineItems, subtotal, catalogMap, recipeUnits) {
   if (!body.discount || !body.discount.preset_id) return Promise.resolve(null);
   catalogMap = catalogMap || {};
+  var hasRecipeUnits = Array.isArray(recipeUnits) && recipeUnits.length > 0;
 
   return cache.get(C.CACHE_KEYS.KIOSK_DISCOUNT_PRESETS).then(function (presets) {
     presets = Array.isArray(presets) ? presets : [];
@@ -170,6 +179,36 @@ function resolveDiscount(body, lineItems, subtotal, catalogMap) {
     if (!preset.active) return { error: 'Discount preset is inactive', status: 400 };
 
     var discountApplied = null;
+    var recipeAmounts = {};
+    var rl = hasRecipeUnits ? recipeLines() : null;
+    // Fixed presets: one allocation unit per recipe whose targeted base is > 0.
+    function recipeFixedUnits() {
+      var units = [];
+      if (!hasRecipeUnits) return units;
+      recipeUnits.forEach(function (u) {
+        var base = rl.recipeDiscountBase(preset, u.base_total, u.fee_portion);
+        if (base > 0) units.push({ quantity: 1, rate: base, index: u.index });
+      });
+      return units;
+    }
+    function recipeUnitsTotal(units) {
+      var t = 0;
+      units.forEach(function (u) { t += u.rate; });
+      return Math.round(t * 100) / 100;
+    }
+    function applyRecipePercentage() {
+      if (!hasRecipeUnits) return null;
+      for (var ri = 0; ri < recipeUnits.length; ri++) {
+        var u = recipeUnits[ri];
+        var d = rl.computeRecipeDiscount(preset, u.base_total, u.fee_portion);
+        if (d.error) return { error: d.error, status: d.status };
+        recipeAmounts[u.index] = d.discountAmount;
+      }
+      return null;
+    }
+    function collectFixedAmounts(units) {
+      units.forEach(function (u) { recipeAmounts[u.index] = Number(u.discount) || 0; });
+    }
 
     if (preset.scope === 'cart') {
       if (preset.type === 'percentage') {
@@ -177,6 +216,8 @@ function resolveDiscount(body, lineItems, subtotal, catalogMap) {
           if (li.custom || li.gift_cert) return; // D-08: custom/gift_cert lines excluded from all discounts
           li.discount = preset.value + '%';
         });
+        var cartPctErr = applyRecipePercentage();
+        if (cartPctErr) return cartPctErr;
         discountApplied = { preset_id: preset.id, name: preset.name, type: 'percentage', value: preset.value, scope: 'cart' };
       } else {
         // CR-01: cap and allocate over the DISCOUNTABLE subtotal only —
@@ -187,9 +228,11 @@ function resolveDiscount(body, lineItems, subtotal, catalogMap) {
         });
         var cartMatchedSubtotal = 0;
         cartTargets.forEach(function (li) { cartMatchedSubtotal += li.quantity * li.rate; });
-        cartMatchedSubtotal = Math.round(cartMatchedSubtotal * 100) / 100;
+        var cartUnits = recipeFixedUnits();
+        cartMatchedSubtotal = Math.round((cartMatchedSubtotal + recipeUnitsTotal(cartUnits)) * 100) / 100;
         var fixedAmount = Math.min(preset.value, cartMatchedSubtotal);
-        allocateFixedDiscount(cartTargets, cartMatchedSubtotal, fixedAmount);
+        allocateFixedDiscount(cartTargets.concat(cartUnits), cartMatchedSubtotal, fixedAmount);
+        collectFixedAmounts(cartUnits);
         discountApplied = { preset_id: preset.id, name: preset.name, type: 'fixed', value: fixedAmount, scope: 'cart' };
       }
     } else if (preset.scope === 'type') {
@@ -208,12 +251,17 @@ function resolveDiscount(body, lineItems, subtotal, catalogMap) {
         lineItems.forEach(function (li, idx) {
           if (matchFlags[idx]) li.discount = preset.value + '%';
         });
+        var typePctErr = applyRecipePercentage();
+        if (typePctErr) return typePctErr;
         discountApplied = { preset_id: preset.id, name: preset.name, type: 'percentage', value: preset.value, scope: 'type', applies_to: preset.applies_to };
       } else {
+        var typeUnits = recipeFixedUnits();
+        matchedSubtotal = Math.round((matchedSubtotal + recipeUnitsTotal(typeUnits)) * 100) / 100;
         var fixedType = Math.min(preset.value, matchedSubtotal);
         // CR-01: last-matched-line remainder allocation (mirror the client).
         var typeTargets = lineItems.filter(function (li, idx) { return matchFlags[idx]; });
-        allocateFixedDiscount(typeTargets, matchedSubtotal, fixedType);
+        allocateFixedDiscount(typeTargets.concat(typeUnits), matchedSubtotal, fixedType);
+        collectFixedAmounts(typeUnits);
         discountApplied = { preset_id: preset.id, name: preset.name, type: 'fixed', value: fixedType, scope: 'type', applies_to: preset.applies_to };
       }
     } else {
@@ -225,7 +273,18 @@ function resolveDiscount(body, lineItems, subtotal, catalogMap) {
       // CR-01: per-line rounded discount methodology (mirrors the client).
       newSubtotal += discountedLineTotal(li);
     });
-    return { discountApplied: discountApplied, subtotal: Math.round(newSubtotal * 100) / 100 };
+    var resolved = { discountApplied: discountApplied, subtotal: Math.round(newSubtotal * 100) / 100 };
+    if (hasRecipeUnits) {
+      var discTotal = 0;
+      lineItems.forEach(function (li) {
+        discTotal += li.quantity * li.rate - discountedLineTotal(li);
+      });
+      Object.keys(recipeAmounts).forEach(function (k) { discTotal += recipeAmounts[k]; });
+      discountApplied.amount = Math.round(discTotal * 100) / 100;
+      resolved.recipeAmounts = recipeAmounts;
+      resolved.preset = preset;
+    }
+    return resolved;
   });
 }
 
@@ -486,6 +545,9 @@ function findMissingCatalogItem(items, catalogMap) {
 // discountApplied, recipe } or { ok:false, status, error, tag }. lineItems are
 // the NON-recipe lines only. Nothing here touches res or the charge path.
 function computeCartPricing(body, catalogMap) {
+  // Recipe-only carts may omit items entirely.
+  if (!Array.isArray(body.items)) body.items = [];
+  var hasRecipes = Array.isArray(body.recipes) && body.recipes.length > 0;
   // Phase 90: canning bundle validation + standard tax. /sale runs before any
   // charge, so a plain 400 is safe here (the confirm path throws a tagged error).
   var bundleCtx = prepareBundleContext(body.items, catalogMap);
@@ -608,30 +670,114 @@ function computeCartPricing(body, catalogMap) {
   });
   subtotal = Math.round(subtotal * 100) / 100;
 
-  // Apply discount (if any) before computing tax and terminal charge
-  return resolveDiscount(body, lineItems, subtotal, catalogMap).then(function (discResult) {
-    if (discResult && discResult.error) {
-      return { ok: false, status: discResult.status, error: discResult.error, tag: 'discount' };
+  // Phase 101: price recipe components (server-side only; client prices are
+  // never read) BEFORE the discount so one preset spans the whole cart.
+  var recipePricing = Promise.resolve(null);
+  if (hasRecipes) {
+    var rl = recipeLines();
+    var validated = rl.validateRecipeEntries(body.recipes);
+    if (!validated.ok) {
+      return Promise.resolve({ ok: false, status: validated.status, error: validated.error, tag: 'recipe' });
     }
-    var discountApplied = null;
-    if (discResult) {
-      subtotal = discResult.subtotal;
-      discountApplied = discResult.discountApplied || null;
-    }
+    recipePricing = rl.priceRecipeEntries(validated.entries).then(function (priced) {
+      return { priced: priced };
+    }, function (rej) {
+      if (rej && typeof rej.status === 'number' && rej.body) {
+        return { fail: { ok: false, status: rej.status, error: rej.body.error, body: rej.body, tag: 'recipe' } };
+      }
+      throw rej;
+    });
+  }
 
-    // Phase 67 (KIOSK-TAX-QUOTE-01): SALE path — no charge has been made
-    // yet, so an early 400 is safe here (unlike the confirm path below,
-    // which must void rather than bare-400 after a charge).
-    var taxResult = computeTax(lineItems, catalogMap);
-    if (taxResult.error) {
-      return { ok: false, status: 400, error: taxResult.error, tag: 'tax' };
+  // Apply discount (if any) before computing tax and terminal charge
+  return recipePricing.then(function (rp) {
+    if (rp && rp.fail) return rp.fail;
+    var recipeUnits;
+    if (rp) {
+      recipeUnits = rp.priced.entries.map(function (e) {
+        return { index: e.index, base_total: e.base_total, fee_portion: e.fee_portion };
+      });
     }
-    var taxTotal = taxResult.taxTotal;
-    var grandTotal = Math.round((subtotal + taxTotal) * 100) / 100;
-    return {
-      ok: true, lineItems: lineItems, subtotal: subtotal, taxTotal: taxTotal,
-      grandTotal: grandTotal, discountApplied: discountApplied, recipe: null
-    };
+    return resolveDiscount(body, lineItems, subtotal, catalogMap, recipeUnits).then(function (discResult) {
+      if (discResult && discResult.error) {
+        return { ok: false, status: discResult.status, error: discResult.error, tag: 'discount' };
+      }
+      var discountApplied = null;
+      if (discResult) {
+        subtotal = discResult.subtotal;
+        discountApplied = discResult.discountApplied || null;
+      }
+
+      // Phase 67 (KIOSK-TAX-QUOTE-01): SALE path — no charge has been made
+      // yet, so an early 400 is safe here (unlike the confirm path below,
+      // which must void rather than bare-400 after a charge).
+      var productGroups = taxGroups(lineItems, catalogMap);
+      if (productGroups.error) {
+        return { ok: false, status: 400, error: productGroups.error, tag: 'tax' };
+      }
+      if (!rp) {
+        var taxResult = computeTax(lineItems, catalogMap);
+        var taxTotalP = taxResult.taxTotal;
+        return {
+          ok: true, lineItems: lineItems, subtotal: subtotal, taxTotal: taxTotalP,
+          grandTotal: Math.round((subtotal + taxTotalP) * 100) / 100,
+          discountApplied: discountApplied, recipe: null
+        };
+      }
+
+      // Recipe components: per-recipe discount, adjustment, and tax merged per
+      // rate group with the product lines BEFORE rounding (entity_level).
+      var rl2 = recipeLines();
+      var amounts = (discResult && discResult.recipeAmounts) || {};
+      var preset = (discResult && discResult.preset) || null;
+      var labels = rl2.recipeEntryLabels(rp.priced);
+      var sections = rp.priced.entries.map(function (e, i) {
+        var amount = amounts[e.index] || 0;
+        var applied = rl2.applyRecipeDiscount(e, amount, preset);
+        return {
+          index: e.index, label: labels[i], entry: e, lines: applied.lines,
+          pre_tax: applied.pre_tax, discount_amount: amount,
+          adjustment: rl2.recipeAdjustment(applied.pre_tax, applied.lines)
+        };
+      });
+      return Promise.all(sections.map(function (sec) {
+        return rl2.recipeTaxGroups(sec.lines, sec.entry.catalog_map);
+      })).then(function (groupList) {
+        var merged = {};
+        Object.keys(productGroups.byRate).forEach(function (k) { merged[k] = productGroups.byRate[k]; });
+        for (var gi = 0; gi < groupList.length; gi++) {
+          if (groupList[gi].error) {
+            return { ok: false, status: 400, error: groupList[gi].error, tag: 'tax' };
+          }
+          Object.keys(groupList[gi].byRate).forEach(function (k) {
+            merged[k] = (merged[k] || 0) + groupList[gi].byRate[k];
+          });
+        }
+        var taxSum = 0;
+        Object.keys(merged).forEach(function (k) { taxSum += Math.round(merged[k] * 100) / 100; });
+        var taxTotal = Math.round(taxSum * 100) / 100;
+        var preTaxTotal = 0;
+        var adjTotal = 0;
+        var allLines = [];
+        sections.forEach(function (sec) {
+          preTaxTotal += sec.pre_tax;
+          adjTotal += sec.adjustment;
+          allLines = allLines.concat(sec.lines);
+        });
+        preTaxTotal = Math.round(preTaxTotal * 100) / 100;
+        adjTotal = Math.round(adjTotal * 100) / 100;
+        var grandTotal = Math.round((subtotal + preTaxTotal + taxTotal) * 100) / 100;
+        return {
+          ok: true, lineItems: lineItems, subtotal: subtotal, taxTotal: taxTotal,
+          grandTotal: grandTotal, discountApplied: discountApplied,
+          recipe: {
+            priced: rp.priced, labels: labels, sections: sections, lines: allLines,
+            adjustment_total: adjTotal, pre_tax_total: preTaxTotal,
+            stock: rl2.checkCombinedStock(rp.priced)
+          }
+        };
+      });
+    });
   });
 }
 
@@ -654,7 +800,9 @@ function processSale(body, idempotencyKey, req, res, stageStart) {
     });
   }
   // Validate required fields
-  if (!body || !Array.isArray(body.items) || body.items.length === 0) {
+  var hasRecipes = !!(body && Array.isArray(body.recipes) && body.recipes.length > 0);
+  if (hasRecipes && !Array.isArray(body.items)) body.items = [];
+  if (!body || !Array.isArray(body.items) || (body.items.length === 0 && !hasRecipes)) {
     return res.status(400).json({ error: 'Cart is empty' });
   }
   if (body.items.length > 50) {
