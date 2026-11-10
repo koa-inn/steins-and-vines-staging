@@ -2709,7 +2709,7 @@ Plans:
 **Goal:** The v2 dashboard is fast and usable on the shop tablet, phones and desktop, and accessible. Once that holds, it becomes the default view.
 
 **Depends on:** Phases 94 to 98
-**Requirements:** TBD. Handoff §4 Phase F.
+**Requirements:** RESP-01, PERF-01, PERF-02, PERF-03, A11Y-01, A11Y-02, DFLT-01 (handoff §4 Phase F)
 **Success Criteria** (draft):
 
   1. The layout is a mobile-first grid: 1 column on phone, 2 on tablet, 3–4 on desktop. There is no horizontal scroll at 360 px.
@@ -2717,11 +2717,42 @@ Plans:
   3. Every chart has a "view as table" fallback. Colour is never the only signal, and focus states are visible.
   4. The `?dash=v2` flag is removed once the owner signs off, and v2 becomes the default.
 
-**Plans:** 0 plans
+**Plans:** 9 plans
 
 Plans:
 
-- [ ] TBD
+**Wave 1**
+
+- [ ] 99-01-PLAN.md — local Lighthouse + axe harness, owner-assisted staging capture, anonymized fixture + PII test, ec2ad073 baseline (checkpoint)
+- [ ] 99-02-PLAN.md — TDD pure helpers: default flag + migration, same-day cache gate, as-of hint, point styles, touch tap action, lazy-render predicate
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 99-03-PLAN.md — jsPDF/qrcode off the head (idle preload + fallback), collapsed phone sections in D-09 order, IntersectionObserver lazy charts
+
+**Wave 3**
+
+- [ ] 99-04-PLAN.md — cached-first render (bp_dash_cache_v1, todayPacific gate, same user), as-of hint, layout skeletons, clear on sign-out
+
+**Wave 4**
+
+- [ ] 99-05-PLAN.md — opt-in line-chart markers + legend glyphs, touch HTML tooltip with "View batches ›", aria-describedby table hint
+
+**Wave 5**
+
+- [ ] 99-06-PLAN.md — table-view coverage test + packaging calendar table, 3-column grid at 1200 px, focus ring, contrast, 44 px targets
+
+**Wave 6**
+
+- [ ] 99-07-PLAN.md — final D-05 gate run (Lighthouse ≥ 85, axe, 360/320 overflow); owner decision if it fails (checkpoint)
+
+**Wave 7**
+
+- [ ] 99-08-PLAN.md — staging deploy, Claude-piloted UAT, owner iPad sign-off + permission to update the 13 opt-in-default tests (checkpoint)
+
+**Wave 8**
+
+- [ ] 99-09-PLAN.md — v2 default flip with one-time migration and Classic fallback, staging deploy, owner iPad confirmation (checkpoint)
 
 ### Phase 100: Limited Releases page and online deposits
 
