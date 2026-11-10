@@ -4,13 +4,13 @@ milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
 stopped_at: Phase 101 UI-SPEC approved
-last_updated: "2026-11-10T22:23:13.379Z"
+last_updated: "2026-11-10T22:29:45.270Z"
 last_activity: 2026-11-10
 progress:
   total_phases: 87
   completed_phases: 41
   total_plans: 377
-  completed_plans: 355
+  completed_plans: 356
   percent: 47
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-19)
 ## Current Position
 
 Phase: 101 (kiosk-mixed-recipe-carts-and-full-tenders) — EXECUTING
-Plan: 5 of 15
+Plan: 6 of 15
 Also open: Phase 87 — 87-19 Task 3 (first real sale). 87-20 rollback RETIRED 2026-11-03 (verify 0 mismatches); drift-check false-positive fix pending (quick task)
 **Phase 94 COMPLETE 2026-10-27:** live on production `141901a7` (`prod-20261027-1`, Railway `896f6942`; rollback target `90dfb9c1`). B3 (215 typed) + B2 (40 completion dates) applied on staging + prod with owner OK; replay + verify 0 mismatches; D-13 PASS (57d/59d/175); verification passed 5/5; owner signed off. Staging batches now on Postgres (refreshed + flipped 2026-10-27). Open from Phase 94: code review CR-01 + WR-01..04 FIXED 2026-10-28 (6c296bcc..73970cfb), LIVE on prod 2026-10-28 (`3f64da2d`, `prod-20261028-1`, Railway `d8ffd7bd`; rollback `896f6942`); IN-01..05 open; replay CLI needs retry/longer timeout/resume (Apps Script ~14 s per batch); prod recipes lack `beer_category` (Phase 89 gap); batch list/detail age still now − start_date. body-parser patch `13805fe9` LIVE on prod in the same release (CI audit green).
 Status: Ready to execute
@@ -224,6 +224,7 @@ Milestone: v4.5 Security & Money-Path Closeout — NOT complete (the 2026-07-08 
 - [Phase 87]: Phase 87-01: owner approved design Q1-Q20 as recommended (2026-10-09)
 - [Phase 87]: 87-17: owner approved Phase 87 ASVS review (risks A1-A7, notes A8-A9, public-path hardening) with no changes
 - [Phase ?]: [101-04] priceRecipe takes optional preloadedCatalog; recipe data cloned per entry
+- [Phase 101]: 101-05: RECIPE_SALE mutex dropped from merged /sale; idempotency lock + deterministic Helcim key protect against double charge
 
 ### Quick Tasks Completed
 
@@ -231,6 +232,7 @@ Milestone: v4.5 Security & Money-Path Closeout — NOT complete (the 2026-07-08 
 |---|-------------|------|--------|-----------|
 | 261002-kkk | Migration guard follow-ups: reject NUL bytes in migration-allowlist, lint zoho-middleware scripts/ | 2026-10-02 | 7dae8f8a | [261002-kkk-migration-guard-follow-ups-reject-nul-by](./quick/261002-kkk-migration-guard-follow-ups-reject-nul-by/) |
 | Phase 101 P04 | 20min | 2 tasks | 2 files |
+| Phase 101 P05 | 45min | 3 tasks | 3 files |
 
 ### Pending Todos
 
@@ -293,6 +295,6 @@ Milestone: v4.5 Security & Money-Path Closeout — NOT complete (the 2026-07-08 
 
 ## Session Continuity
 
-Last session: 2026-11-10T22:23:10.350Z
+Last session: 2026-11-10T22:29:42.344Z
 Stopped at: Phase 101 UI-SPEC approved
 Resume file: None
