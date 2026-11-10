@@ -605,6 +605,142 @@ describe('fee items in the kiosk catalog (Pitfall 4)', function () {
   });
 });
 
+describe('sale reference and idempotency on a recipe cart (replaces the legacy recipe-sale reference cases, 101-09)', function () {
+  var total = fx.ORACLE.initiate['RCP-LOCKED/in-store/none'].charge;
+
+  test('charges, records the pending sentinel and responds under the kiosk reference_number', function () {
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total, reference_number: 'KIOSK-REF-1', idempotency_key: 'KIOSK-REF-1' }).then(function (out) {
+      expect(out.code).toBe(202);
+      expect(out.body.reference).toBe('KIOSK-REF-1');
+      expect(helcimLib.terminalPurchase.mock.calls[0][1]).toBe('KIOSK-REF-1');
+      var pendingKeys = cache.set.mock.calls.map(function (c) { return c[0]; })
+        .filter(function (k) { return k.indexOf('kiosk:pending-charge:') === 0; });
+      expect(pendingKeys).toEqual(['kiosk:pending-charge:KIOSK-REF-1']);
+    });
+  });
+
+  test('falls back to a generated KIOSK- reference when the kiosk sends none', function () {
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total }).then(function (out) {
+      expect(out.body.reference).toMatch(/^KIOSK-/);
+      expect(helcimLib.terminalPurchase.mock.calls[0][1]).toBe(out.body.reference);
+    });
+  });
+
+  test('an idempotency replay returns the cached response without charging again', function () {
+    var moneyPath = require('../lib/money-path');
+    var cached = { pending: true, reference: 'KIOSK-REF-1' };
+    moneyPath.acquireIdempotencyLock.mockResolvedValue({ status: 'replay', cached: cached });
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total, idempotency_key: 'KIOSK-REF-1' }).then(function (out) {
+      expect(out.code).toBe(201);
+      expect(out.body).toEqual(cached);
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+
+  test('idempotency contention returns 409 without charging', function () {
+    var moneyPath = require('../lib/money-path');
+    moneyPath.acquireIdempotencyLock.mockResolvedValue({ status: 'contention' });
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total, idempotency_key: 'KIOSK-REF-1' }).then(function (out) {
+      expect(out.code).toBe(409);
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+  test('idempotency lock is taken on the kiosk:idem: key', function () {
+    var moneyPath = require('../lib/money-path');
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total, idempotency_key: 'order-key-002' }).then(function (out) {
+      expect(out.code).toBe(202);
+      expect(moneyPath.acquireIdempotencyLock).toHaveBeenCalledWith(cache, 'kiosk:idem:order-key-002', expect.any(Number));
+    });
+  });
+
+  test('idempotency_key is required when NODE_ENV=production; terminalPurchase NOT called', function () {
+    var prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total }).then(function (out) {
+      process.env.NODE_ENV = prev;
+      expect(out.code).toBe(400);
+      expect(out.body.error).toMatch(/idempotency_key is required/);
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    }, function (e) { process.env.NODE_ENV = prev; throw e; });
+  });
+
+  test('terminalPurchase receives the deterministic Helcim key sha256(idempotency_key).hex.slice(0,25)', function () {
+    var expected = require('crypto').createHash('sha256').update('order-key-004').digest('hex').substring(0, 25);
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total, idempotency_key: 'order-key-004' }).then(function (out) {
+      expect(out.code).toBe(202);
+      expect(helcimLib.terminalPurchase.mock.calls[0][2]).toBe(expected);
+    });
+  });
+
+  test('the pending-charge record carries reference, amount, idempotency key and created_at', function () {
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total, idempotency_key: 'order-key-005' }).then(function (out) {
+      expect(out.code).toBe(202);
+      var ref = helcimLib.terminalPurchase.mock.calls[0][1];
+      var call = cache.set.mock.calls.find(function (c) { return c[0] === 'kiosk:pending-charge:' + ref; });
+      expect(call[1]).toEqual(expect.objectContaining({
+        reference_number: ref, amount: total, idempotency_key: 'order-key-005', created_at: expect.any(String)
+      }));
+    });
+  });
+
+  test('terminal-push failure releases the idempotency key (502)', function () {
+    helcimLib.terminalPurchase.mockRejectedValue(new Error('Terminal unavailable'));
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total, idempotency_key: 'order-key-006' }).then(function (out) {
+      expect(out.code).toBe(502);
+      expect(cache.releaseLock).toHaveBeenCalledWith('kiosk:idem:order-key-006');
+    });
+  });
+});
+
+describe('recipe pricing validation through /sale (replaces the legacy recipe-sale scaling/unit cases, 101-09)', function () {
+  function expectRejected(out, code, msg) {
+    expect(out.code).toBe(code);
+    expect(out.body.error).toMatch(msg);
+    expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+  }
+
+  test('missing recipe_id -> 400 and no charge', function () {
+    return sale({ recipes: [{ sale_type: 'in-store' }], client_grand_total: 10 }).then(function (out) { expectRejected(out, 400, /recipe_id is required/); });
+  });
+
+  test('unknown recipe -> 4xx and no charge', function () {
+    return sale({ recipes: [recipeEntry('RCP-NOPE')], client_grand_total: 10 }).then(function (out) {
+      expect(out.code).toBeGreaterThanOrEqual(400);
+      expect(out.code).toBeLessThan(500);
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+
+  test('target_volume_l <= 0 -> 400 and no charge', function () {
+    return sale({ recipes: [recipeEntry('RCP-LOCKED', { target_volume_l: 0 })], client_grand_total: 10 })
+      .then(function (out) { expectRejected(out, 400, /target_volume_l must be/); });
+  });
+
+  test('target_volume_l above 10x the base batch (fat-finger guard) -> 400 and no charge', function () {
+    return sale({ recipes: [recipeEntry('RCP-LOCKED', { target_volume_l: 231 })], client_grand_total: 10 })
+      .then(function (out) { expectRejected(out, 400, /exceeds maximum/); });
+  });
+
+  test('a recipe with no batch_size_l cannot be scaled -> 400 and no charge', function () {
+    var original = fx.MOCK_RECIPES['RCP-LOCKED'];
+    recipeStore.get.mockImplementation(function (id) {
+      if (id !== 'RCP-LOCKED') return Promise.resolve(fx.MOCK_RECIPES[id] || { ok: false });
+      var copy = JSON.parse(JSON.stringify(original));
+      var recipe = (copy.data && copy.data.recipe) || copy.recipe;
+      if (recipe) recipe.batch_size_l = 0;
+      return Promise.resolve(copy);
+    });
+    return sale({ recipes: [recipeEntry('RCP-LOCKED', { target_volume_l: 46 })], client_grand_total: 10 })
+      .then(function (out) { expectRejected(out, 400, /no base batch size/); });
+  });
+
+  test('a cross-family ingredient unit -> 422 before any charge', function () {
+    var modified = [{ item_id: 'ing-grain-1', item_name: 'Pale Malt 2-Row', quantity: 5, unit: 'L' }];
+    return sale({ recipes: [recipeEntry('RCP-DYN', { modified_ingredients: modified })], client_grand_total: 10 })
+      .then(function (out) { expectRejected(out, 422, /not convertible/); });
+  });
+});
+
 describe('combined recipe stock (D-12, D-13)', function () {
   // RCP-LOCKED needs 5.5 kg grain and RCP-DYN 6 kg: each fits in 8 kg alone, not together.
   function twoRecipes() { return [recipeEntry('RCP-LOCKED'), recipeEntry('RCP-DYN')]; }

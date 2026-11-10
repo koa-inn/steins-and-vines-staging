@@ -268,18 +268,6 @@ describe('D-05 dual price compare', function () {
     });
   });
 
-  test('sale route compares with operation sale', function () {
-    return callHandler('POST', '/api/kiosk/recipe-sale', {
-      body: { recipe_id: 'RCP-001', sale_type: 'in-store' }
-    }).then(function (res) {
-      expect(res._status).toBe(202);
-      return flush();
-    }).then(function () {
-      expect(mocks.compare.compareAndReport).toHaveBeenCalledTimes(1);
-      expect(mocks.compare.compareAndReport.mock.calls[0][0].operation).toBe('sale');
-    });
-  });
-
   test('drifted sheet recipe: projections differ, response and price still Postgres (D-06)', function () {
     mocks.store.getFromSheet.mockImplementation(function () { return Promise.resolve(recipeBody({ malt: 9 })); });
     var pgTotal;

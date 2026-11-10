@@ -6,8 +6,9 @@
 // Phase 101 oracle (D-20). Later plans assert the merged /api/kiosk/sale path
 // produces these exact values. Do not regenerate these literals from new code.
 //
-// Pins what the legacy recipe route charges (POST /api/kiosk/recipe-sale) and
-// books (POST /api/kiosk/recipe-sale/confirm) for a recipe-only cart. Expected
+// Pins what the merged route charges (POST /api/kiosk/sale with recipes[], the
+// initiate leg since 101-09) and what the legacy confirm route books
+// (POST /api/kiosk/recipe-sale/confirm, kept by D-18) for a recipe-only cart. Expected
 // values are literals in fixtures/recipe-mixed-carts.js ORACLE. Test names
 // carry the caseKey so later plans can reference them.
 //
@@ -108,6 +109,10 @@ jest.mock('../lib/constants', function () {
   };
 });
 
+jest.mock('../lib/inventory-ledger', function () {
+  return { decrementStock: jest.fn().mockResolvedValue({}), reconcileFromZoho: jest.fn() };
+});
+
 jest.mock('../lib/brewpad-integration', function () {
   return {
     detectRecipeSale: jest.fn(),
@@ -167,9 +172,49 @@ function buildBody(c, extra) {
   return Object.assign(body, extra || {});
 }
 
+// Recipe-only /api/kiosk/sale body; the client total is the oracle charge.
+function buildSaleBody(c) {
+  var m = MODES[c.mode];
+  var entry = { recipe_id: c.recipe, sale_type: m.sale_type, mill_grain: m.mill_grain };
+  if (c.target) entry.target_volume_l = c.target;
+  if (c.modified) entry.modified_ingredients = MODIFIED[c.recipe];
+  var body = { items: [], recipes: [entry], client_grand_total: fx.ORACLE.initiate[c.key].charge };
+  if (fx.DISCOUNT_KEYS[c.disc]) body.discount = { preset_id: fx.DISCOUNT_KEYS[c.disc] };
+  return body;
+}
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
+
+function resetAndLoadPos() {
+  mockRouteHandlers = {};
+  jest.resetModules();
+  require('../routes/pos');
+  return {
+    cache: require('../lib/cache'),
+    helcim: require('../lib/helcim'),
+    zohoApi: require('../lib/zoho-api')
+  };
+}
+
+function callSale(body) {
+  return new Promise(function (resolve, reject) {
+    var handler = mockRouteHandlers['POST:/api/kiosk/sale'];
+    if (!handler) return reject(new Error('No handler registered for POST:/api/kiosk/sale'));
+    var finishHandlers = [];
+    var res = { _status: 200, _body: null, headersSent: false, locals: {} };
+    res.status = jest.fn(function (s) { res._status = s; return res; });
+    res.on = jest.fn(function (evt, h) { if (evt === 'finish') finishHandlers.push(h); });
+    res.json = jest.fn(function (b) {
+      res._body = b; res.headersSent = true;
+      finishHandlers.forEach(function (h) { h(); });
+      resolve(res);
+      return res;
+    });
+    try { handler({ body: body }, res); } catch (e) { reject(e); }
+  });
+}
 
 function resetAndLoadPosRecipe() {
   mockRouteHandlers = {};
@@ -237,12 +282,12 @@ function stubCache(mocks, catalog) {
 // Initiate leg
 // ---------------------------------------------------------------------------
 
-describe('recipe-sale initiate oracle', function () {
+describe('recipe-only /api/kiosk/sale initiate oracle', function () {
   var mocks;
 
   beforeEach(function () {
     setupEnv();
-    mocks = resetAndLoadPosRecipe();
+    mocks = resetAndLoadPos();
     mocks.helcim.isTerminalEnabled.mockReturnValue(true);
     mocks.helcim.terminalPurchase.mockResolvedValue({});
     mocks.cache.acquireLock.mockResolvedValue(true);
@@ -256,31 +301,30 @@ describe('recipe-sale initiate oracle', function () {
 
   CASES.forEach(function (c) {
     test('initiate ' + c.key, function () {
-      return callHandler('POST', '/api/kiosk/recipe-sale', { body: buildBody(c) }).then(function (res) {
+      return callSale(buildSaleBody(c)).then(function (res) {
         expect(res._status).toBe(202);
         expect(mocks.helcim.terminalPurchase).toHaveBeenCalledTimes(1);
-        expectOracle('initiate', c.key, {
-          charge: mocks.helcim.terminalPurchase.mock.calls[0][0],
-          total_before_tax: res._body.total_before_tax,
-          tax_total: res._body.tax_total
-        });
-        // The 202 body total is the terminal charge.
-        expect(res._body.total).toBe(mocks.helcim.terminalPurchase.mock.calls[0][0]);
+        // The merged route returns {pending, reference}; the oracle's charge is
+        // the terminal amount (the legacy route also echoed pre-tax/tax totals,
+        // which the cart-quote route now carries: pos-cart-quote.test.js).
+        expect(mocks.helcim.terminalPurchase.mock.calls[0][0]).toBe(fx.ORACLE.initiate[c.key].charge);
+        expect(res._body.pending).toBe(true);
       });
     });
   });
 
-  test('initiate stock shortfall -> 409 Insufficient stock for scaled batch', function () {
+  test('initiate stock shortfall -> 409 Insufficient stock naming the short ingredient', function () {
     var shortCatalog = fx.MOCK_INGREDIENTS_CATALOG.map(function (e) {
       return e.item_id === 'ing-grain-1' ? Object.assign({}, e, { stock_on_hand: 1 }) : e;
     });
     stubCache(mocks, shortCatalog);
-    return callHandler('POST', '/api/kiosk/recipe-sale', {
-      body: { recipe_id: 'RCP-LOCKED', sale_type: 'in-store' }
+    return callSale({
+      items: [], recipes: [{ recipe_id: 'RCP-LOCKED', sale_type: 'in-store' }],
+      client_grand_total: fx.ORACLE.initiate['RCP-LOCKED/in-store/none'].charge
     }).then(function (res) {
       expect(res._status).toBe(409);
-      expect(res._body.error).toBe('Insufficient stock for scaled batch');
-      expect(res._body.conflicts[0].item_id).toBe('ing-grain-1');
+      expect(res._body.error).toMatch(/Insufficient stock/);
+      expect(JSON.stringify(res._body.conflicts)).toContain('ing-grain-1');
       expect(mocks.helcim.terminalPurchase).not.toHaveBeenCalled();
     });
   });

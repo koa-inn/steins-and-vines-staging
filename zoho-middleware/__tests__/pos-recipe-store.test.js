@@ -302,25 +302,5 @@ describe('cross-store pricing parity (quote and sale)', function () {
         expect(results.postgres._body).toEqual(results.sheets._body);
       });
     });
-
-    test('sale: ' + sc.name + ' charges the same terminal amount from sheets and postgres', function () {
-      var amounts = {};
-      var saleBody = { recipe_id: 'RCP-001', sale_type: sc.query.sale_type, mill_grain: !!sc.mill };
-      if (sc.query.target_volume_l) saleBody.target_volume_l = Number(sc.query.target_volume_l);
-      if (sc.query.modified_ingredients) saleBody.modified_ingredients = JSON.parse(sc.query.modified_ingredients);
-      if (sc.query.discount_preset_id) saleBody.discount = { preset_id: sc.query.discount_preset_id };
-      var m1 = load('sheets');
-      supplyRecipe('sheets', m1, recipeBody(sc.recipe));
-      return callHandler('POST', '/api/kiosk/recipe-sale', { body: saleBody }).then(function (res) {
-        expect(res._status).toBe(202);
-        amounts.sheets = res._body.total;
-        var m2 = load('postgres');
-        supplyRecipe('postgres', m2, recipeBody(sc.recipe));
-        return callHandler('POST', '/api/kiosk/recipe-sale', { body: saleBody });
-      }).then(function (res) {
-        expect(res._status).toBe(202);
-        expect(res._body.total).toBe(amounts.sheets);
-      });
-    });
   });
 });

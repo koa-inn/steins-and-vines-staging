@@ -3,16 +3,11 @@
 // ---------------------------------------------------------------------------
 // pos-recipe-money-path.test.js — Phase 50-05 (M12 / roadmap SC#5)
 //
-// Regression coverage for /api/kiosk/recipe-sale adopting the SAME
-// money-path primitives already used by /api/kiosk/sale (pos.js):
-//   - moneyPath.acquireIdempotencyLock as a distinct duplicate-charge guard,
-//     acquired BEFORE the pre-existing RECIPE_SALE inventory mutex (D-50-06)
-//   - a deterministic sha256-derived Helcim idempotency key (D-50-06a)
-//   - a pending-charge record (KIOSK_PENDING_CHARGE_PREFIX) so an orphaned
-//     recipe charge becomes visible to lib/reconcile.js (M12)
-//   - the recipe confirm leg's void-on-failure routed through
-//     moneyPath.voidWithTimeout instead of a raw helcimLib.voidTransaction
-//     call (audit H5/L18)
+// Regression coverage for the recipe confirm leg's void-on-failure routed
+// through moneyPath.voidWithTimeout instead of a raw helcimLib.voidTransaction
+// call (audit H5/L18). The initiate-leg money-path cases (idempotency gate,
+// deterministic Helcim key, pending-charge record, lock release) moved to
+// pos-sale-recipes.test.js when the legacy initiate route was retired (101-09).
 //
 // Mirrors the mocking conventions of pos-recipe.test.js. Does NOT mock
 // ../lib/money-path — the real primitive is exercised (consistent with how
@@ -22,7 +17,6 @@
 // Run alone: cd zoho-middleware && npx jest pos-recipe-money-path
 // ---------------------------------------------------------------------------
 
-var crypto = require('crypto');
 
 var mockRouteHandlers = {};
 
@@ -196,150 +190,6 @@ function callHandler(method, path, req) {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-
-describe('POST /api/kiosk/recipe-sale — money-path primitives (M12, D-50-06)', function () {
-  var mocks;
-
-  beforeEach(function () {
-    mocks = resetAndLoadPosRecipe();
-    process.env.APPS_SCRIPT_URL = 'https://script.google.com/test';
-    process.env.APPS_SCRIPT_SERVER_TOKEN = 'test-token';
-    process.env.BEER_SALES_ENABLED = 'true';
-    process.env.MAKERS_FEE_ITEM_ID = 'fee-makers-1';
-    process.env.MATERIALS_FEE_ITEM_ID = 'fee-materials-1';
-    process.env.KIOSK_CONTACT_ID = 'contact-default';
-    delete process.env.MILLING_FEE_ITEM_ID;
-    delete process.env.NODE_ENV;
-    mocks.helcim.isTerminalEnabled.mockReturnValue(true);
-    mocks.helcim.terminalPurchase.mockResolvedValue({});
-    mocks.cache.acquireLock.mockResolvedValue(true);
-    mocks.cache.releaseLock.mockResolvedValue();
-    mocks.cache.get.mockImplementation(function (key) {
-      if (key === 'zoho:ingredients:all') return Promise.resolve(MOCK_INGREDIENTS_CATALOG);
-      if (key === 'zoho:ingredients') return Promise.resolve(MOCK_INGREDIENTS_CATALOG);
-      return Promise.resolve(null);
-    });
-    mocks.axios.post.mockResolvedValue(MOCK_RECIPE_RESPONSE);
-  });
-
-  afterEach(function () {
-    delete process.env.APPS_SCRIPT_URL;
-    delete process.env.APPS_SCRIPT_SERVER_TOKEN;
-    delete process.env.BEER_SALES_ENABLED;
-    delete process.env.MAKERS_FEE_ITEM_ID;
-    delete process.env.MATERIALS_FEE_ITEM_ID;
-    delete process.env.KIOSK_CONTACT_ID;
-    delete process.env.MILLING_FEE_ITEM_ID;
-    delete process.env.NODE_ENV;
-    jest.restoreAllMocks();
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 1: Duplicate recipe-sale -> one charge
-  // -------------------------------------------------------------------------
-  test('1. duplicate recipe-sale with the same idempotency_key produces exactly ONE terminal charge', function () {
-    var lockSpy = jest.spyOn(mocks.moneyPath, 'acquireIdempotencyLock')
-      .mockResolvedValueOnce({ status: 'acquired' })
-      .mockResolvedValueOnce({ status: 'contention' });
-
-    var body = { recipe_id: 'RCP-001', sale_type: 'in-store', idempotency_key: 'dup-key-001' };
-
-    return callHandler('POST', '/api/kiosk/recipe-sale', { body: body }).then(function (res1) {
-      expect(res1._status).toBe(202);
-      return callHandler('POST', '/api/kiosk/recipe-sale', { body: body }).then(function (res2) {
-        expect(res2._status).toBe(409);
-        expect(mocks.helcim.terminalPurchase).toHaveBeenCalledTimes(1);
-        expect(lockSpy).toHaveBeenCalledTimes(2);
-      });
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 2: idempotency lock is a distinct guard from the RECIPE_SALE mutex
-  // -------------------------------------------------------------------------
-  test('2. BOTH the idempotency lock (kiosk:idem:) AND the RECIPE_SALE mutex are acquired, idempotency gate FIRST (D-50-06)', function () {
-    var lockSpy = jest.spyOn(mocks.moneyPath, 'acquireIdempotencyLock');
-
-    return callHandler('POST', '/api/kiosk/recipe-sale', {
-      body: { recipe_id: 'RCP-001', sale_type: 'in-store', idempotency_key: 'order-key-002' }
-    }).then(function (res) {
-      expect(res._status).toBe(202);
-      expect(lockSpy).toHaveBeenCalledWith(mocks.cache, 'kiosk:idem:order-key-002', expect.any(Number));
-      expect(mocks.cache.acquireLock).toHaveBeenCalledWith('recipe-sale', 30);
-
-      var lockCallOrder = lockSpy.mock.invocationCallOrder[0];
-      var mutexCallOrder = mocks.cache.acquireLock.mock.invocationCallOrder[0];
-      expect(lockCallOrder).toBeLessThan(mutexCallOrder);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 3: required in production
-  // -------------------------------------------------------------------------
-  test('3. idempotency_key is required when NODE_ENV=production; terminalPurchase NOT called', function () {
-    process.env.NODE_ENV = 'production';
-    return callHandler('POST', '/api/kiosk/recipe-sale', {
-      body: { recipe_id: 'RCP-001', sale_type: 'in-store' }
-    }).then(function (res) {
-      expect(res._status).toBe(400);
-      expect(res._body.error).toMatch(/idempotency_key is required/);
-      expect(mocks.helcim.terminalPurchase).not.toHaveBeenCalled();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 4: deterministic Helcim key (D-50-06a)
-  // -------------------------------------------------------------------------
-  test('4. terminalPurchase receives a deterministic 3rd-arg Helcim key = sha256(idempotency_key).hex.slice(0,25)', function () {
-    var idemKey = 'order-key-004';
-    var expectedHelcimKey = crypto.createHash('sha256').update(idemKey).digest('hex').substring(0, 25);
-
-    return callHandler('POST', '/api/kiosk/recipe-sale', {
-      body: { recipe_id: 'RCP-001', sale_type: 'in-store', idempotency_key: idemKey }
-    }).then(function (res) {
-      expect(res._status).toBe(202);
-      expect(mocks.helcim.terminalPurchase).toHaveBeenCalledTimes(1);
-      var callArgs = mocks.helcim.terminalPurchase.mock.calls[0];
-      expect(callArgs[2]).toBe(expectedHelcimKey);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 5: pending-charge record written (M12)
-  // -------------------------------------------------------------------------
-  test('5. a pending-charge record is written under kiosk:pending-charge:<refNumber> matching the Helcim invoiceNumber', function () {
-    return callHandler('POST', '/api/kiosk/recipe-sale', {
-      body: { recipe_id: 'RCP-001', sale_type: 'in-store', idempotency_key: 'order-key-005' }
-    }).then(function (res) {
-      expect(res._status).toBe(202);
-      var refNumber = mocks.helcim.terminalPurchase.mock.calls[0][1];
-      expect(typeof refNumber).toBe('string');
-      var expectedKey = 'kiosk:pending-charge:' + refNumber;
-      var pendingSetCall = mocks.cache.set.mock.calls.find(function (c) { return c[0] === expectedKey; });
-      expect(pendingSetCall).toBeTruthy();
-      expect(pendingSetCall[1]).toEqual(expect.objectContaining({
-        reference_number: refNumber,
-        amount: expect.any(Number),
-        idempotency_key: 'order-key-005',
-        created_at: expect.any(String)
-      }));
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 6: lock released on terminal-push failure
-  // -------------------------------------------------------------------------
-  test('6. terminal-push failure releases BOTH the idempotency key and the RECIPE_SALE mutex', function () {
-    mocks.helcim.terminalPurchase.mockRejectedValue(new Error('Terminal unavailable'));
-    return callHandler('POST', '/api/kiosk/recipe-sale', {
-      body: { recipe_id: 'RCP-001', sale_type: 'in-store', idempotency_key: 'order-key-006' }
-    }).then(function (res) {
-      expect(res._status).toBe(502);
-      expect(mocks.cache.releaseLock).toHaveBeenCalledWith('recipe-sale');
-      expect(mocks.cache.releaseLock).toHaveBeenCalledWith('kiosk:idem:order-key-006');
-    });
-  });
-});
 
 describe('POST /api/kiosk/recipe-sale/confirm — hardened void (T-50-28, audit H5/L18)', function () {
   var mocks;
