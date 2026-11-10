@@ -1814,6 +1814,7 @@
       _kcEnv.setRecipeEntries(entries);
 
       kioskSetMode('products');
+      kioskRequestCartQuote();
       kioskRenderCart();
       showToast('Added ' + (recipe.name || 'recipe') + ' to cart', 'success');
     }
@@ -2136,6 +2137,7 @@
       kioskSyncKitFees();
     }
 
+    kioskRequestCartQuote();
     kioskRenderCart();
     kioskRenderProducts();
   }
@@ -2168,6 +2170,7 @@
       }
     }
     if (wasKit) kioskSyncKitFees();
+    kioskRequestCartQuote();
     kioskRenderCart();
     kioskRenderProducts();
   }
@@ -2186,6 +2189,7 @@
     } else if (wasKit) {
       kioskSyncKitFees();
     }
+    kioskRequestCartQuote();
     kioskRenderCart();
     kioskRenderProducts();
   }
@@ -2193,6 +2197,7 @@
   function kioskRemoveRecipeEntry(entryId) {
     var entries = _kcEnv.getRecipeEntries().filter(function (e) { return e.entry_id !== entryId; });
     _kcEnv.setRecipeEntries(entries);
+    kioskRequestCartQuote();
     kioskRenderCart();
     kioskRenderProducts();
   }
@@ -2214,6 +2219,7 @@
     _kioskModifyPanelOpen = false;
     _kioskTargetVolumeL = null;
     kioskUpdateDiscountDisplay();
+    kioskRequestCartQuote();
     kioskRenderCart();
     kioskRenderProducts();
   }
@@ -2320,6 +2326,7 @@
     _kcEnv.setCart(newCart);
     var overCap = count > bundle.cap[size];
     _kioskBundleCapAck = !!opts.capConfirmed && overCap;
+    kioskRequestCartQuote();
     kioskRenderCart();
     kioskRenderProducts();
     return { ok: true, overCap: overCap };
@@ -2330,6 +2337,7 @@
     delete cart[KIOSK_BUNDLE_LINE_KEY];
     delete cart[KIOSK_BUNDLE_CAN_KEY];
     _kioskBundleCapAck = false;
+    kioskRequestCartQuote();
     kioskRenderCart();
     kioskRenderProducts();
   }
@@ -2347,6 +2355,7 @@
     can.qty = count;
     var over = kioskBundleOverCap();
     if (!over) _kioskBundleCapAck = false;
+    kioskRequestCartQuote();
     kioskRenderCart();
     return { ok: true, overCap: over };
   }
@@ -2937,37 +2946,8 @@
     kioskShowCustomerStep();
   }
 
-  function kioskProceedToPayment() {
-    // 50-04 (D-50-05, T-50-20/T-50-21): primary re-entrancy guard. A second
-    // tap of Proceed/Skip (or any other re-entrant call) while an attempt is
-    // already in flight is a no-op — this is the backstop the disabled
-    // button alone cannot cover (an iPad touch that registers twice before
-    // the DOM disables, a client retry, a stale onclick already queued).
-    if (_kioskPaymentInFlight) return;
-
-    // Pitfall 5: a manager override is per-attempt, never sticky across sales.
-    _kioskStockOverride = false;
-
-    var totals = kioskCalcTotals();
-    // D-19 / T-101-32: a recipe cart is priced only by the server cart-quote.
-    if (totals.pending) {
-      showToast(totals.error ? 'Could not price the recipes. Try again.' : 'Pricing recipes, one moment...', 'error');
-      return;
-    }
-    var mwUrl = _kcEnv.mwUrl;
-    if (!mwUrl) {
-      showToast('Middleware URL not configured', 'error');
-      return;
-    }
-
-    // Mint the ONE key for this attempt now that it is actually proceeding.
-    // Every re-entry within this attempt (GC panel Skip/Proceed, the
-    // stock-override resubmit) reads this SAME closure-captured value via
-    // the local `refNumber` below — never re-minted per invocation.
-    _kioskPaymentInFlight = true;
-    _kioskPaymentKey = 'KIOSK-' + Date.now();
-
-    var items = Object.keys(_kcEnv.getCart()).map(function (id) {
+  function kioskBuildSaleItems() {
+    return Object.keys(_kcEnv.getCart()).map(function (id) {
       var entry = _kcEnv.getCart()[id];
       // GIFTCARD-01: gift_cert lines forward cert info; server prices via KIOSK_GIFT_CARD_ITEM_ID (D-05)
       if (entry.item.gift_cert) {
@@ -3005,6 +2985,103 @@
       if (entry.item.bundle_can) itemLine.bundle_can = true;
       return itemLine;
     });
+  }
+
+  // Parameters-only recipe wire objects (never prices) shared by the sale body
+  // and the cart-quote request so both send identical recipes.
+  function kioskBuildRecipeWire() {
+    return _kcEnv.getRecipeEntries().map(function (e) {
+      return {
+        recipe_id: e.recipe_id,
+        sale_type: e.sale_type,
+        mill_grain: e.mill_grain,
+        target_volume_l: e.target_volume_l,
+        modified_ingredients: Array.isArray(e.modified_ingredients) ? e.modified_ingredients : null
+      };
+    });
+  }
+
+  function kioskBuildDiscountWire() {
+    var d = _kcEnv.getDiscount();
+    return d ? { preset_id: d.presetId, name: d.name, type: d.type, value: d.value, scope: d.scope } : undefined;
+  }
+
+  // 101 D-19 / MIXR-11: server cart-quote for carts with recipe entries.
+  // Debounced; only the latest request's response is applied. While pending or
+  // failed, kioskCalcTotals reports pending and Checkout stays disabled.
+  var _kioskCartQuoteSeq = 0;
+  var _kioskCartQuoteTimer = null;
+  var KIOSK_CART_QUOTE_DEBOUNCE_MS = 250;
+
+  function kioskRequestCartQuote() {
+    if (_kioskCartQuoteTimer) { clearTimeout(_kioskCartQuoteTimer); _kioskCartQuoteTimer = null; }
+    _kioskCartQuoteSeq++;
+    var seq = _kioskCartQuoteSeq;
+    if (!_kcEnv.getRecipeEntries().length) {
+      _kioskCartQuote = null;
+      return;
+    }
+    _kioskCartQuote = { seq: seq, status: 'pending', data: null };
+    kioskRenderCart();
+    _kioskCartQuoteTimer = setTimeout(function () {
+      _kioskCartQuoteTimer = null;
+      if (seq !== _kioskCartQuoteSeq) return;
+      var mwUrl = _kcEnv.mwUrl;
+      var payload = {
+        items: kioskBuildSaleItems(),
+        recipes: kioskBuildRecipeWire(),
+        discount: kioskBuildDiscountWire()
+      };
+      function apply(q) {
+        if (seq !== _kioskCartQuoteSeq) return; // stale response
+        _kioskCartQuote = q;
+        kioskRenderCart();
+      }
+      fetch(mwUrl + '/api/kiosk/cart-quote', _kcMergeAuth({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })).then(function (r) {
+        return r.json().then(function (data) { return { ok: r.ok, data: data }; }, function () { return { ok: false, data: null }; });
+      }).then(function (res) {
+        apply(res.ok && res.data ? { seq: seq, status: 'ok', data: res.data } : { seq: seq, status: 'error', data: null });
+      }).catch(function () {
+        apply({ seq: seq, status: 'error', data: null });
+      });
+    }, KIOSK_CART_QUOTE_DEBOUNCE_MS);
+  }
+
+  function kioskProceedToPayment() {
+    // 50-04 (D-50-05, T-50-20/T-50-21): primary re-entrancy guard. A second
+    // tap of Proceed/Skip (or any other re-entrant call) while an attempt is
+    // already in flight is a no-op — this is the backstop the disabled
+    // button alone cannot cover (an iPad touch that registers twice before
+    // the DOM disables, a client retry, a stale onclick already queued).
+    if (_kioskPaymentInFlight) return;
+
+    // Pitfall 5: a manager override is per-attempt, never sticky across sales.
+    _kioskStockOverride = false;
+
+    var totals = kioskCalcTotals();
+    // D-19 / T-101-32: a recipe cart is priced only by the server cart-quote.
+    if (totals.pending) {
+      showToast(totals.error ? 'Could not price the recipes. Try again.' : 'Pricing recipes, one moment...', 'error');
+      return;
+    }
+    var mwUrl = _kcEnv.mwUrl;
+    if (!mwUrl) {
+      showToast('Middleware URL not configured', 'error');
+      return;
+    }
+
+    // Mint the ONE key for this attempt now that it is actually proceeding.
+    // Every re-entry within this attempt (GC panel Skip/Proceed, the
+    // stock-override resubmit) reads this SAME closure-captured value via
+    // the local `refNumber` below — never re-minted per invocation.
+    _kioskPaymentInFlight = true;
+    _kioskPaymentKey = 'KIOSK-' + Date.now();
+
+    var items = kioskBuildSaleItems();
 
     // 57-03: pre-checkout phantom guard — the confirmed variant-2 stale-catalog
     // cause (57-DIAGNOSIS.md). A cart line whose item_id is no longer in the
@@ -3178,15 +3255,7 @@
     // 101 D-16: one standard route for every cart. Recipes travel as parameters
     // only (never prices); the server re-prices and asserts client_grand_total.
     var saleUrl = mwUrl + '/api/kiosk/sale';
-    var recipeWire = _kcEnv.getRecipeEntries().map(function (e) {
-      return {
-        recipe_id: e.recipe_id,
-        sale_type: e.sale_type,
-        mill_grain: e.mill_grain,
-        target_volume_l: e.target_volume_l,
-        modified_ingredients: Array.isArray(e.modified_ingredients) ? e.modified_ingredients : null
-      };
-    });
+    var recipeWire = kioskBuildRecipeWire();
     var saleCustomer = _kcEnv.getCustomer();
     // 97-10 (D-03): the email is already in kiosk memory from the contact search.
     var saleCustomerEmail = (saleCustomer && saleCustomer.email) || '';
@@ -3203,7 +3272,7 @@
       // charge. client_tax_total is observability-only, never asserted.
       client_grand_total: totals.total,
       client_tax_total: totals.tax,
-      discount: _kcEnv.getDiscount() ? { preset_id: _kcEnv.getDiscount().presetId, name: _kcEnv.getDiscount().name, type: _kcEnv.getDiscount().type, value: _kcEnv.getDiscount().value, scope: _kcEnv.getDiscount().scope } : undefined,
+      discount: kioskBuildDiscountWire(),
       gift_card: undefined,
       // D-07 (Manager Override): refreshed on every push/resubmit.
       override: _kioskStockOverride || false,
@@ -3271,7 +3340,7 @@
           customer_email: saleCustomerEmail,
           recipes: recipeWire.length ? recipeWire : undefined,
           override: _kioskStockOverride || false,
-          discount: _kcEnv.getDiscount() ? { preset_id: _kcEnv.getDiscount().presetId, name: _kcEnv.getDiscount().name, type: _kcEnv.getDiscount().type, value: _kcEnv.getDiscount().value, scope: _kcEnv.getDiscount().scope } : undefined,
+          discount: kioskBuildDiscountWire(),
           gift_card: _kcEnv.getGiftCard() ? { cert_number: _kcEnv.getGiftCard().cert_number, amount_applied: _kcEnv.getGiftCard().amount_applied } : undefined
         })
       }))
@@ -6048,6 +6117,7 @@
   // Recompute the displayed total after a discount changes. For recipe carts the
   // discount is server-authoritative, so re-fetch the (discount-aware) quote first.
   function kioskRefreshAfterDiscountChange() {
+    kioskRequestCartQuote();
     if (_kioskSelectedRecipe && typeof kioskFetchRecipeQuote === 'function') {
       var p = kioskFetchRecipeQuote();
       if (p && typeof p.then === 'function') {
@@ -6875,6 +6945,7 @@
     setQty: kioskSetQty,
     removeFromCart: kioskRemoveFromCart,
     removeRecipeEntry: kioskRemoveRecipeEntry,
+    requestCartQuote: kioskRequestCartQuote,
     clearCart: kioskClearCart,
     renderCart: kioskRenderCart,
     showCustomerStep: kioskShowCustomerStep,
