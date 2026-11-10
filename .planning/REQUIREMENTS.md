@@ -150,7 +150,7 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 
 **Defined:** 2026-11-10. **Source:** `101-CONTEXT.md` D-01..D-21 + `101-RESEARCH.md` phase_requirements.
 
-- [ ] **MIXR-01** (Phase 101, D-01..D-08, D-15): One kiosk / admin-POS cart holds several recipe entries (the same recipe can repeat; each keeps its own batch size, edits, sale type and milling) alongside products, wine kits, canning bundles, custom items and gift-card lines. Adding a recipe never clears the cart. Each recipe renders as one grouped block with one remove control.
+- [x] **MIXR-01** (Phase 101, D-01..D-08, D-15): One kiosk / admin-POS cart holds several recipe entries (the same recipe can repeat; each keeps its own batch size, edits, sale type and milling) alongside products, wine kits, canning bundles, custom items and gift-card lines. Adding a recipe never clears the cart. Each recipe renders as one grouped block with one remove control.
 - [x] **MIXR-02** (Phase 101, D-20): `/api/kiosk/sale` + `/confirm` price recipe components server-side with the same recipe pricing, unit conversion, discount and tax code (extracted to `lib/recipe-sale-lines.js`). A recipe-only cart prices exactly as the old recipe route did, proven by characterization tests written first.
 - [x] **MIXR-03** (Phase 101, D-14): A mixed sale books ONE Zoho invoice and ONE payment. Tax is grouped per rate across product and recipe lines before rounding (entity_level). Per-recipe package adjustments are summed into the single invoice adjustment, and the invoice total equals the charge.
 - [x] **MIXR-04** (Phase 101, D-09, D-10): Every kiosk tender works for recipe-bearing sales: card terminal, cash (change-due), phone order (MOTO), and gift card alone or split. The tender panel is never skipped for recipe carts.
@@ -159,12 +159,12 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 - [x] **MIXR-07** (Phase 101, D-14, D-21): Recipe-bearing sales get money-path parity: idempotency, pending-charge sentinel, manual-confirm / MOTO / captured-amount verification, void-whole-payment on booking or payment-record failure, orphan reconcile, and the $0 < total <= $10,000 limits. The confirm leg never bare-4xx's after a charge.
 - [x] **MIXR-08** (Phase 101, D-02, D-04): One BrewPad batch per in-store recipe entry (duplicates of one recipe all created via `unit_total`), kit batches unaffected by recipe lines, kiosk `customer_email` carried to recipe batches only.
 - [x] **MIXR-09** (Phase 101, D-16, D-18): `POST /api/kiosk/recipe-sale` stops starting sales (safe "refresh" response, no charge); `POST /api/kiosk/recipe-sale/confirm` stays with a usage event for the soak window; a pending todo schedules its deletion. `BEER_SALES_ENABLED` still gates recipe components.
-- [ ] **MIXR-10** (Phase 101, D-15): The bbca0f28 recipe-cart guard (blocked products/bundles, "check out or clear the cart", "card terminal only" notes) is removed on the kiosk and the admin POS; docs (`docs/API.md`, `docs/RUNBOOK.md`) describe the merged route and the deploy order.
+- [x] **MIXR-10** (Phase 101, D-15): The bbca0f28 recipe-cart guard (blocked products/bundles, "check out or clear the cart", "card terminal only" notes) is removed on the kiosk and the admin POS; docs (`docs/API.md`, `docs/RUNBOOK.md`) describe the merged route and the deploy order.
 - [x] **MIXR-11** (Phase 101, D-19): A read-only `POST /api/kiosk/cart-quote` (kiosk auth tier, no Zoho calls) prices any cart with the same core as `/sale`; the kiosk shows that server total for recipe carts, and the Phase 67 `client_grand_total` assertion stays blocking for every cart.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MIXR-01 | Phase 101 | Pending |
+| MIXR-01 | Phase 101 | Complete |
 | MIXR-02 | Phase 101 | Complete |
 | MIXR-03 | Phase 101 | Complete |
 | MIXR-04 | Phase 101 | Complete |
@@ -173,7 +173,7 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 | MIXR-07 | Phase 101 | Complete |
 | MIXR-08 | Phase 101 | Complete |
 | MIXR-09 | Phase 101 | Complete |
-| MIXR-10 | Phase 101 | Pending |
+| MIXR-10 | Phase 101 | Complete |
 | MIXR-11 | Phase 101 | Complete |
 
 ---
