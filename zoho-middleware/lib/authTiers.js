@@ -52,6 +52,7 @@ var KIOSK_ROUTES = [
   '/api/kiosk/gift-card/void', // D-54-GC: status-only, reason-required, logged — supersedes T-46-07/D-46-02
   '/api/kiosk/gift-card/adjust', // Phase 84 D-05/D-07: ledgered balance-adjust; accepted risk mirrors D-54-GC void (leaked device token)
   '/api/kiosk/recipe-quote',
+  '/api/kiosk/cart-quote', // Phase 101 D-19: read-only server cart pricing
   '/api/kiosk/recipe-sale',
   '/api/kiosk/recipe-sale/confirm',
   '/api/kiosk/sale',
