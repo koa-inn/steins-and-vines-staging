@@ -419,3 +419,200 @@ describe('product-only confirm is unchanged', function () {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 2: one invoice — line order, notes, numeric discounts, adjustment, reconcile
+// ---------------------------------------------------------------------------
+
+var MODES = {
+  'in-store': { sale_type: 'in-store', mill_grain: false },
+  'take-out': { sale_type: 'take-out', mill_grain: false },
+  'take-out-mill': { sale_type: 'take-out', mill_grain: true }
+};
+var MODIFIED = {
+  'RCP-LOCKED': [
+    { item_id: 'ing-grain-1', item_name: 'Pale Malt 2-Row', quantity: 5.5, unit: 'kg' },
+    { item_id: 'ing-hop-1', item_name: 'Cascade Hops', quantity: 150, unit: 'g' },
+    { item_id: 'ing-yeast-1', item_name: 'US-05 Yeast', quantity: 1, unit: 'pcs' }
+  ],
+  'RCP-DYN': [
+    { item_id: 'ing-grain-1', item_name: 'Pale Malt 2-Row', quantity: 6, unit: 'kg' },
+    { item_id: 'ing-hop-1', item_name: 'Cascade Hops', quantity: 80, unit: 'g' },
+    { item_id: 'ing-yeast-1', item_name: 'US-05 Yeast', quantity: 2, unit: 'pcs' }
+  ]
+};
+
+describe('recipe-only confirm posts the Plan 01 oracle invoice', function () {
+  Object.keys(fx.ORACLE.confirm).forEach(function (key, i) {
+    test('ORACLE.confirm ' + key, function () {
+      var parts = key.split('/');
+      var mode = MODES[parts[1]];
+      var entry = recipeEntry(parts[0], { sale_type: mode.sale_type, mill_grain: mode.mill_grain });
+      if (parts[3] === 'scale2x') entry.target_volume_l = 46;
+      if (parts[3] === 'modified') entry.modified_ingredients = MODIFIED[parts[0]];
+      var body = { recipes: [entry], transaction_id: 'txn-or-' + i, reference_number: 'REF-OR-' + i };
+      if (fx.DISCOUNT_KEYS[parts[2]]) body.discount = { preset_id: fx.DISCOUNT_KEYS[parts[2]] };
+      var charge = fx.ORACLE.initiate[key].charge;
+      approveCharge(charge);
+      return confirm(body).then(function (out) {
+        expect(out.code).toBe(201);
+        expect(zohoApi.zohoPut).not.toHaveBeenCalled();
+        expect(helcimLib.voidTransaction).not.toHaveBeenCalled();
+        var payload = invoicePayloads[0];
+        var payCall = paymentCalls()[0];
+        expect({
+          line_items: payload.line_items.map(function (li) {
+            return { item_id: li.item_id, quantity: li.quantity, rate: li.rate, discount: li.discount, tax_id: li.tax_id };
+          }),
+          adjustment: payload.adjustment,
+          adjustment_description: payload.adjustment_description,
+          tax: deriveTax(payload.line_items),
+          payment_amount: payCall[1].amount
+        }).toEqual(fx.ORACLE.confirm[key]);
+        expect(payCall[1].amount).toBe(charge);
+      });
+    });
+  });
+});
+
+describe('mixed carts book ONE invoice and ONE payment', function () {
+  function mixedBody(extra) {
+    return Object.assign({
+      items: [
+        { item_id: 'p-5', quantity: 1 },
+        { gift_cert: true, gift_action: 'issue', cert_number: 'GC-000042', rate: 25 }
+      ],
+      recipes: [recipeEntry('RCP-LOCKED'), recipeEntry('RCP-DYN')],
+      transaction_id: 'txn-mix', reference_number: 'REF-MIX'
+    }, extra || {});
+  }
+
+  function priceMixed(body) {
+    var map = {};
+    kioskCatalog().forEach(function (p) { map[p.item_id] = p; });
+    var copy = JSON.parse(JSON.stringify(body));
+    return pos.computeCartPricing(copy, map);
+  }
+
+  test('line order: non-recipe lines, then recipe 1 lines, then recipe 2 lines; notes list the recipes', function () {
+    var body = mixedBody();
+    return priceMixed(body).then(function (p) {
+      approveCharge(p.grandTotal);
+      return confirm(body).then(function (out) {
+        expect(out.code).toBe(201);
+        expect(invoiceCalls()).toHaveLength(1);
+        expect(paymentCalls()).toHaveLength(1);
+        var items = invoicePayloads[0].line_items.map(function (li) { return li.item_id; });
+        expect(items.slice(0, 2)).toEqual(['p-5', 'gc-item']);
+        var rest = items.slice(2);
+        var rec1 = p.recipe.sections[0].lines.map(function (li) { return li.item_id; });
+        var rec2 = p.recipe.sections[1].lines.map(function (li) { return li.item_id; });
+        expect(rest).toEqual(rec1.concat(rec2));
+        expect(invoicePayloads[0].notes).toContain('Recipes: ');
+        expect(invoicePayloads[0].notes).toContain('Locked Pale Ale');
+        expect(invoicePayloads[0].notes).toContain('Dynamic Amber');
+        // gift_cert tracking fields never reach Zoho
+        expect(invoicePayloads[0].line_items[1]).toEqual({ item_id: 'gc-item', name: 'Gift Certificate GC-000042', quantity: 1, rate: 25 });
+        expect(giftCardStore.issue).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
+
+  test('ledger decrement sees only the non-recipe lines', function () {
+    var body = mixedBody();
+    return priceMixed(body).then(function (p) {
+      approveCharge(p.grandTotal);
+      return confirm(body).then(function () {
+        var lines = ledger.decrementStock.mock.calls[0][0];
+        expect(lines.map(function (l) { return l.item_id; })).toEqual(['p-5', 'gc-item']);
+        var batch = require('../lib/brewpad-integration').createBatchesFromSale.mock.calls[0][0];
+        expect(batch.map(function (l) { return l.item_id; })).toEqual(['p-5', 'gc-item']);
+      });
+    });
+  });
+
+  test('two locked recipes sum their adjustments into one invoice adjustment', function () {
+    var single = fx.ORACLE.confirm['RCP-LOCKED/in-store/none'].adjustment;
+    var body = { recipes: [recipeEntry('RCP-LOCKED'), recipeEntry('RCP-LOCKED')], transaction_id: 'txn-2', reference_number: 'REF-2' };
+    return priceMixed(body).then(function (p) {
+      approveCharge(p.grandTotal);
+      return confirm(body).then(function (out) {
+        expect(out.code).toBe(201);
+        expect(invoicePayloads[0].adjustment).toBe(r2(single * 2));
+        expect(invoicePayloads[0].adjustment_description).toBe('Recipe package price');
+        expect(invoicePayloads[0].notes).toContain('Locked Pale Ale #1');
+        expect(invoicePayloads[0].notes).toContain('Locked Pale Ale #2');
+      });
+    });
+  });
+
+  test('a product percentage discount in a recipe-bearing sale is posted as a number', function () {
+    var body = {
+      items: [{ item_id: 'p-5', quantity: 1 }], recipes: [recipeEntry('RCP-LOCKED')],
+      discount: { preset_id: fx.DISCOUNT_KEYS['cart-pct'] }, transaction_id: 'txn-d', reference_number: 'REF-D'
+    };
+    return priceMixed(body).then(function (p) {
+      approveCharge(p.grandTotal);
+      return confirm(body).then(function (out) {
+        expect(out.code).toBe(201);
+        var productLine = invoicePayloads[0].line_items[0];
+        expect(productLine.item_id).toBe('p-5');
+        expect(productLine.discount).toBe(0.5);
+        expect(typeof productLine.discount).toBe('number');
+        expect(zohoApi.zohoPut).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  test('a product-only sale still posts the percentage string', function () {
+    approveCharge(4.73);
+    return confirm({
+      items: [{ item_id: 'p-5', quantity: 1 }], discount: { preset_id: fx.DISCOUNT_KEYS['cart-pct'] },
+      transaction_id: 'txn-po', reference_number: 'REF-PO'
+    }).then(function (out) {
+      expect(out.code).toBe(201);
+      expect(invoicePayloads[0].line_items[0].discount).toBe('10%');
+    });
+  });
+});
+
+describe('reconcile after create', function () {
+  test('Zoho echoing a total 0.01 off re-balances via PUT and the sale books', function () {
+    approveCharge(CHARGE);
+    var base = zohoApi.zohoPost.getMockImplementation();
+    zohoApi.zohoPost.mockImplementation(function (path, payload) {
+      if (path === '/invoices') {
+        return base(path, payload).then(function (d) { d.invoice.total = r2(d.invoice.total + 0.01); return d; });
+      }
+      return base(path, payload);
+    });
+    zohoApi.zohoPut.mockResolvedValue({ invoice: { total: CHARGE } });
+    return confirm({ recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-r1', reference_number: 'REF-R1' })
+      .then(function (out) {
+        expect(out.code).toBe(201);
+        expect(zohoApi.zohoPut).toHaveBeenCalledTimes(1);
+        expect(zohoApi.zohoPut.mock.calls[0][0]).toBe('/invoices/inv-1');
+        expect(zohoApi.zohoPut.mock.calls[0][1].adjustment).toBe(r2(162.75 - 0.01));
+        expect(helcimLib.voidTransaction).not.toHaveBeenCalled();
+      });
+  });
+
+  test('Zoho echoing a total 2.00 off rejects and voids the whole terminal transaction', function () {
+    approveCharge(CHARGE);
+    var base = zohoApi.zohoPost.getMockImplementation();
+    zohoApi.zohoPost.mockImplementation(function (path, payload) {
+      if (path === '/invoices') {
+        return base(path, payload).then(function (d) { d.invoice.total = r2(d.invoice.total + 2); return d; });
+      }
+      return base(path, payload);
+    });
+    return confirm({ recipes: [recipeEntry('RCP-LOCKED')], transaction_id: 'txn-r2', reference_number: 'REF-R2' })
+      .then(function (out) {
+        expect(out.code).toBe(502);
+        expect(out.body.payment_voided).toBe(true);
+        expect(moneyPath.voidWithTimeout).toHaveBeenCalledTimes(1);
+        expect(moneyPath.voidWithTimeout.mock.calls[0][1]).toBe('txn-r2');
+        expect(paymentCalls()).toHaveLength(0);
+      });
+  });
+});

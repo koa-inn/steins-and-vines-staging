@@ -1769,15 +1769,39 @@ function runConfirm(body, confirmIdemKey, req, res) {
       return { item_id: li.item_id, name: li.name, quantity: li.quantity, rate: li.rate };
     });
 
+    // Phase 101 (D-14): one invoice for the whole recipe-bearing cart. Order is
+    // the non-recipe lines first, then each recipe in cart order (ingredient
+    // lines, then its fee lines). Product percentage discounts are posted as
+    // numeric amounts so the lines Zoho echoes back to the reconcile PUT are
+    // unambiguous (Pitfall 9). Product-only sales are untouched.
+    var invoiceLineItems = zohoLineItems;
+    if (recipePricing) {
+      invoiceLineItems = zohoLineItems.map(function (li) {
+        if (typeof li.discount === 'string' && li.discount.indexOf('%') !== -1) {
+          var lt = li.quantity * li.rate;
+          var numeric = Object.assign({}, li);
+          numeric.discount = Math.round(lt * parseFloat(li.discount) / 100 * 100) / 100;
+          return numeric;
+        }
+        return li;
+      }).concat(recipePricing.recipe.lines);
+      invoiceNotes += '\n' + recipeLines().recipeNotesSummary(recipePricing.recipe.priced);
+    }
+
     var invoicePayload = {
       date: today,
       reference_number: refNumber,
       payment_terms: 0,
       payment_terms_label: 'Due on Receipt',
-      line_items: zohoLineItems,
+      line_items: invoiceLineItems,
       notes: invoiceNotes,
       custom_fields: []
     };
+    if (recipePricing && recipePricing.recipe.adjustment_total) {
+      // Per-recipe package adjustments, summed into the single invoice adjustment.
+      invoicePayload.adjustment = Math.round(recipePricing.recipe.adjustment_total * 100) / 100;
+      invoicePayload.adjustment_description = 'Recipe package price';
+    }
 
     var contactId = process.env.KIOSK_CONTACT_ID || '';
     if (body.contact_id) invoicePayload.customer_id = body.contact_id;
@@ -2046,6 +2070,12 @@ function runConfirm(body, confirmIdemKey, req, res) {
     }
     return captureVerify.then(function () {
     return zohoPost('/invoices', invoicePayload).then(function (invoiceData) {
+      // Phase 101: re-balance to the charge when Zoho's rounding differs; a gap
+      // too large to be rounding rejects here and the outer catch voids the card.
+      return recipePricing
+        ? recipeLines().reconcileRecipeInvoice(invoiceData, invoicePayload, grandTotal)
+        : invoiceData;
+    }).then(function (invoiceData) {
       var invoice = invoiceData.invoice || {};
       var invoiceId = invoice.invoice_id || '';
       var invoiceNumber = invoice.invoice_number || '';
