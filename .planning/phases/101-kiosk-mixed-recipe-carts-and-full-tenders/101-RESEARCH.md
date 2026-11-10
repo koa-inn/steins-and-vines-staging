@@ -445,16 +445,22 @@ Per mixed sale the Zoho call count equals today's: `POST /invoices`, `/submit`, 
 | A7 | Legacy `/recipe-sale/confirm` soak of >=24h with 0 events is enough before deletion | Removal | Longer soak if iPads are rarely reloaded |
 | A8 | Kit sales mixed with recipes keep kit fee lines distinct from recipe fee lines (same Zoho fee item ids, different lines) | Batches | Maker's Fee slot math if recipe lines leaked into `createBatchesFromSale` |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Literal D-16 vs safe soak.** CONTEXT wants the old route "removed in this phase", discretion allows keeping `/recipe-sale/confirm` until nothing is pending.
    - Known: initiate -> 410 is safe immediately; confirm must outlive in-flight charges.
    - Recommendation: Release N keeps legacy confirm with a usage event; schedule deletion as the last plan, executed after prod soak (or record as an explicit follow-up). Planner must get the owner's nod.
+   - **RESOLVED by D-18:** initiate returns a safe 410 now; `/recipe-sale/confirm` stays with a usage event; deletion is a pending todo after ~1 week of zero use (Plan 13).
 2. **Option A (cart-quote) vs Option B (client mirror + log-only for recipe carts).** Recommendation A; confirm scope appetite.
+   - **RESOLVED by D-19:** Option A — `POST /api/kiosk/cart-quote` (Plans 07, 10, 11); assertion stays blocking for every cart.
 3. **Sale cap `> $10,000` / `<= 0` now applies to recipe sales** (Pitfall 8) - confirm acceptable.
+   - **RESOLVED by D-21:** limits apply to recipe-bearing sales (Plan 05).
 4. **Recipe-only stricter payment-failure behaviour** (Pitfall 7) - confirm the owner is happy that a failed `customerpayments` post now voids the card for recipe sales.
+   - **RESOLVED by D-21:** a failed payment record after a charge voids the charge (Plan 06).
 5. **Kit + recipe on one invoice - batch label** (`cf_batch_status`) counts kit batches only; accept?
+   - **RESOLVED: ACCEPT.** The status label counts kit batches only; recipe batches are tracked in BrewPad, not in that Zoho label. Plan 07 records this as an accepted limitation so the executor does not change it.
 6. **Does the admin POS need the cart-quote auth tier?** `authTiers.js` KIOSK_ROUTES is the allowlist; add `/api/kiosk/cart-quote` there (admin session also passes kiosk-scoped routes - verify in the auth test).
+   - **RESOLVED (Plan 02):** `/api/kiosk/cart-quote` is added to the exact-path KIOSK_ROUTES list — same auth tier as `/api/kiosk/sale`.
 
 ## Environment Availability
 

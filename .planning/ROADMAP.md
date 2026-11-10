@@ -1449,13 +1449,52 @@ Plans:
 ### Phase 101: Kiosk mixed recipe carts and full tenders
 
 **Goal:** One kiosk sale can hold a recipe together with products, custom items and gift cards, and recipe sales get the same Cash / Gift Card / Phone order tenders as other sales. The standard `/api/kiosk/sale` + `/confirm` route accepts a recipe component, reusing the pos-recipe pricing, unit conversion, package-price adjustment, stock-override prompt, recipe lock and batch creation, so there is one invoice and one payment. Removes the recipe-cart guard shipped in bbca0f28 (prod-20261110-2). Owner request 2026-11-10 after the report that adding a recipe cleared the cart and recipe checkout skipped the payment-method choice.
-**Requirements**: TBD
+**Requirements**: MIXR-01, MIXR-02, MIXR-03, MIXR-04, MIXR-05, MIXR-06, MIXR-07, MIXR-08, MIXR-09, MIXR-10, MIXR-11
 **Depends on:** Phase 100
-**Plans:** 0 plans
+**Plans:** 15 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 101 to break down)
 
+**Wave 1**
+- [ ] 101-01-PLAN.md — Characterization oracle: pin today's recipe-only charge, invoice lines, adjustment and tax (D-20, tests first)
+- [ ] 101-02-PLAN.md — detectRecipeSale unit_total for repeated recipes + cart-quote auth tier
+
+**Wave 2**
+- [ ] 101-03-PLAN.md — Pure move of recipe pricing helpers to lib/recipe-sale-lines.js + recipeTaxGroups
+
+**Wave 3**
+- [ ] 101-04-PLAN.md — Mixed-cart recipe helpers (TDD): entry validation, multi-entry pricing, combined stock, per-recipe discount/adjustment
+
+**Wave 4**
+- [ ] 101-05-PLAN.md — /api/kiosk/sale accepts recipes[]: computeCartPricing, merged tax, cart-wide discount; gate, validation, stock 409 + override, limits
+
+**Wave 5**
+- [ ] 101-06-PLAN.md — /confirm: re-pricing + tagged errors, one invoice with summed adjustment + reconcile, money-path parity per tender
+
+**Wave 6**
+- [ ] 101-07-PLAN.md — Recipe batches/cache bust/receipt after confirm + read-only POST /api/kiosk/cart-quote
+
+**Wave 7**
+- [ ] 101-08-PLAN.md — Client recipe-entries model (bridge rename) + bbca0f28 guard removal
+- [ ] 101-09-PLAN.md — Re-point/retire middleware tests that used the legacy initiate route (D-20)
+
+**Wave 8**
+- [ ] 101-10-PLAN.md — Quote-based totals + one standard sale/confirm body with recipes on every tender; tender panel unskipped
+
+**Wave 9**
+- [ ] 101-11-PLAN.md — Cart-quote client: debounced, stale-safe fetch and checkout gate
+
+**Wave 10**
+- [ ] 101-12-PLAN.md — Grouped recipe blocks, quote states, shared low-stock panel for all tenders, receipt sections
+
+**Wave 11**
+- [ ] 101-13-PLAN.md — Legacy /recipe-sale -> 410, legacy confirm usage event, docs, D-18 deletion todo
+
+**Wave 12** (owner)
+- [ ] 101-14-PLAN.md — Middleware-first staging deploy + D-17 staging terminal sale gate
+
+**Wave 13** (owner)
+- [ ] 101-15-PLAN.md — Owner-approved middleware-first production release, tag, D-18 soak start
 ---
 
 ### Phase 46: Auth Re-Architecture (CRITICAL — split from Phase 45)
