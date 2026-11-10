@@ -157,10 +157,10 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 - [ ] **MIXR-05** (Phase 101, D-11): Discount presets apply per line across the mixed cart (`scope: 'cart'` covers all lines; `scope: 'type'` with `recipe` / `service` tokens hits only recipe product / fee portions), and the charge equals what the invoice books.
 - [ ] **MIXR-06** (Phase 101, D-12, D-13): Before any charge, stock is checked across all recipes combined; the 409 names the short recipe(s); staff can override (sell anyway) on every tender.
 - [ ] **MIXR-07** (Phase 101, D-14, D-21): Recipe-bearing sales get money-path parity: idempotency, pending-charge sentinel, manual-confirm / MOTO / captured-amount verification, void-whole-payment on booking or payment-record failure, orphan reconcile, and the $0 < total <= $10,000 limits. The confirm leg never bare-4xx's after a charge.
-- [ ] **MIXR-08** (Phase 101, D-02, D-04): One BrewPad batch per in-store recipe entry (duplicates of one recipe all created via `unit_total`), kit batches unaffected by recipe lines, kiosk `customer_email` carried to recipe batches only.
+- [x] **MIXR-08** (Phase 101, D-02, D-04): One BrewPad batch per in-store recipe entry (duplicates of one recipe all created via `unit_total`), kit batches unaffected by recipe lines, kiosk `customer_email` carried to recipe batches only.
 - [ ] **MIXR-09** (Phase 101, D-16, D-18): `POST /api/kiosk/recipe-sale` stops starting sales (safe "refresh" response, no charge); `POST /api/kiosk/recipe-sale/confirm` stays with a usage event for the soak window; a pending todo schedules its deletion. `BEER_SALES_ENABLED` still gates recipe components.
 - [ ] **MIXR-10** (Phase 101, D-15): The bbca0f28 recipe-cart guard (blocked products/bundles, "check out or clear the cart", "card terminal only" notes) is removed on the kiosk and the admin POS; docs (`docs/API.md`, `docs/RUNBOOK.md`) describe the merged route and the deploy order.
-- [ ] **MIXR-11** (Phase 101, D-19): A read-only `POST /api/kiosk/cart-quote` (kiosk auth tier, no Zoho calls) prices any cart with the same core as `/sale`; the kiosk shows that server total for recipe carts, and the Phase 67 `client_grand_total` assertion stays blocking for every cart.
+- [x] **MIXR-11** (Phase 101, D-19): A read-only `POST /api/kiosk/cart-quote` (kiosk auth tier, no Zoho calls) prices any cart with the same core as `/sale`; the kiosk shows that server total for recipe carts, and the Phase 67 `client_grand_total` assertion stays blocking for every cart.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -171,10 +171,10 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 | MIXR-05 | Phase 101 | Pending |
 | MIXR-06 | Phase 101 | Pending |
 | MIXR-07 | Phase 101 | Pending |
-| MIXR-08 | Phase 101 | Pending |
+| MIXR-08 | Phase 101 | Complete |
 | MIXR-09 | Phase 101 | Pending |
 | MIXR-10 | Phase 101 | Pending |
-| MIXR-11 | Phase 101 | Pending |
+| MIXR-11 | Phase 101 | Complete |
 
 ---
 *Requirements defined: 2026-07-03 (v4.5); 2026-07-10 (v4.6 analytics); 2026-07-15 (v4.7 post-review polish); 2026-07-24 (v4.8 bookkeeping & inventory integrity); 2026-09-23 (v4.9 Sheets → Postgres)*
