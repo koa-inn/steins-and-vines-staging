@@ -792,7 +792,6 @@
   var KCB_REASONS = {
     can_item_missing: 'Can item not found in the catalog. Refresh products.',
     already_added: 'A canning bundle is already in the cart.',
-    recipe_cart: 'A canning bundle cannot be added to a recipe cart.',
     bad_count: 'Cans filled must be a whole number from 1 to 100.'
   };
 

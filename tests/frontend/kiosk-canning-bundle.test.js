@@ -118,10 +118,6 @@ describe('addCanningBundle', function () {
     expect(core.addCanningBundle({ bundleKey: 'beer-25', canSize: 473, count: 101 }).reason).toBe('bad_count');
     expect(Object.keys(core._getCart())).toEqual([]);
 
-    core._setRecipeContext({ recipe_id: 'R1' });
-    expect(core.addCanningBundle({ bundleKey: 'beer-25', canSize: 473, count: 52 })).toEqual({ ok: false, reason: 'recipe_cart' });
-    core._setRecipeContext(null);
-
     seedCatalog(core, [CAN_355]);
     expect(core.addCanningBundle({ bundleKey: 'beer-25', canSize: 473, count: 52 })).toEqual({ ok: false, reason: 'can_item_missing' });
     expect(Object.keys(core._getCart())).toEqual([]);
@@ -243,12 +239,13 @@ describe('opener gating (D-25)', function () {
     expect(btn.textContent).toBe('Bundle added');
   });
 
-  test('no opener in a recipe cart', function () {
+  test('bundle allowed alongside a recipe entry (Phase 101 D-05)', function () {
     var core = setup();
     core.init({ showCanningBundleModal: function () {} });
-    core._setRecipeContext({ recipe_id: 'R1' });
+    core._setRecipeEntries([{ entry_id: 'r1', recipe_id: 'R1', recipe_name: 'R1', total_before_discount: 10 }]);
     core.removeCanningBundle();
-    expect(document.getElementById('kiosk-canning-bundle-btn')).toBeNull();
+    expect(document.getElementById('kiosk-canning-bundle-btn')).not.toBeNull();
+    expect(core.addCanningBundle({ bundleKey: 'beer-25', canSize: 473, count: 52 }).ok).toBe(true);
   });
 
   test('a consumer without the hook (admin-embedded) gets no opener', function () {

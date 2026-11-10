@@ -786,7 +786,7 @@
   }
 
   function kioskCartIsEmpty() {
-    return Object.keys(_kcEnv.getCart()).length === 0;
+    return Object.keys(_kcEnv.getCart()).length === 0 && _kcEnv.getRecipeEntries().length === 0;
   }
 
   function kioskCartHasKits() {
@@ -1770,142 +1770,85 @@
 
     if (avail && (avail.summary === 'cannot_brew' || avail.summary === 'unknown')) return;
 
-    // A recipe sale charges only the recipe, so it cannot share a cart with
-    // other items. Never wipe them silently; a recipe already here is replaced.
-    if (!kioskCartHasRecipe() && Object.keys(_kcEnv.getCart()).length > 0) {
-      showToast('Check out or clear the items in the cart before adding a recipe.', 'warning');
-      return;
-    }
-
-    _kcEnv.setCart({});
-
     function processRecipeData(data) {
       if (!data.recipe) {
         alert('Failed to load recipe details');
         return;
       }
-      var cart = _kcEnv.getCart();
       var fullRecipe = data.recipe;
       var ingredients = data.ingredients || [];
       var pricingMode = fullRecipe.pricing_mode || recipe.pricing_mode || (Number(recipe.locked_price) > 0 ? 'locked' : 'dynamic');
-
-      _kioskSetLegacyRecipeContext({
-        recipe_id: recipe.recipe_id,
-        recipe_name: recipe.name,
-        sale_type: _kioskSaleType,
-        mill_grain: _kioskMillGrain,
-        locked_price: recipe.locked_price,
-        pricing_mode: pricingMode,
-        ingredients: ingredients,
-        target_volume_l: _kioskTargetVolumeL
-      });
 
       // Phase 35+36: Use server quote (scaled+modified) when available; fall back to base data
       var quoteForCart = (_kioskQuote &&
                           _kioskQuote.recipe_id === recipe.recipe_id &&
                           Array.isArray(_kioskQuote.ingredients))
                          ? _kioskQuote : null;
+      var ingSource = quoteForCart ? quoteForCart.ingredients : ingredients;
 
-      if (pricingMode === 'dynamic') {
-        // Add each ingredient as a priced line item
-        // Prefer scaled+modified quantities from server quote when present
-        var ingSource = quoteForCart ? quoteForCart.ingredients : ingredients;
-        ingSource.forEach(function (ing, ingIdx) {
-          // Unique per occurrence: a recipe can list the same item_id multiple
-          // times (e.g. hop/salt additions at different times). Keying by
-          // item_id alone collided and dropped all but the last → undercharge.
-          var key = 'recipe-ing-' + ingIdx + '-' + (ing.item_id || ing.ingredient_id);
-          var ingQty = Number(ing.quantity) || 0;
-          var ingRate;
-          if (quoteForCart) {
-            // quote ingredient: line_total is authoritative; fall back to rate * qty
-            ingRate = Number(ing.line_total) || (Number(ing.rate) * ingQty);
-          } else {
-            ingRate = (Number(ing.rate) || 0) * ingQty;
-          }
-          cart[key] = {
-            item: {
-              item_id: ing.item_id,
-              name: escapeHTML(ing.item_name) + ' (' + ingQty + ' ' + escapeHTML(ing.unit || '') + ')',
-              rate: ingRate,
-              // 67 review (WR-04, KNOWN SEAM — deliberately deferred): this
-              // `|| 0` (and the fee lines below) coerces a missing ingredient
-              // tax to 0% — the same silent laundering Phase 67 removed for
-              // product carts. It is left in place because the SERVER's
-              // recipe total (recipe-scaling) computes no tax at all, so a
-              // fail-closed client gate here would block sales the server
-              // happily charges. The recipe path instead sends
-              // client_grand_total/client_tax_total for the server's
-              // LOG-ONLY divergence detector (pos-recipe.js); full recipe
-              // tax fail-closed is a follow-up phase (67-REVIEW.md WR-04).
-              tax_percentage: Number(ing.tax_percentage) || 0,
-              product_type: 'recipe_ingredient'
-            },
-            qty: 1
-          };
+      // Display-only snapshot: the server re-prices from the parameters below.
+      var lines = [];
+      var feeLines = [];
+      var total = 0;
+      ingSource.forEach(function (ing) {
+        var ingQty = Number(ing.quantity) || 0;
+        var amount = 0;
+        if (pricingMode === 'dynamic') {
+          amount = quoteForCart
+            ? (Number(ing.line_total) || (Number(ing.rate) * ingQty))
+            : (Number(ing.rate) || 0) * ingQty;
+        }
+        lines.push({
+          name: ing.item_name || '',
+          qty_text: ingQty + ' ' + (ing.unit || ''),
+          amount: kioskR2(amount)
         });
-        // Add fee lines for in-store sales
+        total += amount;
+      });
+      if (pricingMode === 'dynamic') {
         if (_kioskSaleType === 'in-store') {
           if (Number(fullRecipe.service_fee) > 0) {
-            cart['recipe-fee-brewing'] = {
-              item: { item_id: 'fee-brewing', name: 'Brewing Fee', rate: parseFloat(fullRecipe.service_fee) || 0, tax_percentage: Number(fullRecipe.brewing_fee_tax) || 0, product_type: 'fee' },
-              qty: 1
-            };
+            feeLines.push({ name: 'Brewing Fee', amount: parseFloat(fullRecipe.service_fee) || 0 });
           }
           if (Number(fullRecipe.materials_fee) > 0) {
-            cart['recipe-fee-materials'] = {
-              item: { item_id: 'fee-materials', name: 'Materials Fee', rate: parseFloat(fullRecipe.materials_fee) || 0, tax_percentage: Number(fullRecipe.materials_fee_tax) || 0, product_type: 'fee' },
-              qty: 1
-            };
+            feeLines.push({ name: 'Materials Fee', amount: parseFloat(fullRecipe.materials_fee) || 0 });
           }
         }
-        // Add milling fee for take-out when checked
         if (_kioskSaleType === 'take-out' && _kioskMillGrain) {
-          var millingFee = Number(recipe.milling_fee_rate || fullRecipe.milling_fee_rate) || 0;
-          cart['recipe-fee-milling'] = {
-            item: { item_id: 'fee-milling', name: 'Milling Fee', rate: millingFee, tax_percentage: Number(recipe.milling_fee_tax || fullRecipe.milling_fee_tax) || 0, product_type: 'fee' },
-            qty: 1
-          };
+          feeLines.push({ name: 'Milling Fee', amount: Number(recipe.milling_fee_rate || fullRecipe.milling_fee_rate) || 0 });
         }
+        feeLines.forEach(function (f) { total += f.amount; });
       } else {
-        // Locked mode: ingredient lines as info-only (rate=0), plus single total line
-        // Show SCALED+MODIFIED quantities from quote when available, otherwise base quantities
-        var lockedIngSource = quoteForCart ? quoteForCart.ingredients : ingredients;
-        lockedIngSource.forEach(function (ing, ingIdx) {
-          // Unique per occurrence (see dynamic-mode note): same item_id may
-          // appear multiple times in a recipe; index-qualify the cart key.
-          var key = 'recipe-ing-' + ingIdx + '-' + (ing.item_id || ing.ingredient_id);
-          cart[key] = {
-            item: {
-              item_id: ing.item_id,
-              name: escapeHTML(ing.item_name) + ' (' + (Number(ing.quantity) || 0) + ' ' + escapeHTML(ing.unit || '') + ')',
-              rate: 0,
-              tax_percentage: 0,
-              product_type: 'recipe_ingredient'
-            },
-            qty: 1
-          };
-        });
-        // Single total line — use the PRE-DISCOUNT quote total when available, else
-        // locked_price. The discount is applied separately in kioskCalcTotals from
-        // the server quote, so the cart line must stay at the undiscounted amount.
-        var packagePrice = quoteForCart
+        // Locked: PRE-DISCOUNT quote total when available, else locked_price.
+        total = quoteForCart
           ? Number(quoteForCart.total_before_discount != null ? quoteForCart.total_before_discount : quoteForCart.total) // eslint-disable-line eqeqeq -- intentional loose equality to match both null and undefined
           : (parseFloat(recipe.locked_price) || 0);
-        cart['recipe-total'] = {
-          item: {
-            item_id: recipe.recipe_id,
-            name: escapeHTML(recipe.name || recipe.recipe_id) + ' — Package Price',
-            rate: packagePrice,
-            tax_percentage: 0,
-            product_type: 'recipe'
-          },
-          qty: 1
-        };
       }
+
+      var modified = _kcEnv.getModifiedIngredients();
+      var entries = _kcEnv.getRecipeEntries().slice();
+      var seq = _kioskNextSeq();
+      entries.push({
+        entry_id: 'r' + seq,
+        recipe_id: recipe.recipe_id,
+        recipe_name: recipe.name,
+        sale_type: _kioskSaleType,
+        mill_grain: _kioskMillGrain,
+        target_volume_l: _kioskTargetVolumeL,
+        modified_ingredients: Array.isArray(modified) ? JSON.parse(JSON.stringify(modified)) : null,
+        pricing_mode: pricingMode,
+        locked_price: recipe.locked_price,
+        lines: lines,
+        fee_lines: feeLines,
+        total_before_discount: kioskR2(total),
+        added_seq: seq,
+        _ingredients: ingredients // interim: read by _kioskLegacyRecipeContext (removed in Plan 10)
+      });
+      _kcEnv.setRecipeEntries(entries);
 
       kioskSetMode('products');
       kioskRenderCart();
+      showToast('Added ' + (recipe.name || 'recipe') + ' to cart', 'success');
     }
 
     // Always fetch fresh to ensure tax rates and prices are current
@@ -2200,18 +2143,7 @@
 
   // ===== Cart Management =====
 
-  // /api/kiosk/recipe-sale charges only the recipe, on the card terminal.
-  // A recipe cart must never hold or show anything that sale will not charge.
-  function kioskCartHasRecipe() {
-    return !!_kioskLegacyRecipeContext();
-  }
-
-  function kioskWarnRecipeCart() {
-    showToast('Recipe sales are checked out on their own. Finish or clear the recipe first.', 'warning');
-  }
-
   function kioskAddToCart(product) {
-    if (kioskCartHasRecipe()) { kioskWarnRecipeCart(); return; }
     var cart = _kcEnv.getCart();
     var id = product.item_id;
     if (kioskIsWeightItem(product)) {
@@ -2242,8 +2174,6 @@
   }
 
   function kioskSetQty(itemId, qty) {
-    // Recipe lines are priced by the server as one recipe; quantities are fixed.
-    if (kioskCartHasRecipe()) { kioskRenderCart(); return; }
     var cart = _kcEnv.getCart();
     // Phase 90 (D-16): the bundle line is pinned at qty 1; the can line edits
     // go through the cap-aware setter; dropping the can count to 0 removes both.
@@ -2276,8 +2206,6 @@
   }
 
   function kioskRemoveFromCart(itemId) {
-    // Removing any recipe line removes the recipe: the sale charges it whole.
-    if (kioskCartHasRecipe()) { kioskClearCart(); return; }
     var cart = _kcEnv.getCart();
     if (itemId === KIOSK_BUNDLE_LINE_KEY || itemId === KIOSK_BUNDLE_CAN_KEY) {
       kioskRemoveCanningBundle(); // D-16: either line removes both
@@ -2295,6 +2223,13 @@
     kioskRenderProducts();
   }
 
+  function kioskRemoveRecipeEntry(entryId) {
+    var entries = _kcEnv.getRecipeEntries().filter(function (e) { return e.entry_id !== entryId; });
+    _kcEnv.setRecipeEntries(entries);
+    kioskRenderCart();
+    kioskRenderProducts();
+  }
+
   function kioskClearCart() {
     _kioskBundleCapAck = false;
     _kioskMakersFeeWaived = false;
@@ -2305,7 +2240,8 @@
     _kioskSaleType = null;
     _kioskMillGrain = false;
     _kioskRecipeAvailability = null;
-    _kioskSetLegacyRecipeContext(null);
+    _kcEnv.setRecipeEntries([]);
+    _kioskStockOverride = false;
     _kioskQuote = null;
     _kcEnv.setModifiedIngredients(null);
     _kioskModifyPanelOpen = false;
@@ -2378,7 +2314,6 @@
     var bundle = KIOSK_CANNING_BUNDLES[opts.bundleKey];
     var size = Number(opts.canSize);
     if (size !== 473 && size !== 355) return { ok: false, reason: 'unknown_size' };
-    if (_kioskLegacyRecipeContext()) return { ok: false, reason: 'recipe_cart' };
     if (kioskBundleInCart()) return { ok: false, reason: 'already_added' };
     var count = Number(opts.count);
     if (!isFinite(count) || Math.floor(count) !== count || count < 1 || count > KIOSK_BUNDLE_MAX_CANS) {
@@ -2450,7 +2385,7 @@
   }
 
   function kioskBundleOpenerHtml() {
-    if (typeof _kcEnv.showCanningBundleModal !== 'function' || _kioskLegacyRecipeContext()) return '';
+    if (typeof _kcEnv.showCanningBundleModal !== 'function') return '';
     var added = kioskBundleInCart();
     return '<div style="margin-top:0.5rem;">' +
       '<button id="kiosk-canning-bundle-btn" type="button" class="kiosk-add-custom-btn kiosk-canning-bundle-btn"' +
@@ -2491,7 +2426,8 @@
         '</div>';
     }
 
-    if (keys.length === 0) {
+    var recipeEntries = _kcEnv.getRecipeEntries();
+    if (keys.length === 0 && recipeEntries.length === 0) {
       container.innerHTML = bannerHtml +
         '<p class="kiosk-cart-empty">No items in cart</p>' +
         '<div style="margin-top:0.5rem;">' +
@@ -2534,7 +2470,15 @@
     }
 
     var html = '';
-    var isRecipeCart = kioskCartHasRecipe();
+    // Interim plain rows (Plan 12 replaces them with the grouped block).
+    recipeEntries.forEach(function (re) {
+      html += '<div class="kiosk-cart-line kiosk-recipe-entry" data-entry-id="' + escapeHTML(re.entry_id) + '">';
+      html += '<div class="kiosk-cart-line-name" title="' + escapeHTML(re.recipe_name || '') + '">' + escapeHTML(re.recipe_name || '') + '</div>';
+      html += '<div class="kiosk-cart-qty"><span class="kiosk-qty-val">1</span></div>';
+      html += '<div class="kiosk-cart-line-total">' + kioskFmt(re.total_before_discount) + '</div>';
+      html += '<button class="kiosk-recipe-entry-remove" data-entry-id="' + escapeHTML(re.entry_id) + '">&times;</button>';
+      html += '</div>';
+    });
     keys.forEach(function (id) {
       var entry = cart[id];
       if (!entry || !entry.item) return; // skip non-item entries (defensive guard)
@@ -2569,9 +2513,7 @@
       var isWeight = kioskIsWeightItem(item);
       html += '<div class="kiosk-cart-line-name" title="' + escapeHTML(item.name || '') + '">' + escapeHTML(item.name || '') +
         (isBundleCan ? '<div class="kiosk-bundle-note">Included in bundle</div>' : '') + '</div>';
-      if (isRecipeCart) {
-        html += '<div class="kiosk-cart-qty"><span class="kiosk-qty-val">' + qty + '</span></div>';
-      } else if (isWeight) {
+      if (isWeight) {
         html += '<div class="kiosk-cart-qty">';
         html += '<input type="number" class="kiosk-qty-input" data-id="' + id + '" value="' + qty + '" step="0.01" min="0.001" inputmode="decimal">';
         html += '<span class="kiosk-qty-unit">kg</span>';
@@ -2594,22 +2536,17 @@
       }
     });
 
-    if (isRecipeCart) {
-      html += '<p class="kiosk-recipe-cart-note" style="margin-top:0.5rem;font-size:0.85rem;color:#555;">' +
-        'Recipe sale: checked out on its own, card terminal only.</p>';
-    } else {
-      html += '<div style="margin-top:0.5rem;">' +
-        '<button id="kiosk-add-custom-btn" type="button" class="kiosk-add-custom-btn" style="width:100%;padding:0.6rem;font-size:0.95rem;border:1px dashed #888;border-radius:6px;background:none;cursor:pointer;color:#555;">' +
-        '+ Add custom item' +
-        '</button>' +
-        '</div>';
-      html += kioskBundleOpenerHtml();
-      html += '<div style="margin-top:0.5rem;">' +
-        '<button id="kiosk-add-gc-btn" type="button" class="kiosk-add-custom-btn" style="width:100%;padding:0.6rem;font-size:0.95rem;border:1px dashed #5a3e1b;border-radius:6px;background:none;cursor:pointer;color:#5a3e1b;">' +
-        '+ Issue / Reload Gift Card' +
-        '</button>' +
-        '</div>';
-    }
+    html += '<div style="margin-top:0.5rem;">' +
+      '<button id="kiosk-add-custom-btn" type="button" class="kiosk-add-custom-btn" style="width:100%;padding:0.6rem;font-size:0.95rem;border:1px dashed #888;border-radius:6px;background:none;cursor:pointer;color:#555;">' +
+      '+ Add custom item' +
+      '</button>' +
+      '</div>';
+    html += kioskBundleOpenerHtml();
+    html += '<div style="margin-top:0.5rem;">' +
+      '<button id="kiosk-add-gc-btn" type="button" class="kiosk-add-custom-btn" style="width:100%;padding:0.6rem;font-size:0.95rem;border:1px dashed #5a3e1b;border-radius:6px;background:none;cursor:pointer;color:#5a3e1b;">' +
+      '+ Issue / Reload Gift Card' +
+      '</button>' +
+      '</div>';
 
     container.innerHTML = bannerHtml + html;
 
@@ -2671,6 +2608,12 @@
       btn.addEventListener('click', function () {
         var id = btn.getAttribute('data-id');
         kioskRemoveFromCart(id);
+      });
+    });
+
+    container.querySelectorAll('.kiosk-recipe-entry-remove').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        kioskRemoveRecipeEntry(btn.getAttribute('data-entry-id'));
       });
     });
 
@@ -7035,6 +6978,7 @@
     nextSeq: _kioskNextSeq,
     setQty: kioskSetQty,
     removeFromCart: kioskRemoveFromCart,
+    removeRecipeEntry: kioskRemoveRecipeEntry,
     clearCart: kioskClearCart,
     renderCart: kioskRenderCart,
     showCustomerStep: kioskShowCustomerStep,
