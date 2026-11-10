@@ -851,8 +851,11 @@ function reconcileInvoiceBatchStatus(invoice, liveBatchIndex, opts) {
  * @param {string} customerName    - full customer name (or empty for walk-in)
  * @param {string} contactId       - Zoho contact ID (or empty for walk-in)
  * @param {string} [customerEmail] - validated customer email (97-10, D-03); omitted when absent
+ * @param {Object} [opts]          - optional; opts.unit_total (Phase 101, D-02): when > 1 it is sent on the
+ *                                   create payload so repeated entries of one recipe on one invoice each
+ *                                   create a batch (dedup allows unit_total copies). Omitted/<= 1: unchanged.
  */
-function detectRecipeSale(recipeId, recipeSnapshot, invoiceNumber, customerName, contactId, customerEmail) {
+function detectRecipeSale(recipeId, recipeSnapshot, invoiceNumber, customerName, contactId, customerEmail, opts) {
   if (!recipeId) return;
   var nameParts = splitCustomerName(customerName);
   var batchPayload = {
@@ -870,6 +873,7 @@ function detectRecipeSale(recipeId, recipeSnapshot, invoiceNumber, customerName,
     scale_factor:       (recipeSnapshot && recipeSnapshot.scale_factor) || null
   };
   if (customerEmail) batchPayload.customer_email = customerEmail;
+  if (opts && Number(opts.unit_total) > 1) batchPayload.unit_total = Math.floor(Number(opts.unit_total));
   callAppsScriptCreateBatch(batchPayload).catch(function () {});
 }
 
