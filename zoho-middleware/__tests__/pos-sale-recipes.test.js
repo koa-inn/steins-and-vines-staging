@@ -83,7 +83,9 @@ jest.mock('../lib/constants', function () {
       INGREDIENTS_ALL: 'zoho:ingredients:all',
       KIOSK_DISCOUNT_PRESETS: 'kiosk:discount-presets',
       KIOSK_IDEM_PREFIX: 'kiosk:idem:',
-      KIOSK_PENDING_CHARGE_PREFIX: 'kiosk:pending-charge:'
+      KIOSK_PENDING_CHARGE_PREFIX: 'kiosk:pending-charge:',
+      KIOSK_PRODUCTS_LASTGOOD: 'kiosk:products:lastgood',
+      KIOSK_PRODUCTS_LASTGOOD_AT: 'kiosk:products:lastgood:at'
     },
     LOCK_KEYS: { RECIPE_SALE: 'recipe-sale' }
   };
@@ -567,6 +569,37 @@ describe('fee items in the kiosk catalog (Pitfall 4)', function () {
     return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total }).then(function (out) {
       expect(out.code).toBe(400);
       expect(out.body.error).toMatch(/Recipe fee item not found/);
+      expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
+    });
+  });
+
+  // Replaces the legacy recipe-sale last-good cases (101-09): the merged route
+  // resolves fee tax through lib/kiosk-sale-catalog.
+  test('rebuild fails + last-good has the fees -> the terminal is charged the last-good-taxed total', function () {
+    var rebuild = require('../routes/catalog').rebuildKioskCatalog;
+    rebuild.mockRejectedValue(new Error('quota'));
+    cache.get.mockImplementation(function (key) {
+      if (key === 'test:kiosk-products') return Promise.resolve(null);
+      if (key === 'kiosk:products:lastgood') return Promise.resolve(kioskCatalog());
+      if (key === 'kiosk:products:lastgood:at') return Promise.resolve('2026-10-29T16:50:00.000Z');
+      if (key === 'zoho:ingredients:all') return Promise.resolve(ingredientCatalog());
+      return Promise.resolve(null);
+    });
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total }).then(function (out) {
+      expect(out.code).toBe(202);
+      expect(chargedAmount()).toBe(total);
+    });
+  });
+
+  test('rebuild fails + no last-good copy -> 400 before any charge', function () {
+    var rebuild = require('../routes/catalog').rebuildKioskCatalog;
+    rebuild.mockRejectedValue(new Error('quota'));
+    cache.get.mockImplementation(function (key) {
+      if (key === 'zoho:ingredients:all') return Promise.resolve(ingredientCatalog());
+      return Promise.resolve(null);
+    });
+    return sale({ recipes: [recipeEntry('RCP-LOCKED')], client_grand_total: total }).then(function (out) {
+      expect(out.code).toBe(400);
       expect(helcimLib.terminalPurchase).not.toHaveBeenCalled();
     });
   });

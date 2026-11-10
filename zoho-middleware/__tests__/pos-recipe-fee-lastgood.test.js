@@ -220,12 +220,6 @@ function quote(saleType) {
   return callHandler('GET', '/api/kiosk/recipe-quote', { query: { recipe_id: 'RCP-001', sale_type: saleType || 'in-store' }, headers: {} });
 }
 
-function sale(saleType) {
-  return callHandler('POST', '/api/kiosk/recipe-sale', {
-    body: { recipe_id: 'RCP-001', sale_type: saleType || 'in-store', reference_number: 'KIOSK-T-1', idempotency_key: 'KIOSK-T-1' }
-  });
-}
-
 function confirm() {
   return callHandler('POST', '/api/kiosk/recipe-sale/confirm', {
     body: { recipe_id: 'RCP-001', sale_type: 'in-store', transaction_id: 'txn-tax-1', reference: 'KIOSK-T-1', idempotency_key: 'KIOSK-T-1' }
@@ -254,23 +248,6 @@ describe('recipe fee tax uses the last-good kiosk catalog when the rebuild fails
       expect(require('../lib/logger').warn.mock.calls.some(function (c) {
         return /last-good/.test(c[0]) && c[0].indexOf('2026-10-29T16:50:00.000Z') !== -1;
       })).toBe(true);
-    });
-  });
-
-  test('sale: terminal charged the last-good-taxed total', function () {
-    var mocks = load(null, FEE_CATALOG);
-    return sale().then(function (res) {
-      expect(res._status).toBe(202);
-      expect(mocks.helcim.terminalPurchase.mock.calls[0][0]).toBe(247.85);
-    });
-  });
-
-  test('no last-good copy: still fails closed (400, no charge)', function () {
-    var mocks = load(null, null);
-    return sale().then(function (res) {
-      expect(res._status).toBe(400);
-      expect(res._body.error).toMatch(/tax/i);
-      expect(mocks.helcim.terminalPurchase).not.toHaveBeenCalled();
     });
   });
 

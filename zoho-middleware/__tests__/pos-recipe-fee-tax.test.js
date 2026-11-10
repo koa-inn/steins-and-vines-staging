@@ -217,12 +217,6 @@ function quote(saleType) {
   return callHandler('GET', '/api/kiosk/recipe-quote', { query: { recipe_id: 'RCP-001', sale_type: saleType || 'in-store' }, headers: {} });
 }
 
-function sale(saleType) {
-  return callHandler('POST', '/api/kiosk/recipe-sale', {
-    body: { recipe_id: 'RCP-001', sale_type: saleType || 'in-store', reference_number: 'KIOSK-T-1', idempotency_key: 'KIOSK-T-1' }
-  });
-}
-
 function confirm() {
   return callHandler('POST', '/api/kiosk/recipe-sale/confirm', {
     body: { recipe_id: 'RCP-001', sale_type: 'in-store', transaction_id: 'txn-tax-1', reference: 'KIOSK-T-1', idempotency_key: 'KIOSK-T-1' }
@@ -260,27 +254,6 @@ describe('recipe quote reports fee tax separately', function () {
     return quote().then(function (res) {
       expect(res._status).toBe(400);
       expect(res._body.error).toMatch(/tax/i);
-    });
-  });
-});
-
-describe('recipe sale charges pre-tax total plus fee tax', function () {
-  test('terminal is charged 247.85 and the pending record carries it', function () {
-    var mocks = load();
-    return sale().then(function (res) {
-      expect(res._status).toBe(202);
-      expect(mocks.helcim.terminalPurchase.mock.calls[0][0]).toBe(247.85);
-      expect(res._body.total).toBe(247.85);
-      var pending = mocks.cache.set.mock.calls.filter(function (c) { return c[0] === 'kiosk:pending-charge:KIOSK-T-1'; });
-      expect(pending[0][1].amount).toBe(247.85);
-    });
-  });
-
-  test('unresolvable fee tax: 400, terminal never charged', function () {
-    var mocks = load([]);
-    return sale().then(function (res) {
-      expect(res._status).toBe(400);
-      expect(mocks.helcim.terminalPurchase).not.toHaveBeenCalled();
     });
   });
 });

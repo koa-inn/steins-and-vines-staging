@@ -224,10 +224,14 @@ function load() {
   return mocks;
 }
 
-// Run the sale leg to learn the amount the terminal was charged.
+// Learn the amount a sale of SALE_BODY charges: the quote route prices through
+// the same computeRecipeQuote the confirm leg re-checks (the legacy initiate
+// route is retired from tests, 101-09).
 function chargedTotal() {
-  return callHandler('POST', '/api/kiosk/recipe-sale', { body: SALE_BODY }).then(function (res) {
-    return res._body.total;
+  return callHandler('GET', '/api/kiosk/recipe-quote', {
+    query: { recipe_id: SALE_BODY.recipe_id, sale_type: SALE_BODY.sale_type }, headers: {}
+  }).then(function (res) {
+    return res._body.total_with_tax;
   });
 }
 

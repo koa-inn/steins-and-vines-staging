@@ -236,17 +236,6 @@ describe('quote: expired Redis catalog falls back to ingredients-all-cache.json'
 });
 
 describe('sale and post-charge confirm use the same fallback', function () {
-  test('recipe-sale: Redis expired + file present -> not a catalog 503', function () {
-    load(null, CATALOG);
-    return callHandler('POST', '/api/kiosk/recipe-sale', {
-      body: { recipe_id: 'RCP-001', sale_type: 'in-store', idempotency_key: 'k-sale-1' },
-      headers: {}
-    }).then(function (res) {
-      expect(fileReads).toBeGreaterThanOrEqual(1);
-      expect(res._status).not.toBe(503);
-    });
-  });
-
   test('confirm (card already charged): Redis expired + file present -> not a catalog 503', function () {
     load(null, CATALOG);
     return callHandler('POST', '/api/kiosk/recipe-sale/confirm', {

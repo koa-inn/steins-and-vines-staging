@@ -217,12 +217,6 @@ function quote(saleType) {
   return callHandler('GET', '/api/kiosk/recipe-quote', { query: { recipe_id: 'RCP-001', sale_type: saleType || 'in-store' }, headers: {} });
 }
 
-function sale(saleType) {
-  return callHandler('POST', '/api/kiosk/recipe-sale', {
-    body: { recipe_id: 'RCP-001', sale_type: saleType || 'in-store', reference_number: 'KIOSK-T-1', idempotency_key: 'KIOSK-T-1' }
-  });
-}
-
 function confirm() {
   return callHandler('POST', '/api/kiosk/recipe-sale/confirm', {
     body: { recipe_id: 'RCP-001', sale_type: 'in-store', transaction_id: 'txn-tax-1', reference: 'KIOSK-T-1', idempotency_key: 'KIOSK-T-1' }
