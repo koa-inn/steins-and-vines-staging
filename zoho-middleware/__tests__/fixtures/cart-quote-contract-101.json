@@ -1,0 +1,235 @@
+[
+  {
+    "name": "recipe-only",
+    "request": {
+      "items": [],
+      "recipes": [
+        {
+          "recipe_id": "RCP-LOCKED",
+          "sale_type": "in-store"
+        }
+      ]
+    },
+    "gross": 245,
+    "response": {
+      "subtotal": 0,
+      "discount_total": 0,
+      "tax_total": 4.21,
+      "total": 249.21,
+      "discount": null,
+      "recipes": [
+        {
+          "index": 0,
+          "label": "Locked Pale Ale",
+          "total_before_discount": 245,
+          "discount": 0,
+          "pre_tax": 245,
+          "sale_type": "in-store",
+          "mill_grain": false,
+          "target_volume_l": 23
+        }
+      ],
+      "stock": {
+        "ok": true,
+        "conflicts": [],
+        "recipes_short": []
+      }
+    }
+  },
+  {
+    "name": "product + recipe, no discount",
+    "request": {
+      "items": [
+        {
+          "item_id": "p-5",
+          "quantity": 2
+        }
+      ],
+      "recipes": [
+        {
+          "recipe_id": "RCP-LOCKED",
+          "sale_type": "in-store"
+        }
+      ]
+    },
+    "gross": 255,
+    "response": {
+      "subtotal": 10,
+      "discount_total": 0,
+      "tax_total": 4.71,
+      "total": 259.71,
+      "discount": null,
+      "recipes": [
+        {
+          "index": 0,
+          "label": "Locked Pale Ale",
+          "total_before_discount": 245,
+          "discount": 0,
+          "pre_tax": 245,
+          "sale_type": "in-store",
+          "mill_grain": false,
+          "target_volume_l": 23
+        }
+      ],
+      "stock": {
+        "ok": true,
+        "conflicts": [],
+        "recipes_short": []
+      }
+    }
+  },
+  {
+    "name": "product + recipe, fixed cart discount",
+    "request": {
+      "items": [
+        {
+          "item_id": "p-12",
+          "quantity": 2
+        }
+      ],
+      "recipes": [
+        {
+          "recipe_id": "RCP-LOCKED",
+          "sale_type": "in-store"
+        }
+      ],
+      "discount": {
+        "preset_id": "p-cart-fixed"
+      }
+    },
+    "gross": 255,
+    "response": {
+      "subtotal": 9.71,
+      "discount_total": 7.5,
+      "tax_total": 5.01,
+      "total": 252.51,
+      "discount": {
+        "preset_id": "p-cart-fixed",
+        "name": "Cart $7.50 off",
+        "type": "fixed",
+        "value": 7.5,
+        "scope": "cart",
+        "amount": 7.5
+      },
+      "recipes": [
+        {
+          "index": 0,
+          "label": "Locked Pale Ale",
+          "total_before_discount": 245,
+          "discount": 7.21,
+          "pre_tax": 237.79,
+          "sale_type": "in-store",
+          "mill_grain": false,
+          "target_volume_l": 23
+        }
+      ],
+      "stock": {
+        "ok": true,
+        "conflicts": [],
+        "recipes_short": []
+      }
+    }
+  },
+  {
+    "name": "product + recipe, percentage cart discount",
+    "request": {
+      "items": [
+        {
+          "item_id": "p-5",
+          "quantity": 4
+        }
+      ],
+      "recipes": [
+        {
+          "recipe_id": "RCP-LOCKED",
+          "sale_type": "in-store"
+        }
+      ],
+      "discount": {
+        "preset_id": "p-cart-pct"
+      }
+    },
+    "gross": 265,
+    "response": {
+      "subtotal": 18,
+      "discount_total": 26.5,
+      "tax_total": 3.86,
+      "total": 242.36,
+      "discount": {
+        "preset_id": "p-cart-pct",
+        "name": "Cart 10%",
+        "type": "percentage",
+        "value": 10,
+        "scope": "cart",
+        "amount": 26.5
+      },
+      "recipes": [
+        {
+          "index": 0,
+          "label": "Locked Pale Ale",
+          "total_before_discount": 245,
+          "discount": 24.5,
+          "pre_tax": 220.5,
+          "sale_type": "in-store",
+          "mill_grain": false,
+          "target_volume_l": 23
+        }
+      ],
+      "stock": {
+        "ok": true,
+        "conflicts": [],
+        "recipes_short": []
+      }
+    }
+  },
+  {
+    "name": "two recipes",
+    "request": {
+      "recipes": [
+        {
+          "recipe_id": "RCP-LOCKED",
+          "sale_type": "in-store"
+        },
+        {
+          "recipe_id": "RCP-DYN",
+          "sale_type": "in-store"
+        }
+      ]
+    },
+    "gross": 330,
+    "response": {
+      "subtotal": 0,
+      "discount_total": 0,
+      "tax_total": 8.31,
+      "total": 338.31,
+      "discount": null,
+      "recipes": [
+        {
+          "index": 0,
+          "label": "Locked Pale Ale",
+          "total_before_discount": 245,
+          "discount": 0,
+          "pre_tax": 245,
+          "sale_type": "in-store",
+          "mill_grain": false,
+          "target_volume_l": 23
+        },
+        {
+          "index": 1,
+          "label": "Dynamic Amber",
+          "total_before_discount": 85,
+          "discount": 0,
+          "pre_tax": 85,
+          "sale_type": "in-store",
+          "mill_grain": false,
+          "target_volume_l": 23
+        }
+      ],
+      "stock": {
+        "ok": true,
+        "conflicts": [],
+        "recipes_short": []
+      }
+    }
+  }
+]

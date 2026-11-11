@@ -929,11 +929,18 @@
     if (_kcEnv.getRecipeEntries().length) {
       var cq = _kioskCartQuote;
       if (cq && cq.status === 'ok' && cq.data) {
+        // WR-01: the server's `subtotal` is the DISCOUNTED, products-only
+        // subtotal (recipes are priced apart), so it is not the cart Subtotal.
+        // Derive the gross cart subtotal from the fields that define the
+        // charge, so Subtotal - Discount + Tax always equals Total.
+        var cqDiscount = kioskR2(cq.data.discount_total);
+        var cqTax = kioskR2(cq.data.tax_total);
+        var cqTotal = kioskR2(cq.data.total);
         return {
-          subtotal: kioskR2(cq.data.subtotal),
-          discount: kioskR2(cq.data.discount_total),
-          tax: kioskR2(cq.data.tax_total),
-          total: kioskR2(cq.data.total),
+          subtotal: kioskR2(cqTotal - cqTax + cqDiscount),
+          discount: cqDiscount,
+          tax: cqTax,
+          total: cqTotal,
           missingTaxItem: missingTaxItem
         };
       }
