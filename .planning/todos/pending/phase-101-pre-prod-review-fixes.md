@@ -51,7 +51,7 @@ Cleanup done 2026-11-11 (owner asked): the four payments and invoices INV-000266
 
 Still open before Plan 101-15:
 
-- **HI-01 Zoho check not done.** The fix follows what Zoho is expected to accept (a line updated by `line_item_id` with `description` and no `item_id`). Staging and prod share one Zoho org, so the check writes to the real books: it needs the owner's OK (create a draft invoice with a custom line, PUT it in the new shape, confirm 200 and the text kept, delete the draft).
+- **HI-01 Zoho check DONE 2026-11-11 (owner said go).** Draft INV-000270 (custom line, bundle-style line, Brewing Fee; since deleted). Zoho echoes item-less lines with `item_id: ""`, `name: ""` and the text in `description`, as the tests model. PUT in the new shape (line_item_id + description, no item_id/name): accepted, total moved by exactly the 0.01 adjustment, descriptions and taxes kept. PUT in the OLD shape (empty item_id/name, no description): also accepted and the descriptions were kept, so Zoho retains omitted fields on a line updated by `line_item_id`. HI-01 was therefore not a live defect; the fix is harmless and stays. Run through the Zoho Books connector, not the middleware's own client.
 - Owner staging re-test (below).
 
 ## Then
