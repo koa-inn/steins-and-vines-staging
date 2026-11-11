@@ -1,6 +1,6 @@
 ---
 title: Phase 101 pre-production review fixes (6 findings) + staging re-test
-status: pending
+status: fixes on staging, owner re-test pending
 created: 2026-11-11
 source: .planning/phases/101-kiosk-mixed-recipe-carts-and-full-tenders/101-REVIEW.md
 area: kiosk money path
@@ -25,6 +25,25 @@ Each fix: regression test first, one commit per fix, full frontend + middleware 
 4. **WR-03** Add-to-cart double tap adds the recipe twice, so double charge and two BrewPad batches. Add a re-entrancy guard on the recipe add-to-cart (disable until done).
 5. **WR-02** The custom-item and gift-card modals in `js/kiosk.js` and `js/admin.js` (6 sites) never call `kioskRequestCartQuote`. A recipe cart keeps a stale quote and checkout fails with "Totals changed". Request a new quote after these adds.
 6. **WR-01** cart-quote `subtotal` is products-only and already discounted, but the client renders it as the gross subtotal (recipe-only cart shows "Subtotal $0.00"). The client test mocks a shape the server can't produce. Align the server field with the client (or render from the right fields) and add a contract test that uses a real server response.
+
+## Fix status (2026-11-11): all six done, pushed to staging (`170266fd`)
+
+Each has a regression test written first (red, then green). Gates on HEAD: frontend 262 suites / 3595 tests, middleware 315 / 4390 (Node 24), lint clean, build committed.
+
+| Finding | Commit | What changed |
+|---|---|---|
+| HI-01 | `29ba6a82` | Re-balance PUT re-sends `description`; omits empty `item_id` / `name`. |
+| HI-03 | `ea9ccc48` | Confirm catch looks the manual-confirm charge up by reference first: approved -> void the real id; declined/cancelled -> plain no-charge error; not verifiable -> 409, no void, pending-charge sentinel left for the sweep. |
+| HI-02 | `fb1cd05d` | SO import prompts for and clears recipe entries; recipe add refused in SO mode; checkout backstop; SO "New sale" uses `kioskClearCart`. |
+| WR-03 | `7c679993` | In-flight flag + disabled button on recipe add-to-cart. |
+| WR-02 | `bfb6f3b8` | `requestCartQuote()` after all six custom-item / gift-card cart writes. |
+| WR-01 | `e75c0239` | Client derives Subtotal = total - tax + discount. Server response NOT changed (existing tests pin its keys and the discounted `subtotal`). Shared fixture `zoho-middleware/__tests__/fixtures/cart-quote-contract-101.json` is asserted against the real route and fed to `kioskCalcTotals`. |
+| build | `170266fd` | kiosk + admin bundles and cache stamps. |
+
+Still open before Plan 101-15:
+
+- **HI-01 Zoho check not done.** The fix follows what Zoho is expected to accept (a line updated by `line_item_id` with `description` and no `item_id`). Staging and prod share one Zoho org, so the check writes to the real books: it needs the owner's OK (create a draft invoice with a custom line, PUT it in the new shape, confirm 200 and the text kept, delete the draft).
+- Owner staging re-test (below).
 
 ## Then
 
