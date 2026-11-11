@@ -20,7 +20,7 @@ requirements-completed: [MIXR-09]
 
 # Phase 101 Plan 15: Production release Summary
 
-Phase 101 and its six pre-production review fixes are live on production as `280eae3e` (tag `prod-20261111-1`), pushed middleware first. Task 3 (owner confirms the production kiosk after reloading the iPads) is still open.
+Phase 101 and its six pre-production review fixes are live on production as `280eae3e` (tag `prod-20261111-1`), pushed middleware first. The owner confirmed the production kiosk and the first real mixed sale (INV-000271) booked correctly.
 
 ## Tasks
 
@@ -33,7 +33,10 @@ Phase 101 and its six pre-production review fixes are live on production as `280
    - Tag `prod-20261111-1` on `280eae3e`, pushed to production and origin.
    - Smoke: `/api/products` 200; ingredient catalog warmed (`/api/ingredients` 200); production `kiosk.html` serves `?v=mwch9sxx` and the served `kiosk-core.min.js`, `kiosk.min.js` and `admin.min.js` hash-match the built files.
    - RUNBOOK Deploy History row and STATE line added.
-3. **Task 3 (owner verifies production): pending.** Reload the kiosk iPads and the admin POS tab; add a product then a recipe (the product stays, the recipe shows as one block); Checkout offers Gift card, Cash, Phone order and card.
+3. **Task 3 (owner verifies production): done 2026-11-11.** After a hard reload (the first load still served the cached old page and showed the old "clear the cart before adding a recipe" toast; kiosk.html is cached for 10 minutes), the owner reported recipes adding next to products and put through a combined phone order. Verified in Zoho and BrewPad:
+   - **INV-000271** (Bauman, Ted, ref KIOSK-1794424754241): ONE invoice, $175.33 = sub-total 164.47 + tax 10.53 + adjustment 0.33; paid in full by ONE creditcard payment of $175.33 (Helcim 58160515).
+   - Lines: canning bundle "Beer 25 L (355 mL)" $40 with 66 cans at $0, Custom Label Setup Fee $10, 66 labels, then recipe Bavarian Style Lager (in-store, 28 L) with Brewing Fee $45 (GST) and Materials Fee $5 (PST+GST). Non-recipe lines first, then the recipe, as designed.
+   - Production BrewPad batch **SV-B-000254** created for the customer, linked to INV-000271, status pending.
 
 ## Deviations from Plan
 
@@ -45,8 +48,7 @@ Phase 101 and its six pre-production review fixes are live on production as `280
 
 ## Open items
 
-- Owner: reload the iPads and the admin POS, then confirm (Task 3).
-- First real recipe-bearing sale on production: check its Zoho invoice (one invoice, total equals the charge) and its BrewPad batch.
+- Any kiosk iPad or POS tab not yet reloaded still runs the old page until it is hard-reloaded.
 - Owner: void Helcim test transactions 58155163, 58155497 and 58158593.
 - D-18: delete the legacy `/recipe-sale/confirm` after the soak (`.planning/todos/pending/delete-legacy-recipe-sale-confirm.md`).
 - Deferred review findings: WR-04, WR-05, LO-01..LO-04. `docs/DEPLOYMENT.md` still lists the dead staging host.
