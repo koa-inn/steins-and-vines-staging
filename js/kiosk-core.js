@@ -414,6 +414,7 @@
   var _kioskSoPayInFlightId = null;
   var _kioskSoActiveChips = ['open', 'draft'];  // default active chip filter (D-10)
   var _kioskImportedSoId = null;        // SO ID when cart was imported from an SO
+  var _kioskRecipeAddInFlight = false;  // WR-03: a recipe add-to-cart is loading
   var _kioskImportedSoNumber = null;    // SO number for display (e.g., "SO-001234")
   var _kioskImportedSoUpdated = false;  // true after SO update succeeds -- skip on retry (D-08)
   var _kioskQuote = null;
@@ -1739,13 +1740,22 @@
       showToast('Recipes cannot be added to a Sales Order. Finish or clear the order first.', 'error');
       return;
     }
+    // WR-03: one add at a time. Duplicates are allowed (D-02), so a double-
+    // registered tap would otherwise add, charge and batch the recipe twice.
+    if (_kioskRecipeAddInFlight) return;
     var recipe = _kioskSelectedRecipe;
     var avail = _kioskRecipeAvailability;
 
     if (avail && (avail.summary === 'cannot_brew' || avail.summary === 'unknown')) return;
 
+    function endRecipeAdd() {
+      _kioskRecipeAddInFlight = false;
+      if (addBtn) addBtn.disabled = false;
+    }
+
     function processRecipeData(data) {
-      if (!data.recipe) {
+      endRecipeAdd();
+      if (!data || !data.recipe) {
         alert('Failed to load recipe details');
         return;
       }
@@ -1828,10 +1838,14 @@
     // Always fetch fresh to ensure tax rates and prices are current
     {
       var mw = _kcEnv.mwUrl;
+      var addBtn = document.getElementById('kiosk-add-recipe-to-cart');
+      _kioskRecipeAddInFlight = true;
+      if (addBtn) addBtn.disabled = true;
       fetch(mw + '/api/recipes/' + encodeURIComponent(recipe.recipe_id), _kcMergeAuth({}))
         .then(function (r) { return r.json(); })
         .then(processRecipeData)
         .catch(function (err) {
+          endRecipeAdd();
           alert('Failed to load recipe: ' + err.message);
         });
     }
