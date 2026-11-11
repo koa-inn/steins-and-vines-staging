@@ -41,7 +41,7 @@ Phase 101 and its six pre-production review fixes are live on production as `280
 
 **2. Weak probes.** Unauthenticated `cart-quote` and `recipe-sale` both return 403 because the auth guard runs before routing, so they do not prove the routes exist. The uptime reset after each push and the bundle hash match are the evidence.
 
-**3. Window between the two pushes (about 3 minutes).** Production ran the new middleware with the old frontend, whose recipe checkout uses the retired initiate route. No sale was attempted in that window as far as the health checks show; not otherwise verified.
+**3. Window between the two pushes (about 3 minutes).** Production ran the new middleware with the old frontend, whose recipe checkout uses the retired initiate route. A recipe checkout in that window would have been refused with the refresh message (fail safe, nothing charged). Whether one was attempted was not checked.
 
 ## Open items
 
