@@ -5,6 +5,8 @@
  * (101-REVIEW.md). Harness copied from __tests__/pos-confirm-recipes.test.js.
  *
  * HI-01: the reconcile PUT must keep the text of custom / canning-bundle lines.
+ * HI-03: a manual confirm that fails before the charge is verified must act
+ *        on the REAL Helcim id, never the literal 'manual-confirm'.
  */
 
 var mockRouteHandlers = {};
@@ -333,6 +335,76 @@ describe('HI-01: re-balance PUT on a mixed invoice keeps custom line text', func
         expect(li.name).toBeTruthy();
       });
       expect(helcimLib.voidTransaction).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HI-03: manual confirm failing before verifyManualCharge resolves the real id
+// ---------------------------------------------------------------------------
+
+describe('HI-03: manual confirm that fails to re-price never voids the literal manual-confirm', function () {
+  function manualBody(extra) {
+    return Object.assign({
+      recipes: [recipeEntry('RCP-NOPE')], transaction_id: 'manual-confirm', reference_number: 'REF-H3'
+    }, extra || {});
+  }
+
+  test('recipe error + terminal approved: voids the real polled id', function () {
+    helcimLib.pollTerminalResult.mockResolvedValue({ approved: true, transactionId: 'real-303', status: 'APPROVED' });
+    return confirm(manualBody()).then(function (out) {
+      expect(helcimLib.pollTerminalResult).toHaveBeenCalledWith('REF-H3');
+      expect(moneyPath.voidWithTimeout).toHaveBeenCalledTimes(1);
+      expect(moneyPath.voidWithTimeout.mock.calls[0][1]).toBe('real-303');
+      expect(helcimLib.voidTransaction).toHaveBeenCalledWith('real-303');
+      expect(out.code).toBe(502);
+      expect(out.body.payment_voided).toBe(true);
+      expect(out.body.voided_transaction_id).toBe('real-303');
+      expect(invoiceCalls()).toHaveLength(0);
+    });
+  });
+
+  test('ingredient catalog unavailable + terminal approved: voids the real polled id', function () {
+    cache.get.mockImplementation(function (key) {
+      if (key === 'test:kiosk-products') return Promise.resolve(kioskCatalog());
+      return Promise.resolve(null);
+    });
+    helcimLib.pollTerminalResult.mockResolvedValue({ approved: true, transactionId: 'real-304', status: 'APPROVED' });
+    return confirm(manualBody({ recipes: [recipeEntry('RCP-LOCKED')] })).then(function (out) {
+      expect(moneyPath.voidWithTimeout.mock.calls[0][1]).toBe('real-304');
+      expect(out.body.payment_voided).toBe(true);
+    });
+  });
+
+  test('recipe error + terminal declined: no charge, plain recipe error, nothing voided', function () {
+    helcimLib.pollTerminalResult.mockResolvedValue({ approved: false, status: 'DECLINED' });
+    return confirm(manualBody()).then(function (out) {
+      expect(out.code).toBe(404);
+      expect(moneyPath.voidWithTimeout).not.toHaveBeenCalled();
+      expect(helcimLib.voidTransaction).not.toHaveBeenCalled();
+      expect(out.body.payment_voided).toBeUndefined();
+    });
+  });
+
+  test('recipe error + charge not verifiable yet: 409, nothing voided, left to the pending-charge sweep', function () {
+    helcimLib.pollTerminalResult.mockResolvedValue({ approved: false, status: 'pending', transactionId: null });
+    return confirm(manualBody()).then(function (out) {
+      expect(out.code).toBe(409);
+      expect(out.body.error).toMatch(/Do NOT re-charge/);
+      expect(moneyPath.voidWithTimeout).not.toHaveBeenCalled();
+      expect(helcimLib.voidTransaction).not.toHaveBeenCalled();
+      expect(out.res.locals.__keepIdemLock).toBeUndefined();
+      // The pending-charge sentinel is what the sweep voids from: never deleted here.
+      var dels = cache.del.mock.calls.map(function (c) { return String(c[0]); });
+      expect(dels.filter(function (k) { return k.indexOf('kiosk:pending-charge:') === 0; })).toHaveLength(0);
+    });
+  });
+
+  test('recipe error + Helcim lookup itself fails: 409, nothing voided', function () {
+    helcimLib.pollTerminalResult.mockRejectedValue(new Error('helcim down'));
+    return confirm(manualBody()).then(function (out) {
+      expect(out.code).toBe(409);
+      expect(moneyPath.voidWithTimeout).not.toHaveBeenCalled();
     });
   });
 });

@@ -1670,6 +1670,38 @@ router.post('/api/kiosk/sale/confirm', function (req, res) {
   runConfirm(body, null, req, res);
 });
 
+// Phase 101 review HI-03. For a failed manual confirm (transaction_id is the
+// literal 'manual-confirm') whose error does not already carry the real Helcim
+// id, look the charge up by reference number and record the outcome on the
+// error: __capturedTxnId (approved: void this id), __noCharge (declined or
+// cancelled: nothing to void) or __chargeUnverified (unknown: never void a
+// made-up id). Always resolves; any other error is left untouched.
+function resolveManualConfirmCharge(body, err) {
+  if (!err || err.__capturedTxnId || err.__manualVerify ||
+      !body || body.transaction_id !== 'manual-confirm' || body.tender === 'cash') {
+    return Promise.resolve();
+  }
+  var ref = (typeof body.reference_number === 'string') ? body.reference_number.slice(0, 64) : '';
+  if (!ref) {
+    err.__chargeUnverified = true;
+    return Promise.resolve();
+  }
+  return Promise.resolve().then(function () {
+    return helcimLib.pollTerminalResult(ref);
+  }).then(function (tr) {
+    if (tr && tr.approved && tr.transactionId) {
+      err.__capturedTxnId = String(tr.transactionId);
+    } else if (tr && (tr.status === 'DECLINED' || tr.status === 'CANCELLED')) {
+      err.__noCharge = true;
+    } else {
+      err.__chargeUnverified = true;
+    }
+  }).catch(function (pollErr) {
+    log.error('[pos/kiosk/sale/confirm] HI-03: charge lookup failed for ref=' + ref + ': ' + (pollErr && pollErr.message));
+    err.__chargeUnverified = true;
+  });
+}
+
 function runConfirm(body, confirmIdemKey, req, res) {
   // D-50-03 (50-03 / H4 / SC#2): release the confirm idempotency lock on
   // EVERY failure return in this function — the ~10 existing ones and any
@@ -2532,6 +2564,15 @@ function runConfirm(body, confirmIdemKey, req, res) {
     }); // end gcConfirmBalanceLookup.then (D-12 balance validation)
     }); // end resolveDiscount.then
   }).catch(function (err) {
+    // Phase 101 review HI-03: on a manual confirm, body.transaction_id is the
+    // literal 'manual-confirm'; the real Helcim id only exists once
+    // verifyManualCharge has run. An error thrown BEFORE that (recipe re-price,
+    // unresolved tax, invalid bundle, catalog failure) used to reach the void
+    // below with 'manual-confirm' as the id: the void could never succeed and
+    // the customer stayed charged. Resolve the real charge state first and
+    // record it on the error for the handler below.
+    return resolveManualConfirmCharge(body, err).then(function () { throw err; });
+  }).catch(function (err) {
     // F2 (45-09): manual-confirm could not be positively verified against Helcim.
     // No invoice was created and there is no real terminal txn to void — fail closed
     // WITHOUT booking. A genuinely-orphaned real charge is settled by the 45-08 sweep.
@@ -2554,7 +2595,10 @@ function runConfirm(body, confirmIdemKey, req, res) {
     // after a charge, pos.js:816-819 invariant).
     // Phase 90: an invalid canning bundle / unresolvable standard tax (tagged
     // __bundleInvalid) follows the exact same rule as __taxUnresolved.
-    if (err && (err.__taxUnresolved || err.__bundleInvalid || err.__recipeInvalid) && !(body && body.transaction_id)) {
+    // HI-03: a manual confirm whose terminal charge was declined / cancelled
+    // (err.__noCharge) is the same "nothing was charged" case.
+    if (err && (err.__taxUnresolved || err.__bundleInvalid || err.__recipeInvalid) &&
+        (!(body && body.transaction_id) || err.__noCharge)) {
       if (res.headersSent) return;
       // Phase 67 review fix (WR-01): release the confirm idempotency lock on
       // this actionable no-charge 400 — acquireIdempotencyLock only replays
@@ -2564,6 +2608,24 @@ function runConfirm(body, confirmIdemKey, req, res) {
       // "so a corrected re-ring can retry immediately").
       if (confirmIdemKey) { cache.releaseLock(confirmIdemKey).catch(function () {}); }
       return res.status(err.__status || 400).json({ error: err.message });
+    }
+    // HI-03: the sale cannot be booked AND the manual-confirm charge could not
+    // be looked up (terminal still pending, or Helcim unreachable). There is no
+    // id to void, so never attempt one. The pending-charge sentinel written at
+    // /sale is left in place: the webhook / 5-minute sweep (lib/reconcile.js)
+    // voids the charge if the terminal did approve. The lock is released (4xx
+    // finish hook) so a retry can resolve the id and void it straight away.
+    if (err && err.__chargeUnverified) {
+      log.error('[pos/kiosk/sale/confirm] Manual confirm failed before the charge was verified (' +
+        err.message + ') and the charge could not be looked up — left to the pending-charge sweep');
+      captureExceptionSafe(err, { level: 'error', tags: { reqId: req.id, txnId: null, salesOrderId: null } });
+      if (res.headersSent) return;
+      var unverifiedReason = (err.__taxUnresolved || err.__bundleInvalid || err.__recipeInvalid)
+        ? err.message : 'the sale could not be priced';
+      return res.status(409).json({
+        error: 'This sale was NOT recorded (' + unverifiedReason + ') and the card payment could not be verified yet. ' +
+          'Do NOT re-charge. Wait a moment and retry: if the terminal approved, the charge will be voided automatically.'
+      });
     }
     log.error('[pos/kiosk/sale/confirm] Error: ' + err.message);
     // M-A3 / SC#1 (50-03): a captured-amount mismatch is a 402 (payment
@@ -2591,6 +2653,8 @@ function runConfirm(body, confirmIdemKey, req, res) {
     var _txnIdForVoid = (err && err.__capturedTxnId)
       ? String(err.__capturedTxnId)
       : ((body && body.transaction_id) ? String(body.transaction_id) : null);
+    // HI-03: the terminal declined / cancelled the manual-confirm charge.
+    if (err && err.__noCharge) _txnIdForVoid = null;
     if (_txnIdForVoid) {
       // D-12: track void failure via a thin wrapper so the response body can include
       // needs_manual_review and the sv:void-failure record is persisted for reconciliation.
