@@ -40,6 +40,13 @@ Each has a regression test written first (red, then green). Gates on HEAD: front
 | WR-01 | `e75c0239` | Client derives Subtotal = total - tax + discount. Server response NOT changed (existing tests pin its keys and the discounted `subtotal`). Shared fixture `zoho-middleware/__tests__/fixtures/cart-quote-contract-101.json` is asserted against the real route and fed to `kioskCalcTotals`. |
 | build | `170266fd` | kiosk + admin bundles and cache stamps. |
 
+Owner staging re-test on the fixed build (2026-11-11, after the `170266fd` redeploy), both verified in Zoho:
+
+- **INV-000268** mixed card sale (airlock + Bavarian Style Lager, in-store): one invoice, $100.09, paid, creditcard payment ref 58158593.
+- **INV-000269** cash sale on a recipe cart: $97.85, paid, payment mode cash, reference is the kiosk ref (no Helcim id).
+
+Neither needed a re-balance (invoices last modified 1 s after creation), so HI-01 is still unproven against Zoho. On-screen checks (Subtotal, custom item re-quote, SO import) are the owner's word only. INV-000266..269 are still `paid` in Zoho and need voiding.
+
 Still open before Plan 101-15:
 
 - **HI-01 Zoho check not done.** The fix follows what Zoho is expected to accept (a line updated by `line_item_id` with `description` and no `item_id`). Staging and prod share one Zoho org, so the check writes to the real books: it needs the owner's OK (create a draft invoice with a custom line, PUT it in the new shape, confirm 200 and the text kept, delete the draft).
