@@ -597,7 +597,9 @@ function validateRecipeEntries(recipes) {
     if (tv !== undefined && tv !== null && !(typeof tv === 'number' && isFinite(tv) && tv > 0)) {
       return { status: 400, error: 'recipes[' + i + '].target_volume_l must be a number > 0' };
     }
-    if (r.modified_ingredients !== undefined && !Array.isArray(r.modified_ingredients)) {
+    // The kiosk sends null for an unmodified recipe; treat it the same as absent.
+    var mods = r.modified_ingredients === null ? undefined : r.modified_ingredients;
+    if (mods !== undefined && !Array.isArray(mods)) {
       return { status: 400, error: 'recipes[' + i + '].modified_ingredients must be an array' };
     }
     entries.push({
@@ -606,7 +608,7 @@ function validateRecipeEntries(recipes) {
       sale_type: r.sale_type,
       mill_grain: r.mill_grain === true,
       target_volume_l: tv === undefined ? null : tv,
-      modified_ingredients: r.modified_ingredients
+      modified_ingredients: mods
     });
   }
   return { ok: true, entries: entries };
