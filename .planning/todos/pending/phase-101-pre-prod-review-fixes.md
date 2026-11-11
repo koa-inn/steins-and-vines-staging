@@ -45,7 +45,9 @@ Owner staging re-test on the fixed build (2026-11-11, after the `170266fd` redep
 - **INV-000268** mixed card sale (airlock + Bavarian Style Lager, in-store): one invoice, $100.09, paid, creditcard payment ref 58158593.
 - **INV-000269** cash sale on a recipe cart: $97.85, paid, payment mode cash, reference is the kiosk ref (no Helcim id).
 
-Neither needed a re-balance (invoices last modified 1 s after creation), so HI-01 is still unproven against Zoho. On-screen checks (Subtotal, custom item re-quote, SO import) are the owner's word only. INV-000266..269 are still `paid` in Zoho and need voiding.
+Neither needed a re-balance (invoices last modified 1 s after creation), so HI-01 is still unproven against Zoho. On-screen checks (Subtotal, custom item re-quote, SO import) are the owner's word only.
+
+Cleanup done 2026-11-11 (owner asked): the four payments and invoices INV-000266..269 were deleted in Zoho (stock returned), and staging batches SV-B-000251..254 were deleted through `batch-store.remove` in the staging container. Left for the owner in Helcim: void/refund txns 58155163 (INV-000266), 58155497 (INV-000267), 58158593 (INV-000268). INV-000269 was cash.
 
 Still open before Plan 101-15:
 
