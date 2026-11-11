@@ -1,11 +1,11 @@
 ---
 title: Phase 101 pre-production review fixes (6 findings) + staging re-test
-status: fixes on staging, owner re-test pending
+status: done, released to production 2026-11-11 (prod-20261111-1)
 created: 2026-11-11
 source: .planning/phases/101-kiosk-mixed-recipe-carts-and-full-tenders/101-REVIEW.md
 area: kiosk money path
 priority: high
-blocks: Plan 101-15 (production release)
+blocks: nothing (Plan 101-15 Task 2 done)
 ---
 
 ## Where things stand (2026-11-11)
