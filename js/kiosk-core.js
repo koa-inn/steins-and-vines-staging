@@ -1733,6 +1733,12 @@
 
   function kioskAddRecipeToCart() {
     if (!_kioskSelectedRecipe || !_kioskSaleType) return;
+    // HI-02: recipes on a Sales Order are out of scope; the SO checkout would
+    // charge the SO only and silently drop the recipe.
+    if (_kioskImportedSoId) {
+      showToast('Recipes cannot be added to a Sales Order. Finish or clear the order first.', 'error');
+      return;
+    }
     var recipe = _kioskSelectedRecipe;
     var avail = _kioskRecipeAvailability;
 
@@ -3223,6 +3229,13 @@
 
     // Pitfall 5: a manager override is per-attempt, never sticky across sales.
     _kioskStockOverride = false;
+
+    // HI-02 backstop: the SO checkout below sends the SO's items only. A recipe
+    // in the same cart would go unpaid, so refuse before anything is sent.
+    if (_kioskImportedSoId && _kcEnv.getRecipeEntries().length) {
+      showToast('Recipes cannot be paid on a Sales Order. Remove the recipe, then ring it up as its own sale.', 'error');
+      return;
+    }
 
     var totals = kioskCalcTotals();
     // D-19 / T-101-32: a recipe cart is priced only by the server cart-quote.
@@ -5494,8 +5507,9 @@
     }
     if (!so) { showToast('Order not found', 'error'); return; }
 
-    // D-03: confirm if cart non-empty
-    if (Object.keys(_kcEnv.getCart()).length > 0) {
+    // D-03: confirm if cart non-empty. Recipes live outside the cart map
+    // (Phase 101), so a recipe-only cart counts as non-empty too (HI-02).
+    if (Object.keys(_kcEnv.getCart()).length > 0 || _kcEnv.getRecipeEntries().length > 0) {
       if (!confirm('Replace current cart with items from ' + (so.salesorder_number || '') + '? Current cart will be cleared.')) return;
     }
 
@@ -5522,6 +5536,10 @@
       var newCart = {};
       _kcEnv.setCart(newCart);
       _kcEnv.setDiscount(null);
+      // HI-02: the SO checkout charges only the SO's items, so a recipe left
+      // in the cart would never be charged, invoiced or batched.
+      _kcEnv.setRecipeEntries([]);
+      kioskRequestCartQuote();
       var skipped = 0;
 
       lineItems.forEach(function (li) {
@@ -5765,11 +5783,11 @@
             kioskLoadProducts('cached'); // cached re-fetch, see kioskShowReceipt
             _kioskSoPayingId = null;
             if (_kioskImportedSoId) {
-              // D-07: Return to empty cart/product grid after SO payment
+              // D-07: Return to empty cart/product grid after SO payment.
+              // kioskClearCart also drops recipe entries and gift card, so
+              // nothing carries into the next customer's cart (HI-02).
               kioskClearImportedSo();
-              _kcEnv.setCart({});
-              _kcEnv.setDiscount(null);
-              kioskRenderCart();
+              kioskClearCart();
               kioskShowView('browse');
             } else {
               kioskShowCollect();
