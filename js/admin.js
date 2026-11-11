@@ -10868,6 +10868,8 @@
         qty: 1
       };
       closeModal();
+      // WR-02: a recipe cart is priced only by the server quote; re-quote with the new line.
+      window.KioskCore.requestCartQuote();
       kioskRenderCart();
     } else {
       // Reload mode: pre-check cert exists and is active (UX guard; server re-validates, D-05)
@@ -10906,6 +10908,8 @@
           qty: 1
         };
         closeModal();
+        // WR-02: a recipe cart is priced only by the server quote; re-quote with the new line.
+        window.KioskCore.requestCartQuote();
         kioskRenderCart();
       })
       .catch(function () {
@@ -11220,6 +11224,8 @@
     _kioskCart['custom-' + _kioskCustomCounter] = { item: customItem, qty: qty, added_seq: window.KioskCore.nextSeq() };
 
     closeModal();
+    // WR-02: a recipe cart is priced only by the server quote; re-quote with the new line.
+    window.KioskCore.requestCartQuote();
     kioskRenderCart();
   }
 
