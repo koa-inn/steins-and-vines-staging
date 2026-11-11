@@ -293,17 +293,22 @@ function reconcileRecipeInvoice(invoiceData, invoicePayload, grandTotal) {
   // Re-send the lines exactly as Zoho created them: a line without its
   // tax_id is re-defaulted on update (Materials Fee 12% became GST 5% on
   // INV-000238), which moves the tax and defeats the re-balance.
+  // Custom and canning-bundle lines have no backing item: Zoho echoes them
+  // with an empty item_id / name and their text only in `description`, so
+  // the description must go back or the line is blanked (or the PUT refused).
   if (Array.isArray(invoice.line_items) && invoice.line_items.length) {
     updated.line_items = invoice.line_items.map(function (li) {
-      return {
+      var out = {
         line_item_id: li.line_item_id,
-        item_id: li.item_id,
-        name: li.name,
         quantity: li.quantity,
         rate: li.rate,
         discount: li.discount,
         tax_id: li.tax_id
       };
+      if (li.item_id) out.item_id = li.item_id;
+      if (li.name) out.name = li.name;
+      if (li.description) out.description = li.description;
+      return out;
     });
   }
   return zohoPut('/invoices/' + invoice.invoice_id, updated).then(function (putData) {
