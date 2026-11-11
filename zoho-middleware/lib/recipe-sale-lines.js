@@ -61,9 +61,23 @@ function getIngredientCatalog() {
     } catch {
       fileCatalog = null;
     }
-    if (!Array.isArray(fileCatalog)) return null;
-    log.warn('[pos-recipe] Ingredient catalog not in Redis; using file cache (' + fileCatalog.length + ' items)');
-    return fileCatalog;
+    if (Array.isArray(fileCatalog)) {
+      log.warn('[pos-recipe] Ingredient catalog not in Redis; using file cache (' + fileCatalog.length + ' items)');
+      return fileCatalog;
+    }
+    // Cold (after a redeploy, or a recipe sale busted Redis before the file was
+    // ever written): rebuild it rather than 503 every recipe price. The refresh
+    // is coalesced, so concurrent callers share one Zoho round-trip.
+    log.warn('[pos-recipe] Ingredient catalog not in Redis or file cache; refreshing');
+    // Lazy require: routes/catalog.js is heavy and route tests mock it.
+    return Promise.resolve()
+      .then(function () { return require('../routes/catalog').refreshIngredients(); })
+      .then(function () { return cache.get(C.CACHE_KEYS.INGREDIENTS_ALL); })
+      .then(function (fresh) { return Array.isArray(fresh) ? fresh : null; })
+      .catch(function (err) {
+        log.error('[pos-recipe] Ingredient catalog refresh failed: ' + (err && err.message));
+        return null;
+      });
   });
 }
 
