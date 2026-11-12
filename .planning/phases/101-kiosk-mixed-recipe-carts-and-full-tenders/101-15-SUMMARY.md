@@ -49,6 +49,6 @@ Phase 101 and its six pre-production review fixes are live on production as `280
 ## Open items
 
 - Any kiosk iPad or POS tab not yet reloaded still runs the old page until it is hard-reloaded.
-- Owner: void Helcim test transactions 58155163, 58155497 and 58158593.
+- Helcim test transactions 58155163, 58155497 and 58158593: voided by the owner (reported 2026-11-12).
 - D-18: delete the legacy `/recipe-sale/confirm` after the soak (`.planning/todos/pending/delete-legacy-recipe-sale-confirm.md`).
-- Deferred review findings: WR-04, WR-05, LO-01..LO-04. `docs/DEPLOYMENT.md` still lists the dead staging host.
+- Deferred review findings WR-04, WR-05, LO-01..LO-04 and the stale `docs/DEPLOYMENT.md` host: recorded in `.planning/todos/pending/phase-101-deferred-review-findings.md`.
