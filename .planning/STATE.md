@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: Phase 101 UI-SPEC approved
+stopped_at: Phase 101 complete, live on production (prod-20261111-1)
 last_updated: "2026-11-11T18:26:24.406Z"
 last_activity: 2026-11-11
 progress:
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-19)
 
 ## Current Position
 
-Phase: 101 (kiosk-mixed-recipe-carts-and-full-tenders) — EXECUTING
+Phase: 101 (kiosk-mixed-recipe-carts-and-full-tenders) — COMPLETE 2026-11-11 (15/15)
 Plan: 15 of 15
 **Phase 101 LIVE on production 2026-11-11** (`280eae3e`, `prod-20261111-1`, Railway `78807aa2`; rollback target `bbca0f28`), with the six pre-prod review fixes. D-18 soak started 2026-11-11; see .planning/todos/pending/delete-legacy-recipe-sale-confirm.md. Owner confirmed on production 2026-11-11; first real mixed sale INV-000271 ($175.33, phone order, one invoice + one payment, batch SV-B-000254) verified.
 Also open: Phase 87 — 87-19 Task 3 (first real sale). 87-20 rollback RETIRED 2026-11-03 (verify 0 mismatches); drift-check false-positive fix pending (quick task)
 **Phase 94 COMPLETE 2026-10-27:** live on production `141901a7` (`prod-20261027-1`, Railway `896f6942`; rollback target `90dfb9c1`). B3 (215 typed) + B2 (40 completion dates) applied on staging + prod with owner OK; replay + verify 0 mismatches; D-13 PASS (57d/59d/175); verification passed 5/5; owner signed off. Staging batches now on Postgres (refreshed + flipped 2026-10-27). Open from Phase 94: code review CR-01 + WR-01..04 FIXED 2026-10-28 (6c296bcc..73970cfb), LIVE on prod 2026-10-28 (`3f64da2d`, `prod-20261028-1`, Railway `d8ffd7bd`; rollback `896f6942`); IN-01..05 open; replay CLI needs retry/longer timeout/resume (Apps Script ~14 s per batch); prod recipes lack `beer_category` (Phase 89 gap); batch list/detail age still now − start_date. body-parser patch `13805fe9` LIVE on prod in the same release (CI audit green).
-Status: Ready to execute
+Status: Phase 101 complete; next candidate is Phase 99 (planned, 9 plans, not started)
 Last activity: 2026-11-11
 
 **2026-10-27 production cutover (shop open, owner present):**
