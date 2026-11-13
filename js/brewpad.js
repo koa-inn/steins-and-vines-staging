@@ -488,6 +488,23 @@ function buildPackagingCalendar(tasks, bookingsResult, typeById, today, nameById
   return { days: days, total: total, undatedCount: undatedCount, note: note };
 }
 
+// Phase 99-06: flat table model of the packaging calendar (same entries and order as the calendar).
+function dashV2PackCalTableModel(cal) {
+  var days = (cal && cal.days) || [];
+  var rows = [];
+  for (var d = 0; d < days.length; d++) {
+    var entries = days[d].entries || [];
+    for (var e = 0; e < entries.length; e++) {
+      var en = entries[e];
+      var date = days[d].label + (en.time && en.time !== 'All day' ? ', ' + en.time : '');
+      var batch = en.batch_id ? (en.customer ? en.customer + ' \u00b7 ' + en.batch_id : en.batch_id) : (en.customer || 'Booking');
+      var type = (en.source === 'booking' ? 'Booking' : 'Task') + (en.status ? ', ' + en.status : '');
+      rows.push({ batchId: en.batch_id || null, cells: [date, batch, en.kind, type] });
+    }
+  }
+  return { caption: 'Packaging calendar, next 14 days, as a table', headers: ['Date', 'Batch', 'Task', 'Type'], rows: rows };
+}
+
 // ---- Phase 97-09: Beer & cider cards (pure). Canning numbers come from the server (input.canning). ----
 function dashBcHas(v) { return v !== null && v !== undefined && String(v).trim() !== ''; }
 
@@ -8876,6 +8893,16 @@ function parseWaitlistRecipeIds(value) {
   }
 
   // One widget, isolated: a throw or missing server array only affects that widget.
+  // Scrolling tables are keyboard-focusable regions named after their widget (D-14).
+  function dashV2MarkTableRegions(slotEl, title) {
+    var wraps = slotEl.querySelectorAll('.bp-table-wrap');
+    for (var i = 0; i < wraps.length; i++) {
+      wraps[i].setAttribute('role', 'region');
+      wraps[i].setAttribute('aria-label', title + ' table');
+      wraps[i].setAttribute('tabindex', '0');
+    }
+  }
+
   function runDashV2Widget(def, model, chartState) {
     var slotEl = document.getElementById(def.slot);
     if (!slotEl) return;
@@ -8898,6 +8925,7 @@ function parseWaitlistRecipeIds(value) {
         return;
       }
       def.render(model, chartState);
+      dashV2MarkTableRegions(slotEl, def.title);
     } catch (e) {
       dashV2Msg(def.slot, def.chart || def.key, def.title, DASH_V2_FAILED);
     }
@@ -10231,6 +10259,7 @@ function parseWaitlistRecipeIds(value) {
     var body = slot.querySelector('.bp-widget-body');
     body.setAttribute('data-state', 'list');
 
+    dashV2SetControls(slotId, '');
     if (_dashCal.tasksFailed && _dashCal.bookingsState !== 'ok') {
       dashV2SetNote(slotId, '');
       body.setAttribute('data-state', 'msg');
@@ -10256,6 +10285,20 @@ function parseWaitlistRecipeIds(value) {
       return;
     }
 
+    var calView = dashV2Opt('t3', 'view', 'calendar') === 'table' ? 'table' : 'calendar';
+    dashV2SetControls(slotId, dashSegHtml('t3', 'view', [['calendar', 'Calendar'], ['table', 'Table']], calView, 'View as'));
+    if (calView === 'table') {
+      var tm = dashV2PackCalTableModel(model);
+      var tbl = { caption: tm.caption, columns: tm.headers.map(function (h) { return { label: h }; }), rows: [] };
+      for (var tr = 0; tr < tm.rows.length; tr++) {
+        var cellsOut = tm.rows[tr].cells.map(function (txt) { return { text: txt }; });
+        if (tm.rows[tr].batchId) cellsOut[1].drill = dashV2DrillAdd('t3', [tm.rows[tr].batchId], tm.rows[tr].batchId, true);
+        tbl.rows.push({ cells: cellsOut });
+      }
+      body.setAttribute('data-state', 'table');
+      body.innerHTML = dashTableHtml('t3', tbl) + undated;
+      return;
+    }
     var expanded = !!_dashV2Expanded['t3:cal'];
     var limit = expanded ? model.total : 7;
     var shown = 0;
@@ -18158,7 +18201,7 @@ if (typeof module !== 'undefined' && module.exports) {
     shouldShowInternalBadge: shouldShowInternalBadge,
     getCustomerDisplayName: getCustomerDisplayName,
     dashWeekdayDate: dashWeekdayDate, buildBeerCiderCards: buildBeerCiderCards,
-    dashCalDayLabel: dashCalDayLabel, dashCalTimeLabel: dashCalTimeLabel, buildPackagingCalendar: buildPackagingCalendar,
+    dashCalDayLabel: dashCalDayLabel, dashCalTimeLabel: dashCalTimeLabel, buildPackagingCalendar: buildPackagingCalendar, dashV2PackCalTableModel: dashV2PackCalTableModel,
     calcAbv: calcAbv, renderDataGapWarning: renderDataGapWarning,
     isSessionStale: isSessionStale,
     isSessionExpired: isSessionExpired,
