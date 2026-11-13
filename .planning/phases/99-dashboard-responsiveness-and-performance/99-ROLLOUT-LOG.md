@@ -46,4 +46,12 @@ Also confirmed: charts render lazily on desktop (3 canvases before scrolling, 11
 
 ## Owner sign-off
 
-Pending.
+2026-11-13, owner: **approved, tests ok**.
+
+- v2 is approved to become the default dashboard.
+- Permission given to update the 13 existing tests that assume the classic dashboard is the default
+  (`brewpad-dashboard-v2-shell.test.js` x3, `brewpad-dashboard-render.test.js` x10), per CLAUDE.md rule 10.
+- **iPad testing deferred by the owner** ("brewpad is mainly accessed via laptop"). Not verified on a real touch
+  device: two-tap chart tooltips (D-13), finger-scrolling over a chart, and Safari's popup blocker when printing a
+  QR code or label right after sign-in (A1). Tracked in `.planning/todos/pending/phase-99-ipad-touch-checks.md`.
+  The same waiver was made for Phase 96.
