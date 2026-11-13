@@ -1424,6 +1424,81 @@ function dashV2FlagFrom(search, hash, storedFlag) {
   return { on: storedFlag === '1', persist: null };
 }
 
+// Phase 99-02: default-on flag. Explicit URL wins; otherwise a one-time migration resets
+// every device to v2, after which a stored '0' (Classic) is remembered.
+function dashV2DefaultFlagFrom(search, hash, storedFlag, migrated) {
+  var q = String(search || '');
+  var h = parseDashHash(hash).dash;
+  if (/[?&]dash=v2(&|$)/.test(q) || h === 'v2') return { on: true, persist: '1', markMigrated: true };
+  if (/[?&]dash=(classic|v1)(&|$)/.test(q) || h === 'classic') return { on: false, persist: '0', markMigrated: true };
+  if (migrated !== '1') return { on: true, persist: '1', markMigrated: true };
+  return { on: storedFlag !== '0', persist: null, markMigrated: false };
+}
+
+function dashCacheEntry(dashData, fermSchedules, upcomingTasks, email, dayYmd, nowMs) {
+  if (!dashData || typeof dashData !== 'object' || !email) return null;
+  return {
+    v: 1, day: dayYmd, savedAt: nowMs, email: email,
+    dashData: dashData, fermSchedules: fermSchedules, upcomingTasks: upcomingTasks
+  };
+}
+
+function dashCacheUsable(entry, todayYmd, email) {
+  if (!entry || typeof entry !== 'object' || entry.v !== 1) return null;
+  if (!entry.dashData || typeof entry.dashData !== 'object') return null;
+  if (!todayYmd || entry.day !== todayYmd) return null;
+  if (!entry.email || !email || entry.email !== email) return null;
+  return entry;
+}
+
+function dashAsOfHint(state, savedAtMs) {
+  if (typeof savedAtMs !== 'number' || !isFinite(savedAtMs)) return '';
+  var t = new Date(savedAtMs).toLocaleTimeString('en-US', {
+    hour: 'numeric', minute: '2-digit', timeZone: 'America/Vancouver'
+  });
+  if (state === 'updating') return 'As of ' + t + ' · Updating…';
+  if (state === 'fresh') return 'Updated ' + t;
+  if (state === 'failed') return 'As of ' + t + ' · Couldn\'t refresh. Reopen the Dashboard tab to try again.';
+  return '';
+}
+
+var DASH_POINT_STYLES = ['circle', 'triangle', 'rect', 'rectRot', 'cross', 'star'];
+var DASH_POINT_STYLE_BY_KEY = { wine: 'circle', cider: 'triangle', beer: 'rect', other: 'rectRot' };
+
+function dashPointStyleFor(seriesKey, index) {
+  var k = String(seriesKey || '').toLowerCase();
+  var style = Object.prototype.hasOwnProperty.call(DASH_POINT_STYLE_BY_KEY, k)
+    ? DASH_POINT_STYLE_BY_KEY[k]
+    : DASH_POINT_STYLES[(+index || 0) % DASH_POINT_STYLES.length];
+  return { pointStyle: style, pointRadius: 6, pointHitRadius: 22 };
+}
+
+function dashMarkerGlyph(pointStyle) {
+  var map = {
+    circle: '●', triangle: '▲', rect: '■',
+    rectRot: '◆', cross: '✚', star: '★'
+  };
+  return Object.prototype.hasOwnProperty.call(map, pointStyle) ? map[pointStyle] : '■';
+}
+
+function dashTouchTapAction(prevPoint, nextPoint, tooltipOpen) {
+  if (!nextPoint) return 'hide';
+  if (tooltipOpen && prevPoint && prevPoint.datasetIndex === nextPoint.datasetIndex &&
+      prevPoint.index === nextPoint.index) return 'drill';
+  return 'show';
+}
+
+function dashV2SlotShouldRender(o) {
+  o = o || {};
+  if (o.sectionKey === 'today') return true;
+  if (o.isPhone) return o.sectionOpen === true;
+  return o.ioSupported !== true || o.intersected === true;
+}
+
+function dashSectionCountLabel(n) {
+  return n === 1 ? '1 chart' : n + ' charts';
+}
+
 function dashShortDate(ymd) {
   return DASH_MONTH_LABELS[+String(ymd).slice(5, 7) - 1] + ' ' + (+String(ymd).slice(8, 10));
 }
@@ -17582,6 +17657,15 @@ if (typeof module !== 'undefined' && module.exports) {
     resolveDashFilters: resolveDashFilters,
     serializeDashFilters: serializeDashFilters,
     dashV2FlagFrom: dashV2FlagFrom,
+    dashV2DefaultFlagFrom: dashV2DefaultFlagFrom,
+    dashCacheEntry: dashCacheEntry,
+    dashCacheUsable: dashCacheUsable,
+    dashAsOfHint: dashAsOfHint,
+    dashPointStyleFor: dashPointStyleFor,
+    dashMarkerGlyph: dashMarkerGlyph,
+    dashTouchTapAction: dashTouchTapAction,
+    dashV2SlotShouldRender: dashV2SlotShouldRender,
+    dashSectionCountLabel: dashSectionCountLabel,
     dashPeriodLabel: dashPeriodLabel,
     dashFilterSummary: dashFilterSummary,
     countNonDefaultFilters: countNonDefaultFilters,
