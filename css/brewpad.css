@@ -3319,3 +3319,11 @@ button.bp-list-row:focus-visible { outline: 2px solid var(--ledger-focus); outli
   color: var(--ink-secondary);
   font-variant-numeric: tabular-nums;
 }
+
+/* ===== Phase 99-05: line-chart legend glyphs and touch tooltip ===== */
+.bp-chart canvas { touch-action: pan-y; }
+.bp-chart-legend-glyph { display: inline-block; width: 12px; text-align: center; font-size: 12px; line-height: 1; }
+.bp-chart-tip { position: absolute; z-index: 5; max-width: 240px; padding: 8px 12px; background: var(--stain); color: var(--cellar-raised); border-radius: var(--r-md); font-size: 12px; line-height: 1.4; }
+.bp-chart-tip-title { font-weight: 700; }
+.bp-chart-tip-action { display: block; min-height: 44px; min-width: 44px; margin-top: 4px; padding: 0; background: none; border: 0; color: var(--cellar-raised); font: inherit; font-weight: 700; text-decoration: underline; touch-action: manipulation; cursor: pointer; }
+.bp-chart-tip-action:focus-visible { outline: 2px solid var(--cellar-raised); outline-offset: 2px; }

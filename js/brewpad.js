@@ -1488,6 +1488,23 @@ function dashTouchTapAction(prevPoint, nextPoint, tooltipOpen) {
   return 'show';
 }
 
+// Marker style for a batch type's line series; seltzer takes the 5th categorical shape so it never collides with wine.
+function dashTypeMarker(type) {
+  return dashPointStyleFor(type, type === 'seltzer' ? 4 : 0).pointStyle;
+}
+
+// HTML legend. Items with a `marker` (pointStyle) show the matching glyph; others keep the square swatch.
+function dashV2LegendHtml(items) {
+  var h = '';
+  for (var i = 0; i < items.length; i++) {
+    var sw = items[i].marker
+      ? '<span class="bp-chart-legend-glyph" aria-hidden="true" style="color:' + escapeHTML(items[i].colour) + '">' + dashMarkerGlyph(items[i].marker) + '</span>'
+      : '<span class="bp-chart-swatch" style="background:' + escapeHTML(items[i].colour) + '"></span>';
+    h += '<span class="bp-chart-legend-item">' + sw + escapeHTML(items[i].label) + '</span>';
+  }
+  return h;
+}
+
 function dashV2SlotShouldRender(o) {
   o = o || {};
   if (o.sectionKey === 'today') return true;
@@ -3319,8 +3336,8 @@ function buildG8Model(rows, readings, metaById, model, ctx) {
     var data = [];
     var q;
     for (q = 0; q < pts[pid].length; q++) data.push({ x: pts[pid][q].x, y: pts[pid][q].y });
-    base.series.push({ key: pid, label: pid, data: data, colour: colour, borderWidth: 2, pointRadius: sel === 'all' ? 3 : 4, batchId: pid });
-    if (!seen[ty]) { seen[ty] = true; base.legend.push({ label: DASH_TYPE_LABELS[ty], colour: colour }); }
+    base.series.push({ key: pid, label: pid, data: data, colour: colour, borderWidth: 2, markerStyle: dashTypeMarker(ty), batchId: pid });
+    if (!seen[ty]) { seen[ty] = true; base.legend.push({ label: DASH_TYPE_LABELS[ty], colour: colour, marker: dashTypeMarker(ty) }); }
     parts.push(pid + ' ' + pts[pid].length + (pts[pid].length === 1 ? ' reading' : ' readings'));
     for (q = 0; q < pts[pid].length; q++) {
       var p = pts[pid][q];
@@ -3438,6 +3455,84 @@ function loadChartJs() {
   return _chartJsPromise;
 }
 
+// ===== Phase 99-05: HTML touch tooltip for chart taps (D-13) =====
+var _chartTipBound = false;
+
+function ensureChartDesc() {
+  if (!document.getElementById('bp-chart-desc')) {
+    var d = document.createElement('span');
+    d.id = 'bp-chart-desc';
+    d.className = 'bp-visually-hidden';
+    d.textContent = 'Switch to Table for the full data.';
+    document.body.appendChild(d);
+  }
+  return 'bp-chart-desc';
+}
+
+function closeChartTip(canvas) {
+  if (canvas && canvas._bpTip) {
+    if (canvas._bpTip.parentNode) canvas._bpTip.parentNode.removeChild(canvas._bpTip);
+  }
+  if (canvas) { canvas._bpTip = null; canvas._bpTipPoint = null; }
+}
+
+function closeAllChartTips(exceptTarget) {
+  var tips = document.querySelectorAll('.bp-chart-tip');
+  for (var i = 0; i < tips.length; i++) {
+    var tip = tips[i];
+    if (exceptTarget && tip.parentNode && tip.parentNode.contains(exceptTarget)) continue;
+    closeChartTip(tip._bpCanvas);
+    if (tip.parentNode) tip.parentNode.removeChild(tip);
+  }
+}
+
+function bindChartTipClosers() {
+  if (_chartTipBound) return;
+  _chartTipBound = true;
+  document.addEventListener('pointerdown', function (e) { closeAllChartTips(e.target); }, true);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' || e.key === 'Esc') closeAllChartTips(null); });
+}
+
+// Text only (T-99-19): titles and values come from batch data.
+function showChartTip(canvas, title, lines, onAction, x, y) {
+  closeChartTip(canvas);
+  bindChartTipClosers();
+  var host = canvas.parentNode;
+  if (!host) return;
+  var tip = document.createElement('div');
+  tip.className = 'bp-chart-tip';
+  tip.setAttribute('role', 'status');
+  var t = document.createElement('div');
+  t.className = 'bp-chart-tip-title';
+  t.textContent = title;
+  tip.appendChild(t);
+  for (var i = 0; i < lines.length; i++) {
+    var ln = document.createElement('div');
+    ln.textContent = lines[i];
+    tip.appendChild(ln);
+  }
+  if (onAction) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bp-chart-tip-action';
+    btn.textContent = 'View batches ›';
+    btn.addEventListener('click', function () { closeChartTip(canvas); onAction(); });
+    tip.appendChild(btn);
+  }
+  tip._bpCanvas = canvas;
+  tip.style.left = Math.max(8, x) + 'px';
+  tip.style.top = Math.max(0, y) + 'px';
+  host.appendChild(tip);
+  canvas._bpTip = tip;
+  // Keep the whole box at least 8px inside the viewport.
+  var r = tip.getBoundingClientRect();
+  var vw = document.documentElement.clientWidth || window.innerWidth || 0;
+  var left = parseFloat(tip.style.left) || 0;
+  if (r.left < 8) left += 8 - r.left;
+  else if (vw && r.right > vw - 8) left -= r.right - (vw - 8);
+  tip.style.left = Math.max(8, left) + 'px';
+}
+
 function chart(canvas, cfg) {
   var Chart = window.Chart;
   var theme = readChartTheme();
@@ -3492,6 +3587,19 @@ function chart(canvas, cfg) {
       if (series[i].borderWidth !== undefined) ds.borderWidth = series[i].borderWidth;
       if (series[i].fill !== undefined) ds.fill = series[i].fill;
       if (series[i].showLine !== undefined) ds.showLine = series[i].showLine;
+      // Phase 99-05 (D-15): opt-in non-colour point markers.
+      if (cfg.markers === true) {
+        var pst = dashPointStyleFor(series[i].key, i);
+        ds.pointStyle = series[i].markerStyle || pst.pointStyle;
+        ds.pointHitRadius = pst.pointHitRadius;
+        ds.pointHoverRadius = pst.pointRadius;
+        if (series[i].pointRadius === undefined) {
+          ds.pointRadius = (series[i].data && series[i].data.length > 24) ? 0 : pst.pointRadius;
+        }
+        ds.pointBackgroundColor = series[i].colour;
+        ds.pointBorderColor = theme.separator;
+        ds.pointBorderWidth = 1;
+      }
     }
     datasets.push(ds);
   }
@@ -3672,32 +3780,90 @@ function chart(canvas, cfg) {
     });
   }
 
-  if (typeof cfg.onClick === 'function') {
-    options.onClick = function (evt, elements, chartInst) {
-      var inst = chartInst || Chart.getChart(canvas);
-      if (!inst) return;
-      var hit = inst.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
-      if (hit && hit.length) {
-        var key = series[hit[0].datasetIndex] ? series[hit[0].datasetIndex].key : null;
-        if (key !== null && cfg.inertKeys && cfg.inertKeys.indexOf(key) !== -1) return;
-        var payload = { index: hit[0].index, key: key };
-        // Opt-in: existing Phase 95 call sites (and their locked tests) expect exactly {index, key}.
-        if (cfg.hitDatasetIndex) payload.datasetIndex = hit[0].datasetIndex;
-        cfg.onClick(payload);
-        return;
-      }
-      var col = inst.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
-      if (col && col.length) {
-        var colPayload = { index: col[0].index, key: null };
-        if (cfg.hitDatasetIndex) colPayload.datasetIndex = null;
-        cfg.onClick(colPayload);
-      }
-    };
-    canvas.style.cursor = 'pointer';
+  closeChartTip(canvas);
+  // Remember the last pointer type on the canvas: some browsers deliver click events without pointerType.
+  if (!canvas._bpPtrBound) {
+    canvas._bpPtrBound = true;
+    canvas.addEventListener('pointerdown', function (e) { canvas._bpPtrType = e && e.pointerType; });
   }
+  var hasClick = typeof cfg.onClick === 'function';
+  var payloadFor = function (pt) {
+    var key = pt.datasetIndex !== null && series[pt.datasetIndex] ? series[pt.datasetIndex].key : null;
+    var payload = { index: pt.index, key: key };
+    // Opt-in: existing Phase 95 call sites (and their locked tests) expect exactly {index, key}.
+    if (cfg.hitDatasetIndex) payload.datasetIndex = pt.datasetIndex;
+    return payload;
+  };
+  var isInert = function (pt) {
+    var k = pt.datasetIndex !== null && series[pt.datasetIndex] ? series[pt.datasetIndex].key : null;
+    return k !== null && cfg.inertKeys && cfg.inertKeys.indexOf(k) !== -1;
+  };
+  // Touch: first tap shows an HTML tooltip (values + explicit action); a second tap on the same point drills.
+  var touchTap = function (evt, inst, hitPt) {
+    var action = dashTouchTapAction(canvas._bpTipPoint || null, hitPt, !!canvas._bpTip);
+    if (action === 'hide') { closeChartTip(canvas); return; }
+    var inert = isInert(hitPt);
+    if (action === 'drill' && !inert && hasClick) {
+      closeChartTip(canvas);
+      cfg.onClick(payloadFor(hitPt));
+      return;
+    }
+    var items = [];
+    var dsList = hitPt.datasetIndex === null ? series : [series[hitPt.datasetIndex]];
+    for (var di = 0; di < dsList.length; di++) {
+      var dIdx = hitPt.datasetIndex === null ? di : hitPt.datasetIndex;
+      var raw = dsList[di] && dsList[di].data ? dsList[di].data[hitPt.index] : undefined;
+      items.push({
+        dataset: { label: dsList[di] && dsList[di].label },
+        label: cfg.labels ? cfg.labels[hitPt.index] : '',
+        parsed: raw, dataIndex: hitPt.index, datasetIndex: dIdx
+      });
+    }
+    var first = items[0] && items[0].parsed;
+    var title = cfg.labels ? String(cfg.labels[hitPt.index] === undefined ? '' : cfg.labels[hitPt.index])
+      : (first && typeof first === 'object' && first.x !== undefined ? (cfg.xTitle ? cfg.xTitle + ': ' : '') + first.x : '');
+    var cb = options.plugins.tooltip.callbacks;
+    var lines = [];
+    for (var li2 = 0; li2 < items.length; li2++) lines.push(cb.label(items[li2]));
+    var footer = cb.footer(items);
+    if (footer) lines.push(footer);
+    showChartTip(canvas, title, lines, (hasClick && !inert) ? function () { cfg.onClick(payloadFor(hitPt)); } : null,
+      evt && typeof evt.x === 'number' ? evt.x : 0, evt && typeof evt.y === 'number' ? evt.y : 0);
+    canvas._bpTipPoint = hitPt;
+    // Hide the canvas tooltip so two tooltips never show at once.
+    if (inst.tooltip && inst.tooltip.setActiveElements) {
+      try { inst.tooltip.setActiveElements([], { x: 0, y: 0 }); inst.update('none'); } catch (e2) { /* tooltip optional */ }
+    }
+  };
+  options.onClick = function (evt, elements, chartInst) {
+    var inst = chartInst || Chart.getChart(canvas);
+    if (!inst) return;
+    var ptType = (evt && evt.native && evt.native.pointerType) || canvas._bpPtrType;
+    var isTouch = ptType === 'touch';
+    var hit = inst.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+    var col = null;
+    if (hit && hit.length) {
+      if (isTouch) { touchTap(evt, inst, { datasetIndex: hit[0].datasetIndex, index: hit[0].index }); return; }
+      if (!hasClick) return;
+      var key = series[hit[0].datasetIndex] ? series[hit[0].datasetIndex].key : null;
+      if (key !== null && cfg.inertKeys && cfg.inertKeys.indexOf(key) !== -1) return;
+      cfg.onClick(payloadFor({ datasetIndex: hit[0].datasetIndex, index: hit[0].index }));
+      return;
+    }
+    col = inst.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+    if (col && col.length) {
+      if (isTouch) { touchTap(evt, inst, { datasetIndex: null, index: col[0].index }); return; }
+      if (!hasClick) return;
+      cfg.onClick(payloadFor({ datasetIndex: null, index: col[0].index }));
+      return;
+    }
+    if (isTouch) closeChartTip(canvas);
+  };
+  if (hasClick) canvas.style.cursor = 'pointer';
 
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', cfg.ariaLabel || '');
+  canvas.setAttribute('aria-describedby', ensureChartDesc());
 
   return new Chart(canvas, {
     type: cfg.type,
@@ -7816,14 +7982,6 @@ function parseWaitlistRecipeIds(value) {
     return { canvas: body.querySelector('canvas'), legend: body.querySelector('.bp-chart-legend'), slot: slot };
   }
 
-  function dashV2LegendHtml(items) {
-    var h = '';
-    for (var i = 0; i < items.length; i++) {
-      h += '<span class="bp-chart-legend-item"><span class="bp-chart-swatch" style="background:' + escapeHTML(items[i].colour) + '"></span>' + escapeHTML(items[i].label) + '</span>';
-    }
-    return h;
-  }
-
   function renderDashV2Production(model, chartState) {
     var slotId = 'bp-dash-v2-period';
     if (!model || !document.getElementById(slotId)) return;
@@ -8440,6 +8598,7 @@ function parseWaitlistRecipeIds(value) {
   function dashG8ChartConfig(g) {
     return {
       type: 'line',
+      markers: true,
       xType: 'linear',
       xMin: 0,
       xTitle: 'Days since start',
@@ -18065,6 +18224,8 @@ if (typeof module !== 'undefined' && module.exports) {
     dashPointStyleFor: dashPointStyleFor,
     dashMarkerGlyph: dashMarkerGlyph,
     dashTouchTapAction: dashTouchTapAction,
+    dashTypeMarker: dashTypeMarker,
+    dashV2LegendHtml: dashV2LegendHtml,
     dashV2SlotShouldRender: dashV2SlotShouldRender,
     dashSectionCountLabel: dashSectionCountLabel,
     dashPeriodLabel: dashPeriodLabel,
