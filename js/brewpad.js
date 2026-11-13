@@ -4750,6 +4750,7 @@ function parseWaitlistRecipeIds(value) {
   function showApp() {
     document.getElementById('bp-signin').style.display = 'none';
     document.getElementById('bp-app').style.display = '';
+    preloadPrintTools();
     var emailEl = document.getElementById('bp-user-email');
     if (emailEl) emailEl.textContent = userEmail;
     var deniedMsg = document.getElementById('bp-denied-msg');
@@ -12792,8 +12793,55 @@ function parseWaitlistRecipeIds(value) {
     }
   }
 
+  // Phase 99-03 (PERF-03): jsPDF + qrcode are no longer in the head. They are preloaded on idle after the
+  // first app paint; these loaders are also the fallback if a label/QR action beats the preload.
+  var PRINT_QR_SRC = 'js/vendor/qrcode.min.js';
+  var PRINT_PDF_SRC = 'js/vendor/jspdf.umd.min.js';
+  var PRINT_TOOLS_FAILED = 'Could not load the PDF tools. Check your connection and try again.';
+  var _scriptPromises = {};
+  var _printPreloadScheduled = false;
+
+  // Only the two hard-coded same-origin vendor paths above are ever passed here (T-99-10).
+  function loadScriptOnce(src) {
+    if (_scriptPromises[src]) return _scriptPromises[src];
+    _scriptPromises[src] = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = function () { resolve(); };
+      s.onerror = function () {
+        delete _scriptPromises[src];
+        if (s.parentNode) s.parentNode.removeChild(s);
+        reject(new Error('Script failed to load: ' + src));
+      };
+      document.head.appendChild(s);
+    });
+    return _scriptPromises[src];
+  }
+
+  function preloadPrintTools() {
+    if (_printPreloadScheduled) return;
+    _printPreloadScheduled = true;
+    var go = function () {
+      loadScriptOnce(PRINT_QR_SRC).catch(function () { /* retried on demand */ });
+      loadScriptOnce(PRINT_PDF_SRC).catch(function () { /* retried on demand */ });
+    };
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go);
+    else setTimeout(go, 2000);
+  }
+
   function openBatchQR(batchId, token) {
-    if (typeof qrcode === 'undefined') { showToast('QR library not loaded', 'error'); return; }
+    if (typeof qrcode === 'undefined') {
+      loadScriptOnce(PRINT_QR_SRC).then(function () { openBatchQRNow(batchId, token); }, function () {
+        showToast(PRINT_TOOLS_FAILED, 'error');
+      });
+      return;
+    }
+    openBatchQRNow(batchId, token);
+  }
+
+  function openBatchQRNow(batchId, token) {
+    if (typeof qrcode === 'undefined') { showToast(PRINT_TOOLS_FAILED, 'error'); return; }
     var url = window.location.origin + '/batch.html?id=' + encodeURIComponent(batchId) + '&token=' + encodeURIComponent(token);
     var qr = qrcode(0, 'M');
     qr.addData(url);
@@ -12810,7 +12858,17 @@ function parseWaitlistRecipeIds(value) {
 
   // Matches the 4"×6" admin panel label format exactly (black & white)
   function generateBatchLabelPDF(b, tasks, accessToken) {
-    if (typeof window.jspdf === 'undefined') { showToast('PDF library not loaded', 'error'); return; }
+    if (typeof window.jspdf === 'undefined' || typeof qrcode === 'undefined') {
+      Promise.all([loadScriptOnce(PRINT_QR_SRC), loadScriptOnce(PRINT_PDF_SRC)]).then(function () {
+        generateBatchLabelPDFNow(b, tasks, accessToken);
+      }, function () { showToast(PRINT_TOOLS_FAILED, 'error'); });
+      return;
+    }
+    generateBatchLabelPDFNow(b, tasks, accessToken);
+  }
+
+  function generateBatchLabelPDFNow(b, tasks, accessToken) {
+    if (typeof window.jspdf === 'undefined') { showToast(PRINT_TOOLS_FAILED, 'error'); return; }
     showToast('Generating label\u2026', 'info');
     function imgToDataURL(path, cb) {
       var img = new Image();
@@ -17506,6 +17564,11 @@ function parseWaitlistRecipeIds(value) {
       _bpStartRecipeFromExistingForTest: function (id, name, btn) { return bpStartRecipeFromExisting(id, name, btn); },
       // Plan 36-22: test-only state accessors for the cache-bust state vars
       _renderDashboardForTest: function () { renderDashboard(); },
+      _loadScriptOnceForTest: function (src) { return loadScriptOnce(src); },
+      _preloadPrintToolsForTest: function () { return preloadPrintTools(); },
+      _resetPrintToolsForTest: function () { _scriptPromises = {}; _printPreloadScheduled = false; },
+      _openBatchQRForTest: function (id, t) { return openBatchQR(id, t); },
+      _generateBatchLabelPDFForTest: function (b, tasks, tok) { return generateBatchLabelPDF(b, tasks, tok); },
       _renderTasksForTest: function () { renderTasks(); },
       _loadTasksForTest: function () { return loadTasks(); },
       _renderDashboardV2ForTest: function () { renderDashboardV2(); },
