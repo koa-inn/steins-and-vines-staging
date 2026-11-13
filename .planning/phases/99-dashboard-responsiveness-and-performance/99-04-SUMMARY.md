@@ -53,3 +53,19 @@ None to the plan. The build restamped ~30 unrelated pages and js/admin.*; all we
 - Classic dashboard (v1) is not cached; cache writes only occur when v2 is on.
 
 ## Self-Check: PASSED
+
+## Follow-up (2026-11-13): warm-load layout shift
+
+Warm Lighthouse reported CLS 0.36 (perf 0.83). Measured with a throwaway Playwright layout-shift observer (412x823):
+two shifts of the whole `.bp-dash-grid` (0.334 + 0.025). Cause: the cache stores `upcomingTasks` and `eagerLoad` hydrated
+`_upcomingTasks`, but `_upcomingLoaded` stayed false, so the cached render showed "Today's tasks: Not available yet" (192 px)
+and no Overdue / Due today chips; the refresh then grew the attention block (44 -> 148 px) and the tasks widget (192 -> 737 px).
+The hint element and skeletons were not involved.
+
+Fix (js/brewpad.js only, commit 56478864): `_dashTasksHydrated` flag plus `dashTasksAvailable()` used by
+`renderDashV2TodayTasks` and `dashV2AttentionModel`; cleared in `dashFreshApplied`. `_upcomingLoaded` is deliberately left
+false so other tabs still refetch. No cache-format change. Tests: tests/frontend/brewpad-dashboard-v2-cache-99-layout.test.js
+(layout shift itself is not assertable in jsdom; the tests pin the data-side cause).
+
+Result: warm CLS 0.025, warm perf 1.00. Remaining shift: the Waitlist chip appears after refresh (the waitlist fetch is skipped
+while hydrating), adding one 52 px chip row; left alone because it is under the 0.05 target.
