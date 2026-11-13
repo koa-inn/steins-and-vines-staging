@@ -66,4 +66,8 @@ Also confirmed: charts render lazily on desktop (3 canvases before scrolling, 11
 
 ## Default flip confirmed
 
-Pending owner check (laptop; iPad deferred).
+2026-11-13, owner: **approved** (checked on staging on a laptop; iPad check deferred, see the todo
+`.planning/todos/pending/phase-99-ipad-touch-checks.md`). The owner did not report separately on the QR / label
+print window, so pilot item 8 stays partly checked.
+
+Production promotion follows the normal release process and needs the owner's go-ahead.

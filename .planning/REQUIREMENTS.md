@@ -138,13 +138,13 @@ Phases risk-ordered: containment (SEC) → de-fork backbone → correctness (MON
 
 **Defined:** 2026-11-06. **Source:** `.planning/research/brewpad-dashboard-v2.md` §4 Phase F + `99-CONTEXT.md` D-01..D-15. Phases 94-98 tracked requirements by decision ID; Phase 99 mints these.
 
-- [ ] **RESP-01** (Phase 99, D-09..D-12): The v2 grid is mobile-first: 1 column below 768 px, 2 from 768 px and 3 from 1200 px, with wide charts spanning the row. The phone order is Needs attention → Today's tasks → Ready to bottle → KPI tiles → chart sections. There is no horizontal scroll at 360 px (also checked at 320 px).
-- [ ] **PERF-01** (Phase 99, D-05, D-06): Lighthouse mobile performance is ≥ 85 on `brewpad.html` with v2 on. It is measured by a repeatable local harness with anonymized recorded data and no production-shipped mock. The warm (< 1.5 s) and cold (< 3 s) interactive figures are read from the same runs.
-- [ ] **PERF-02** (Phase 99, D-07, D-08): Same-day (Vancouver), same-user cached dashboard data paints first with an "As of … · Updating…" hint and is swapped in place on refresh. Otherwise layout-matching skeletons show. The cache is cleared on sign-out.
-- [ ] **PERF-03** (Phase 99, D-10): Charts load lazily. Phone chart sections are collapsed and render on open, wider screens render slots near the viewport, and jsPDF/qrcode are off the blocking head path.
-- [ ] **A11Y-01** (Phase 99, D-14, D-15): Every v2 chart (and the packaging calendar) has a table view, enforced by a registry test. Line charts carry distinct point markers. Every v2 control has a visible --stain focus ring. Text contrast is ≥ 4.5:1 and touch targets are 44 px. An axe check runs in the harness.
-- [ ] **A11Y-02** (Phase 99, D-13): On touch, a tap shows the chart tooltip, a second tap or the "View batches ›" button drills through, and a tap away or Esc hides it. Mouse behaviour is unchanged.
-- [ ] **DFLT-01** (Phase 99, D-01..D-04): After the owner's iPad sign-off, v2 is the default with a one-time per-device migration and a remembered "Classic dashboard" fallback. v1 code stays. The "Remove v1 dashboard code" backlog todo exists.
+- [x] **RESP-01** (Phase 99, D-09..D-12): The v2 grid is mobile-first: 1 column below 768 px, 2 from 768 px and 3 from 1200 px, with wide charts spanning the row. The phone order is Needs attention → Today's tasks → Ready to bottle → KPI tiles → chart sections. There is no horizontal scroll at 360 px (also checked at 320 px).
+- [x] **PERF-01** (Phase 99, D-05, D-06): Lighthouse mobile performance is ≥ 85 on `brewpad.html` with v2 on. It is measured by a repeatable local harness with anonymized recorded data and no production-shipped mock. The warm (< 1.5 s) and cold (< 3 s) interactive figures are read from the same runs.
+- [x] **PERF-02** (Phase 99, D-07, D-08): Same-day (Vancouver), same-user cached dashboard data paints first with an "As of … · Updating…" hint and is swapped in place on refresh. Otherwise layout-matching skeletons show. The cache is cleared on sign-out.
+- [x] **PERF-03** (Phase 99, D-10): Charts load lazily. Phone chart sections are collapsed and render on open, wider screens render slots near the viewport, and jsPDF/qrcode are off the blocking head path.
+- [x] **A11Y-01** (Phase 99, D-14, D-15): Every v2 chart (and the packaging calendar) has a table view, enforced by a registry test. Line charts carry distinct point markers. Every v2 control has a visible --stain focus ring. Text contrast is ≥ 4.5:1 and touch targets are 44 px. An axe check runs in the harness.
+- [x] **A11Y-02** (Phase 99, D-13): On touch, a tap shows the chart tooltip, a second tap or the "View batches ›" button drills through, and a tap away or Esc hides it. Mouse behaviour is unchanged.
+- [x] **DFLT-01** (Phase 99, D-01..D-04): After the owner's iPad sign-off, v2 is the default with a one-time per-device migration and a remembered "Classic dashboard" fallback. v1 code stays. The "Remove v1 dashboard code" backlog todo exists.
 
 ## v5.0 follow-up Requirements (Kiosk mixed recipe carts) — Phase 101
 
