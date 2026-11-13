@@ -3,6 +3,7 @@
 // /auth/google endpoints from a recorded fixture, and rewrites a few responses
 // at serve time so the shipped files need no test seam (D-06).
 // It never forwards anything: there is no outbound HTTP client in this file.
+import zlib from 'node:zlib';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -42,9 +43,18 @@ var fixture = loadFixture();
 var misses = [];
 var requests = [];
 
+// The live site gzips on the wire: GitHub Pages for static assets (brewpad.min.js is ~425 KB raw,
+// ~114 KB transferred) and Railway's edge for middleware JSON (checked 2026-11-13: /api/products
+// comes back content-encoding: gzip). Serve the same way, or Lighthouse's simulated slow-4G
+// download times are several times too pessimistic.
 function send(res, status, type, body, extra) {
   var headers = { 'Content-Type': type };
   if (extra) { Object.keys(extra).forEach(function (k) { headers[k] = extra[k]; }); }
+  if (res._acceptsGzip && /^(text\/|application\/(javascript|json)|image\/svg)/.test(type) && Buffer.byteLength(body) > 1024) {
+    body = zlib.gzipSync(body);
+    headers['Content-Encoding'] = 'gzip';
+    headers['Vary'] = 'Accept-Encoding';
+  }
   res.writeHead(status, headers);
   res.end(body);
 }
@@ -98,6 +108,7 @@ function serveStatic(req, res, urlPath) {
 }
 
 var server = http.createServer(function (req, res) {
+  res._acceptsGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''));
   var u = new URL(req.url, 'http://127.0.0.1');
   var p = u.pathname;
   requests.push(req.method + ' ' + p);

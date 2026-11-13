@@ -37,6 +37,8 @@ per-plan work (99-04 cache, deferral) cannot close the gap, a bundle split is a 
   placeholder, so the YTD charts stay stable between runs; the "vs earlier period" tiles show "No earlier data to compare".
 
 ## Payload size (RESEARCH A5, for 99-04 cache storage choice)
+| 2026-11-13 | ec2ad073 (phase start), gzip harness | baseline (re-measured) | 0.85 | 0.91 | 3932 | 1802 | 3870 | 62 | 0.047 | 2 / 2 / 2 rules (color-contrast 6/9/5, label 5) | 360 / 320 (no overflow) | FCP 2409 ms; warm perf 1.00; cold runs 0.85 / 0.85 / 0.94. Harness now serves gzip like the live site (see note below); rows above this one are NOT comparable. |
+| 2026-11-13 | f8038e40 + gzip harness | 99-04 (re-measured) | 0.95 | 0.90 | 2720 | 1519 | 2720 | 0 | 0.025 | 2 / 2 / 2 rules (color-contrast 6/9/7, label 5); expanded phone 5/5 | 360 / 320 (no overflow) | FCP 1808 ms; cold runs 0.95 / 0.89 / 0.95; desktop 1.00. **Warm perf 0.83 with CLS 0.36**: the cached-first render shifts layout when the refresh lands — to fix before the 99-07 gate. |
 
 - `get_dashboard_stats.data`: **398,966 bytes** (about 390 KiB) as compact JSON in the anonymized fixture
   (398,978 bytes raw; anonymization changes it by 12 bytes). That is under the typical 5 MB localStorage
@@ -49,3 +51,14 @@ per-plan work (99-04 cache, deferral) cannot close the gap, a bundle split is a 
 The fixture is anonymized by `tests/perf/anonymize.js` (allowlist-first) and guarded by
 `tests/frontend/perf-fixture-anonymized-99.test.js`. Rendering check on the fixture: `#bp-dash-v2`
 renders tiles, Production over time, Products, and Source mix with data; 0 fixture misses.
+
+## Harness correction (2026-11-13): gzip
+
+The first version of `tests/perf/server.mjs` served every response uncompressed. The live site never does:
+GitHub Pages gzips static assets (`brewpad.min.js` 425 KB raw, about 114 KB on the wire) and Railway's edge
+gzips middleware JSON (checked on `/api/products` and `/api/ingredients`, both `content-encoding: gzip`).
+Under Lighthouse's simulated slow 4G, uncompressed transfer made every download-bound metric several times
+too slow, so the 2026-11-12 rows (0.60 / 0.66) understate the real score. The server now gzips text
+responses when the client accepts it. Like-for-like, the phase-start code measures **0.85** and the tree
+after 99-04 measures **0.95**. The D-05 target (>= 0.85) should be read against the corrected rows.
+The baseline also varies run to run (0.85 to 0.94) because Lighthouse sometimes picks an early element as LCP.
