@@ -62,3 +62,7 @@ zoho-middleware/dump.rdb
 *.xlsx
 zoho-middleware/backfill-output/
 rejects-*.json
+
+# Phase 99 perf harness: raw staging capture (real customer data) and run output
+tests/perf/.raw/
+tests/perf/results/

@@ -1,0 +1,26 @@
+{
+  "get_dashboard_stats": {
+    "ok": true,
+    "data": {
+      "asOf": { "today": "__TODAY__", "year": "__YEAR__", "tz": "America/Vancouver" },
+      "batches": [],
+      "staffBatchIds": [],
+      "taskRows": [],
+      "vessels": [],
+      "readings": [],
+      "batchMeta": [],
+      "summary": { "readyToBottle": [] }
+    }
+  },
+  "get_batches": { "ok": true, "data": { "batches": [] } },
+  "get_vessels": { "ok": true, "data": { "vessels": [] } },
+  "get_ferm_schedules": { "ok": true, "data": { "schedules": [] } },
+  "get_tasks_upcoming": { "ok": true, "data": { "tasks": [] } },
+  "get_tasks_calendar": { "ok": true, "data": { "tasks": [] } },
+  "get_waitlist": { "ok": true, "data": [] },
+  "get_batch_dashboard_summary": { "ok": true, "data": { "readyToBottle": [] } },
+  "__rest": {
+    "/api/admin/packaging-bookings": { "ok": true, "bookings": [] },
+    "/api/admin/dashboard-cards": { "ok": true, "cards": [], "canning": null }
+  }
+}
