@@ -1,8 +1,6 @@
 'use strict';
 
 var express = require('express');
-var fs = require('fs');
-var path = require('path');
 var helcimLib = require('../lib/helcim');
 var zohoApi = require('../lib/zoho-api');
 var cache = require('../lib/cache');
@@ -10,7 +8,6 @@ var log = require('../lib/logger');
 var eventLog = require('../lib/eventLog');
 var mailer = require('../lib/mailer');
 var C = require('../lib/constants');
-var kioskSaleCatalog = require('../lib/kiosk-sale-catalog');
 var brewpadIntegration = require('../lib/brewpad-integration');
 var scaling = require('../lib/recipe-scaling');
 var moneyPath = require('../lib/money-path');
@@ -21,7 +18,6 @@ var dualWriteCompare = require('../lib/dual-write-compare');
 var sentryCapture = require('../lib/sentry-capture');
 
 var zohoPost = zohoApi.zohoPost;
-var zohoPut = zohoApi.zohoPut;
 
 var lines = require('../lib/recipe-sale-lines');
 var getIngredientCatalog = lines.getIngredientCatalog;
@@ -32,7 +28,6 @@ var recipeFeeItemIds = lines.recipeFeeItemIds;
 var buildRecipeLineItems = lines.buildRecipeLineItems;
 var reconcileRecipeInvoice = lines.reconcileRecipeInvoice;
 var recipeLineAmount = lines.recipeLineAmount;
-var getFeeCatalogMap = lines.getFeeCatalogMap;
 var computeRecipeTax = lines.computeRecipeTax;
 var priceRecipe = lines.priceRecipe;
 var loadRecipe = lines.loadRecipe;
@@ -41,10 +36,6 @@ var snapshotGravity = lines.snapshotGravity;
 var round2 = lines.round2;
 
 var router = express.Router();
-
-// M12 (D-13 parity): 7-day TTL for the recipe-sale pending-charge record —
-// mirrors KIOSK_PENDING_CHARGE_TTL in routes/pos.js.
-var KIOSK_PENDING_CHARGE_TTL = 604800;
 
 // ---------------------------------------------------------------------------
 // computeRecipeQuote — shared helper (35-06, extended 36-03)

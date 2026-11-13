@@ -36,7 +36,7 @@ function snapshotMax(text) {
   if (typeof text !== 'string' || text === '') return null;
   try {
     parsed = JSON.parse(text);
-  } catch (e) {
+  } catch {
     return null;
   }
   steps = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.steps) ? parsed.steps : null);
