@@ -71,3 +71,14 @@ Also confirmed: charts render lazily on desktop (3 canvases before scrolling, 11
 print window, so pilot item 8 stays partly checked.
 
 Production promotion follows the normal release process and needs the owner's go-ahead.
+
+## Production release (2026-11-13)
+
+- Owner: "fix the lint then go ahead with prod" (2026-11-13).
+- `git push production main --force` at 20:31 UTC, fast-forward `280eae3e` -> `82a1df0c`; tag `prod-20261113-1`.
+- Railway production deployment `3cfb9af1` SUCCESS; `/health` ok at 20:34 UTC; `/api/ingredients` and
+  `/api/products` warmed (200).
+- Live `steinsandvines.ca/brewpad.html` serves stamp `mwff7qbw`; live `brewpad.min.js` SHA-256 prefix
+  `8eec9ad77cdd058a` matches the local build (checked in the browser; curl gets 403 on BrewPad paths).
+- Not exercised on production by Claude: signed-in dashboard (owner to confirm after a hard reload).
+- Rollback: `git push production prod-20261111-1^{commit}:main --force` (`280eae3e`).

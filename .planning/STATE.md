@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v4.5
 milestone_name: Security & Money-Path Closeout
 status: executing
-stopped_at: Phase 99 complete on staging (v2 dashboard default); production release pending
+stopped_at: Phase 99 complete, live on production (prod-20261113-1)
 last_updated: "2026-11-11T18:26:24.406Z"
 last_activity: 2026-11-13
 progress:
@@ -21,18 +21,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-19)
 
 **Core value:** Customers can discover, select, or co-create fermentation recipes and purchase them as a complete package — with ingredient inventory, pricing, and batch tracking handled automatically by the system.
-**Current focus:** Phase 99 — dashboard-responsiveness-and-performance (complete on staging; production release pending)
+**Current focus:** Phase 99 — dashboard-responsiveness-and-performance (complete; live on production 2026-11-13)
 
 ## Current Position
 
-Phase: 99 (dashboard-responsiveness-and-performance) — COMPLETE 2026-11-13 (9/9), on staging `4ecb413d`
+Phase: 99 (dashboard-responsiveness-and-performance) — COMPLETE 2026-11-13 (9/9)
+**Phase 99 LIVE on production 2026-11-13 20:31 UTC** (`82a1df0c`, `prod-20261113-1`, Railway `3cfb9af1`; rollback target `280eae3e` / `prod-20261111-1`), with `a12d8d05` (calendar allow-list) and the middleware lint cleanup. Health ok, catalogs warmed, live bundle hash matches. Owner production confirmation pending.
 Plan: 9 of 9
 **Phase 99 COMPLETE on staging 2026-11-13:** D-05 gate PASS on the gzip-corrected harness (Lighthouse mobile 0.89 / 0.95 vs baseline 0.85, axe 0, no overflow at 360 / 320); v2 is the default dashboard (`4ea08134`) with a remembered Classic fallback; owner approved and confirmed on a laptop, iPad touch checks deferred (.planning/todos/pending/phase-99-ipad-touch-checks.md). Also on staging, not yet on production: `a12d8d05` (get_tasks_calendar allow-list fix for the v2 packaging calendar). Production is still `280eae3e` (`prod-20261111-1`). CI "Tests" is red on the middleware lint step (unused variables in routes/pos-recipe.js; pre-existing since 2026-11-11).
 Phase 101 (kiosk-mixed-recipe-carts-and-full-tenders) — COMPLETE 2026-11-11 (15/15).
 **Phase 101 LIVE on production 2026-11-11** (`280eae3e`, `prod-20261111-1`, Railway `78807aa2`; rollback target `bbca0f28`), with the six pre-prod review fixes. D-18 soak started 2026-11-11; see .planning/todos/pending/delete-legacy-recipe-sale-confirm.md. Owner confirmed on production 2026-11-11; first real mixed sale INV-000271 ($175.33, phone order, one invoice + one payment, batch SV-B-000254) verified.
 Also open: Phase 87 — 87-19 Task 3 (first real sale). 87-20 rollback RETIRED 2026-11-03 (verify 0 mismatches); drift-check false-positive fix pending (quick task)
 **Phase 94 COMPLETE 2026-10-27:** live on production `141901a7` (`prod-20261027-1`, Railway `896f6942`; rollback target `90dfb9c1`). B3 (215 typed) + B2 (40 completion dates) applied on staging + prod with owner OK; replay + verify 0 mismatches; D-13 PASS (57d/59d/175); verification passed 5/5; owner signed off. Staging batches now on Postgres (refreshed + flipped 2026-10-27). Open from Phase 94: code review CR-01 + WR-01..04 FIXED 2026-10-28 (6c296bcc..73970cfb), LIVE on prod 2026-10-28 (`3f64da2d`, `prod-20261028-1`, Railway `d8ffd7bd`; rollback `896f6942`); IN-01..05 open; replay CLI needs retry/longer timeout/resume (Apps Script ~14 s per batch); prod recipes lack `beer_category` (Phase 89 gap); batch list/detail age still now − start_date. body-parser patch `13805fe9` LIVE on prod in the same release (CI audit green).
-Status: Phase 99 complete on staging; next step is the production release (Phase 99 + a12d8d05), then the v5.0 milestone close-out
+Status: Phase 99 complete and live on production; next is the v5.0 milestone close-out. CI "Tests" still red: `npm audit` high on follow-redirects 1.16.0-1.16.1 in the middleware (lint step now passes)
 Last activity: 2026-11-13 -- Phase 99 complete (9/9), v2 default on staging
 
 **2026-10-27 production cutover (shop open, owner present):**
