@@ -72,6 +72,9 @@ Observed on the smoke run: 1 `/auth/google`, 7 admin-proxy, 2 `/api/admin/*` GET
 
 ## Accepted limits
 
+- **Run it with the Mac awake.** With the display asleep, headless Chrome never paints and Lighthouse reports `NO_FCP` (scores print as 0 / NaN and each run takes minutes). Wake the machine, or wrap the command in `caffeinate -d -i`.
+
+
 - No Railway latency: the mock answers instantly, so TTI/TBT are optimistic (RESEARCH Pitfall 6).
 - Fonts are blocked, so text metrics differ slightly from production.
 - Lab numbers only; no real-device throttling.
