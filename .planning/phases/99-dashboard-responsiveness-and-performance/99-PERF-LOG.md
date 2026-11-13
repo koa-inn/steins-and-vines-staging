@@ -42,6 +42,8 @@ per-plan work (99-04 cache, deferral) cannot close the gap, a bundle split is a 
 | 2026-11-13 | 56478864 | 99-04 follow-up (CLS) | 0.89 | 0.90 | 3471 | 1518 | 3471 | 0 | 0.071 | 2 / 2 / 2 rules (color-contrast 7/9/6 nodes approx, label 5); expanded phone 2 rules | 360 / 320 (no overflow) | FCP 1810 ms. **Warm perf 1.00, warm CLS 0.025** (was 0.83 / 0.36): the cached render now shows the cached Today tasks and Overdue/Due today chips instead of 'Not available yet'. Remaining warm shift = Waitlist chip row appearing after the refresh (52 px). Cold CLS 0.071 this run (0.025 in the previous run; run-to-run noise); cold perf 0.89 sits in the known 0.85-0.95 spread. |
 | 2026-11-13 | 5580a1e4 | 99-05 | 0.94 | 0.90 | 2761 | 1520 | 2761 | 0 | 0.071 | 2 / 2 / 2 rules (color-contrast 6/9/7 nodes, label 5); expanded phone 2 rules (5/5) | 360 / 320 (no overflow) | FCP 1810 ms; desktop perf 1.00. Warm perf 1.00, warm CLS 0 in latest.json lighthouse.warm (warm FCP 967 ms, warm interactive/LCP 1520). Chart markers and touch tooltip add no measurable cost (charts are lazy). Cold CLS 0.071 is the known run-to-run noise (0.025-0.071). |
 | 2026-11-13 | 87014761 | 99-06 | 0.95 | 1.00 | 2716 | 1519 | 2716 | 0 | 0.025 | 0 / 0 / 0 rules; expanded phone 0 rules (was 2 rules: color-contrast 6/9/7/5 nodes, label 5) | 360 / 320 (no overflow) | FCP 1958 ms; desktop perf 1.00, desktop a11y 1.00. Lighthouse a11y 0.90 -> 1.00. Warm perf 1.00, warm CLS 0.025 (latest.json lighthouse.warm; warm FCP 966 ms, warm interactive/LCP 1519). Cold perf 0.95 is within the 0.89-0.95 spread. Grid/focus/contrast CSS and table-view JS add no measurable cost. |
+| 2026-11-13 | 91d05a9e | 99-07 gate run 1 | 0.95 | 1.00 | 2716 | 1520 | 2716 | 0 | 0.025 | 0 / 0 / 0 (phone expanded 0) | 360 / 320 (no overflow) | cold runs 0.87 / 0.95 / 0.95; FCP 1958 ms; warm perf 1.00, warm CLS 0.025; desktop perf 1.00; 0 external requests |
+| 2026-11-13 | 91d05a9e | 99-07 gate run 2 (lower, used for the gate) | 0.89 | 1.00 | 3467 | 1519 | 3467 | 0 | 0.071 | 0 / 0 / 0 (phone expanded 0) | 360 / 320 (no overflow) | cold runs 0.87 / 0.89 / 0.95; FCP 1959 ms; warm perf 1.00, warm CLS 0.025; desktop perf 1.00; 0 external requests |
 
 - `get_dashboard_stats.data`: **398,966 bytes** (about 390 KiB) as compact JSON in the anonymized fixture
   (398,978 bytes raw; anonymization changes it by 12 bytes). That is under the typical 5 MB localStorage
@@ -65,3 +67,20 @@ too slow, so the 2026-11-12 rows (0.60 / 0.66) understate the real score. The se
 responses when the client accepts it. Like-for-like, the phase-start code measures **0.85** and the tree
 after 99-04 measures **0.95**. The D-05 target (>= 0.85) should be read against the corrected rows.
 The baseline also varies run to run (0.85 to 0.94) because Lighthouse sometimes picks an early element as LCP.
+
+## Gate (99-07, 2026-11-13, commit 91d05a9e)
+
+Gate: PASS
+
+Two full `npm run perf` runs on the final tree, both exit 0. The lower run is used (variance guard):
+Lighthouse mobile performance median 0.89 (>= 0.85), axe serious+critical 0 at desktop, tablet, phone and
+phone-expanded, scrollWidth equal to the viewport at 360 and 320 px. Accessibility score 1.00.
+
+Handoff targets (lab, simulated slow 4G, mock middleware with no server latency, so real loads add
+Railway response time and these are optimistic on that side):
+- warm interactive < 1500 ms: **no, marginally** (1519 to 1520 ms)
+- cold interactive < 3000 ms: **mixed** (2716 ms in run 1, 3467 ms in run 2; the cold number moves with which
+  element Lighthouse picks as LCP)
+
+Read against the corrected (gzip) baseline of 0.85 / 3932 ms cold / 1802 ms warm / a11y 0.91 with 2 failing
+axe rules. Owner decision (Task 2): n/a, the gate passed.
