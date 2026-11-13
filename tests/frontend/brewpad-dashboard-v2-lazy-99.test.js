@@ -146,3 +146,180 @@ describe('generateBatchLabelPDF', function () {
     expect(document.getElementById('bp-toast-container').textContent).toContain(TOAST);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 2: collapsible phone sections and action-first order
+// ---------------------------------------------------------------------------
+
+var TODAY = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Vancouver' });
+var YEAR = +TODAY.slice(0, 4);
+
+function lean(id, type, start) {
+  return {
+    batch_id: id, status: 'primary', batch_type: type, batch_type_source: 'recipe',
+    start_date: start, completed_day: null, completed_at: null, completed_at_source: null,
+    vessel_id: null, source: 'kiosk', product_sku: '', product_name: '', product_subcategory: '',
+    product_brand: '', product_manufacturer: '', recipe_id: '', schedule_id: '',
+    schedule_category: '', target_volume_l: 20, tasks_total: 0, tasks_done: 0
+  };
+}
+
+var DATA = {
+  asOf: { today: TODAY, year: YEAR, tz: 'America/Vancouver' },
+  batches: [lean('B', 'beer', YEAR + '-01-01'), lean('C', 'cider', YEAR + '-01-01'), lean('A', 'wine', YEAR + '-01-02')]
+};
+
+var CHART_SECTIONS = ['production', 'floor', 'bc', 'products', 'health'];
+var phone;
+var secListeners;
+var origRenders;
+
+function setupMedia() {
+  window.matchMedia = function (q) {
+    return {
+      get matches() { return phone && q.indexOf('767') !== -1; },
+      addEventListener: function (type, fn) { if (q.indexOf('767') !== -1) secListeners.push(fn); },
+      removeEventListener: function () {}
+    };
+  };
+}
+
+function fireSecChange() { secListeners.forEach(function (fn) { fn(); }); }
+
+function widgetsFor(secKey) {
+  var sec = document.querySelector('section[data-dash-sec="' + secKey + '"]');
+  return bp._dashV2FrameForTest.widgets.filter(function (w) { return sec && sec.querySelector('#' + w.slot); });
+}
+
+function mountDash() {
+  document.body.innerHTML =
+    '<div><button type="button" id="bp-dash-switch" hidden></button></div>' +
+    '<div id="bp-dashboard-inner"></div><div id="bp-toast-container"></div>';
+  bp._setStateForTest({ _allBatchesData: [], _dashData: DATA, _dashSummary: {}, _dashWineSkuLookup: {} });
+  bp._setDashV2ForTest(true);
+  bp._renderDashboardForTest();
+}
+
+function chartScripts() {
+  return appended.filter(function (n) { return /chart/i.test(srcOf(n) || ''); });
+}
+
+describe('phone sections', function () {
+  beforeEach(function () {
+    phone = true;
+    secListeners = [];
+    setupMedia();
+    window.localStorage.clear();
+    window.history.replaceState(null, '', '/brewpad.html?dash=v2');
+    bp._resetDashV2LazyForTest();
+    delete window.Chart;
+    origRenders = bp._dashV2FrameForTest.widgets.map(function (w) { return w.render; });
+    bp._dashV2FrameForTest.widgets.forEach(function (w) { w.render = jest.fn(); });
+    mountDash();
+  });
+
+  afterEach(function () {
+    bp._dashV2FrameForTest.widgets.forEach(function (w, i) { w.render = origRenders[i]; });
+    bp._setDashV2ForTest(false);
+    delete window.matchMedia;
+  });
+
+  test('chart sections start collapsed with a 44px toggle; Today has none', function () {
+    CHART_SECTIONS.forEach(function (k) {
+      var btn = document.querySelector('button.bp-dash-section-toggle[data-dash-sec-toggle="' + k + '"]');
+      expect(btn).not.toBeNull();
+      expect(btn.getAttribute('type')).toBe('button');
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(btn.getAttribute('aria-controls')).toBe('bp-dash-sec-body-' + k);
+      expect(btn.querySelector('.bp-dash-section-chevron').textContent).toBe('▸');
+      expect(btn.querySelector('.bp-dash-section-count').textContent).toMatch(/^\d+ charts?$/);
+      expect(document.getElementById('bp-dash-sec-body-' + k).hasAttribute('hidden')).toBe(true);
+      widgetsFor(k).forEach(function (w) { expect(w.render).not.toHaveBeenCalled(); });
+    });
+    expect(document.querySelector('[data-dash-sec-toggle="today"]')).toBeNull();
+    expect(document.querySelector('section[data-dash-sec="today"] h2.bp-dash-section-title')).not.toBeNull();
+    widgetsFor('today').forEach(function (w) { expect(w.render).toHaveBeenCalled(); });
+    expect(chartScripts().length).toBe(0);
+    expect(document.querySelector('#bp-dash-v2-period .bp-skeleton-chart')).not.toBeNull();
+  });
+
+  test('opening renders the section once, loads Chart.js once, keeps focus, closing keeps the render', function () {
+    var btn = document.querySelector('[data-dash-sec-toggle="production"]');
+    btn.focus();
+    btn.click();
+    var now = document.querySelector('[data-dash-sec-toggle="production"]');
+    expect(now.getAttribute('aria-expanded')).toBe('true');
+    expect(now.querySelector('.bp-dash-section-chevron').textContent).toBe('▾');
+    expect(document.getElementById('bp-dash-sec-body-production').hasAttribute('hidden')).toBe(false);
+    expect(document.activeElement).toBe(now);
+    widgetsFor('production').forEach(function (w) { expect(w.render).toHaveBeenCalledTimes(1); });
+    expect(chartScripts().length).toBe(1);
+    expect(bp._dashV2SecOpenForTest().production).toBe(true);
+    now.click();
+    expect(document.querySelector('[data-dash-sec-toggle="production"]').getAttribute('aria-expanded')).toBe('false');
+    expect(document.getElementById('bp-dash-sec-body-production').hasAttribute('hidden')).toBe(true);
+    document.querySelector('[data-dash-sec-toggle="production"]').click();
+    widgetsFor('production').forEach(function (w) { expect(w.render).toHaveBeenCalledTimes(1); });
+    expect(chartScripts().length).toBe(1);
+  });
+
+  test('a filter change while closed renders with the current model on open', function () {
+    window.history.replaceState(null, '', '/brewpad.html?dash=v2#type=beer');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    var st = bp.getStateForTest();
+    expect(st._dashV2State.type).toBe('beer');
+    widgetsFor('production').forEach(function (w) {
+      expect(w.render).not.toHaveBeenCalled();
+      expect(bp._dashV2DirtyForTest()[w.key]).toBe(true);
+    });
+    document.querySelector('[data-dash-sec-toggle="production"]').click();
+    widgetsFor('production').forEach(function (w) {
+      expect(w.render).toHaveBeenCalledTimes(1);
+      expect(w.render.mock.calls[0][0]).toBe(bp.getStateForTest()._dashV2Model);
+      expect(bp._dashV2DirtyForTest()[w.key]).toBeUndefined();
+    });
+  });
+
+  test('DOM order: Today, KPI tiles, then chart sections; same nodes move back on wide', function () {
+    function ids() {
+      return Array.prototype.map.call(document.getElementById('bp-dash-v2').children, function (c) {
+        return c.id || c.getAttribute('data-dash-sec');
+      });
+    }
+    expect(ids()).toEqual(['bp-dash-filters', 'bp-dash-range', 'today', 'bp-dash-v2-tiles', 'production', 'floor', 'bc', 'products', 'health']);
+    var tiles = document.getElementById('bp-dash-v2-tiles');
+    phone = false;
+    fireSecChange();
+    expect(document.getElementById('bp-dash-v2-tiles')).toBe(tiles);
+    expect(ids()).toEqual(['bp-dash-filters', 'bp-dash-range', 'bp-dash-v2-tiles', 'today', 'production', 'floor', 'bc', 'products', 'health']);
+    phone = true;
+    fireSecChange();
+    expect(ids().slice(2, 4)).toEqual(['today', 'bp-dash-v2-tiles']);
+    expect(document.getElementById('bp-dash-v2-tiles')).toBe(tiles);
+  });
+
+  test('crossing 768 expands every section; returning restores previous open states', function () {
+    document.querySelector('[data-dash-sec-toggle="floor"]').click();
+    phone = false;
+    fireSecChange();
+    expect(document.querySelectorAll('[data-dash-sec-toggle]').length).toBe(0);
+    CHART_SECTIONS.forEach(function (k) {
+      expect(document.getElementById('bp-dash-sec-body-' + k).hasAttribute('hidden')).toBe(false);
+    });
+    expect(document.querySelector('section[data-dash-sec="production"] h2.bp-dash-section-title')).not.toBeNull();
+    widgetsFor('production').forEach(function (w) { expect(w.render).toHaveBeenCalledTimes(1); });
+    phone = true;
+    fireSecChange();
+    expect(document.querySelector('[data-dash-sec-toggle="floor"]').getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('[data-dash-sec-toggle="products"]').getAttribute('aria-expanded')).toBe('false');
+    expect(document.getElementById('bp-dash-sec-body-products').hasAttribute('hidden')).toBe(true);
+  });
+
+  test('real widget render replaces the skeleton on open', function () {
+    bp._dashV2FrameForTest.widgets.forEach(function (w, i) { w.render = origRenders[i]; });
+    expect(document.querySelector('#bp-dash-v2-period .bp-skeleton-chart')).not.toBeNull();
+    document.querySelector('[data-dash-sec-toggle="production"]').click();
+    expect(document.querySelector('#bp-dash-v2-period .bp-skeleton-chart')).toBeNull();
+    expect(document.querySelector('#bp-dash-v2-period .bp-widget-title').textContent).not.toBe('');
+  });
+});

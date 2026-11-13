@@ -4415,6 +4415,8 @@ function parseWaitlistRecipeIds(value) {
   var _dashV2State = null;        // sanitised filter state
   var _dashV2Model = null;        // last buildDashV2Model result
   var _dashV2Seq = 0;
+  var _dashV2SecOpen = {};        // Phase 99-03: phone section key -> open (in memory, per page load)
+  var _dashV2Dirty = {};          // Phase 99-03: widget key -> true while skipped by the lazy gate
   var _dashV2WidgetOpts = {};     // Phase 96: 'w:opt' -> value; in memory only, never hash/localStorage
   // Phase 97-08: packaging calendar data, fetched lazily once per dashboard load (token = load identity).
   var _dashCal = { tok: null, loadTime: null, data: null, tasks: null, tasksFailed: false, bookingsState: 'loading', bookings: [] };
@@ -8534,9 +8536,55 @@ function parseWaitlistRecipeIds(value) {
     return false;
   }
 
+  // Phase 99-03: slot id -> section key, built once from DASH_V2_SECTIONS.
+  var _dashV2SlotSection = null;
+  function dashV2SlotSectionKey(slot) {
+    if (!_dashV2SlotSection) {
+      _dashV2SlotSection = {};
+      for (var i = 0; i < DASH_V2_SECTIONS.length; i++) {
+        var sec = DASH_V2_SECTIONS[i];
+        if (sec.lead) _dashV2SlotSection[sec.lead] = sec.key;
+        for (var j = 0; j < sec.slots.length; j++) _dashV2SlotSection[sec.slots[j][0]] = sec.key;
+      }
+    }
+    return _dashV2SlotSection[slot] || '';
+  }
+
+  function dashV2SecIsPhone() {
+    return !!(window.matchMedia && window.matchMedia('(max-width: 767px)').matches);
+  }
+
+  function dashV2DefShouldRender(def) {
+    return dashV2SlotShouldRender({
+      sectionKey: dashV2SlotSectionKey(def.slot),
+      isPhone: dashV2SecIsPhone(),
+      sectionOpen: !!_dashV2SecOpen[dashV2SlotSectionKey(def.slot)],
+      intersected: true,
+      ioSupported: false
+    });
+  }
+
+  function dashV2DefNeedsChart(def) {
+    if (!def.chart && def.key !== 'bc') return false;
+    return dashV2Opt(def.key, 'view', 'chart') !== 'table';
+  }
+
   // One widget, isolated: a throw or missing server array only affects that widget.
   function runDashV2Widget(def, model, chartState) {
-    if (!document.getElementById(def.slot)) return;
+    var slotEl = document.getElementById(def.slot);
+    if (!slotEl) return;
+    if (!dashV2DefShouldRender(def)) {
+      _dashV2Dirty[def.key] = true;
+      // Skeleton inside the normal widget card (real title visible) so the later swap does not shift layout.
+      var card = dashV2Widget(def.slot, def.title);
+      var cbody = card && card.querySelector('.bp-widget-body');
+      if (cbody && !cbody.firstChild) {
+        cbody.setAttribute('data-state', 'skeleton');
+        cbody.innerHTML = '<div class="bp-skeleton-block bp-skeleton-chart" aria-hidden="true"></div><span class="bp-visually-hidden">Loading chart\u2026</span>';
+      }
+      return;
+    }
+    delete _dashV2Dirty[def.key];
     dashV2DrillReset(def.key);
     try {
       if (dashV2WidgetMissing(def)) {
@@ -8561,27 +8609,63 @@ function parseWaitlistRecipeIds(value) {
     }
   }
 
+  // Renders a set of widget defs (each still passes through the lazy gate). Chart.js is only
+  // fetched when at least one gated-in def draws a chart.
+  function renderDashV2Defs(defs) {
+    var model = _dashV2Model;
+    if (!model || !defs.length) return;
+    var seq = _dashV2Seq;
+    var i;
+    function runAll(m, cs) { for (var k = 0; k < defs.length; k++) runDashV2Widget(defs[k], m, cs); }
+    if (window.Chart) {
+      _dashV2ChartState = 'ready';
+      runAll(model, 'ready');
+      return;
+    }
+    var needs = false;
+    for (i = 0; i < defs.length; i++) {
+      if (dashV2DefShouldRender(defs[i]) && dashV2DefNeedsChart(defs[i])) needs = true;
+    }
+    _dashV2ChartState = 'pending';
+    runAll(model, 'pending');
+    if (!needs) return;
+    loadChartJs().then(function () {
+      if (seq !== _dashV2Seq || !isDashV2()) return;
+      _dashV2ChartState = 'ready';
+      runAll(_dashV2Model, 'ready');
+    }, function () {
+      if (seq !== _dashV2Seq || !isDashV2()) return;
+      _dashV2ChartState = 'failed';
+      runAll(_dashV2Model, 'failed');
+    });
+  }
+
+  function dashV2DefsForSection(key, onlyDirty) {
+    var out = [];
+    for (var i = 0; i < DASH_V2_WIDGETS.length; i++) {
+      var d = DASH_V2_WIDGETS[i];
+      if (dashV2SlotSectionKey(d.slot) !== key) continue;
+      if (onlyDirty && !_dashV2Dirty[d.key]) continue;
+      out.push(d);
+    }
+    return out;
+  }
+
+  // Render every skipped widget that the gate now lets through (section opened, breakpoint crossed).
+  function flushDashV2Dirty() {
+    var defs = [];
+    for (var i = 0; i < DASH_V2_WIDGETS.length; i++) {
+      if (_dashV2Dirty[DASH_V2_WIDGETS[i].key] && dashV2DefShouldRender(DASH_V2_WIDGETS[i])) defs.push(DASH_V2_WIDGETS[i]);
+    }
+    renderDashV2Defs(defs);
+  }
+
   function renderDashV2Widgets() {
     var model = _dashV2Model;
     if (!model) return;
     renderDashV2Tiles(model);
-    var seq = ++_dashV2Seq;
-    if (window.Chart) {
-      _dashV2ChartState = 'ready';
-      renderDashV2AllWidgets(model, 'ready');
-      return;
-    }
-    _dashV2ChartState = 'pending';
-    renderDashV2AllWidgets(model, 'pending');
-    loadChartJs().then(function () {
-      if (seq !== _dashV2Seq || !isDashV2()) return;
-      _dashV2ChartState = 'ready';
-      renderDashV2AllWidgets(_dashV2Model, 'ready');
-    }, function () {
-      if (seq !== _dashV2Seq || !isDashV2()) return;
-      _dashV2ChartState = 'failed';
-      renderDashV2AllWidgets(_dashV2Model, 'failed');
-    });
+    ++_dashV2Seq;
+    renderDashV2Defs(DASH_V2_WIDGETS);
   }
 
   function resizeDashV2Charts() {
@@ -8639,6 +8723,7 @@ function parseWaitlistRecipeIds(value) {
     var sheet = document.getElementById('bp-dash-sheet');
     var inSheet = !!(sheet && sheet.contains(t));
     var el;
+    if ((el = t.closest('[data-dash-sec-toggle]'))) { onDashV2SecToggle(el); return; }
     if ((el = t.closest('[data-dash-close]'))) { closeDashV2Sheet(true); return; }
     if (t.closest('[data-dash-open-sheet]')) { openDashV2Sheet(); return; }
     if (t.closest('[data-dash-apply-sheet]')) {
@@ -8826,19 +8911,108 @@ function parseWaitlistRecipeIds(value) {
     { key: 'health', title: 'Data health', hint: 'All batches, ignores the filters', slots: [['bp-dash-v2-health', true]] }
   ];
 
+  // Number of chart widgets in a section (collapsed-header count). Today never collapses.
+  function dashV2SectionChartCount(key) {
+    var n = 0;
+    for (var i = 0; i < DASH_V2_WIDGETS.length; i++) {
+      var d = DASH_V2_WIDGETS[i];
+      if (dashV2SlotSectionKey(d.slot) === key && (d.chart || d.key === 'bc')) n++;
+    }
+    return n;
+  }
+
+  // Head inner HTML: a 44px toggle button on phone (chart sections only), a plain heading otherwise.
+  function dashV2SecHeadInner(sec, phone) {
+    if (phone && sec.key !== 'today') {
+      var open = !!_dashV2SecOpen[sec.key];
+      return '<h2 class="bp-dash-section-h"><button type="button" class="bp-dash-section-toggle" data-dash-sec-toggle="' + escapeHTML(sec.key) +
+        '" aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="bp-dash-sec-body-' + escapeHTML(sec.key) + '">' +
+        '<span class="bp-dash-section-chevron" aria-hidden="true">' + (open ? '\u25BE' : '\u25B8') + '</span>' +
+        '<span class="bp-dash-section-title">' + escapeHTML(sec.title) + '</span>' +
+        (open ? '' : '<span class="bp-dash-section-count">' + escapeHTML(dashSectionCountLabel(dashV2SectionChartCount(sec.key))) + '</span>') +
+        '</button></h2>';
+    }
+    return '<h2 class="bp-dash-section-title">' + escapeHTML(sec.title) + '</h2><p class="bp-dash-section-hint">' + escapeHTML(sec.hint) + '</p>';
+  }
+
   function dashV2SectionsHtml() {
     var html = '';
+    var phone = dashV2SecIsPhone();
     for (var i = 0; i < DASH_V2_SECTIONS.length; i++) {
       var sec = DASH_V2_SECTIONS[i];
-      html += '<section class="bp-dash-section" data-dash-sec="' + sec.key + '"><div class="bp-dash-section-head"><h2 class="bp-dash-section-title">' + escapeHTML(sec.title) +
-        '</h2><p class="bp-dash-section-hint">' + escapeHTML(sec.hint) + '</p></div>' +
+      var collapsed = phone && sec.key !== 'today' && !_dashV2SecOpen[sec.key];
+      // Today never collapses, so it gets no body wrapper (its head/lead/grid stay direct children).
+      var wrap = sec.key !== 'today';
+      html += '<section class="bp-dash-section" data-dash-sec="' + sec.key + '"><div class="bp-dash-section-head">' + dashV2SecHeadInner(sec, phone) + '</div>' +
+        (wrap ? '<div class="bp-dash-section-body" id="bp-dash-sec-body-' + sec.key + '"' + (collapsed ? ' hidden' : '') + '>' : '') +
         (sec.lead ? '<div id="' + sec.lead + '" class="bp-dash-lead"></div>' : '') + '<div class="bp-dash-grid">';
       for (var j = 0; j < sec.slots.length; j++) {
         html += '<div id="' + sec.slots[j][0] + '"' + (sec.slots[j][1] ? ' class="bp-dash-full"' : '') + '></div>';
       }
-      html += '</div></section>';
+      html += '</div>' + (wrap ? '</div>' : '') + '</section>';
     }
     return html;
+  }
+
+  // The shell is built once: rewrite each head and body visibility in place when the width class
+  // or a section's open state changes. At >= 768px every body is shown.
+  function syncDashV2SectionHeads() {
+    var phone = dashV2SecIsPhone();
+    for (var i = 0; i < DASH_V2_SECTIONS.length; i++) {
+      var sec = DASH_V2_SECTIONS[i];
+      var el = document.querySelector('section[data-dash-sec="' + sec.key + '"]');
+      if (!el) continue;
+      var head = el.querySelector('.bp-dash-section-head');
+      var body = document.getElementById('bp-dash-sec-body-' + sec.key);
+      var toggles = phone && sec.key !== 'today';
+      var open = !toggles || !!_dashV2SecOpen[sec.key];
+      var sig = (toggles ? 'p' : 'w') + (open ? '1' : '0');
+      if (head && head.getAttribute('data-sig') !== sig) {
+        head.innerHTML = dashV2SecHeadInner(sec, phone);
+        head.setAttribute('data-sig', sig);
+      }
+      if (body) { if (open) body.removeAttribute('hidden'); else body.setAttribute('hidden', ''); }
+    }
+  }
+
+  // D-09: on phone the KPI tiles follow the Today section. DOM order (not CSS order) so keyboard
+  // and screen-reader order match the visual order. The same nodes are moved, never rebuilt.
+  function applyDashV2PhoneOrder() {
+    var shell = document.getElementById('bp-dash-v2');
+    var tiles = document.getElementById('bp-dash-v2-tiles');
+    var today = shell ? shell.querySelector('section[data-dash-sec="today"]') : null;
+    if (!shell || !tiles || !today) return;
+    if (dashV2SecIsPhone()) {
+      if (today.nextElementSibling !== tiles) shell.insertBefore(tiles, today.nextSibling);
+    } else if (tiles.nextElementSibling !== today) {
+      shell.insertBefore(tiles, today);
+    }
+  }
+
+  var _dashV2SecBound = false;
+  function onDashV2SecModeChange() {
+    if (!isDashV2() || !document.getElementById('bp-dash-v2')) return;
+    syncDashV2SectionHeads();
+    applyDashV2PhoneOrder();
+    flushDashV2Dirty();
+  }
+  function bindDashV2SecListener() {
+    if (_dashV2SecBound || !window.matchMedia) return;
+    var mq = window.matchMedia('(max-width: 767px)');
+    if (!mq) return;
+    if (mq.addEventListener) mq.addEventListener('change', onDashV2SecModeChange);
+    else if (mq.addListener) mq.addListener(onDashV2SecModeChange);
+    else return;
+    _dashV2SecBound = true;
+  }
+
+  function onDashV2SecToggle(btn) {
+    var key = btn.getAttribute('data-dash-sec-toggle');
+    _dashV2SecOpen[key] = !_dashV2SecOpen[key];
+    syncDashV2SectionHeads();
+    var again = document.querySelector('[data-dash-sec-toggle="' + key + '"]');
+    if (again) again.focus();
+    if (_dashV2SecOpen[key]) renderDashV2Defs(dashV2DefsForSection(key, true));
   }
 
   // The shell is built once, so per-section visibility (D-16: Beer & cider hidden for Wine) is
@@ -8870,6 +9044,9 @@ function parseWaitlistRecipeIds(value) {
       _dashV2RangeOpen = false;
     }
     bindDashV2ModeListener();
+    bindDashV2SecListener();
+    applyDashV2PhoneOrder();
+    syncDashV2SectionHeads();
     if (!_dashV2State) _dashV2State = readDashFiltersFromEnv();
     refreshDashV2();
   }
@@ -17575,6 +17752,9 @@ function parseWaitlistRecipeIds(value) {
       _setDashV2ForTest: function (on) { _dashV2On = on === true; },
       _initDashV2FlagForTest: function () { initDashV2Flag(); },
       _setDashV2ChartsForTest: function (m) { _dashV2Charts = m; },
+      _dashV2SecOpenForTest: function () { return _dashV2SecOpen; },
+      _dashV2DirtyForTest: function () { return _dashV2Dirty; },
+      _resetDashV2LazyForTest: function () { _dashV2SecOpen = {}; _dashV2Dirty = {}; _dashV2SecBound = false; },
       // Phase 96-04: framework seams (registry + helpers) so tests can mount throwaway widgets.
       _dashV2FrameForTest: {
         widgets: DASH_V2_WIDGETS,

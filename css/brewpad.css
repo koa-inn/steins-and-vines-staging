@@ -3110,6 +3110,16 @@ textarea.bp-input {
 .bp-dash-section-title { font-size: 16px; font-weight: 700; color: var(--ink-primary); margin: 0; }
 .bp-dash-section-hint { font-size: 12px; color: var(--ink-secondary); margin: 4px 0 0; }
 .bp-dash-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+/* Phase 99-03: phone section toggle (< 768px), collapsed bodies, chart skeleton */
+.bp-dash-section-h { margin: 0; font: inherit; }
+.bp-dash-section-head[data-sig^="p"] { border-bottom: 0; padding-bottom: 0; margin-bottom: 8px; }
+.bp-dash-section-toggle { display: flex; align-items: center; gap: 4px; width: 100%; min-height: 44px; padding: 8px 16px; text-align: left; background: var(--cellar-raised); border: 1px solid var(--ledger-line); border-radius: var(--r-lg); font: inherit; color: inherit; touch-action: manipulation; }
+.bp-dash-section-toggle:focus-visible { outline: 2px solid var(--ledger-focus); outline-offset: 2px; }
+.bp-dash-section-toggle .bp-dash-section-title { font-size: 16px; font-weight: 700; color: var(--ink-primary); }
+.bp-dash-section-count { margin-left: auto; font-size: 12px; color: var(--ink-secondary); }
+.bp-dash-section-body[hidden] { display: none; }
+.bp-skeleton-chart { height: 200px; }
+@media (min-width: 768px) { .bp-skeleton-chart { height: 240px; } }
 .bp-dash-grid > .bp-widget { margin-bottom: 0; }
 .bp-dash-grid > div > .bp-widget { margin-bottom: 0; }
 .bp-dash-full { grid-column: 1 / -1; }
