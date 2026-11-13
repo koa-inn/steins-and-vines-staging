@@ -9930,7 +9930,7 @@ function parseWaitlistRecipeIds(value) {
 
   function dashTodayTaskRowHtml(t, overdue) {
     var h = '<div class="bp-task-row' + (overdue ? ' bp-task-row--overdue' : '') + '" data-task-id="' + escapeHTML(t.task_id) + '">';
-    h += '<label class="bp-task-check"><input type="checkbox" data-task-id="' + escapeHTML(t.task_id) + '"></label>';
+    h += '<label class="bp-task-check"><input type="checkbox" data-task-id="' + escapeHTML(t.task_id) + '" aria-label="' + escapeHTML('Mark done: ' + (t.title || ('Step ' + t.step_number))) + '"></label>';
     h += '<div class="bp-task-body">';
     h += '<button type="button" class="bp-batch-chip' + (overdue ? ' bp-batch-chip--overdue' : '') + '" data-batch-id="' + escapeHTML(t.batch_id || '') + '">' + escapeHTML(t.batch_id || '') + '</button>';
     h += '<span class="bp-task-title">' + escapeHTML(t.title || ('Step ' + t.step_number)) + '</span>';

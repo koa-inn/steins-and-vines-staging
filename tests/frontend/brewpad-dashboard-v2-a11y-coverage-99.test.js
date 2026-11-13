@@ -347,3 +347,16 @@ describe('dashV2PackCalTableModel', function () {
     expect(m.rows[1].cells[3]).toContain('not booked yet');
   });
 });
+
+describe('Today task checkboxes have an accessible name (axe label rule)', function () {
+  test('each checkbox is named after its task; markup is escaped', function () {
+    var host = document.createElement('div');
+    host.innerHTML = bp.dashTodayTaskRowHtml({ task_id: 'T1', batch_id: 'B1', title: 'Rack <b>wine</b>' }, true) +
+      bp.dashTodayTaskRowHtml({ task_id: 'T2', batch_id: 'B2', step_number: 3 }, false);
+    var boxes = host.querySelectorAll('input[type="checkbox"]');
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0].getAttribute('aria-label')).toBe('Mark done: Rack <b>wine</b>');
+    expect(boxes[1].getAttribute('aria-label')).toBe('Mark done: Step 3');
+    expect(host.querySelector('b')).toBeNull();
+  });
+});
