@@ -87,7 +87,9 @@ describe('dashCacheEntry / dashCacheUsable', function () {
 });
 
 describe('dashAsOfHint', function () {
-  var ms = new Date('2026-11-06T23:05:00Z').getTime(); // 3:05 PM PST
+  // July date: Vancouver is UTC-7 here under both old tzdata and BC permanent time,
+  // so the expected clock time does not depend on the Node/ICU version.
+  var ms = new Date('2026-07-06T22:05:00Z').getTime(); // 3:05 PM Pacific
   test('copy', function () {
     expect(bp.dashAsOfHint('updating', ms)).toBe('As of 3:05 PM · Updating…');
     expect(bp.dashAsOfHint('fresh', ms)).toBe('Updated 3:05 PM');
