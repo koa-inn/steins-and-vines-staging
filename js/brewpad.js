@@ -4412,6 +4412,7 @@ function parseWaitlistRecipeIds(value) {
   var _dashLoadTime = 0;
   // Phase 99-04: cached-first render state (never feeds _dashLoadTime, Pitfall 5).
   var DASH_CACHE_KEY = 'bp_dash_cache_v1';
+  var _dashTasksHydrated = false; // cached upcoming tasks are on screen (99-04 follow-up: keeps Today/attention layout stable)
   var _dashFromCache = 0;      // savedAt ms of the cached data on screen; 0 once fresh data landed
   var _dashHydrating = false;  // cached render shown, refresh in flight: side fetches wait for fresh data
   var _dashDataAt = 0;         // ms of the data currently on screen (for the as-of hint)
@@ -7180,6 +7181,7 @@ function parseWaitlistRecipeIds(value) {
   // Fresh aggregate landed (from eagerLoad or loadDashboard).
   function dashFreshApplied() {
     _dashFromCache = 0;
+    _dashTasksHydrated = false;
     _dashHydrating = false;
     _dashDataAt = Date.now();
     if (isDashV2()) writeDashCache();
@@ -7213,7 +7215,7 @@ function parseWaitlistRecipeIds(value) {
       // Hydrate and paint before any network response. _dashLoadTime stays 0 so the real refresh always runs.
       _dashData = cached.dashData;
       if (Array.isArray(cached.fermSchedules)) _fermSchedules = cached.fermSchedules;
-      if (Array.isArray(cached.upcomingTasks)) _upcomingTasks = cached.upcomingTasks;
+      if (Array.isArray(cached.upcomingTasks)) { _upcomingTasks = cached.upcomingTasks; _dashTasksHydrated = true; }
       _dashFromCache = cached.savedAt;
       _dashDataAt = cached.savedAt;
       _dashHydrating = true;
@@ -9802,10 +9804,14 @@ function parseWaitlistRecipeIds(value) {
     return slot;
   }
 
+  function dashTasksAvailable() {
+    return _upcomingLoaded || (_dashTasksHydrated && !!_dashFromCache);
+  }
+
   function renderDashV2TodayTasks() {
     var slotId = 'bp-dash-v2-today-tasks';
     var title = "Today's tasks";
-    if (!_upcomingLoaded) {
+    if (!dashTasksAvailable()) {
       dashV2Msg(slotId, 't1', title, 'Not available yet. Reopen the Dashboard tab to refresh.');
       return;
     }
@@ -9883,7 +9889,7 @@ function parseWaitlistRecipeIds(value) {
     for (var i = 0; i < sb.length; i++) staffIds[sb[i]] = true;
     var today = dashV2TodayDate();
     var taskCounts = null;
-    if (_upcomingLoaded) {
+    if (dashTasksAvailable()) {
       var tr = dashTodayTaskRows(_upcomingTasks, today);
       taskCounts = { overdue: tr.overdue.length, today: tr.today.length, truncated: _upcomingTruncated };
     }
