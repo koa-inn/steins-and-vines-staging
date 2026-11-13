@@ -55,3 +55,15 @@ Also confirmed: charts render lazily on desktop (3 canvases before scrolling, 11
   device: two-tap chart tooltips (D-13), finger-scrolling over a chart, and Safari's popup blocker when printing a
   QR code or label right after sign-in (A1). Tracked in `.planning/todos/pending/phase-99-ipad-touch-checks.md`.
   The same waiver was made for Phase 96.
+
+## Default flip on staging (2026-11-13)
+
+- Staging sha: `a65c9897` (feature commit `4ea08134`, `git push origin main`); deploy-staging succeeded.
+- v2 is now the default: empty storage or a stored opt-out without the migration marker opens v2 once and sets
+  `bp_dash_default_v2`; "Classic dashboard" switches back and is remembered; `?dash=classic` / `?dash=v1` open Classic.
+- Harness after the change: PASS (cold perf 0.89, warm 1.00, axe 0, no overflow).
+- Production: unchanged (`280eae3e`). Release needs separate owner approval.
+
+## Default flip confirmed
+
+Pending owner check (laptop; iPad deferred).
