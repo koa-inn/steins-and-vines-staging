@@ -14,6 +14,7 @@
     }));
     localStorage.setItem('sv_session_token', 'harness-session');
     localStorage.setItem('bp_dash_v2', '1');
+    localStorage.setItem('bp_dash_default_v2', '1');
     if (!warm) {
       var drop = [];
       for (var i = 0; i < localStorage.length; i++) {

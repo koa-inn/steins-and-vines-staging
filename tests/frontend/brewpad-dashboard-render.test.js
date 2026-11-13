@@ -66,6 +66,10 @@ function baseRaw() {
 }
 
 function setup(rawBatches, data) {
+  // Phase 99-09: v2 is the default, so these v1 render tests choose Classic explicitly.
+  global.localStorage.setItem('bp_dash_v2', '0');
+  global.localStorage.setItem('bp_dash_default_v2', '1');
+  bp._initDashV2FlagForTest();
   document.body.innerHTML = '<div id="bp-dashboard-inner"></div>';
   bp._setStateForTest({ _allBatchesData: rawBatches, _dashData: data || null, _dashSummary: {}, _dashWineSkuLookup: {} });
 }

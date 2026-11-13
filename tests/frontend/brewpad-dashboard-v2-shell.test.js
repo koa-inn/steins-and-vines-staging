@@ -76,6 +76,9 @@ beforeEach(function () {
 
 describe('opt-in flag and dispatch', function () {
   test('flag off renders v1 and the switch offers the new dashboard', function () {
+    window.localStorage.setItem('bp_dash_v2', '0');
+    window.localStorage.setItem('bp_dash_default_v2', '1');
+    bp._initDashV2FlagForTest();
     bp._renderDashboardForTest();
     expect(document.querySelector('.bp-pipeline-tile')).not.toBeNull();
     expect(document.getElementById('bp-dash-v2')).toBeNull();
@@ -102,12 +105,12 @@ describe('opt-in flag and dispatch', function () {
     expect(document.getElementById('bp-dash-v2')).not.toBeNull();
   });
 
-  test('throwing localStorage does not crash and defaults to v1', function () {
+  test('throwing localStorage does not crash and defaults to v2', function () {
     var g = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(function () { throw new Error('denied'); });
     var s = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function () { throw new Error('denied'); });
     try {
       expect(function () { bp._initDashV2FlagForTest(); bp._renderDashboardForTest(); }).not.toThrow();
-      expect(document.getElementById('bp-dash-v2')).toBeNull();
+      expect(document.getElementById('bp-dash-v2')).not.toBeNull();
       setUrl('?dash=v2', '');
       expect(function () { bp._initDashV2FlagForTest(); bp._renderDashboardForTest(); }).not.toThrow();
       expect(document.getElementById('bp-dash-v2')).not.toBeNull();
@@ -118,12 +121,15 @@ describe('opt-in flag and dispatch', function () {
   });
 
   test('switch button toggles v2 and back, destroying charts and stripping dash= from the URL', function () {
+    window.localStorage.setItem('bp_dash_v2', '0');
+    window.localStorage.setItem('bp_dash_default_v2', '1');
+    bp._initDashV2FlagForTest();
     bp._renderDashboardForTest();
     var btn = document.getElementById('bp-dash-switch');
     btn.click();
     expect(ls('bp_dash_v2')).toBe('1');
     expect(document.getElementById('bp-dash-v2')).not.toBeNull();
-    expect(btn.textContent).toBe('Back to classic dashboard');
+    expect(btn.textContent).toBe('Classic dashboard');
     var destroyed = 0;
     bp._setDashV2ChartsForTest({ a: { destroy: function () { destroyed++; } }, b: { destroy: function () { destroyed++; } } });
     setUrl('?dash=v2', '#dash=v2&type=wine');

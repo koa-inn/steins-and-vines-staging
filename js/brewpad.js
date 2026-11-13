@@ -7603,11 +7603,19 @@ function parseWaitlistRecipeIds(value) {
 
   function initDashV2Flag() {
     var stored = null;
+    var migrated = null;
     try { stored = localStorage.getItem('bp_dash_v2'); } catch (e) { stored = null; }
-    var f = dashV2FlagFrom(location.search, location.hash, stored);
+    try { migrated = localStorage.getItem('bp_dash_default_v2'); } catch (e1) { migrated = null; }
+    var f = dashV2DefaultFlagFrom(location.search, location.hash, stored, migrated);
     _dashV2On = f.on === true;
     if (f.persist !== null) {
       try { localStorage.setItem('bp_dash_v2', f.persist); } catch (e2) { /* private mode */ }
+    }
+    if (f.markMigrated) {
+      try { localStorage.setItem('bp_dash_default_v2', '1'); } catch (e3) { /* private mode */ }
+    }
+    if (/[?&]dash=(classic|v1)(&|$)/.test(String(location.search || '')) || parseDashHash(location.hash).dash === 'classic') {
+      stripDashFromUrl();
     }
     _dashV2State = readDashFiltersFromEnv();
   }
@@ -7643,7 +7651,7 @@ function parseWaitlistRecipeIds(value) {
     var btn = document.getElementById('bp-dash-switch');
     if (!btn) return;
     btn.hidden = false;
-    btn.textContent = isDashV2() ? 'Back to classic dashboard' : 'Try new dashboard';
+    btn.textContent = isDashV2() ? 'Classic dashboard' : 'Try new dashboard';
     var asof = document.getElementById('bp-dash-asof');
     if (asof) asof.hidden = !(isDashV2() && _dashAsOfState);
   }
