@@ -4417,6 +4417,8 @@ function parseWaitlistRecipeIds(value) {
   var _dashV2Seq = 0;
   var _dashV2SecOpen = {};        // Phase 99-03: phone section key -> open (in memory, per page load)
   var _dashV2Dirty = {};          // Phase 99-03: widget key -> true while skipped by the lazy gate
+  var _dashV2Seen = {};           // Phase 99-03: slot id -> true once it has come near the viewport (>= 768px)
+  var _dashV2Io = null;           // Phase 99-03: the one IntersectionObserver over unseen chart slots
   var _dashV2WidgetOpts = {};     // Phase 96: 'w:opt' -> value; in memory only, never hash/localStorage
   // Phase 97-08: packaging calendar data, fetched lazily once per dashboard load (token = load identity).
   var _dashCal = { tok: null, loadTime: null, data: null, tasks: null, tasksFailed: false, bookingsState: 'loading', bookings: [] };
@@ -7348,6 +7350,7 @@ function parseWaitlistRecipeIds(value) {
       try { if (_dashV2Charts[keys[i]] && _dashV2Charts[keys[i]].destroy) _dashV2Charts[keys[i]].destroy(); } catch (e) { /* already gone */ }
     }
     _dashV2Charts = {};
+    disconnectDashV2Io();
   }
 
   function syncDashSwitch() {
@@ -8559,9 +8562,48 @@ function parseWaitlistRecipeIds(value) {
       sectionKey: dashV2SlotSectionKey(def.slot),
       isPhone: dashV2SecIsPhone(),
       sectionOpen: !!_dashV2SecOpen[dashV2SlotSectionKey(def.slot)],
-      intersected: true,
-      ioSupported: false
+      intersected: !!_dashV2Seen[def.slot],
+      ioSupported: typeof window.IntersectionObserver === 'function'
     });
+  }
+
+  function disconnectDashV2Io() {
+    if (_dashV2Io) { try { _dashV2Io.disconnect(); } catch (e) { /* already gone */ } }
+    _dashV2Io = null;
+  }
+
+  // D-10: at >= 768px render each chart slot when it comes within 200px of the viewport. Without
+  // IntersectionObserver the gate lets everything through, so there is nothing to observe.
+  function observeDashV2Slots() {
+    if (typeof window.IntersectionObserver !== 'function' || dashV2SecIsPhone()) { disconnectDashV2Io(); return; }
+    var pending = [];
+    for (var i = 0; i < DASH_V2_WIDGETS.length; i++) {
+      var d = DASH_V2_WIDGETS[i];
+      if (_dashV2Dirty[d.key] && !_dashV2Seen[d.slot]) pending.push(d);
+    }
+    if (!pending.length) return;
+    if (!_dashV2Io) {
+      var io = new window.IntersectionObserver(function (entries) {
+        if (_dashV2Io !== io) return;
+        var defs = [];
+        for (var e = 0; e < entries.length; e++) {
+          if (!entries[e].isIntersecting) continue;
+          var id = entries[e].target.id;
+          if (_dashV2Seen[id]) continue;
+          _dashV2Seen[id] = true;
+          io.unobserve(entries[e].target);
+          for (var k = 0; k < DASH_V2_WIDGETS.length; k++) {
+            if (DASH_V2_WIDGETS[k].slot === id) defs.push(DASH_V2_WIDGETS[k]);
+          }
+        }
+        renderDashV2Defs(defs);
+      }, { rootMargin: '200px' });
+      _dashV2Io = io;
+    }
+    for (var j = 0; j < pending.length; j++) {
+      var el = document.getElementById(pending[j].slot);
+      if (el) _dashV2Io.observe(el);
+    }
   }
 
   function dashV2DefNeedsChart(def) {
@@ -8666,6 +8708,7 @@ function parseWaitlistRecipeIds(value) {
     renderDashV2Tiles(model);
     ++_dashV2Seq;
     renderDashV2Defs(DASH_V2_WIDGETS);
+    observeDashV2Slots();
   }
 
   function resizeDashV2Charts() {
@@ -8995,6 +9038,7 @@ function parseWaitlistRecipeIds(value) {
     syncDashV2SectionHeads();
     applyDashV2PhoneOrder();
     flushDashV2Dirty();
+    observeDashV2Slots();
   }
   function bindDashV2SecListener() {
     if (_dashV2SecBound || !window.matchMedia) return;
@@ -9032,6 +9076,8 @@ function parseWaitlistRecipeIds(value) {
     if (!inner) return;
     if (!document.getElementById('bp-dash-v2')) {
       destroyDashV2Charts();
+      _dashV2Seen = {};
+      _dashV2Dirty = {};
       inner.innerHTML = '<div id="bp-dash-v2" class="bp-dash-v2">' +
         '<div id="bp-dash-filters" class="bp-dash-filters" role="group" aria-label="Dashboard filters"></div>' +
         '<div id="bp-dash-range" class="bp-dash-range" hidden></div>' +
@@ -17754,7 +17800,7 @@ function parseWaitlistRecipeIds(value) {
       _setDashV2ChartsForTest: function (m) { _dashV2Charts = m; },
       _dashV2SecOpenForTest: function () { return _dashV2SecOpen; },
       _dashV2DirtyForTest: function () { return _dashV2Dirty; },
-      _resetDashV2LazyForTest: function () { _dashV2SecOpen = {}; _dashV2Dirty = {}; _dashV2SecBound = false; },
+      _resetDashV2LazyForTest: function () { _dashV2SecOpen = {}; _dashV2Dirty = {}; _dashV2Seen = {}; _dashV2SecBound = false; disconnectDashV2Io(); },
       // Phase 96-04: framework seams (registry + helpers) so tests can mount throwaway widgets.
       _dashV2FrameForTest: {
         widgets: DASH_V2_WIDGETS,

@@ -323,3 +323,116 @@ describe('phone sections', function () {
     expect(document.querySelector('#bp-dash-v2-period .bp-widget-title').textContent).not.toBe('');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 3: IntersectionObserver lazy rendering at >= 768px
+// ---------------------------------------------------------------------------
+
+describe('wide lazy rendering', function () {
+  var ios;
+
+  function StubIO(cb, opts) {
+    this.cb = cb;
+    this.opts = opts;
+    this.observed = [];
+    this.unobserved = [];
+    this.disconnected = false;
+    ios.push(this);
+  }
+  StubIO.prototype.observe = function (el) { this.observed.push(el); };
+  StubIO.prototype.unobserve = function (el) { this.unobserved.push(el); };
+  StubIO.prototype.disconnect = function () { this.disconnected = true; };
+
+  function enter(io, slotId) {
+    io.cb([{ target: document.getElementById(slotId), isIntersecting: true }]);
+  }
+
+  function def(key) {
+    return bp._dashV2FrameForTest.widgets.filter(function (w) { return w.key === key; })[0];
+  }
+
+  beforeEach(function () {
+    phone = false;
+    ios = [];
+    secListeners = [];
+    setupMedia();
+    window.localStorage.clear();
+    window.history.replaceState(null, '', '/brewpad.html?dash=v2');
+    bp._resetDashV2LazyForTest();
+    window.Chart = function () {};
+    origRenders = bp._dashV2FrameForTest.widgets.map(function (w) { return w.render; });
+    bp._dashV2FrameForTest.widgets.forEach(function (w) { w.render = jest.fn(); });
+  });
+
+  afterEach(function () {
+    bp._dashV2FrameForTest.widgets.forEach(function (w, i) { w.render = origRenders[i]; });
+    bp._setDashV2ForTest(false);
+    delete window.matchMedia;
+    delete window.IntersectionObserver;
+    delete window.Chart;
+  });
+
+  test('observes unseen chart slots with rootMargin 200px; Today renders at once', function () {
+    window.IntersectionObserver = StubIO;
+    mountDash();
+    expect(ios.length).toBe(1);
+    expect(ios[0].opts.rootMargin).toBe('200px');
+    var ids = ios[0].observed.map(function (e) { return e.id; });
+    expect(ids).toContain('bp-dash-v2-period');
+    expect(ids).toContain('bp-dash-v2-health');
+    expect(ids).not.toContain('bp-dash-v2-today-tasks');
+    expect(def('g1').render).not.toHaveBeenCalled();
+    expect(def('t1').render).toHaveBeenCalled();
+  });
+
+  test('an intersection renders that slot once and unobserves it', function () {
+    window.IntersectionObserver = StubIO;
+    mountDash();
+    enter(ios[0], 'bp-dash-v2-period');
+    expect(def('g1').render).toHaveBeenCalledTimes(1);
+    expect(ios[0].unobserved.map(function (e) { return e.id; })).toEqual(['bp-dash-v2-period']);
+    enter(ios[0], 'bp-dash-v2-period');
+    expect(def('g1').render).toHaveBeenCalledTimes(1);
+    expect(def('g2').render).not.toHaveBeenCalled();
+  });
+
+  test('without IntersectionObserver every widget renders immediately', function () {
+    mountDash();
+    bp._dashV2FrameForTest.widgets.forEach(function (w) {
+      if (!(w.needs || []).length) expect(w.render).toHaveBeenCalled();
+    });
+    expect(def('g1').render).toHaveBeenCalled();
+  });
+
+  test('a filter change re-renders seen slots and keeps unseen slots dirty', function () {
+    window.IntersectionObserver = StubIO;
+    mountDash();
+    enter(ios[0], 'bp-dash-v2-period');
+    window.history.replaceState(null, '', '/brewpad.html?dash=v2#type=beer');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect(def('g1').render).toHaveBeenCalledTimes(2);
+    expect(def('g2').render).not.toHaveBeenCalled();
+    expect(bp._dashV2DirtyForTest().g2).toBe(true);
+    expect(bp._dashV2DirtyForTest().g1).toBeUndefined();
+  });
+
+  test('a late intersection renders against the current model', function () {
+    window.IntersectionObserver = StubIO;
+    mountDash();
+    var first = bp.getStateForTest()._dashV2Model;
+    window.history.replaceState(null, '', '/brewpad.html?dash=v2#type=wine');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    var current = bp.getStateForTest()._dashV2Model;
+    expect(current).not.toBe(first);
+    enter(ios[0], 'bp-dash-v2-pipeline');
+    expect(def('g2').render.mock.calls[0][0]).toBe(current);
+  });
+
+  test('rebuilding the shell disconnects the observer', function () {
+    window.IntersectionObserver = StubIO;
+    mountDash();
+    document.getElementById('bp-dashboard-inner').innerHTML = '';
+    bp._renderDashboardForTest();
+    expect(ios[0].disconnected).toBe(true);
+  });
+});
