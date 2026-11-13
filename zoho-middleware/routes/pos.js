@@ -5068,6 +5068,7 @@ var ADMIN_PROXY_ACTIONS = {
   get_vessels: true,
   get_ferm_schedules: true,
   get_tasks_upcoming: true,
+  get_tasks_calendar: true, // v2 dashboard packaging calendar (Phase 97) calls it from BrewPad
   get_waitlist: true,
   // writes
   create_batch: true,
@@ -5106,6 +5107,7 @@ var ADMIN_PROXY_READS = {
   get_vessels: true,
   get_ferm_schedules: true,
   get_tasks_upcoming: true,
+  get_tasks_calendar: true,
   get_waitlist: true
 };
 
