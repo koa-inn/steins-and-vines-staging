@@ -3021,7 +3021,10 @@ textarea.bp-input {
 .bp-recipe-dup { margin-top: 6px; padding: 8px 10px; background: var(--batch-warning-bg); border-left: 3px solid var(--batch-warning); font-size: 12px; font-weight: 700; }
 
 /* ===== Phase 95-06: v2 dashboard shell + global filter bar ===== */
-.bp-dash-switch-row { max-width: 900px; margin: 0 auto; padding: 8px 16px 0; text-align: right; }
+.bp-dash-switch-row { max-width: 900px; margin: 0 auto; padding: 8px 16px 0; text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.bp-dash-asof { margin: 0; font-size: 12px; line-height: 1.4; color: var(--ink-secondary); }
+.bp-dash-asof[hidden] { display: none; }
+@media (max-width: 767px) { .bp-dash-asof { flex-basis: 100%; order: 2; text-align: left; } }
 .bp-dash-switch { flex: none; min-height: 44px; font-size: 14px; background: none; border: 0; color: var(--ink-secondary); text-decoration: underline; cursor: pointer; }
 
 /* top: 0 (not var(--bp-shell-height)): the bar sticks inside the scrolling .bp-panel, which already sits below the shell header. */
@@ -3120,6 +3123,17 @@ textarea.bp-input {
 .bp-dash-section-body[hidden] { display: none; }
 .bp-skeleton-chart { height: 200px; }
 @media (min-width: 768px) { .bp-skeleton-chart { height: 240px; } }
+/* Phase 99-04: layout-matching dashboard skeletons (fixed heights so the swap does not shift layout) */
+.bp-dash-skel { display: flex; flex-direction: column; gap: 12px; }
+.bp-dash-skel-chips { display: flex; gap: 8px; }
+.bp-dash-skel-rows { display: flex; flex-direction: column; gap: 8px; }
+.bp-dash-skel-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@media (min-width: 768px) { .bp-dash-skel-tiles { grid-template-columns: repeat(4, 1fr); } }
+.bp-skeleton-block--chip { height: 44px; width: 96px; flex: none; }
+.bp-skeleton-block--row { height: 44px; }
+.bp-skeleton-block--tile { height: 64px; }
+.bp-skeleton-block--chart { height: 200px; }
+@media (min-width: 768px) { .bp-skeleton-block--chart { height: 240px; } }
 .bp-dash-grid > .bp-widget { margin-bottom: 0; }
 .bp-dash-grid > div > .bp-widget { margin-bottom: 0; }
 .bp-dash-full { grid-column: 1 / -1; }

@@ -4410,6 +4410,12 @@ function parseWaitlistRecipeIds(value) {
   var _dashSummary = null;
   var _dashData = null;   // Phase 94: get_dashboard_stats aggregate ({asOf, batches, ...}) or null (sheets fallback)
   var _dashLoadTime = 0;
+  // Phase 99-04: cached-first render state (never feeds _dashLoadTime, Pitfall 5).
+  var DASH_CACHE_KEY = 'bp_dash_cache_v1';
+  var _dashFromCache = 0;      // savedAt ms of the cached data on screen; 0 once fresh data landed
+  var _dashHydrating = false;  // cached render shown, refresh in flight: side fetches wait for fresh data
+  var _dashDataAt = 0;         // ms of the data currently on screen (for the as-of hint)
+  var _dashAsOfState = '';
   var _dashAutoRefreshTimer = null;
   var _dashV2On = false;          // Phase 95-06: per-device v2 opt-in
   var _dashV2State = null;        // sanitised filter state
@@ -4835,6 +4841,7 @@ function parseWaitlistRecipeIds(value) {
     accessToken = null;
     userEmail = null;
     clearSession();
+    clearDashCache();
     document.getElementById('bp-signin').style.display = '';
     document.getElementById('bp-app').style.display = 'none';
     var emailEl = document.getElementById('bp-user-email');
@@ -4879,6 +4886,7 @@ function parseWaitlistRecipeIds(value) {
     _sessionLoggedOut = true;
     saveAllFormDrafts();
     clearSession();
+    clearDashCache();
     accessToken = null;
     userEmail = null;
     var dot = document.getElementById('bp-auth-dot');
@@ -7135,10 +7143,90 @@ function parseWaitlistRecipeIds(value) {
 
   // ===== Dashboard =====
 
+  // ---- Phase 99-04: cached-first render (D-07, D-08) ----
+  // The cache holds customer data: it lives in localStorage only, is never logged, is keyed to
+  // one user and one Vancouver day, and is removed on sign-out (T-99-14).
+  function dashCacheEmail() {
+    return userEmail || (loadSession() || {}).email || null;
+  }
+
+  function clearDashCache() {
+    try { localStorage.removeItem(DASH_CACHE_KEY); } catch (e) { /* storage unavailable */ }
+  }
+
+  function readDashCache() {
+    var raw = null;
+    try { raw = localStorage.getItem(DASH_CACHE_KEY); } catch (e) { return null; }
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e2) { clearDashCache(); return null; }
+  }
+
+  function writeDashCache() {
+    var entry = dashCacheEntry(_dashData, _fermSchedules, _upcomingTasks, dashCacheEmail(), todayPacific(), Date.now());
+    if (!entry) return;
+    try { localStorage.setItem(DASH_CACHE_KEY, JSON.stringify(entry)); } catch (e) { clearDashCache(); }
+  }
+
+  function setDashAsOf(state, timeMs, force) {
+    var el = document.getElementById('bp-dash-asof');
+    if (!el) return;
+    if (state !== _dashAsOfState || force) {
+      _dashAsOfState = state;
+      el.textContent = dashAsOfHint(state, timeMs);
+    }
+    el.hidden = !(isDashV2() && _dashAsOfState);
+  }
+
+  // Fresh aggregate landed (from eagerLoad or loadDashboard).
+  function dashFreshApplied() {
+    _dashFromCache = 0;
+    _dashHydrating = false;
+    _dashDataAt = Date.now();
+    if (isDashV2()) writeDashCache();
+    setDashAsOf('fresh', _dashDataAt, true);
+  }
+
+  function dashRefreshFailed() {
+    _dashHydrating = false;
+    if (_dashDataAt) setDashAsOf('failed', _dashDataAt);
+  }
+
+  // Layout-matching placeholders (UI-SPEC section 5): attention chips, Today rows, KPI tiles, one block per chart.
+  function dashV2SkeletonHtml() {
+    var h = '<div class="bp-dash-skel" aria-hidden="true">';
+    h += '<div class="bp-dash-skel-chips"><div class="bp-skeleton-block bp-skeleton-block--chip"></div><div class="bp-skeleton-block bp-skeleton-block--chip"></div><div class="bp-skeleton-block bp-skeleton-block--chip"></div></div>';
+    h += '<div class="bp-dash-skel-rows"><div class="bp-skeleton-block bp-skeleton-block--row"></div><div class="bp-skeleton-block bp-skeleton-block--row"></div><div class="bp-skeleton-block bp-skeleton-block--row"></div></div>';
+    h += '<div class="bp-dash-skel-tiles"><div class="bp-skeleton-block bp-skeleton-block--tile"></div><div class="bp-skeleton-block bp-skeleton-block--tile"></div><div class="bp-skeleton-block bp-skeleton-block--tile"></div><div class="bp-skeleton-block bp-skeleton-block--tile"></div></div>';
+    h += '<div class="bp-skeleton-block bp-skeleton-block--chart"></div><div class="bp-skeleton-block bp-skeleton-block--chart"></div>';
+    return h + '</div>';
+  }
+
   function eagerLoad() {
-    // Show loading in dashboard (the first visible panel)
     var dashInner = document.getElementById('bp-dashboard-inner');
-    if (dashInner && !document.getElementById('bp-dash-v2')) dashInner.innerHTML = '<div class="bp-skeleton-block"></div><div class="bp-skeleton-block" style="height:120px;margin-top:12px;"></div>';
+    var cached = null;
+    var stored = readDashCache();
+    if (stored) {
+      cached = isDashV2() ? dashCacheUsable(stored, todayPacific(), dashCacheEmail()) : null;
+      if (!cached) clearDashCache();
+    }
+    if (cached) {
+      // Hydrate and paint before any network response. _dashLoadTime stays 0 so the real refresh always runs.
+      _dashData = cached.dashData;
+      if (Array.isArray(cached.fermSchedules)) _fermSchedules = cached.fermSchedules;
+      if (Array.isArray(cached.upcomingTasks)) _upcomingTasks = cached.upcomingTasks;
+      _dashFromCache = cached.savedAt;
+      _dashDataAt = cached.savedAt;
+      _dashHydrating = true;
+      renderDashboard();
+      setDashAsOf('updating', cached.savedAt);
+    } else if (dashInner && !document.getElementById('bp-dash-v2')) {
+      if (isDashV2()) {
+        dashInner.innerHTML = dashV2SkeletonHtml();
+        dashInner.setAttribute('aria-busy', 'true');
+      } else {
+        dashInner.innerHTML = '<div class="bp-skeleton-block"></div><div class="bp-skeleton-block" style="height:120px;margin-top:12px;"></div>';
+      }
+    }
 
     // Wrap each call so a single failure doesn't reject the whole Promise.all —
     // a partial result is better than a blank dashboard.
@@ -7194,10 +7282,19 @@ function parseWaitlistRecipeIds(value) {
 
       // Mark eager-load done if at least the core (summary + batches) succeeded.
       // If everything failed, fall back to the separate-load path.
+      if (r0) dashFreshApplied();
+      else if (_dashFromCache) _dashHydrating = false;
       if (r0 || r1) {
         _eagerLoadDone = true;
         _eagerLoadTime = Date.now();
         renderDashboard();
+        if (!r0 && _dashFromCache) dashRefreshFailed();
+        startDashAutoRefresh();
+      } else if (_dashFromCache) {
+        // Everything failed but the cached render is on screen: keep it, say so, retry on tab reopen.
+        _eagerLoadDone = false;
+        renderDashboard();
+        dashRefreshFailed();
         startDashAutoRefresh();
       } else {
         // All calls failed — graceful fallback: load dashboard + batches separately
@@ -7252,15 +7349,19 @@ function parseWaitlistRecipeIds(value) {
       _upcomingTasks = (results[1].data && results[1].data.tasks) || _upcomingTasks;
       if (results[1].data) _upcomingTruncated = _upcomingTasks.length >= 100;
       if (results[1].data) { _upcomingLoaded = true; _upcomingLoadTime = Date.now(); }
+      dashFreshApplied();
       renderDashboard();
     }).catch(function () {
       // Degrade gracefully: try the aggregate alone
       return fetchDashboardAggregate().then(function (r) {
         _dashData = r.stats;
         _dashSummary = r.summary;
+        dashFreshApplied();
         renderDashboard();
       }).catch(function (e) {
         var inner = document.getElementById('bp-dashboard-inner');
+        if (isDashV2() && document.getElementById('bp-dash-v2')) { dashRefreshFailed(); return; }
+        if (inner) inner.removeAttribute('aria-busy');
         if (inner) inner.innerHTML = '<p class="bp-empty">Failed to load dashboard: ' + escapeHTML(e.message) + '. Reopen the Dashboard tab to try again.</p>';
       });
     });
@@ -7358,6 +7459,8 @@ function parseWaitlistRecipeIds(value) {
     if (!btn) return;
     btn.hidden = false;
     btn.textContent = isDashV2() ? 'Back to classic dashboard' : 'Try new dashboard';
+    var asof = document.getElementById('bp-dash-asof');
+    if (asof) asof.hidden = !(isDashV2() && _dashAsOfState);
   }
 
   function setDashV2(on) {
@@ -9111,6 +9214,8 @@ function parseWaitlistRecipeIds(value) {
 
   function renderDashboard() {
     syncDashSwitch();
+    var busyEl = document.getElementById('bp-dashboard-inner');
+    if (busyEl) busyEl.removeAttribute('aria-busy');
     if (isDashV2()) { return renderDashboardV2(); }
     var inner = document.getElementById('bp-dashboard-inner');
     if (!inner) return;
@@ -9742,7 +9847,7 @@ function parseWaitlistRecipeIds(value) {
 
   // ---- Phase 98-04: Needs attention row (Today section lead slot; ignores the global filters, D-04) ----
   function ensureDashWaitlist() {
-    if (!isDashV2()) return;
+    if (!isDashV2() || _dashHydrating) return;
     var prev = _dashWaitlist;
     var sameLoad = !!(prev.tok && prev.loadTime === _dashLoadTime);
     if (sameLoad) {
@@ -9859,7 +9964,7 @@ function parseWaitlistRecipeIds(value) {
   // Fetches tasks (BrewPad) and bookings (Cal.com via the middleware) once per dashboard load; each
   // settle re-renders only this widget. A bookings failure never blocks the tasks (D-02).
   function ensureDashCalData(today) {
-    if (!_dashData || !isDashV2()) return;
+    if (!_dashData || !isDashV2() || _dashHydrating) return;
     if (_dashCal.tok && _dashCal.loadTime === _dashLoadTime && _dashCal.data === _dashData) return;
     var tok = {};
     _dashCal = { tok: tok, loadTime: _dashLoadTime, data: _dashData, tasks: null, tasksFailed: false, bookingsState: 'loading', bookings: [] };
@@ -10010,7 +10115,7 @@ function parseWaitlistRecipeIds(value) {
   // Card facts (ABV, IBU, juice, yeast) and the shared canning constants come from the middleware,
   // fetched once per dashboard load. A failure only drops those facts; the cards still render.
   function ensureDashCardsData() {
-    if (!_dashData || !isDashV2()) return;
+    if (!_dashData || !isDashV2() || _dashHydrating) return;
     if (_dashCards.tok && _dashCards.loadTime === _dashLoadTime && _dashCards.data === _dashData) return;
     var tok = {};
     _dashCards = { tok: tok, loadTime: _dashLoadTime, data: _dashData, state: 'loading', byId: {}, canning: null };
@@ -17816,6 +17921,7 @@ function parseWaitlistRecipeIds(value) {
       },
       _loadDashboardForTest: function () { return loadDashboard(); },
       _eagerLoadForTest: function () { return eagerLoad(); },
+      _dashCacheForTest: { read: readDashCache, write: writeDashCache, clear: clearDashCache, signOut: bpSignOut, loggedOut: _enterLoggedOutState },
       getStateForTest: function () {
         return {
           _batchesLoaded: _batchesLoaded,
